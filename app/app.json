@@ -31,7 +31,8 @@
       "predictiveBackGestureEnabled": false
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      "./plugins/withAlwaysRunScripts"
     ],
     "extra": {
       "eas": {

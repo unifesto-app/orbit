@@ -1,0 +1,16 @@
+diff --git a/build/platforms/apple/moduleScanner.js b/build/platforms/apple/moduleScanner.js
+index 093a8f5a3bf5c7b0578b64ea112e9606d201779b..9d484ca7a41e30cd6be22dc73f653a092bc79452 100644
+--- a/build/platforms/apple/moduleScanner.js
++++ b/build/platforms/apple/moduleScanner.js
+@@ -166,7 +166,10 @@ function groupScannedModules(output, packageRoots, platform) {
+         }
+         if (module1.accessLevel !== 'public' && module1.accessLevel !== 'open') {
+             // Only `internal` warns: it's the default, so likely a mistake. A lower level is an opt-out.
+-            if (module1.accessLevel === 'internal' && !warnedClasses.has(module1.file + module1.name)) {
++            // Orbit patch: expo-modules-core's own CoreModule is internal on purpose (AppContext creates it
++            // directly), so skip the false warning for it. Still in Expo 58.1.0 and on expo/expo main (Nov 2026).
++            const isCoreModule = module1.name === 'CoreModule' && module1.file.includes('/expo-modules-core/ios/');
++            if (module1.accessLevel === 'internal' && !isCoreModule && !warnedClasses.has(module1.file + module1.name)) {
+                 console.warn(`warning: The @ExpoModule class '${module1.name}' (${module1.file}) is internal, so the generated modules provider cannot reference it. Declare it public to link it automatically, or use a lower access level such as private to opt it out of linking.`);
+                 warnedClasses.add(module1.file + module1.name);
+             }
