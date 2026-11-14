@@ -1,0 +1,40 @@
+.swatches {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-s) var(--space-l);
+}
+
+.swatch {
+  display: flex;
+  align-items: center;
+  gap: var(--space-s);
+}
+
+.chip {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: var(--border-radius-item);
+  box-shadow: inset 0 0 0 1px var(--color-border-divider-default);
+}
+
+.textLine {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0 var(--space-m);
+}
+
+.specimen code {
+  font-family: var(--font-family-monospace);
+  font-size: var(--font-size-body-s);
+  color: var(--color-text-label);
+  letter-spacing: normal;
+  font-weight: 400;
+}
+
+.footnote {
+  color: var(--color-text-small);
+  font-size: var(--font-size-body-s);
+  line-height: var(--line-height-body-s);
+}
