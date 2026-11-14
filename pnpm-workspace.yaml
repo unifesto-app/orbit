@@ -7,3 +7,8 @@ packages:
 
 patchedDependencies:
   expo-modules-autolinking@58.1.0: patches/expo-modules-autolinking@58.1.0.patch
+
+# Expo SDK 58 pins react-native-worklets to 0.13.0 (expo/bundledNativeModules.json). Without this, the
+# expo-router copy that @expo/cli pulls in resolves its own 0.13.1, and two Worklets copies break at runtime.
+overrides:
+  react-native-worklets: 0.13.0

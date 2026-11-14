@@ -1,5 +1,6 @@
 // Orbit brand tokens, from the approved Theme and Typography boards
-// (docs/context/artifacts/orbit-logo-concepts). Accent changed to #375DF6 on 14 Nov 2026.
+// (docs/context/artifacts/orbit-logo-concepts). Accent is #295EFF, rgb(41, 94, 255) (owner, 15 Nov 2026;
+// was #375DF6, and #2953A4 on the Theme board).
 // Accent goes on elements only (dots, progress, switches, selection), never on text or buttons.
 // Buttons are white with a dark label.
 export const color = {
@@ -8,7 +9,7 @@ export const color = {
   raised: '#2C2C30',
   text: '#FFFFFF',
   secondary: 'rgba(255, 255, 255, 0.64)',
-  accent: '#375DF6',
+  accent: '#295EFF',
 } as const;
 
 // Plus Jakarta Sans for headlines, titles and buttons; DM Sans for text, meta and prices.
