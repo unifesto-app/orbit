@@ -8,7 +8,7 @@
   --text-2: rgb(255 255 255 / 0.64);
   --hairline: rgb(255 255 255 / 0.08);
   --track: rgb(255 255 255 / 0.12);
-  --accent: #375df6; /* progress, switches, selection, live dots. Never buttons or text. Was #2953A4 on the Theme board. */
+  --accent: #295eff; /* progress, switches, selection, live dots. Never buttons or text. Owner, 15 Nov 2026 (was #375df6; #2953A4 on the Theme board). */
   --steel: #7c818c;
   --r-control: 14px;
   --r-card: 20px;
