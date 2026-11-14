@@ -278,7 +278,7 @@ const LETTER_EXIT: Track[] = LETTERS.map((_, i) => {
 });
 
 /** The orbit ring's box in pt (assets/splash/orbit-ring.svg, drawn twice), centred on the screen. */
-export const RING_W = 210;
+export const RING_W = 200;
 export const RING_H = 105;
 /** Ring k's resting tilt: the two cross like the Orbit symbol. */
 const RING_TILT = [40, -40];
@@ -315,6 +315,26 @@ const GROUND_EXIT: Track = { i: REST, s: [[A, 1, 0, 1.65, 0.3, P1I, 0]] };
 // The Horizon walker wallpaper takes Unifesto's glass sheet's part: it settles in, then rushes past
 // with the rings. It tops out at WALLPAPER_DIM over the dark ground, so it sits back (owner, 15 Nov).
 export const WALLPAPER_DIM = 0.7;
+
+/** The wallpaper (assets/splash/wallpaper.jpg) in px, and how high its artist credit reaches above its foot. */
+export const WALLPAPER_W = 860;
+export const WALLPAPER_H = 1720;
+const CREDIT_TOP = 64;
+
+/**
+ * Where the wallpaper and the "by unifesto" footer go on a width × height screen (pt): the wallpaper
+ * covers it, anchored to the bottom, so a shorter screen loses sky from the top and never the credit;
+ * the footer sits above the home indicator and always clear of the credit (on iPad the credit rises
+ * into where the footer would otherwise go).
+ */
+export function splashLayout(width: number, height: number, insetBottom: number) {
+  const fit = Math.max(width / WALLPAPER_W, height / WALLPAPER_H);
+  return {
+    wallpaper: { width: WALLPAPER_W * fit, height: WALLPAPER_H * fit, left: (width - WALLPAPER_W * fit) / 2, bottom: 0 },
+    creditTop: CREDIT_TOP * fit,
+    footerBottom: Math.max(insetBottom + 30, CREDIT_TOP * fit + 8),
+  };
+}
 const PANE: Track = { i: [0, 0, 1.04, 1, 0, 0], s: [[A, 0, WALLPAPER_DIM, 0.1, 1.4, P2O, 0], [S, 1.04, 1, 0.1, 1.4, P2O, 0]] };
 const PANE_EXIT: Track = { i: REST, s: [[S, 1, 1.6, RING_ZOOM, RING_ZOOM_LEN, P3I, 0]] };
 

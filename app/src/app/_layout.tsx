@@ -18,14 +18,15 @@ export default function RootLayout() {
   });
   // On a font load error, carry on with the system font rather than a stuck splash.
   const ready = loaded || !!error;
+  const [splashLeaving, setSplashLeaving] = useState(false);
   const [splashDone, setSplashDone] = useState(false);
 
   return (
     <>
       <StatusBar style="light" />
       {/* Home mounts underneath as soon as it can draw, so the splash's zoom lands on it; and if the
-          splash ever leaves through its cap first, Home mounts anyway rather than a blank screen. */}
-      {(ready || splashDone) && (
+          splash starts leaving through its cap first, Home mounts then, never a blank screen. */}
+      {(ready || splashLeaving) && (
         <Stack
           screenOptions={{
             headerShown: false,
@@ -33,7 +34,7 @@ export default function RootLayout() {
           }}
         />
       )}
-      {!splashDone && <Splash ready={ready} onDone={() => setSplashDone(true)} />}
+      {!splashDone && <Splash ready={ready} onLeave={() => setSplashLeaving(true)} onDone={() => setSplashDone(true)} />}
     </>
   );
 }

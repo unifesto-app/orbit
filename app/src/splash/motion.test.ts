@@ -21,7 +21,10 @@ import {
   letterFrame,
   nextSwap,
   physics,
+  RING_H,
+  RING_W,
   ringFrame,
+  splashLayout,
   swapPropFrame,
   WALLPAPER_DIM,
   wallpaperFrame,
@@ -150,4 +153,29 @@ test('splash SVGs use only elements react-native-svg draws', () => {
     const bad = tags.filter((t) => !allowed.has(t));
     assert.deepEqual(bad, [], `${f} has ${bad.join(', ')}`);
   }
+});
+
+test('the wallpaper covers the screen and the footer stays clear of the artist credit', () => {
+  // [width, height, bottom inset] in pt
+  const screens: Record<string, [number, number, number]> = {
+    'iPhone SE': [375, 667, 0],
+    'iPhone 15': [393, 852, 34],
+    'iPad mini': [744, 1133, 20],
+    'iPad 10.2': [810, 1080, 0],
+    'iPad 13': [1032, 1376, 20],
+    'iPad 13 landscape': [1376, 1032, 20],
+  };
+  for (const [name, [w, h, inset]] of Object.entries(screens)) {
+    const { wallpaper, creditTop, footerBottom } = splashLayout(w, h, inset);
+    assert.ok(wallpaper.width >= w - 0.01 && wallpaper.height >= h - 0.01, `${name}: wallpaper covers the screen`);
+    near(wallpaper.left + wallpaper.width / 2, w / 2, 0.01, `${name}: wallpaper centred`);
+    assert.ok(footerBottom > creditTop, `${name}: footer (${footerBottom}) above the credit (${creditTop})`);
+    assert.ok(footerBottom >= inset + 30, `${name}: footer above the home indicator`);
+  }
+});
+
+test("the ring view's box matches its SVG's viewBox", () => {
+  const svg = readFileSync(new URL('../../assets/splash/orbit-ring.svg', import.meta.url), 'utf8');
+  const [, , w, h] = svg.match(/viewBox="([^"]+)"/)![1].split(/\s+/).map(Number);
+  near(RING_W / RING_H, w / h, 0.001, 'RING_W / RING_H');
 });

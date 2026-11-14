@@ -35,6 +35,7 @@ import {
   letterFrame,
   nextSwap,
   ringFrame,
+  splashLayout,
   wallpaperFrame,
   swapPropFrame,
   type PropArt,
@@ -61,8 +62,6 @@ const FOOTER_SVG: ImageSourcePropType = require('../../assets/splash/by-unifesto
 const RING_SVG: ImageSourcePropType = require('../../assets/splash/orbit-ring.svg');
 // "Horizon walker" (the Splash board's wallpaper). The artist's credit is part of the image: keep it visible.
 const WALLPAPER: ImageSourcePropType = require('../../assets/splash/wallpaper.jpg');
-const WALLPAPER_W = 860;
-const WALLPAPER_H = 1720;
 const FOOTER_W = 108; // the Splash board's size
 const FOOTER_H = (FOOTER_W * 238) / 1735;
 
@@ -128,13 +127,12 @@ function frameStyle(v: number[]) {
  *
  * `ready`: the app can show Home (fonts today; auth later). `onDone`: the splash has left.
  */
-export function Splash({ ready, onDone }: { ready: boolean; onDone: () => void }) {
+export function Splash({ ready, onLeave, onDone }: { ready: boolean; onLeave: () => void; onDone: () => void }) {
   const insets = useSafeAreaInsets();
   // Cover the screen, anchored to the bottom: a shorter screen (iPhone SE, iPad) loses sky from the
   // top, never the artist's credit at the foot.
   const screen = useWindowDimensions();
-  const fit = Math.max(screen.width / WALLPAPER_W, screen.height / WALLPAPER_H);
-  const wallpaperBox = { width: WALLPAPER_W * fit, height: WALLPAPER_H * fit, left: (screen.width - WALLPAPER_W * fit) / 2, bottom: 0 };
+  const layout = splashLayout(screen.width, screen.height, insets.bottom);
   // With reduced motion the intro and exit jump to their ends (Reanimated follows the system
   // setting) and the loader stays off.
   const reduced = useReducedMotion();
@@ -151,6 +149,7 @@ export function Splash({ ready, onDone }: { ready: boolean; onDone: () => void }
   const swaps = [useSharedValue(-1), useSharedValue(-1), useSharedValue(-1), useSharedValue(-1), useSharedValue(-1)];
 
   const live = useRef({
+    alive: true,
     started: false,
     introDone: false,
     held: false,
@@ -163,9 +162,11 @@ export function Splash({ ready, onDone }: { ready: boolean; onDone: () => void }
     swapTimer: null as ReturnType<typeof setTimeout> | null,
   });
   const done = useRef(onDone);
+  const leave = useRef(onLeave);
   useEffect(() => {
     done.current = onDone;
-  }, [onDone]);
+    leave.current = onLeave;
+  }, [onDone, onLeave]);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const later = (ms: number, fn: () => void) => {
     timers.current.push(setTimeout(fn, ms));
@@ -183,6 +184,7 @@ export function Splash({ ready, onDone }: { ready: boolean; onDone: () => void }
     const s = live.current;
     if (s.exiting) return;
     s.exiting = true;
+    leave.current(); // Home mounts now (if it hasn't), so the rings zoom onto it
     // Armed first, so even a throw below can't leave the splash up: if the UI thread's callback is lost.
     later(EXIT_END * 1000 + FALLBACK_MS, finish);
     out.value = withTiming(EXIT_END, { duration: EXIT_END * 1000, easing: Easing.linear }, (ok) => {
@@ -216,6 +218,7 @@ export function Splash({ ready, onDone }: { ready: boolean; onDone: () => void }
   const swapNext = () => {
     const s = live.current;
     s.swapTimer = null;
+    if (!s.alive) return;
     if (s.winding || reducedRef.current) return;
     const i = nextSwap(s.last);
     s.last = i;
@@ -234,7 +237,7 @@ export function Splash({ ready, onDone }: { ready: boolean; onDone: () => void }
 
   const start = () => {
     const s = live.current;
-    if (s.started) return;
+    if (s.started || !s.alive) return; // a load finishing after unmount starts nothing
     s.started = true;
     later(INTRO_END * 1000 + 400, onIntroDone); // armed first: if the UI thread's callback is lost
     t.value = withTiming(INTRO_END, { duration: INTRO_END * 1000, easing: Easing.linear }, (ok) => {
@@ -244,6 +247,7 @@ export function Splash({ ready, onDone }: { ready: boolean; onDone: () => void }
 
   useEffect(() => {
     const s = live.current;
+    s.alive = true; // (again, after React's dev-only StrictMode unmount and remount)
     loadXml()
       .then(setXml)
       .catch(() => {}) // no art: the ground and timing still run, and it still leaves
@@ -261,6 +265,7 @@ export function Splash({ ready, onDone }: { ready: boolean; onDone: () => void }
     later(CAP_MS + EXIT_END * 1000 + FALLBACK_MS, finish);
     const pending = timers.current;
     return () => {
+      s.alive = false;
       pending.forEach(clearTimeout);
       if (s.swapTimer) clearTimeout(s.swapTimer);
     };
@@ -285,7 +290,7 @@ export function Splash({ ready, onDone }: { ready: boolean; onDone: () => void }
     <View style={styles.root} accessible accessibilityRole="image" accessibilityLabel="Orbit by Unifesto">
       <Animated.View style={[StyleSheet.absoluteFill, styles.ground, groundStyle]}>
         <Animated.View style={[StyleSheet.absoluteFill, wallpaperStyle]}>
-          <Image source={WALLPAPER} style={[styles.abs, wallpaperBox]} />
+          <Image source={WALLPAPER} style={[styles.abs, layout.wallpaper]} />
         </Animated.View>
       </Animated.View>
       {xml && (
@@ -303,7 +308,7 @@ export function Splash({ ready, onDone }: { ready: boolean; onDone: () => void }
             {xml.ring && [0, 1].map((k) => <Ring key={`r${k}`} k={k} out={out} xml={xml.ring!} />)}
           </View>
           {xml.footer && (
-            <Animated.View style={[styles.footer, { bottom: insets.bottom + 30 }, footerStyle]} pointerEvents="none">
+            <Animated.View style={[styles.footer, { bottom: layout.footerBottom }, footerStyle]} pointerEvents="none">
               <Art xml={xml.footer} w={FOOTER_W} h={FOOTER_H} />
             </Animated.View>
           )}
