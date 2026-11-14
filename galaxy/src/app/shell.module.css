@@ -1,0 +1,347 @@
+/* AWS console frame: top nav, toolbar, side nav + content, footer.
+   Only the side nav and content scroll, as in the console. */
+.shell {
+  display: grid;
+  grid-template:
+    "top top" var(--size-top-navigation-height)
+    "bar bar" var(--size-toolbar-height)
+    "side main" minmax(0, 1fr)
+    "foot foot" var(--size-footer-height)
+    / var(--size-side-navigation-width) minmax(0, 1fr);
+  height: 100dvh;
+}
+
+.skip {
+  position: absolute;
+  left: -9999px;
+}
+
+.skip:focus {
+  left: var(--space-s);
+  top: var(--space-s);
+  z-index: 30;
+  padding: var(--space-xs) var(--space-s);
+  background: var(--color-background-container-content);
+  color: var(--color-text-interactive-default);
+}
+
+/* ── Top navigation ────────────────────────────────────── */
+
+.top {
+  grid-area: top;
+  display: flex;
+  align-items: center;
+  gap: var(--space-xl);
+  padding: 0 var(--space-l);
+  background: var(--color-background-top-navigation);
+  border-bottom: var(--border-divider-section-width) solid var(--color-border-divider-default);
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex: none;
+  color: var(--color-text-heading-default);
+  font-family: var(--font-family-heading);
+  font-size: var(--font-size-heading-s);
+  font-weight: var(--font-weight-bold);
+  text-decoration: none;
+}
+
+.logo:hover {
+  color: var(--color-text-interactive-hover);
+}
+
+.logo img {
+  height: 13px;
+  width: auto;
+}
+
+.search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 0 1 540px;
+  min-width: 0;
+}
+
+.search svg {
+  position: absolute;
+  left: var(--space-s);
+  color: var(--color-text-input-placeholder);
+  pointer-events: none;
+}
+
+.search input {
+  width: 100%;
+  height: var(--size-vertical-input);
+  padding: 0 var(--space-field-horizontal) 0 36px;
+  border: var(--border-width-field) solid var(--color-border-input-default);
+  border-radius: var(--border-radius-input);
+  background: var(--color-background-top-navigation);
+  color: var(--color-text-form-default);
+  font: inherit;
+  appearance: none;
+}
+
+.search input::placeholder {
+  color: var(--color-text-input-placeholder);
+  font-style: italic;
+}
+
+.search input:focus {
+  outline: none;
+  border-color: var(--color-border-input-focused);
+  box-shadow: 0 0 0 1px var(--color-border-input-focused);
+}
+
+.topLink {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xxs);
+  margin-left: auto;
+  flex: none;
+  color: var(--color-text-interactive-default);
+  font-weight: var(--font-weight-button);
+  text-decoration: none;
+}
+
+.topLink:hover {
+  color: var(--color-text-interactive-hover);
+}
+
+/* ── Toolbar: breadcrumbs (+ drawer toggle on phones) ──── */
+
+.toolbar {
+  grid-area: bar;
+  display: flex;
+  align-items: center;
+  gap: var(--space-s);
+  min-width: 0;
+  padding: 0 var(--space-s) 0 var(--space-panel-nav-left);
+  background: var(--color-background-layout-toolbar);
+  border-bottom: var(--border-divider-section-width) solid var(--color-border-layout);
+}
+
+/* Phones only: the side nav never collapses on desktop. */
+.toggle,
+.iconButton {
+  display: none;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: var(--border-radius-button);
+  background: transparent;
+  color: var(--color-text-interactive-default);
+  cursor: pointer;
+  transition: background var(--motion-duration-responsive) var(--motion-easing-responsive);
+}
+
+.toggle:hover,
+.iconButton:hover {
+  background: var(--color-background-button-link-hover);
+  color: var(--color-text-interactive-hover);
+}
+
+.crumbs {
+  min-width: 0;
+}
+
+.crumbs ol {
+  display: flex;
+  list-style: none;
+  white-space: nowrap;
+}
+
+.crumbs li {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.crumbs li + li::before {
+  content: "/";
+  margin: 0 var(--space-xs);
+  color: var(--color-text-body-secondary);
+}
+
+.crumbs [aria-current] {
+  color: var(--color-text-breadcrumb-current);
+}
+
+/* ── Side navigation ───────────────────────────────────── */
+
+.side {
+  grid-area: side;
+  overflow-y: auto;
+  padding-bottom: var(--space-xl);
+  background: var(--color-background-layout-panel-content);
+  border-right: var(--border-divider-section-width) solid var(--color-border-layout);
+}
+
+.sideHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-l) var(--space-s) var(--space-xs) var(--space-panel-nav-left);
+}
+
+.sideTitle {
+  color: var(--color-text-heading-default);
+  font-family: var(--font-family-heading);
+  font-size: var(--font-size-heading-m);
+  line-height: var(--line-height-heading-m);
+  letter-spacing: var(--letter-spacing-heading-m);
+  font-weight: var(--font-weight-bold);
+  text-decoration: none;
+}
+
+.sideTitle:hover {
+  color: var(--color-text-interactive-hover);
+}
+
+.navList {
+  list-style: none;
+}
+
+.navLink {
+  display: flex;
+  align-items: center;
+  min-height: var(--size-side-navigation-item-height);
+  padding: 0 var(--space-s) 0 var(--space-panel-nav-left);
+  color: var(--color-text-side-navigation-item-default);
+  text-decoration: none;
+}
+
+.navLink:hover {
+  color: var(--color-text-interactive-hover);
+}
+
+.navLink:focus-visible {
+  outline-offset: -2px;
+}
+
+.navLink[aria-current="page"] {
+  color: var(--color-text-side-navigation-item-active);
+  font-weight: var(--font-weight-bold);
+}
+
+.section {
+  margin-top: var(--space-xs);
+}
+
+.section summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  min-height: var(--size-side-navigation-item-height);
+  padding-left: var(--space-xs);
+  color: var(--color-text-heading-default);
+  font-family: var(--font-family-heading);
+  font-size: var(--font-size-heading-s);
+  font-weight: var(--font-weight-bold);
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.section summary::-webkit-details-marker {
+  display: none;
+}
+
+.section summary svg {
+  flex: none;
+  color: var(--color-text-interactive-default);
+  transition: transform var(--motion-duration-responsive) var(--motion-easing-responsive);
+}
+
+.section:not([open]) summary svg {
+  transform: rotate(-90deg);
+}
+
+.backdrop {
+  display: none;
+}
+
+/* ── Content and footer ────────────────────────────────── */
+
+.main {
+  grid-area: main;
+  overflow-y: auto;
+  padding: var(--space-l) var(--space-layout-content-horizontal) var(--space-layout-content-bottom);
+}
+
+.footer {
+  grid-area: foot;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-m);
+  padding: 0 var(--space-l);
+  background: var(--color-background-top-navigation);
+  border-top: var(--border-divider-section-width) solid var(--color-border-divider-default);
+  color: var(--color-text-body-secondary);
+  font-size: var(--font-size-body-s);
+  line-height: var(--line-height-body-s);
+}
+
+.footer a {
+  color: var(--color-text-interactive-default);
+  text-decoration: none;
+}
+
+.footer a:hover {
+  color: var(--color-text-interactive-hover);
+}
+
+/* ── Phones: side nav becomes an overlay ───────────────── */
+
+@media (max-width: 688px) {
+  .shell {
+    grid-template-columns: 0 minmax(0, 1fr);
+  }
+
+  .top {
+    gap: var(--space-s);
+    padding: 0 var(--space-m);
+  }
+
+  .topLink {
+    display: none;
+  }
+
+  .toolbar {
+    padding-left: var(--space-s);
+  }
+
+  .toggle,
+  .iconButton {
+    display: grid;
+  }
+
+  .main {
+    padding-inline: var(--space-m);
+  }
+
+  .side {
+    display: none;
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 20;
+    width: min(280px, calc(100vw - 56px));
+  }
+
+  .shell[data-drawer] .side {
+    display: block;
+  }
+
+  .shell[data-drawer] .backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 19;
+    background: var(--color-background-modal-overlay);
+  }
+}
