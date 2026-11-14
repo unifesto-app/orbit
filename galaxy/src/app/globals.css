@@ -7,9 +7,9 @@
  * suffix, so they map 1:1 to
  * cloudscape.design/foundation/visual-foundation/design-tokens.
  *
- * Blue: #375df6 (Orbit accent) on elements: fills, focus, selection, badge
+ * Blue: #295eff (Orbit accent) on elements: fills, focus, selection, badge
  * tints. Blue text (status info, Info links, active nav) uses lighter tints of
- * the same hue (300, 400): #375df6 is ~3.8:1 here and read as harsh.
+ * the same hue (300, 400): #295eff is ~3.8:1 here and reads as harsh.
  *
  * Galaxy's own: --color-background-top-navigation, --font-weight-heading and
  * the layout sizes (top nav, toolbar, side nav, footer), measured off the
@@ -50,8 +50,8 @@
   --color-primary-200: #c2d1ff;
   --color-primary-300: #94afff;
   --color-primary-400: #7598ff;
-  --color-primary-500: #375df6; /* Orbit accent, replaces AWS #5c7fff */
-  --color-primary-600: #295eff;
+  --color-primary-500: #5c7fff;
+  --color-primary-600: #295eff; /* Orbit accent (owner, 15 Nov); also AWS's own primary */
   --color-primary-700: #003efa;
   --color-primary-800: #0033cc;
   --color-primary-900: #001a99;
@@ -75,7 +75,7 @@
   --color-background-input-default: var(--color-neutral-1000);
   --color-background-input-disabled: var(--color-neutral-800);
   --color-background-control-default: var(--color-neutral-950);
-  --color-background-control-checked: var(--color-primary-500);
+  --color-background-control-checked: var(--color-primary-600);
   --color-background-control-disabled: var(--color-neutral-650);
 
   --color-background-button-normal-default: var(--color-neutral-850);
@@ -94,12 +94,12 @@
   --color-background-modal-overlay: #000000b3;
 
   --color-background-status-indicator-error: #ff7a7a20;
-  --color-background-status-indicator-info: #375df620;
+  --color-background-status-indicator-info: #295eff20;
   --color-background-status-indicator-success: #2bb53420;
   --color-background-status-indicator-warning: #fbd33220;
   --color-background-status-indicator-neutral: var(--color-neutral-800);
 
-  --color-background-badge-blue: #375df633;
+  --color-background-badge-blue: #295eff33;
   --color-background-badge-green: #2bb53433;
   --color-background-badge-red: #ff3d3d33;
   --color-background-badge-yellow: #fbd33233;
@@ -170,10 +170,10 @@
   --color-border-layout: var(--color-neutral-750);
   --color-border-card: var(--color-neutral-750);
   --color-border-input-default: var(--color-neutral-600);
-  --color-border-input-focused: var(--color-primary-500);
+  --color-border-input-focused: var(--color-primary-600);
   --color-border-input-disabled: var(--color-neutral-800);
   --color-border-control-default: var(--color-neutral-600);
-  --color-border-control-checked: var(--color-primary-500);
+  --color-border-control-checked: var(--color-primary-600);
   --color-border-button-normal-default: var(--color-neutral-600);
   --color-border-button-normal-hover: var(--color-neutral-500);
   --color-border-button-normal-disabled: var(--color-neutral-700);
@@ -182,10 +182,10 @@
   --color-border-button-primary-disabled: var(--color-neutral-750);
   --color-border-dropdown-container: var(--color-neutral-600);
   --color-border-popover: var(--color-neutral-600);
-  --color-border-item-focused: var(--color-primary-500);
-  --color-border-item-selected: var(--color-primary-500);
+  --color-border-item-focused: var(--color-primary-600);
+  --color-border-item-selected: var(--color-primary-600);
   --color-border-status-error: #ff3d3d;
-  --color-border-status-info: var(--color-primary-500);
+  --color-border-status-info: var(--color-primary-600);
   --color-border-status-success: #62ff57;
   --color-border-status-warning: #fced69;
 
