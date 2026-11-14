@@ -1,0 +1,21 @@
+.frame {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  background: var(--raised);
+}
+
+/* Same shape as the frame, so nothing is cut off. */
+.cover {
+  object-fit: cover;
+}
+
+.contain {
+  object-fit: contain;
+}
+
+.backdrop {
+  object-fit: cover;
+  filter: blur(28px) brightness(0.55);
+  transform: scale(1.2);
+}

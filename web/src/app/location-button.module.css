@@ -1,0 +1,54 @@
+.loc {
+  height: 40px;
+  max-width: 180px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+
+.loc:hover {
+  background: var(--card);
+}
+
+.loc:disabled {
+  cursor: progress;
+  color: var(--text-2);
+}
+
+.pin {
+  flex: none;
+  color: var(--accent);
+}
+
+.label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The sub-area and city join the area from 960px, where the navbar has room. */
+.city {
+  display: none;
+  color: var(--text-2);
+}
+
+@media (min-width: 960px) {
+  .loc {
+    max-width: 340px;
+  }
+
+  .city {
+    display: inline;
+  }
+}

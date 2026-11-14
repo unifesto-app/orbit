@@ -1,69 +1,109 @@
-import Image from "next/image";
+import Link from "next/link";
+import { categories, EventGrid } from "./discover";
+import { Icon, type IconName } from "./icons";
+import { Media } from "./media";
 import styles from "./page.module.css";
+import { formatPrice, spotlight, thisWeek } from "./mock";
+import { seatsNote } from "./seats";
+
+// Who Orbit is for, in the founder's examples.
+const hostTypes: { label: string; icon: IconName }[] = [
+  { label: "College clubs", icon: "college" },
+  { label: "Comedy groups", icon: "comedy" },
+  { label: "Jam circles", icon: "music" },
+  { label: "Café meetups", icon: "cafe" },
+  { label: "Startup communities", icon: "startup" },
+  { label: "Company hackathons", icon: "company" },
+  { label: "Housing society dandiyas", icon: "society" },
+];
 
 export default function Home() {
+  const spot = spotlight;
+  const spotNote = seatsNote(spot.taken, spot.capacity);
+
   return (
-    <div className={styles.page}>
       <main className={styles.main}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className={styles.intro}>
-          <h1>
-            To get started, edit the{" "}
-            <code className={styles.code}>page.tsx</code> file.
-          </h1>
-          <p>
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className={styles.secondary}
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+        {/* Location and search live in the navbar. */}
+        <h1 className="sr-only">Events near you</h1>
+
+        <section aria-labelledby="explore">
+          <h2 id="explore" className={styles.h2}>Explore</h2>
+          <ul className={styles.tiles}>
+            {categories.map((c) => (
+              <li key={c.slug}>
+                <Link href={`/search?c=${c.slug}`} className={styles.tile}>
+                  <span className={styles.tileIcon}><Icon name={c.icon} size={26} /></span>
+                  <span className={styles.tileLabel}>{c.label}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <section aria-labelledby="spotlight">
+          <h2 id="spotlight" className={styles.h2}>In the spotlight</h2>
+          <article className={styles.spot}>
+            {spot.media && (
+              <div className={styles.spotMedia}>
+                <Media media={spot.media} alt={`Poster for ${spot.title}`} sizes="(min-width: 960px) 340px, 100vw" priority />
+              </div>
+            )}
+            <div className={styles.spotMain}>
+              <p className={styles.spotDate} aria-hidden="true">{spot.date}</p>
+              <div className={styles.spotBody}>
+                <p className={styles.status}><span className={styles.dot} />{spot.status}</p>
+                <h3 className={styles.spotTitle}>{spot.title}</h3>
+                <p className={styles.meta}>{spot.host} · {spot.area} · {spot.date}, {spot.time}</p>
+                {spotNote && spot.capacity && (
+                  <>
+                    <div className={styles.track} role="progressbar" aria-label="Seats taken" aria-valuenow={spot.taken} aria-valuemin={0} aria-valuemax={spot.capacity}>
+                      <div style={{ width: `${Math.min(100, (spot.taken / spot.capacity) * 100)}%` }} />
+                    </div>
+                    <p className={styles.meta}>{spotNote}</p>
+                  </>
+                )}
+                <div className={styles.spotFoot}>
+                  <p className={styles.price}>
+                    {formatPrice(spot.pricePaise)}
+                    {spot.pricePaise > 0 && <span> per ticket</span>}
+                  </p>
+                  <Link href={`/event/${spot.slug}`} className="button">Get tickets</Link>
+                </div>
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <section aria-labelledby="week">
+          <h2 id="week" className={styles.h2}>This week</h2>
+          <EventGrid events={thisWeek} />
+        </section>
+
+        {/* The positioning (founder, 14 Nov): the customer is the host, and what Orbit sells is people coming back. */}
+        <section aria-labelledby="hosts" className={styles.hostBand}>
+          <div className={styles.orbit} aria-hidden="true">
+            <span className={`${styles.ring} ${styles.ring1}`}><span className={`${styles.planet} ${styles.live}`} /></span>
+            <span className={`${styles.ring} ${styles.ring2}`}><span className={styles.planet} /></span>
+            <span className={`${styles.ring} ${styles.ring3}`}><span className={styles.planet} /></span>
+            <span className={styles.core} />
+          </div>
+          <div className={styles.hostCopy}>
+            <p className={styles.eyebrow}>For hosts with a following</p>
+            <h2 id="hosts" className={styles.hostTitle}>Keep your people in orbit.</h2>
+            <p className={styles.hostText}>
+              Orbit is the platform for anyone who runs something again and again, and has people who come back for it.
+            </p>
+            <ul className={styles.hostTypes}>
+              {hostTypes.map((h) => (
+                <li key={h.label}>
+                  <Icon name={h.icon} size={18} />
+                  {h.label}
+                </li>
+              ))}
+            </ul>
+            <Link href="/console" className={`button ${styles.hostCta}`}>Host on Orbit</Link>
+          </div>
+        </section>
       </main>
-    </div>
   );
 }

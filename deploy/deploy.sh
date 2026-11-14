@@ -17,7 +17,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 echo "==> syncing source to $SERVER:$REMOTE_DIR/src"
 tar -C "$ROOT" \
-  --exclude=node_modules --exclude=.git --exclude=docs --exclude='*.log' \
+  --exclude=node_modules --exclude=.git --exclude=docs --exclude='*.log' --exclude='.env*' \
   -czf - . \
   | ssh "${SSH_OPTS[@]}" "$SERVER" "rm -rf $REMOTE_DIR/src && mkdir -p $REMOTE_DIR/src && tar -C $REMOTE_DIR/src -xzf -"
 
