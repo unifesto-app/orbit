@@ -35,8 +35,7 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#121215",
-          "dark": { "backgroundColor": "#121215" }
+          "backgroundColor": "#121215"
         }
       ],
       "./plugins/withAlwaysRunScripts"
