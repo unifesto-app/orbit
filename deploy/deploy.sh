@@ -14,15 +14,18 @@ REMOTE_DIR="${REMOTE_DIR:-/home/ubuntu/orbit}"
 SSH_OPTS=(-i "$KEY" -o BatchMode=yes -o ConnectTimeout=30)
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# The tar flags below are macOS (bsdtar) ones; stop here rather than after wiping the box's copy.
+[[ "$(uname)" == Darwin ]] || { echo "deploy.sh runs from macOS (it uses bsdtar flags)" >&2; exit 1; }
 
 echo "==> syncing source to $SERVER:$REMOTE_DIR/src"
 # macOS tar packs Finder xattrs and file flags the box's GNU tar can't read; leave them out.
-# The box builds api, web and galaxy only, so the app's generated native projects (ios/Pods alone
-# is ~470 MB) and local tooling stay behind too.
+# The box builds api, web and galaxy only, so the app's generated native projects (hundreds of MB
+# with Pods) and local tooling stay behind too. `^` anchors a pattern at the root; without it bsdtar
+# would also drop, say, a web/src/app/docs route.
 COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata --no-fflags -C "$ROOT" \
-  --exclude=node_modules --exclude=.git --exclude=docs --exclude='*.log' --exclude='.env*' \
+  --exclude=node_modules --exclude=.git --exclude='^./docs' --exclude='*.log' --exclude='.env*' \
   --exclude=.next --exclude=.expo --exclude=dist \
-  --exclude=./app/ios --exclude=./app/android --exclude=./.claude --exclude=.DS_Store \
+  --exclude='^./app/ios' --exclude='^./app/android' --exclude='^./.claude' --exclude=.DS_Store \
   -czf - . \
   | ssh "${SSH_OPTS[@]}" "$SERVER" "rm -rf $REMOTE_DIR/src && mkdir -p $REMOTE_DIR/src && tar -C $REMOTE_DIR/src -xzf -"
 
