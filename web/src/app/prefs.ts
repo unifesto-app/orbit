@@ -4,14 +4,16 @@
 import { useSyncExternalStore } from "react";
 
 export type Consent = "all" | "essential";
-export type Place = { area: string; sub?: string; city: string };
+// source: "gps" when detected from the visitor's position (refreshed on later visits),
+// "pick" when chosen from the city list (kept as chosen).
+export type Place = { area: string; sub?: string; city: string; source?: "gps" | "pick" };
 
 const CONSENT = "orbit_consent"; // essential: it records the choice itself
 const LOCATION = "orbit_location";
 const DAY = 86_400;
 
 const listeners = new Set<() => void>();
-let sessionPlace = ""; // "area|city|sub" when consent is not "all"
+let sessionPlace = ""; // "area|city|sub|source" when consent is not "all"
 
 function read(name: string): string {
   const hit = document.cookie.split("; ").find((c) => c.startsWith(`${name}=`));
@@ -34,14 +36,14 @@ export function setConsent(consent: Consent) {
   changed();
 }
 
-export function setPlace({ area, sub = "", city }: Place) {
-  const value = `${area}|${city}|${sub}`;
+export function setPlace({ area, sub = "", city, source = "gps" }: Place) {
+  const value = `${area}|${city}|${sub}|${source}`;
   if (read(CONSENT) === "all") write(LOCATION, value, 30 * DAY);
   else sessionPlace = value;
   changed();
 }
 
-// A string snapshot ("consent~area|city|sub") so React can compare it cheaply; parsed below.
+// A string snapshot ("consent~area|city|sub|source") so React can compare it cheaply; parsed below.
 const snapshot = () => `${read(CONSENT)}~${read(LOCATION) || sessionPlace}`;
 const subscribe = (fn: () => void) => {
   listeners.add(fn);
@@ -52,9 +54,10 @@ const subscribe = (fn: () => void) => {
 export function usePrefs(): { consent: Consent | null | "unknown"; place: Place | null } {
   const snap = useSyncExternalStore(subscribe, snapshot, () => "unknown~");
   const [consent, placeRaw] = snap.split("~");
-  const [area, city, sub] = placeRaw.split("|");
+  const [area, city, sub, source] = placeRaw.split("|");
   return {
     consent: consent === "unknown" ? "unknown" : consent === "all" || consent === "essential" ? consent : null,
-    place: area ? { area, sub: sub ?? "", city: city ?? "" } : null,
+    // Cookies saved before the source was recorded count as detected, so they refresh.
+    place: area ? { area, sub: sub ?? "", city: city ?? "", source: source === "pick" ? "pick" : "gps" } : null,
   };
 }

@@ -1,7 +1,6 @@
-/* Navbar and footer, shared by every page through the root layout. */
+/* Navbar, shared by every page through the root layout. The footer is footer.module.css. */
 
-.navInner,
-.footerInner {
+.navInner {
   padding: 0 16px;
 }
 
@@ -38,10 +37,11 @@
    From 720px: one row. "Host an event" and the city name join from 960px. */
 .navInner {
   display: grid;
-  grid-template-columns: auto auto 1fr auto;
+  /* The location takes the room between the logo and Sign in, and shrinks (with "…") to fit it. */
+  grid-template-columns: auto minmax(0, 1fr) auto;
   grid-template-areas:
-    "brand loc . actions"
-    "search search search search";
+    "brand loc actions"
+    "search search search";
   align-items: center;
   gap: 14px 12px;
   padding-top: 16px;
@@ -112,111 +112,6 @@
   opacity: 0.88;
 }
 
-/* Footer */
-
-.footer {
-  border-top: 1px solid var(--hairline);
-  font-size: 14px;
-  color: var(--text-2);
-}
-
-.footerInner {
-  display: flex;
-  flex-direction: column;
-  gap: 40px;
-  padding-top: 40px;
-  padding-bottom: 28px;
-}
-
-.top {
-  display: flex;
-  flex-direction: column;
-  gap: 40px;
-}
-
-.about {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 14px;
-}
-
-.tagline {
-  font-family: var(--font-display), system-ui, sans-serif;
-  font-size: 17px;
-  font-weight: 600;
-  color: var(--text);
-}
-
-/* Brand marks keep their shape inside a square box (YouTube is wider than tall). */
-.socialLink img {
-  object-fit: contain;
-}
-
-.social {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-left: -11px; /* line the first icon's glyph up with the logo, not its tap area */
-}
-
-/* 44px tap target around a 22px icon. */
-.socialLink {
-  width: 44px;
-  height: 44px;
-  border-radius: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: color 150ms ease, background-color 150ms ease;
-}
-
-.socialLink:hover {
-  background: var(--card);
-}
-
-.columns {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 32px 16px;
-}
-
-.colTitle {
-  margin-bottom: 12px;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text);
-}
-
-.colLinks {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.footer a {
-  transition: color 150ms ease;
-}
-
-.footer a:hover {
-  color: var(--text);
-}
-
-.bottom {
-  padding-top: 20px;
-  border-top: 1px solid var(--hairline);
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  font-size: 13px;
-}
-
-.legal {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 18px;
-}
-
 @media (min-width: 720px) {
   .navInner {
     height: var(--nav-h);
@@ -236,40 +131,15 @@
     width: 100%;
     max-width: 480px;
   }
-
-  .columns {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-
-  .bottom {
-    flex-direction: row;
-    justify-content: space-between;
-    align-items: center;
-  }
 }
 
 @media (min-width: 960px) {
-  .navInner,
-  .footerInner {
+  .navInner {
     padding-left: 32px;
     padding-right: 32px;
   }
 
   .host {
     display: flex;
-  }
-
-  .footerInner {
-    padding-top: 56px;
-  }
-
-  .top {
-    flex-direction: row;
-    justify-content: space-between;
-    gap: 64px;
-  }
-
-  .columns {
-    flex: 1;
   }
 }
