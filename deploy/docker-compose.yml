@@ -1,7 +1,8 @@
 # Orbit's app containers on the AWS box. Caddy is the Unifesto stack's: its Caddyfile
 # routes orbit.unifesto.app and its subdomains to these containers.
-# Images come from GHCR (see .github/workflows/deploy.yml). Runtime secrets live in
-# env files on the server only (api.env, web.env, galaxy.env). Never commit them.
+# Built on the box from the source that deploy/deploy.sh copies to ~/orbit/src.
+# Runtime secrets live in env files on the server only (api.env, web.env, galaxy.env).
+# Never commit them.
 
 name: orbit
 
@@ -11,12 +12,18 @@ x-logging: &logging
     max-size: "10m"
     max-file: "5"
 
+# The three Dockerfiles expect the whole repo as build context.
+x-build-context: &repo
+  context: ./src
+
 services:
   # Container names match the Caddy upstreams in the Unifesto repo's Caddyfile
   # (orbit-api, orbit-web, orbit-galaxy). They join the Unifesto network so Caddy
   # can reach them; that network is created by the Unifesto stack.
   orbit-api:
-    image: ghcr.io/unifesto-app/orbit-api:latest
+    build:
+      <<: *repo
+      dockerfile: api/Dockerfile
     container_name: orbit-api
     restart: unless-stopped
     logging: *logging
@@ -28,7 +35,9 @@ services:
     networks: [unifesto]
 
   orbit-web:
-    image: ghcr.io/unifesto-app/orbit-web:latest
+    build:
+      <<: *repo
+      dockerfile: web/Dockerfile
     container_name: orbit-web
     restart: unless-stopped
     logging: *logging
@@ -38,7 +47,9 @@ services:
     networks: [unifesto]
 
   orbit-galaxy:
-    image: ghcr.io/unifesto-app/orbit-galaxy:latest
+    build:
+      <<: *repo
+      dockerfile: galaxy/Dockerfile
     container_name: orbit-galaxy
     restart: unless-stopped
     logging: *logging
