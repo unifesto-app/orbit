@@ -25,6 +25,9 @@ const icons = {
   cafe: "coffee-duotone",
   society: "buildings-duotone",
   company: "briefcase-duotone",
+  locate: "crosshair-simple-duotone",
+  caret: "caret-down-duotone",
+  check: "check-circle-duotone",
 };
 
 const res = await fetch(`https://api.iconify.design/ph.json?icons=${Object.values(icons).join(",")}`);

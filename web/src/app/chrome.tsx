@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
 import styles from "./chrome.module.css";
+import f from "./footer.module.css";
 import { LocationButton } from "./location-button";
 import { NavSearch } from "./nav-search";
 import { SearchBox } from "./search-box";
@@ -41,18 +42,18 @@ export function Navbar() {
 const columns: { title: string; links: [string, string][] }[] = [
   {
     title: "Discover",
-    links: [["Events near you", "/"], ["Hackathons", "/search?c=hackathons"], ["Comedy", "/search?c=comedy"], ["Music", "/search?c=music"], ["Meetups", "/search?c=meetups"], ["Get the app", "/app"]],
+    links: [["Events near you", "/"], ["Hackathons", "/search?c=hackathons"], ["Comedy", "/search?c=comedy"], ["Music", "/search?c=music"], ["Meetups", "/search?c=meetups"]],
   },
   {
-    title: "Hosts",
+    title: "For hosts",
     links: [["Host an event", CONSOLE], ["Pricing", `${WWW}/pricing`], ["Help for hosts", `${WWW}/help`]],
   },
   {
-    title: "Company",
+    title: "Unifesto",
     links: [["About", `${WWW}/about`], ["Careers", `${WWW}/careers`], ["Press", `${WWW}/press`], ["Blog", `${WWW}/blog`]],
   },
   {
-    title: "Support",
+    title: "Help",
     links: [["Contact support", `${WWW}/support`], ["Refunds", `${WWW}/refund`], ["Grievance redressal", `${WWW}/grievance`], ["Delete account", `${WWW}/delete-account`]],
   },
 ];
@@ -67,48 +68,68 @@ const social = [
   { label: "YouTube", href: "https://www.youtube.com/@unifesto-app", src: "/social/youtube.svg" },
 ];
 
+// Three tiers: the host call to action with the app QR, the link columns, then the base line.
 export function Footer() {
   return (
-    <footer className={styles.footer}>
-      <div className={styles.footerInner}>
-        <div className={styles.top}>
-          <div className={styles.about}>
-            <Image src="/orbit-wordmark.svg" alt="Orbit" width={179} height={26} />
+    <footer className={f.footer}>
+      <div className={f.inner}>
+        <section className={f.band} aria-labelledby="footer-hosts">
+          <div className={f.bandCopy}>
             {/* Tagline idea from the name decision (rename.md); not yet final. */}
-            <p className={styles.tagline}>Keep your people in orbit.</p>
-            <ul className={styles.social} aria-label="Unifesto on social media">
-              {social.map(({ label, href, src }) => (
-                <li key={label}>
-                  <a href={href} rel="noopener" className={styles.socialLink}>
-                    <Image src={src} alt={`Unifesto on ${label}`} width={22} height={22} />
-                  </a>
-                </li>
+            <h2 id="footer-hosts" className={f.bandTitle}>Keep your people in orbit.</h2>
+            <p className={f.bandText}>For hosts with a following.</p>
+            <Link href={CONSOLE} className={`button ${f.bandCta}`}>Host on Orbit</Link>
+          </div>
+          {/* Desktop: scan the QR. Phones can't scan themselves, so they get a link to /app instead. */}
+          <div className={f.app}>
+            <span className={f.qr}>
+              <Image src="/app-qr.svg" alt="QR code linking to the Orbit app" width={96} height={96} />
+            </span>
+            <span className={f.appText}>
+              <strong>Explore the app</strong>
+              <span>Scan to open Orbit on Android or iOS</span>
+            </span>
+          </div>
+          <Link href="/app" className={f.appLink}>Open the Orbit app</Link>
+        </section>
+
+        <nav aria-label="Footer" className={f.columns}>
+          {columns.map((col) => (
+            <div key={col.title}>
+              <h2 className={f.colTitle}>{col.title}</h2>
+              <ul className={f.colLinks}>
+                {col.links.map(([label, href]) => (
+                  <li key={label}><Link href={href}>{label}</Link></li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </nav>
+
+        <div className={f.base}>
+          <div className={f.baseRow}>
+            <div className={f.brandRow}>
+              <Image src="/orbit-wordmark.svg" alt="Orbit" width={124} height={18} />
+              <ul className={f.social} aria-label="Unifesto on social media">
+                {social.map(({ label, href, src }) => (
+                  <li key={label}>
+                    <a href={href} rel="noopener" className={f.socialLink}>
+                      <Image src={src} alt={`Unifesto on ${label}`} width={20} height={20} />
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <ul className={f.legal} aria-label="Legal">
+              {legal.map(([label, href]) => (
+                <li key={label}><a href={href}>{label}</a></li>
               ))}
             </ul>
           </div>
-
-          <nav aria-label="Footer" className={styles.columns}>
-            {columns.map((col) => (
-              <div key={col.title}>
-                <h2 className={styles.colTitle}>{col.title}</h2>
-                <ul className={styles.colLinks}>
-                  {col.links.map(([label, href]) => (
-                    <li key={label}><Link href={href}>{label}</Link></li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </nav>
-        </div>
-
-        <div className={styles.bottom}>
-          <p>© 2027 Unifesto Private Limited</p>
-          <ul className={styles.legal} aria-label="Legal">
-            {legal.map(([label, href]) => (
-              <li key={label}><a href={href}>{label}</a></li>
-            ))}
-            <li><a href="mailto:support@unifesto.app">support@unifesto.app</a></li>
-          </ul>
+          <div className={f.baseRow}>
+            <p>© 2027 Unifesto Private Limited</p>
+            <a href="mailto:support@unifesto.app">support@unifesto.app</a>
+          </div>
         </div>
       </div>
     </footer>

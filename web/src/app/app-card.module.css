@@ -24,6 +24,23 @@
   }
 }
 
+/* Slides away while the footer (which has its own QR) is on screen. */
+.card {
+  transition: opacity 200ms ease, transform 200ms ease;
+}
+
+.away {
+  opacity: 0;
+  transform: translateY(16px);
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card {
+    transition: none;
+  }
+}
+
 /* White tile behind the code: dark-on-light scans most reliably. */
 .qr {
   padding: 8px;
