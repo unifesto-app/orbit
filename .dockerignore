@@ -4,5 +4,6 @@
 **/dist
 .git
 docs
-.env
-.env.*
+# Env files at any depth (web/.env.local holds real keys); servers get them from env_file at runtime.
+**/.env
+**/.env.*
