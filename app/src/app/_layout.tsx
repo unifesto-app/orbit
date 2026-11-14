@@ -3,7 +3,9 @@ import { PlusJakartaSans_600SemiBold, PlusJakartaSans_700Bold } from '@expo-goog
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useState } from 'react';
 
+import { Splash } from '../splash/Splash';
 import { color } from '../theme';
 
 export default function RootLayout() {
@@ -14,20 +16,25 @@ export default function RootLayout() {
     DMSans_500Medium,
     DMSans_600SemiBold,
   });
-
-  // Fonts are bundled, so this is a frame or two of plain ground. On a load error, carry on
-  // with the system font rather than a blank app.
-  if (!loaded && !error) return null;
+  // On a font load error, carry on with the system font rather than a stuck splash.
+  const ready = loaded || !!error;
+  const [splashLeaving, setSplashLeaving] = useState(false);
+  const [splashDone, setSplashDone] = useState(false);
 
   return (
     <>
       <StatusBar style="light" />
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          contentStyle: { backgroundColor: color.ground },
-        }}
-      />
+      {/* Home mounts underneath as soon as it can draw, so the splash's zoom lands on it; and if the
+          splash starts leaving through its cap first, Home mounts then, never a blank screen. */}
+      {(ready || splashLeaving) && (
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: color.ground },
+          }}
+        />
+      )}
+      {!splashDone && <Splash ready={ready} onLeave={() => setSplashLeaving(true)} onDone={() => setSplashDone(true)} />}
     </>
   );
 }

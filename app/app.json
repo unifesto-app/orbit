@@ -32,6 +32,13 @@
     },
     "plugins": [
       "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#121215",
+          "dark": { "backgroundColor": "#121215" }
+        }
+      ],
       "./plugins/withAlwaysRunScripts"
     ],
     "extra": {
