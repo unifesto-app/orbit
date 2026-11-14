@@ -5,6 +5,7 @@ New app, API, website and contract for Orbit by Unifesto. Plan: see `docs/contex
 - `api/` - Node 24, Hono (Drizzle and Postgres to come)
 - `app/` - Expo (TypeScript)
 - `web/` - Next.js (TypeScript), the public site at orbit.unifesto.app
+- `galaxy/` - Next.js (TypeScript), the platform admin (Orbit admin)
 - `contract/` - zod schemas and types shared by the API, the app and the web
 
 ## Develop
@@ -21,6 +22,6 @@ pnpm --filter @orbit/api dev
 
 ## Deploy
 
-- `api/Dockerfile` and `web/Dockerfile` build from the repo root.
+- `api/Dockerfile`, `web/Dockerfile` and `galaxy/Dockerfile` build from the repo root.
 - CI (`.github/workflows/ci.yml`) runs typecheck, tests, build and both Docker builds on every push and PR.
 - `.github/workflows/deploy.yml` pushes images to GHCR on `main`. Running them on the AWS box is not set up yet.
