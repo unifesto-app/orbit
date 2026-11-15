@@ -35,7 +35,11 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Orbit uses your location to show events near you."
+          "locationWhenInUsePermission": "Orbit uses your location to show events near you.",
+          "locationAlwaysAndWhenInUsePermission": false,
+          "locationAlwaysPermission": false,
+          "locationFullAccuracyPermission": false,
+          "motionUsagePermission": false
         }
       ],
       [

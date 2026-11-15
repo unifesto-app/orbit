@@ -1,6 +1,6 @@
 import { formatPrice } from '@orbit/contract';
 import { type ReactNode, useEffect, useState } from 'react';
-import { Animated, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Animated, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import Reanimated, {
   Easing,
   interpolate,
@@ -12,18 +12,17 @@ import Reanimated, {
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Carousel, type CarouselSlide } from '../home/Carousel';
-import { Glass } from '../glass';
-import { justAnnounced, planHome, type Viewer } from '../home/layout';
-import { Icon } from '../icons';
-import { Media, type MediaItem } from '../media';
-import { type Event, type Host, events, hosts, now, viewer } from '../mock';
-import { refreshPlace, usePlace } from '../place';
-import { around, color, font, radius, rim, space } from '../theme';
+import { Carousel, type CarouselSlide } from '../../home/Carousel';
+import { BarGlass, Glass } from '../../glass';
+import { justAnnounced, planHome, type Viewer } from '../../home/layout';
+import { Icon } from '../../icons';
+import { type Event, type Host, events, hosts, now, viewer } from '../../mock';
+import { refreshPlace, usePlace } from '../../place';
+import { EventRow, Monogram, Poster, SEAT, SeatCard, Tag } from '../../rows';
+import { around, color, font, radius, rim, space } from '../../theme';
 
 const HEADER = 44;
 const FRAME = rim; // the thin frosted rim around cards
-const LOGO = 48; // host logo on the card's top rim
 const TICKET_POSTER = 72; // 3:4, so 96 tall
 const TICKET_FACE = 2 * space.small + (TICKET_POSTER * 4) / 3; // ticket face: padding, the poster, padding
 // The stack opening and closing (owner: "also animate the flow", "it is very fast and rapid", "opening is good, closing
@@ -67,7 +66,7 @@ export default function Home() {
       : { key: `h:${s.host.id}`, image: s.host.banner!.source, edge: s.host.banner!.edge, label: `Banner for ${s.host.name}`, action: 'View events' },
   );
 
-  // Fades a ground strip in under the clock once the carousel has scrolled past it, so rows never sit on the status bar.
+  // Drives the glass behind the pinned header (BarGlass in src/glass.tsx).
   const [scrollY] = useState(() => new Animated.Value(0));
 
   // The ticket stack opens to show every ticket (owner, 15 Nov 2026: "need option to see the other tickets").
@@ -75,8 +74,6 @@ export default function Home() {
   const toggleTickets = () => setTicketsOpen((open) => !open);
   const ticketsAction =
     plan.tickets.length > 1 ? { label: ticketsOpen ? 'Show less' : `See all ${plan.tickets.length}`, onPress: toggleTickets } : undefined;
-  const fadeFrom = slides.length ? posterTop + (width * 3) / 4 - insets.top - 24 : 0;
-  const scrim = scrollY.interpolate({ inputRange: [fadeFrom, fadeFrom + 24], outputRange: [0, 1], extrapolate: 'clamp' });
 
   const hostCards = (
     <View style={styles.grid}>
@@ -90,21 +87,12 @@ export default function Home() {
     <View style={styles.screen}>
       <Animated.ScrollView
         showsVerticalScrollIndicator={false} // no side scroll line (owner, 15 Nov 2026)
-        contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}
+        // Clear of the tab bar: on iOS the tab's safe area includes it; on Android the tabs already pad the screen.
+        contentContainerStyle={{ paddingBottom: (Platform.OS === 'ios' ? insets.bottom : 0) + 32 }}
         scrollEventThrottle={16}
         onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })}>
-        {slides.length ? (
-          <View>
-            <Carousel slides={slides} top={posterTop} />
-            <View style={[styles.floating, { top: headerTop }]}>
-              <Header viewer={v} />
-            </View>
-          </View>
-        ) : (
-          <View style={{ paddingTop: headerTop }}>
-            <Header viewer={v} />
-          </View>
-        )}
+        {/* The header is pinned over the page (below); the carousel still starts at the top, under it. */}
+        {slides.length ? <Carousel slides={slides} top={posterTop} /> : <View style={{ height: headerTop + HEADER }} />}
 
         {plan.tickets.length > 0 && (
           <>
@@ -172,7 +160,12 @@ export default function Home() {
         )}
       </Animated.ScrollView>
 
-      <Animated.View style={[styles.statusScrim, { height: insets.top, opacity: scrim }]} />
+      {/* Pinned, with glass fading in behind it once the page scrolls, as on Search (owner, 15 Nov 2026: "apply the
+          same in home"); it replaced a ground strip under the clock. The gaps let taps through. */}
+      <View style={[styles.bar, { paddingTop: headerTop }]}>
+        <BarGlass scrollY={scrollY} />
+        <Header viewer={v} />
+      </View>
     </View>
   );
 }
@@ -340,7 +333,7 @@ function TicketCard({ event: e, host, label }: { event: Event; host: Host; label
 function FeedRow({ event: e, host }: { event: Event; host: Host }) {
   return (
     <View style={styles.feedRow}>
-      <Monogram host={host} size={40} />
+      <Monogram mark={host} size={40} />
       <View style={[styles.grow, styles.feedText]}>
         <View style={styles.feedHead}>
           <Text style={styles.feedHost} numberOfLines={1}>{host.name}</Text>
@@ -361,57 +354,19 @@ function FeedRow({ event: e, host }: { event: Event; host: Host }) {
   );
 }
 
-// A plain row (no card), so it keeps its Save heart, on the app's frosted glass (owner, 15 Nov 2026).
-function EventRow({ event: e, host }: { event: Event; host: Host }) {
-  return (
-    <View style={styles.row}>
-      <Poster media={e.poster} width={60} label={e.title} />
-      <View style={[styles.grow, styles.lines]}>
-        <View style={styles.whenRow}>
-          <Text style={styles.meta}>{e.when}</Text>
-          {e.repeats && <Tag text={e.repeats} />}
-        </View>
-        <Text style={styles.rowTitle}>{e.title}</Text>
-        <Text style={styles.meta} numberOfLines={1}>{host.name} · {e.area}</Text>
-        <Price event={e} />
-      </View>
-      <View style={styles.heart} accessible accessibilityLabel={`Save ${e.title}`}>
-        <Glass style={styles.heartGlass}>
-          <Icon name="heart" size={20} color={color.text} />
-        </Glass>
-      </View>
-    </View>
-  );
-}
-
 // Hosts as two columns of 4:3 cards, the host's 1:1 logo sitting on the card's top rim (owner, 15 Nov 2026).
 // Logos are 1:1 and shown round (Discover decision 13); the monogram stands in until real logos exist. A card, so no
 // icons. Same face and frosted rim as All events.
 function HostCard({ host, width, following }: { host: Host; width: number; following: boolean }) {
-  const face = width - 2 * FRAME;
-  const seat = LOGO + 2 * FRAME;
-  const left = (width - seat) / 2;
   return (
-    <View style={{ width, paddingTop: seat / 2 }}>
-      <Glass style={styles.cardRim}>
-        <View style={[styles.hostCard, { height: (face * 3) / 4, paddingTop: LOGO / 2 + space.small }]}>
-          <Text style={styles.hostCardName} numberOfLines={1}>{host.name}</Text>
-          <Text style={styles.hostCardAbout} numberOfLines={1}>{host.about}</Text>
-          {/* Hosts you already follow show it here (owner, 15 Nov 2026); not a button yet. */}
-          <Glass style={styles.followSmall}>
-            <Text style={[styles.followSmallText, following && styles.followingText]}>{following ? 'Following' : 'Follow'}</Text>
-          </Glass>
-        </View>
+    <SeatCard width={width} seat={<Monogram mark={host} size={SEAT} />}>
+      <Text style={styles.hostCardName} numberOfLines={1}>{host.name}</Text>
+      <Text style={styles.hostCardAbout} numberOfLines={1}>{host.about}</Text>
+      {/* Hosts you already follow show it here (owner, 15 Nov 2026); not a button yet. */}
+      <Glass style={styles.followSmall}>
+        <Text style={[styles.followSmallText, following && styles.followingText]}>{following ? 'Following' : 'Follow'}</Text>
       </Glass>
-      {/* The rim runs on over the logo's top half (owner: "apply the rim to half top of logo"): a frosted rounded
-          square the rim's width bigger than the logo, clipped to the half above the card, with the logo seated in it. */}
-      <View style={[styles.domeClip, { left, width: seat, height: seat / 2 }]}>
-        <Glass style={{ width: seat, height: seat, borderRadius: around(radius.md, FRAME) }} />
-      </View>
-      <View style={[styles.logoSeat, { left: left + FRAME, top: FRAME }]}>
-        <Monogram host={host} size={LOGO} />
-      </View>
-    </View>
+    </SeatCard>
   );
 }
 
@@ -436,15 +391,6 @@ function Notice({ kind, area }: { kind: 'noLocation' | 'nothingNear'; area?: str
   );
 }
 
-function Price({ event: e }: { event: Event }) {
-  return (
-    <View style={styles.priceRow}>
-      <Text style={styles.price}>{formatPrice(e.pricePaise)}</Text>
-      {e.seats && <Text style={styles.small}>{e.seats}</Text>}
-    </View>
-  );
-}
-
 // "All events": two columns of cards with a thin frosted glass rim around each card, the poster on top and
 // date, title and price under it (owner, 15 Nov 2026: two columns, smaller, page margins with a 24px gap, a thin
 // frosted rim, a card, "apply the rim to card", then "remove padding for poster"). The poster runs edge to edge across
@@ -465,33 +411,6 @@ function GridCard({ event: e, width }: { event: Event; width: number }) {
   );
 }
 
-// `corner` 0 for a poster that runs to a card's edge, where the card's own corners round it.
-function Poster({ media, width, label, corner = radius.sm }: { media: MediaItem; width: number; label: string; corner?: number }) {
-  return (
-    <View style={[styles.poster, { width, borderRadius: corner }]}>
-      <Media media={media} label={`Poster for ${label}`} />
-    </View>
-  );
-}
-
-// A host's 1:1 logo (the monogram stands in until real logos exist). Rounded squares, not circles, for every 1:1
-// image in the app: logos and people photos (owner, 15 Nov 2026: "use squares for 1:1 instead of circles").
-function Monogram({ host, size }: { host: Host; size: number }) {
-  return (
-    <View style={[styles.monogram, { width: size, height: size, borderRadius: radius.md, backgroundColor: host.bg }]}>
-      <Text style={[styles.monogramText, { color: host.fg, fontSize: Math.round(size * 0.34) }]}>{host.initials}</Text>
-    </View>
-  );
-}
-
-function Tag({ text }: { text: string }) {
-  return (
-    <View style={styles.tag}>
-      <Text style={styles.tagText}>{text}</Text>
-    </View>
-  );
-}
-
 // Every button is frosted glass with a white label (owner, 15 Nov 2026).
 function Button({ label, small }: { label: string; small?: boolean }) {
   return (
@@ -503,8 +422,7 @@ function Button({ label, small }: { label: string; small?: boolean }) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: color.ground },
-  floating: { position: 'absolute', left: 0, right: 0 },
-  statusScrim: { position: 'absolute', top: 0, left: 0, right: 0, backgroundColor: color.ground, pointerEvents: 'none' },
+  bar: { position: 'absolute', top: 0, left: 0, right: 0, paddingBottom: 12, pointerEvents: 'box-none' },
   grow: { flex: 1, minWidth: 0 },
   lines: { gap: 3 },
 
@@ -546,21 +464,12 @@ const styles = StyleSheet.create({
   announced: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: color.accent },
 
-  row: { marginHorizontal: 20, marginBottom: 12, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  whenRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
-  rowTitle: { fontFamily: font.title, fontSize: 15, lineHeight: 20, color: color.text },
-  heart: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  // Circles (owner, 15 Nov 2026: "circle for love and user profile"), the two exceptions to the one corner.
-  heartGlass: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
 
-  hostCard: { borderRadius: FACE, backgroundColor: color.card, paddingHorizontal: CARD_INSET, alignItems: 'center', gap: 2 },
   hostCardName: { fontFamily: font.title, fontSize: 14, color: color.text, textAlign: 'center' },
   hostCardAbout: { fontFamily: font.text, fontSize: 11, color: color.secondary, textAlign: 'center' },
   // Fully round, like every action pill (owner: "even follow and following").
   followSmall: { marginTop: 'auto', marginBottom: space.small, height: 32, paddingHorizontal: 16, borderRadius: 16, justifyContent: 'center' },
   followSmallText: { fontFamily: font.title, fontSize: 13, color: color.text },
-  domeClip: { position: 'absolute', top: 0, overflow: 'hidden' },
-  logoSeat: { position: 'absolute' },
   followingText: { color: color.secondary },
 
   notice: { marginTop: space.big, borderRadius: FACE, padding: CARD_INSET, gap: 4 },
@@ -568,12 +477,8 @@ const styles = StyleSheet.create({
   noticeText: { fontFamily: font.text, fontSize: 14, lineHeight: 20, color: color.secondary },
   wideButton: { marginTop: space.small, height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center' },
 
-  meta: { fontFamily: font.text, fontSize: 13, color: color.secondary },
   small: { fontFamily: font.text, fontSize: 12, color: color.secondary },
-  priceRow: { marginTop: 2, flexDirection: 'row', alignItems: 'baseline', gap: 10 },
-  price: { fontFamily: font.price, fontSize: 15, color: color.text },
 
-  poster: { overflow: 'hidden' },
   grid: { marginHorizontal: 20, flexDirection: 'row', flexWrap: 'wrap', columnGap: space.big, rowGap: space.big },
   cardRim: { padding: FRAME, borderRadius: RIM },
   gridRim: { padding: FRAME, borderRadius: RIM },
@@ -582,10 +487,6 @@ const styles = StyleSheet.create({
   gridMeta: { fontFamily: font.text, fontSize: 11, color: color.secondary },
   gridTitle: { fontFamily: font.title, fontSize: 13, lineHeight: 17, color: color.text },
   gridPrice: { fontFamily: font.price, fontSize: 13, color: color.text },
-  monogram: { alignItems: 'center', justifyContent: 'center' },
-  monogramText: { fontFamily: font.headline },
-  tag: { minHeight: 22, paddingHorizontal: 8, paddingVertical: 1, borderRadius: radius.sm, backgroundColor: color.raised, justifyContent: 'center' },
-  tagText: { fontFamily: font.medium, fontSize: 12, color: color.text },
   // Fully round (owner: "rounded view ticket and view events and book ticket"). Pills are the exception to nested
   // corners: the card around them keeps its 14px face rather than growing to fit a pill.
   button: { height: 44, paddingHorizontal: 18, borderRadius: 22, justifyContent: 'center' },
