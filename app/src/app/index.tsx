@@ -35,8 +35,8 @@ const STACK_CLOSE_MS = 450;
 const STACK_GAP = 12; // between cards when open
 const STACK_DIM = 0.55; // the veil over a card behind the front one
 const STACK_INSET = 8; // each step back in a stack is this much narrower on each side
-const STACK_PEEK = 10; // how much of each stacked card behind shows: only a sliver of its top edge, ending above
-// its title text (about 16px down: rim 2 + padding 8, then into the 32px title row), so no title shows (owner: "no title should visible")
+const STACK_PEEK = 6; // how much of each stacked card behind shows: a sliver of its top edge, its 2px rim and 4px
+// of empty face, never text (owner: "no title should visible", then "reduce the peek of stacked cards" again: 10 to 6)
 const CARD_INSET = space.small; // padding inside every card, around its contents
 // Every card's corners nest outward from its contents' corner (owner, 15 Nov 2026: "Inner Radius = Outer Radius -
 // Padding", then "apply to all cards"): with a 6px corner and 8px padding the face is 14, the frosted rim 16.
@@ -518,7 +518,7 @@ const styles = StyleSheet.create({
   section: { marginTop: 24, marginBottom: 16, marginHorizontal: 20 },
   stackToggle: { alignSelf: 'center', marginTop: 10 },
   // Very small (owner, 15 Nov 2026); hitSlop keeps the tap target near 44px.
-  stackToggleGlass: { height: 24, paddingHorizontal: 10, borderRadius: radius.sm, justifyContent: 'center' },
+  stackToggleGlass: { height: 24, paddingHorizontal: 10, borderRadius: 12, justifyContent: 'center' },
   stackToggleText: { fontFamily: font.title, fontSize: 11, color: color.text },
   h2: { fontFamily: font.headline, fontSize: 18, color: color.text },
 
@@ -563,7 +563,7 @@ const styles = StyleSheet.create({
   notice: { marginTop: space.big, borderRadius: FACE, padding: CARD_INSET, gap: 4 },
   noticeTitle: { fontFamily: font.title, fontSize: 16, color: color.text },
   noticeText: { fontFamily: font.text, fontSize: 14, lineHeight: 20, color: color.secondary },
-  wideButton: { marginTop: space.small, height: 50, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
+  wideButton: { marginTop: space.small, height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center' },
 
   meta: { fontFamily: font.text, fontSize: 13, color: color.secondary },
   small: { fontFamily: font.text, fontSize: 12, color: color.secondary },

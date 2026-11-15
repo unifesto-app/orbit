@@ -14,8 +14,10 @@ export const color = {
 
 // One corner for everything (owner, 15 Nov 2026: "reduce the round of corners in entire app", "use same roundness
 // across all. use the all events poster one", "make the poster 8px", then 6 with 8px padding, picked in the corners
-// demo): 6px on cards' contents, buttons, pills, tags, posters, logos, photos and the carousel's pill. The three names
-// stay so a part can be tuned apart again later. Only the tiny dots stay round.
+// demo): 6px on cards' contents, tags, posters, logos and photos. The three names stay so a part can be tuned
+// apart again later. Never on a button: every button is a pill, its corner half its height, or a circle when it holds
+// only an icon or an initial (owner, 15 Nov 2026: "never use squared buttons"). The search field is a pill too ("also
+// squared search"). The tiny dots stay round.
 const CORNER = 6;
 export const radius = { sm: CORNER, md: CORNER, lg: CORNER } as const;
 
