@@ -1,4 +1,5 @@
-// Cities for the navbar location picker, by state or union territory. Edit freely: the picker sorts them A to Z.
+// Cities for the location pickers (the web's navbar, the app's location screen), by state or union territory.
+// Edit freely: the pickers sort them A to Z.
 // Until the API knows which cities have events, this is a fixed list.
 const byState: Record<string, string[]> = {
   "Andaman and Nicobar Islands": ["Port Blair"],

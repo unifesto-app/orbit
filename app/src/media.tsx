@@ -3,11 +3,13 @@ import { Image, type ImageSourcePropType, StyleSheet, View } from 'react-native'
 
 import { color } from './theme';
 
-export type MediaItem = { source: ImageSourcePropType; ratio: MediaRatio };
+// The app shows 3:4 and 4:3 posters only (owner, 15 Nov 2026), so the A-series shape can't reach a screen here.
+export type AppRatio = Extract<MediaRatio, '3:4' | '4:3'>;
+export type MediaItem = { source: ImageSourcePropType; ratio: AppRatio };
 
 // Shows an image whole, never cropped (owner's rule; same as web's Media). `frame` sets the box's
 // shape; media of a different shape sits whole inside it over a blurred copy of itself.
-export function Media({ media, frame = media.ratio, label }: { media: MediaItem; frame?: MediaRatio; label?: string }) {
+export function Media({ media, frame = media.ratio, label }: { media: MediaItem; frame?: AppRatio; label?: string }) {
   const fits = frame === media.ratio;
   return (
     <View
