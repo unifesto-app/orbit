@@ -32,7 +32,10 @@ export default function RootLayout() {
             headerShown: false,
             contentStyle: { backgroundColor: color.ground },
           }}
-        />
+        >
+          {/* A sheet over Home: swipe down on iOS, back on Android. */}
+          <Stack.Screen name="location" options={{ presentation: 'modal' }} />
+        </Stack>
       )}
       {!splashDone && <Splash ready={ready} onLeave={() => setSplashLeaving(true)} onDone={() => setSplashDone(true)} />}
     </>

@@ -5,7 +5,7 @@
 // permission was already granted (same as the old site's detectCity). Saved through prefs.ts,
 // which respects cookie consent.
 import { useEffect, useId, useRef, useState } from "react";
-import { allCities, type City, popularCities, searchCities } from "./cities";
+import { allCities, type City, popularCities, searchCities } from "@orbit/contract";
 import { Icon } from "./icons";
 import styles from "./location-button.module.css";
 import { type Place, setPlace, usePrefs } from "./prefs";

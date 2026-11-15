@@ -21,6 +21,7 @@ const icons = {
   film: "film-slate-duotone",
   startup: "rocket-launch-duotone",
   gaming: "game-controller-duotone",
+  heart: "heart-duotone",
 };
 
 const res = await fetch(`https://api.iconify.design/ph.json?icons=${Object.values(icons).join(",")}`);
