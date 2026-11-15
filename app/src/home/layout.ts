@@ -4,6 +4,19 @@
 
 // source: "gps" when found from the phone's position, "pick" when chosen from the city list (src/app/location.tsx).
 export type Place = { area: string; city: string; nearAreas: readonly string[]; source?: 'gps' | 'pick' };
+// The fields of expo-location's LocationGeocodedAddress this reads.
+export type Address = { district: string | null; city: string | null; subregion: string | null; region: string | null };
+
+// What the phone's geocoder calls a spot, as Home's two lines: the neighbourhood over its city ("Gachibowli",
+// "Hyderabad"). With no neighbourhood the city leads over its state, the same shape as a picked city. Never the same
+// name twice: "Hyderabad, Hyderabad" reads as a bug (the web's rule too).
+export function placeName(a: Address): { area: string; city: string } | null {
+  const city = a.city || a.subregion || '';
+  const area = a.district || city;
+  if (!area) return null;
+  return { area, city: [city, a.region].find((name) => name && name !== area) ?? '' };
+}
+
 export type Viewer = {
   signedIn: boolean;
   initial?: string;

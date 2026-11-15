@@ -11,7 +11,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Glass } from '../glass';
 import { Icon } from '../icons';
 import { nearAreasFor, viewer } from '../mock';
-import { placeName, setPlace, usePlace } from '../place';
+import { placeName } from '../home/layout';
+import { setPlace, usePlace } from '../place';
 import { color, font, space } from '../theme';
 
 type Status = 'idle' | 'locating' | 'blocked' | 'failed';
