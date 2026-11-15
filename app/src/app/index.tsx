@@ -18,7 +18,7 @@ import { justAnnounced, planHome, type Viewer } from '../home/layout';
 import { Icon } from '../icons';
 import { Media, type MediaItem } from '../media';
 import { type Event, type Host, events, hosts, now, viewer } from '../mock';
-import { usePlace } from '../place';
+import { refreshPlace, usePlace } from '../place';
 import { around, color, font, radius, rim, space } from '../theme';
 
 const HEADER = 44;
@@ -51,6 +51,9 @@ export default function Home() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const v: Viewer = { ...viewer, place: usePlace(viewer.place) }; // the place chosen on the location screen, if any
+  useEffect(() => {
+    refreshPlace(); // once a launch, only if location is already allowed (src/place.ts)
+  }, []);
   const plan = planHome(v, events, hosts, now);
   const hostOf = (id: string) => hosts.find((h) => h.id === id) as Host;
   const ticketLabel = (id: string) => viewer.tickets?.find((t) => t.eventId === id)?.label ?? '';
