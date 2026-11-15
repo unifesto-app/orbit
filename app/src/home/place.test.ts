@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { placeName } from './place.ts';
+import { placeName } from './layout.ts';
 
 const none = { district: null, city: null, subregion: null, region: null };
 
