@@ -6,6 +6,7 @@
 import { NativeTabs } from 'expo-router/native-tabs';
 import { Platform } from 'react-native';
 
+import { retap } from '../../modeKit';
 import { color } from '../../theme';
 
 export default function TabsLayout() {
@@ -23,7 +24,8 @@ export default function TabsLayout() {
       {/* iOS would inset each screen's scroll view at the top too, pushing Home's carousel off the top of the screen
           and Search's pinned box away from it. Both pad their own bottom instead, from the tab's safe area, which
           includes the tab bar. */}
-      <NativeTabs.Trigger name="index" disableAutomaticContentInsets={Platform.OS === 'ios'}>
+      {/* Re-tapping Home opens the mode sheet: Home, Console, Galaxy (owner, 16 Nov 2026; src/modeKit.tsx). */}
+      <NativeTabs.Trigger name="index" disableAutomaticContentInsets={Platform.OS === 'ios'} disableScrollToTop listeners={retap('home')}>
         <NativeTabs.Trigger.Icon src={require('../../../assets/tabs/home.png')} renderingMode="template" />
         <NativeTabs.Trigger.Label>Home</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>

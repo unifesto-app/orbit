@@ -10,6 +10,9 @@ export const color = {
   text: '#FFFFFF',
   secondary: 'rgba(255, 255, 255, 0.64)',
   accent: '#295EFF',
+  // A saved event's heart, filled (owner, 16 Nov 2026: "for saved events add love red"). iOS's dark-mode red. An element,
+  // like the accent, never text.
+  love: '#FF453A',
 } as const;
 
 // One corner for everything (owner, 15 Nov 2026: "reduce the round of corners in entire app", "use same roundness

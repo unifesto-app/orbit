@@ -1,14 +1,30 @@
-// Pieces more than one screen draws: the event row and what it's made of, a host's logo, the seat card and the search
-// box.
+// Pieces more than one screen draws: the event row and what it's made of, a host's logo, the seat card, the search
+// box, section headings, the top glow, and the back bar and not-found view of the pages pushed over the tabs.
 import { formatPrice } from '@orbit/contract';
-import { type ReactNode, useId } from 'react';
-import { type StyleProp, StyleSheet, Text, TextInput, type TextInputProps, View, type ViewStyle } from 'react-native';
-import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
+import { router } from 'expo-router';
+import { type ReactNode, useId, useRef, useState } from 'react';
+import {
+  type Animated,
+  Modal,
+  Platform,
+  Pressable,
+  Share,
+  type StyleProp,
+  StyleSheet,
+  Text,
+  TextInput,
+  type TextInputProps,
+  View,
+  type ViewStyle,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Defs, LinearGradient, RadialGradient, Rect, Stop } from 'react-native-svg';
 
-import { Glass } from './glass';
-import { Icon } from './icons';
+import { BarGlass, Glass } from './glass';
+import { Icon, type IconName } from './icons';
 import { Media, type MediaItem } from './media';
 import type { Event, Host } from './mock';
+import { needsAccount, setSaved, useSaved } from './session';
 import { around, color, font, radius, rim, space } from './theme';
 
 export const SEAT = 48; // the 1:1 square on a seat card's top rim
@@ -17,25 +33,49 @@ export const SEAT = 48; // the 1:1 square on a seat card's top rim
 const FACE = around(radius.sm, space.small);
 const RIM = around(FACE, rim);
 
-// A plain row (no card), so it keeps its Save heart, on the app's frosted glass (owner, 15 Nov 2026).
-export function EventRow({ event: e, host }: { event: Event; host: Host }) {
+// A plain row (no card), so it keeps its Save heart, on the app's frosted glass (owner, 15 Nov 2026). The poster and
+// text open the event page; the heart stays a target of its own. `tag` takes the repeat tag's place (a person's role
+// on their sheet); a `past` row drops the price and the heart. `onPress` replaces opening the event the usual way.
+export function EventRow({
+  event: e,
+  host,
+  tag = e.repeats,
+  past = false,
+  onPress = () => router.push(`/event/${e.id}`),
+}: {
+  event: Event;
+  host: Host;
+  tag?: string;
+  past?: boolean;
+  onPress?: () => void;
+}) {
+  const saved = useSaved(e.id);
   return (
     <View style={styles.row}>
-      <Poster media={e.poster} width={60} label={e.title} />
-      <View style={[styles.grow, styles.lines]}>
-        <View style={styles.whenRow}>
-          <Text style={styles.meta}>{e.when}</Text>
-          {e.repeats && <Tag text={e.repeats} />}
+      <Pressable onPress={onPress} accessibilityRole="button" style={({ pressed }) => [styles.grow, styles.rowLink, pressed && styles.pressed]}>
+        <Poster media={e.poster} width={60} label={e.title} />
+        <View style={[styles.grow, styles.lines]}>
+          <View style={styles.whenRow}>
+            <Text style={styles.meta}>{e.when}</Text>
+            {tag && <Tag text={tag} />}
+          </View>
+          <Text style={styles.rowTitle}>{e.title}</Text>
+          <Text style={styles.meta} numberOfLines={1}>{host.name} · {e.area}</Text>
+          {!past && <Price event={e} />}
         </View>
-        <Text style={styles.rowTitle}>{e.title}</Text>
-        <Text style={styles.meta} numberOfLines={1}>{host.name} · {e.area}</Text>
-        <Price event={e} />
-      </View>
-      <View style={styles.heart} accessible accessibilityLabel={`Save ${e.title}`}>
-        <Glass style={styles.heartGlass}>
-          <Icon name="heart" size={20} color={color.text} />
-        </Glass>
-      </View>
+      </Pressable>
+      {/* Signed out, it asks to sign in first, then saves (src/session.ts). */}
+      {!past && (
+        <Pressable
+          onPress={() => needsAccount(() => setSaved(e.id, !saved))}
+          style={styles.heart}
+          accessibilityRole="button"
+          accessibilityLabel={saved ? `Saved: ${e.title}` : `Save ${e.title}`}>
+          <Glass style={styles.heartGlass}>
+            <SaveIcon eventId={e.id} />
+          </Glass>
+        </Pressable>
+      )}
     </View>
   );
 }
@@ -135,24 +175,239 @@ export function SearchBox({ style, ...input }: Omit<TextInputProps, 'style'> & {
 }
 
 // A radial glow, not a linear fade: the colour at 75% from the bottom centre out to the ground (owner, 15 Nov 2026:
-// "fip the card tint top and bottom"; it glowed from the top, behind the prop, before).
+// "fip the card tint top and bottom"; it glowed from the top, behind the prop, before). The event page's cards use it
+// faintly, in the poster's colour (`opacity`, and `corner` for their bigger face).
 // Pinned to the face's four edges by its wrapper: sized 100% itself, it measured the face less its padding, so it
 // filled only an inset box and stopped short of the bottom (owner's screenshot, 15 Nov 2026: "the card tint has an
 // issue").
-function FaceWash({ tint }: { tint: string }) {
+export function FaceWash({ tint, opacity = 0.75, corner = FACE }: { tint: string; opacity?: number; corner?: number }) {
   const id = useId().replace(/[^a-zA-Z0-9]/g, '');
   return (
     <View style={styles.wash}>
       <Svg width="100%" height="100%">
         <Defs>
           <RadialGradient id={id} cx="0.5" cy="1" r="0.9">
-            <Stop offset={0} stopColor={tint} stopOpacity={0.75} />
+            <Stop offset={0} stopColor={tint} stopOpacity={opacity} />
             <Stop offset={1} stopColor={tint} stopOpacity={0} />
           </RadialGradient>
         </Defs>
-        <Rect width="100%" height="100%" rx={FACE} fill={`url(#${id})`} />
+        <Rect width="100%" height="100%" rx={corner} fill={`url(#${id})`} />
       </Svg>
     </View>
+  );
+}
+
+// Titles only, no descriptions under them (owner, 15 Nov 2026); 16 down to their content ("add gap after Your Tickets
+// and apply to all").
+export function Section({ title }: { title: string }) {
+  return (
+    <View style={styles.section}>
+      <Text style={styles.h2} accessibilityRole="header">{title}</Text>
+    </View>
+  );
+}
+
+// A colour from the top of the screen, fading into the page by GLOW: the accent on Search (owner, 15 Nov 2026: "add
+// accent from top"), the host's own colour on its event and host pages, so a host's pages read as theirs. A wash
+// fixed behind the page, never on text. Put it first in the screen.
+const GLOW = 320;
+const GLOW_STOPS = [
+  [0, 0.35],
+  [0.45, 0.12],
+  [1, 0],
+] as const; // [offset, opacity]
+export function Glow({ tint = color.accent }: { tint?: string }) {
+  const id = useId().replace(/[^a-zA-Z0-9]/g, '');
+  return (
+    <Svg width="100%" height={GLOW} style={styles.glow}>
+      <Defs>
+        <LinearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+          {GLOW_STOPS.map(([offset, opacity]) => (
+            <Stop key={offset} offset={offset} stopColor={tint} stopOpacity={opacity} />
+          ))}
+        </LinearGradient>
+      </Defs>
+      <Rect width="100%" height="100%" fill={`url(#${id})`} />
+    </Svg>
+  );
+}
+
+// Back, or Home when a link opened the page with nothing under it.
+const goBack = () => (router.canGoBack() ? router.back() : router.replace('/'));
+
+// The pinned bar on pages pushed over the tabs (event and host): a frosted back circle, as every icon-only button, with
+// Home's glass fading in behind it once the page scrolls under (BarGlass). Nothing behind it at the top of the page,
+// even over a poster (owner, 15 Nov 2026: "Remove the shade"). Put it last in the screen. TOP is how far down the page's
+// content starts under it, after the top safe area; BAR is the bar's bottom.
+export const BAR = 4 + 44;
+export const TOP = BAR + space.small;
+// `children` sit on the right: the page's own circles, such as Save and the menu (owner, 15 Nov 2026: "add top right,
+// love and menu").
+export function BackBar({ scrollY, children }: { scrollY: Animated.Value; children?: ReactNode }) {
+  const insets = useSafeAreaInsets();
+  return (
+    <View style={[styles.backBar, { paddingTop: insets.top + 4 }]}>
+      <BarGlass scrollY={scrollY} />
+      <CircleButton icon="back" label="Back" onPress={goBack} />
+      {children && <View style={styles.barRight}>{children}</View>}
+    </View>
+  );
+}
+
+// A saved event's heart is filled and red (owner, 16 Nov 2026: "for saved events add love red"); any other keeps the
+// white duotone outline. What's saved comes from the session (src/session.ts): signed out, nothing is.
+export function SaveIcon({ eventId }: { eventId: string }) {
+  return useSaved(eventId) ? <Icon name="heartFill" size={20} color={color.love} /> : <Icon name="heart" size={20} color={color.text} />;
+}
+
+// A frosted 44pt circle holding one icon, as every icon-only button in a bar (owner, 15 Nov 2026: "never use squared
+// buttons"). Without `onPress` it isn't a button yet and only says what it is.
+// `children` replaces the icon, for one that changes, like a saved event's heart.
+export function CircleButton({ icon, label, onPress, children }: { icon?: IconName; label: string; onPress?: () => void; children?: ReactNode }) {
+  const face = <Glass style={styles.backGlass}>{children ?? (icon && <Icon name={icon} size={20} color={color.text} />)}</Glass>;
+  return onPress ? (
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={label} hitSlop={4}>
+      {face}
+    </Pressable>
+  ) : (
+    <View accessible accessibilityLabel={label}>
+      {face}
+    </View>
+  );
+}
+
+// The phone's share sheet with a line about the thing and its link on the website (Discover doc, Links and sharing:
+// "Open Mic Night · Fri 21 Nov, 8 pm · Jubilee Hills · ₹299" and the link). `path` is "/event/<slug>" or "/host/<slug>".
+export const shareLink = (line: string, path: string) => Share.share({ message: `${line}\nhttps://orbit.unifesto.app${path}` });
+
+// A page's ⋯ button and its dropdown (owner, 15 Nov 2026: "instead of alert menu use dropdown menu"): a frosted panel
+// opening just under the button at the bar's right end, darkened like the bars so its white labels read over a poster.
+// Its corners nest round the items' (6 + the small gap = 14). A tap outside closes it; an item closes it, then runs, so
+// a share sheet never opens over the closing menu. An action without `onPress` isn't built yet and only closes it.
+// Each item has its icon on the right of its label, as iOS's own pull-down menus do (owner: "add icons in menu").
+// React Native's own Modal, so no native module: expo-router's native menus open only from a long press on a link or
+// from the system header, and these pages draw their own.
+export type MenuAction = { label: string; icon: IconName; onPress?: () => void };
+export function MenuButton({ actions }: { actions: MenuAction[] }) {
+  const insets = useSafeAreaInsets();
+  const [open, setOpen] = useState(false);
+  const picked = useRef<(() => void) | undefined>(undefined);
+  const run = () => {
+    const action = picked.current;
+    picked.current = undefined;
+    action?.();
+  };
+  const pick = (a: MenuAction) => {
+    picked.current = a.onPress;
+    setOpen(false);
+    if (Platform.OS !== 'ios') run(); // iOS runs it once the menu has gone (onDismiss)
+  };
+  return (
+    <>
+      <CircleButton icon="more" label="More" onPress={() => setOpen(true)} />
+      {/* Under the status bar on Android too, so `top` is measured from the screen's top as on iOS. */}
+      <Modal
+        transparent
+        statusBarTranslucent
+        visible={open}
+        animationType="fade"
+        onRequestClose={() => setOpen(false)}
+        onDismiss={run}>
+        <Pressable style={styles.menuScrim} onPress={() => setOpen(false)} accessibilityLabel="Close menu" />
+        <View style={[styles.menu, { top: insets.top + BAR + space.small }]} accessibilityViewIsModal>
+          <Glass style={styles.menuFill} />
+          <View style={[styles.menuFill, styles.menuShade]} />
+          {actions.map((a) => (
+            <Pressable
+              key={a.label}
+              onPress={() => pick(a)}
+              accessibilityRole="button"
+              style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}>
+              <Text style={styles.menuText}>{a.label}</Text>
+              <Icon name={a.icon} size={20} color={color.text} />
+            </Pressable>
+          ))}
+        </View>
+      </Modal>
+    </>
+  );
+}
+
+// The frosted glass every modal sits on (owner, 15 Nov 2026: "modal is glass one ( same as cta )", then "Glass for
+// all"): the ticket bar's glass, darkened by the ground at half. It runs BLEED past its frame's bottom, so a sheet that
+// is a little taller than what's in it shows no line where the glass stops (owner: "in venue modal why bottom divider
+// ?"); the sheet clips it. Put it first in the modal's frame, which paints no background of its own (its screen's
+// contentStyle is transparent, src/app/_layout.tsx).
+const BLEED = 200;
+export function GlassFill() {
+  return (
+    <>
+      <Glass style={styles.glassFill} />
+      <View style={[styles.glassFill, styles.glassShade]} />
+    </>
+  );
+}
+
+// A modal's frame (venue, agenda, FAQ, terms), on the glass: its title, an optional grey line under it, and an X on
+// top, then what's in it. The short venue sheet fits its contents, so nothing in it may stretch; a `full` modal fills
+// the screen like the person and location sheets: a gap at its top on iOS, clear of the status bar on Android.
+export function Sheet({ title, note, full = false, children }: { title: string; note?: string; full?: boolean; children: ReactNode }) {
+  const insets = useSafeAreaInsets();
+  const top = full && Platform.OS !== 'ios' ? insets.top + space.small : space.big;
+  return (
+    <View style={[styles.sheet, full && styles.fullSheet, { paddingTop: top, paddingBottom: Math.max(insets.bottom, space.big) }]}>
+      <GlassFill />
+      <View style={styles.sheetHead}>
+        <View style={styles.grow}>
+          <Text style={styles.sheetTitle} accessibilityRole="header">
+            {title}
+          </Text>
+          {note && <Text style={styles.sheetNote}>{note}</Text>}
+        </View>
+        <CloseButton />
+      </View>
+      {children}
+    </View>
+  );
+}
+
+// A page whose link names nothing on Orbit (a stale or mistyped link): one line and a way back.
+export function NotFound({ what }: { what: string }) {
+  return (
+    <View style={styles.missing}>
+      <Text style={styles.missingTitle}>{`This ${what} isn’t on Orbit`}</Text>
+      <Text style={styles.missingText}>It may have been taken down, or the link has a typo.</Text>
+      <Pressable onPress={goBack} accessibilityRole="button">
+        <Glass style={styles.wideButton}>
+          <Text style={styles.buttonText}>Go back</Text>
+        </Glass>
+      </Pressable>
+    </View>
+  );
+}
+
+// The tick beside a verified host's name, in place of the word (owner, 15 Nov 2026: "instead verified use tick mark
+// beside, where unverified stays unverified"), filled ("also use filled verifed instead of duotone"): Phosphor's filled
+// seal in the accent, an element, never text. Its check is cut out of the seal, so a white disc behind it, half the
+// seal across and hidden by the seal everywhere else, makes the check white.
+export function Verified({ size = 18 }: { size?: number }) {
+  return (
+    <View style={[styles.verified, { width: size, height: size }]} accessible accessibilityRole="image" accessibilityLabel="Verified">
+      <View style={[styles.verifiedDisc, { width: size / 2, height: size / 2, borderRadius: size / 4 }]} />
+      <Icon name="verified" size={size} color={color.accent} />
+    </View>
+  );
+}
+
+// Closes a sheet (owner, 15 Nov 2026: "in modals instead of close use x icons"): an X on a 32pt frosted circle, as every
+// icon-only button.
+export function CloseButton() {
+  return (
+    <Pressable onPress={goBack} accessibilityRole="button" accessibilityLabel="Close" hitSlop={10}>
+      <Glass style={styles.closeGlass}>
+        <Icon name="close" size={16} color={color.text} />
+      </Glass>
+    </Pressable>
   );
 }
 
@@ -168,6 +423,8 @@ const styles = StyleSheet.create({
   grow: { flex: 1, minWidth: 0 },
   lines: { gap: 3 },
   row: { marginHorizontal: 20, marginBottom: 12, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  rowLink: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  pressed: { opacity: 0.7 },
   whenRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
   rowTitle: { fontFamily: font.title, fontSize: 15, lineHeight: 20, color: color.text },
   meta: { fontFamily: font.text, fontSize: 13, color: color.secondary },
@@ -197,4 +454,54 @@ const styles = StyleSheet.create({
   wash: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, pointerEvents: 'none' },
   domeClip: { position: 'absolute', top: 0, overflow: 'hidden' },
   seat: { position: 'absolute' },
+
+  section: { marginTop: space.big, marginBottom: 16, marginHorizontal: 20 },
+  h2: { fontFamily: font.headline, fontSize: 18, color: color.text },
+  glow: { position: 'absolute', top: 0, left: 0, right: 0, pointerEvents: 'none' },
+  backBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 20,
+    paddingBottom: space.small,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    pointerEvents: 'box-none',
+  },
+  barRight: { flexDirection: 'row', gap: space.small },
+  sheet: { paddingHorizontal: 20, gap: space.big },
+  fullSheet: { flex: 1 },
+  // No hairline: the glass's fallback edge would draw one round the whole modal.
+  glassFill: { position: 'absolute', top: 0, left: 0, right: 0, bottom: -BLEED, borderWidth: 0 },
+  glassShade: { backgroundColor: `${color.ground}80` },
+  sheetHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  sheetTitle: { fontFamily: font.headline, fontSize: 20, color: color.text },
+  sheetNote: { marginTop: 2, fontFamily: font.medium, fontSize: 14, color: color.secondary },
+  menuScrim: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+  menu: { position: 'absolute', right: 20, minWidth: 200, padding: space.small, borderRadius: FACE, overflow: 'hidden' },
+  menuFill: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: FACE },
+  menuShade: { backgroundColor: `${color.ground}80` },
+  menuItem: {
+    height: 44,
+    paddingHorizontal: 12,
+    borderRadius: radius.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 16,
+  },
+  menuItemPressed: { backgroundColor: 'rgba(255, 255, 255, 0.08)' },
+  menuText: { fontFamily: font.medium, fontSize: 15, color: color.text },
+  // A circle, as every icon-only button (owner, 15 Nov 2026: "never use squared buttons").
+  backGlass: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  closeGlass: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  verified: { alignItems: 'center', justifyContent: 'center' },
+  verifiedDisc: { position: 'absolute', backgroundColor: color.text },
+  // Centred, with Home's notice type, as Search's empty state.
+  missing: { flex: 1, justifyContent: 'center', paddingHorizontal: 20, gap: 4, backgroundColor: color.ground },
+  missingTitle: { fontFamily: font.title, fontSize: 16, color: color.text, textAlign: 'center' },
+  missingText: { fontFamily: font.text, fontSize: 14, lineHeight: 20, color: color.secondary, textAlign: 'center' },
+  wideButton: { marginTop: space.small, height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center' },
+  buttonText: { fontFamily: font.title, fontSize: 14, color: color.text },
 });

@@ -12,13 +12,15 @@ import Reanimated, {
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { ticketFor } from '../../account/data';
 import { Carousel, type CarouselSlide } from '../../home/Carousel';
 import { BarGlass, Glass } from '../../glass';
 import { justAnnounced, planHome, type Viewer } from '../../home/layout';
 import { Icon } from '../../icons';
-import { type Event, type Host, events, hosts, now, viewer } from '../../mock';
+import { type Event, type Host, events, hosts, now } from '../../mock';
 import { refreshPlace, usePlace } from '../../place';
-import { EventRow, Monogram, Poster, SEAT, SeatCard, Tag } from '../../rows';
+import { EventRow, Monogram, Poster, SEAT, SeatCard, Section, Tag } from '../../rows';
+import { needsAccount, setFollowing, useViewer } from '../../session';
 import { around, color, font, radius, rim, space } from '../../theme';
 
 const HEADER = 44;
@@ -44,26 +46,29 @@ const RIM = around(FACE, FRAME);
 
 // Home B ("Orbit"), picked by the owner on 15 Nov 2026: the boards are on the Orbit canvas. Which blocks show
 // comes from planHome (src/home/layout.ts); the state to look at is `viewer` in src/mock.ts.
-// No icons inside cards (owner). The location opens the location screen (src/app/location.tsx); nothing else opens a
-// screen yet, so nothing else here is a button until those screens exist.
+// No icons inside cards (owner). The location opens the location screen (src/app/location.tsx); events open their page
+// (src/app/event/[slug].tsx) and hosts theirs (src/app/host/[slug].tsx), and the profile opens Account
+// (src/app/account). Signed out (src/session.ts), Home has no tickets or orbit and the profile shows a person outline;
+// Follow asks to sign in first, then follows.
 export default function Home() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const v: Viewer = { ...viewer, place: usePlace(viewer.place) }; // the place chosen on the location screen, if any
+  const signed = useViewer();
+  const v: Viewer = { ...signed, place: usePlace(signed.place) }; // the place chosen on the location screen, if any
   useEffect(() => {
     refreshPlace(); // once a launch, only if location is already allowed (src/place.ts)
   }, []);
   const plan = planHome(v, events, hosts, now);
   const hostOf = (id: string) => hosts.find((h) => h.id === id) as Host;
-  const ticketLabel = (id: string) => viewer.tickets?.find((t) => t.eventId === id)?.label ?? '';
+  const ticketLabel = (id: string) => v.tickets?.find((t) => t.eventId === id)?.label ?? '';
 
   const headerTop = insets.top + 4;
   const posterTop = headerTop + HEADER + 4;
   const card = (width - 40 - space.big) / 2; // All events and host cards: two columns on the 20px margins, a big gap apart
   const slides: CarouselSlide[] = plan.slides.map((s) =>
     s.kind === 'event'
-      ? { key: `e:${s.event.id}`, image: s.event.wide!.source, edge: s.event.wide!.edge, label: `Poster for ${s.event.title}`, action: 'Book ticket' }
-      : { key: `h:${s.host.id}`, image: s.host.banner!.source, edge: s.host.banner!.edge, label: `Banner for ${s.host.name}`, action: 'View events' },
+      ? { key: `e:${s.event.id}`, image: s.event.wide!.source, edge: s.event.wide!.edge, label: `Poster for ${s.event.title}`, action: 'Book ticket', href: `/event/${s.event.id}` }
+      : { key: `h:${s.host.id}`, image: s.host.banner!.source, edge: s.host.banner!.edge, label: `Banner for ${s.host.name}`, action: 'View events', href: `/host/${s.host.id}` },
   );
 
   // Drives the glass behind the pinned header (BarGlass in src/glass.tsx).
@@ -78,7 +83,7 @@ export default function Home() {
   const hostCards = (
     <View style={styles.grid}>
       {plan.hosts.map((h) => (
-        <HostCard key={h.id} host={h} width={card} following={viewer.signedIn && viewer.follows.includes(h.id)} />
+        <HostCard key={h.id} host={h} width={card} following={v.follows.includes(h.id)} />
       ))}
     </View>
   );
@@ -188,21 +193,15 @@ function Header({ viewer: v }: { viewer: Viewer }) {
           <Text style={styles.city}>{v.place?.city ?? 'Showing everywhere'}</Text>
         </View>
       </Pressable>
-      {/* A thin frosted rim round the profile circle (owner, 15 Nov 2026: "add rim to profile"). */}
-      <Glass style={styles.profileRim} accessible accessibilityLabel={v.signedIn ? 'Profile' : 'Sign in'}>
-        <View style={styles.round}>
-          {v.signedIn && v.initial ? <Text style={styles.initial}>{v.initial}</Text> : <Icon name="user" size={20} color={color.text} />}
-        </View>
-      </Glass>
-    </View>
-  );
-}
-
-// Titles only, no descriptions under them (owner, 15 Nov 2026).
-function Section({ title }: { title: string }) {
-  return (
-    <View style={styles.section}>
-      <Text style={styles.h2} accessibilityRole="header">{title}</Text>
+      {/* A thin frosted rim round the profile circle (owner, 15 Nov 2026: "add rim to profile"). It opens Account
+          (src/app/account), signed out too, where only what works without an account shows. */}
+      <Pressable onPress={() => router.push('/account')} accessibilityRole="button" accessibilityLabel={v.signedIn ? 'Account' : 'Sign in'}>
+        <Glass style={styles.profileRim}>
+          <View style={styles.round}>
+            {v.signedIn && v.initial ? <Text style={styles.initial}>{v.initial}</Text> : <Icon name="user" size={20} color={color.text} />}
+          </View>
+        </Glass>
+      </Pressable>
     </View>
   );
 }
@@ -306,6 +305,7 @@ function StackCard({
 // the text use two lines as space is there").
 // The face's top 10px (rim and padding) stays empty, so a stacked card's peek never shows text.
 function TicketCard({ event: e, host, label }: { event: Event; host: Host; label: string }) {
+  const ticket = ticketFor(e.id);
   return (
     <Glass style={styles.cardRim}>
       <View style={styles.ticketCard}>
@@ -317,7 +317,14 @@ function TicketCard({ event: e, host, label }: { event: Event; host: Host; label
           </View>
           <View style={styles.ticketFoot}>
             <Text style={[styles.ticketMeta, styles.grow]} numberOfLines={2}>{host.name}{'\n'}{e.area}</Text>
-            <Button label="View ticket" small />
+            {/* Opens the ticket, its QR for the gate (src/app/ticket/[id].tsx). */}
+            <Pressable
+              onPress={() => ticket && router.push(`/ticket/${ticket.id}`)}
+              disabled={!ticket}
+              accessibilityRole="button"
+              hitSlop={6}>
+              <Button label="View ticket" small />
+            </Pressable>
           </View>
         </View>
       </View>
@@ -332,7 +339,10 @@ function TicketCard({ event: e, host, label }: { event: Event; host: Host; label
 // icon-free like one.
 function FeedRow({ event: e, host }: { event: Event; host: Host }) {
   return (
-    <View style={styles.feedRow}>
+    <Pressable
+      onPress={() => router.push(`/event/${e.id}`)}
+      accessibilityRole="button"
+      style={({ pressed }) => [styles.feedRow, pressed && styles.pressed]}>
       <Monogram mark={host} size={40} />
       <View style={[styles.grow, styles.feedText]}>
         <View style={styles.feedHead}>
@@ -350,7 +360,7 @@ function FeedRow({ event: e, host }: { event: Event; host: Host }) {
         <Text style={styles.feedWhen}>{e.when}</Text>
       </View>
       <Poster media={e.poster} width={48} label={e.title} />
-    </View>
+    </Pressable>
   );
 }
 
@@ -359,14 +369,18 @@ function FeedRow({ event: e, host }: { event: Event; host: Host }) {
 // icons. Same face and frosted rim as All events.
 function HostCard({ host, width, following }: { host: Host; width: number; following: boolean }) {
   return (
-    <SeatCard width={width} seat={<Monogram mark={host} size={SEAT} />}>
-      <Text style={styles.hostCardName} numberOfLines={1}>{host.name}</Text>
-      <Text style={styles.hostCardAbout} numberOfLines={1}>{host.about}</Text>
-      {/* Hosts you already follow show it here (owner, 15 Nov 2026); not a button yet. */}
-      <Glass style={styles.followSmall}>
-        <Text style={[styles.followSmallText, following && styles.followingText]}>{following ? 'Following' : 'Follow'}</Text>
-      </Glass>
-    </SeatCard>
+    <Pressable onPress={() => router.push(`/host/${host.id}`)} accessibilityRole="button" accessibilityLabel={host.name}>
+      <SeatCard width={width} seat={<Monogram mark={host} size={SEAT} />}>
+        <Text style={styles.hostCardName} numberOfLines={1}>{host.name}</Text>
+        <Text style={styles.hostCardAbout} numberOfLines={1}>{host.about}</Text>
+        {/* Hosts you already follow show it here (owner, 15 Nov 2026). Signed out, it asks to sign in first. */}
+        <Pressable onPress={() => needsAccount(() => setFollowing(host.id, !following))} accessibilityRole="button" hitSlop={6} style={styles.followTap}>
+          <Glass style={styles.followSmall}>
+            <Text style={[styles.followSmallText, following && styles.followingText]}>{following ? 'Following' : 'Follow'}</Text>
+          </Glass>
+        </Pressable>
+      </SeatCard>
+    </Pressable>
   );
 }
 
@@ -398,16 +412,18 @@ function Notice({ kind, area }: { kind: 'noLocation' | 'nothingNear'; area?: str
 // The card face and rim use FACE and RIM, like every card.
 function GridCard({ event: e, width }: { event: Event; width: number }) {
   return (
-    <Glass style={[styles.gridRim, { width }]}>
-      <View style={styles.gridCard}>
-        <Poster media={e.poster} width={width - 2 * FRAME} label={e.title} corner={0} />
-        <View style={styles.gridBody}>
-          <Text style={styles.gridMeta} numberOfLines={1}>{e.when}</Text>
-          <Text style={styles.gridTitle} numberOfLines={2}>{e.title}</Text>
-          <Text style={styles.gridPrice}>{formatPrice(e.pricePaise)}</Text>
+    <Pressable onPress={() => router.push(`/event/${e.id}`)} accessibilityRole="button">
+      <Glass style={[styles.gridRim, { width }]}>
+        <View style={styles.gridCard}>
+          <Poster media={e.poster} width={width - 2 * FRAME} label={e.title} corner={0} />
+          <View style={styles.gridBody}>
+            <Text style={styles.gridMeta} numberOfLines={1}>{e.when}</Text>
+            <Text style={styles.gridTitle} numberOfLines={2}>{e.title}</Text>
+            <Text style={styles.gridPrice}>{formatPrice(e.pricePaise)}</Text>
+          </View>
         </View>
-      </View>
-    </Glass>
+      </Glass>
+    </Pressable>
   );
 }
 
@@ -435,13 +451,10 @@ const styles = StyleSheet.create({
   round: { flex: 1, borderRadius: 22 - FRAME, backgroundColor: color.raised, alignItems: 'center', justifyContent: 'center' },
   initial: { fontFamily: font.headline, fontSize: 17, color: color.text },
 
-  // Every section heading: 16px down to its content (owner: "add gap after Your Tickets and apply to all").
-  section: { marginTop: 24, marginBottom: 16, marginHorizontal: 20 },
   stackToggle: { alignSelf: 'center', marginTop: 10 },
   // Very small (owner, 15 Nov 2026); hitSlop keeps the tap target near 44px.
   stackToggleGlass: { height: 24, paddingHorizontal: 10, borderRadius: 12, justifyContent: 'center' },
   stackToggleText: { fontFamily: font.title, fontSize: 11, color: color.text },
-  h2: { fontFamily: font.headline, fontSize: 18, color: color.text },
 
   card: { marginHorizontal: 20, backgroundColor: color.card },
   ticketTitle: { fontFamily: font.title, fontSize: 15, lineHeight: 20, color: color.text },
@@ -455,6 +468,7 @@ const styles = StyleSheet.create({
   ticketText: { justifyContent: 'space-between' },
   ticketFoot: { flexDirection: 'row', alignItems: 'center', gap: space.small },
   feed: { marginHorizontal: 20, gap: 20 },
+  pressed: { opacity: 0.7 },
   feedRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   feedText: { gap: 2 },
   feedHead: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 8, rowGap: 4, marginBottom: 2 },
@@ -468,7 +482,8 @@ const styles = StyleSheet.create({
   hostCardName: { fontFamily: font.title, fontSize: 14, color: color.text, textAlign: 'center' },
   hostCardAbout: { fontFamily: font.text, fontSize: 11, color: color.secondary, textAlign: 'center' },
   // Fully round, like every action pill (owner: "even follow and following").
-  followSmall: { marginTop: 'auto', marginBottom: space.small, height: 32, paddingHorizontal: 16, borderRadius: 16, justifyContent: 'center' },
+  followTap: { marginTop: 'auto', marginBottom: space.small },
+  followSmall: { height: 32, paddingHorizontal: 16, borderRadius: 16, justifyContent: 'center' },
   followSmallText: { fontFamily: font.title, fontSize: 13, color: color.text },
   followingText: { color: color.secondary },
 

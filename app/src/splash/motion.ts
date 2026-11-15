@@ -26,14 +26,14 @@ export const BOX = [
   { x: 171.68, y: 0, w: 17.74, h: 30.47 },
   { x: 194.47, y: 0, w: 45.53, h: 30.47 },
 ];
-/** Pivots: the O shrinks into its counter (where the rings are born), the R unfolds from its foot, the T pops from its middle. */
+/** Pivots: the O zooms about its counter, the R unfolds from its foot, the T pops from its middle. */
 export const ORIGIN = ['49.4% 49.9%', '50% 100%', '50% 50%', '50% 50%', '50% 60%'];
 /** The I never swaps in the loader (Unifesto's i didn't either). */
 export const I = 3;
 
 /** Seconds: the intro settles by INTRO_END (the loader starts then); the exit lasts EXIT_END. */
 export const INTRO_END = 2.3;
-export const EXIT_END = 2.05;
+export const EXIT_END = 1.4;
 /** The loader: a swap starts every LOOP_EVERY seconds and lasts SWAP_LEN (so two overlap briefly). */
 export const LOOP_EVERY = 0.9;
 export const SWAP_LEN = 1.08;
@@ -253,14 +253,18 @@ export const SWAP_PROPS: ({ art: PropArt; w: number; h: number } | null)[] = [
 ];
 
 const cx = (i: number) => BOX[i].x + BOX[i].w / 2;
-// The O's counter: it lands on the mark's centre, where the rings are born.
+// The O's counter: it lands on the mark's centre, and the O zooms out through it.
 const O_CX = BOX[0].x + 0.494 * BOX[0].w;
 const O_CY = BOX[0].y + 0.499 * BOX[0].h;
+/** The O zooms from its centred 1.6× to O_ZOOM_TO, from O_ZOOM on the exit clock to its end: by then its counter is wider than a phone. */
+const O_ZOOM = 0.8;
+export const O_ZOOM_TO = 45;
 
 /**
  * The exit, per letter: the others are pulled into the O, and the O takes the centre (Unifesto's
- * timing). Then, instead of zooming through it (owner, 15 Nov), the O shrinks away as the orbit
- * rings burst out of it (ringFrame).
+ * timing). Then the O zooms out past the screen through its counter, fading as it goes, while the
+ * ground lifts off Home (owner, 15 Nov: "in splash remove the rings and just o zoom out"; two orbit
+ * rings used to burst out of it here).
  */
 const LETTER_EXIT: Track[] = LETTERS.map((_, i) => {
   if (i === 0) {
@@ -268,8 +272,8 @@ const LETTER_EXIT: Track[] = LETTERS.map((_, i) => {
       i: REST,
       s: [
         [X, 0, MARK_W / 2 - O_CX, 0.35, 0.45, P3IO, 0], [Y, 0, MARK_H / 2 - O_CY, 0.35, 0.45, P3IO, 0], [S, 1, 1.6, 0.35, 0.45, P3IO, 0],
-        [S, 1.6, 0.4, 0.72, 0.22, P2I, 0],
-        [A, 1, 0, 0.74, 0.16, P1I, 0],
+        [S, 1.6, O_ZOOM_TO, O_ZOOM, EXIT_END - O_ZOOM, P3I, 0],
+        [A, 1, 0, EXIT_END - 0.25, 0.25, P1I, 0],
       ] as Seg[],
     };
   }
@@ -277,43 +281,11 @@ const LETTER_EXIT: Track[] = LETTERS.map((_, i) => {
   return { i: REST, s: [[X, 0, O_CX - cx(i), at, 0.36, P3I, 0], [S, 1, 0.2, at, 0.36, P3I, 0], [A, 1, 0, at, 0.36, P3I, 0]] as Seg[] };
 });
 
-/** The orbit ring's box in pt (assets/splash/orbit-ring.svg, drawn twice), centred on the screen. */
-export const RING_W = 200;
-export const RING_H = 105;
-/** Ring k's resting tilt: the two cross like the Orbit symbol. */
-const RING_TILT = [40, -40];
-/** Rings are born as the O shrinks; ring 1 starts its turn a beat later, so they're never edge-on together. */
-const RING_BORN = 0.7;
-const RING_TURN = [0.7, 0.8];
-const RING_TURN_LEN = 0.8;
-/** They zoom out once both have come round face-on. */
-const RING_ZOOM = 1.45;
-const RING_ZOOM_LEN = 0.55;
-
-/**
- * Orbit ring `k` (0 or 1) at exit clock `out`: [scale, tilt (deg), revolve (deg, rotateX), opacity].
- * Born from the O as it shrinks, each ring revolves one full turn about its own long axis (a real
- * 3D turn: the view applies perspective), in opposite directions, drifting a little around the
- * centre as it goes. Both come back face-on, then zoom out past the screen with Home already
- * showing through the gap at their centre.
- */
-export function ringFrame(k: number, out: number): number[] {
-  'worklet';
-  const dir = k === 0 ? 1 : -1;
-  const born = phase(out, RING_BORN, 0.45);
-  const turn = ease(P2IO, 0, phase(out, RING_TURN[k], RING_TURN_LEN));
-  const zoom = ease(P3I, 0, phase(out, RING_ZOOM, RING_ZOOM_LEN));
-  const scale = (0.25 + 0.75 * ease(BACK, 1.7, born)) * (1 + 44 * zoom);
-  const tilt = RING_TILT[k] + dir * 25 * ease(P1O, 0, phase(out, RING_BORN, RING_ZOOM + RING_ZOOM_LEN - RING_BORN));
-  const opacity = out < RING_BORN ? 0 : phase(out, RING_BORN, 0.15) * (1 - phase(out, EXIT_END - 0.1, 0.1));
-  return [scale, tilt, dir * 360 * turn, opacity];
-}
-
 const FOOTER: Track = { i: [0, 0, 1, 1, 0, 0], s: [[A, 0, 1, 1.4, 0.8, P1O, 0]] };
 const FOOTER_EXIT: Track = { i: REST, s: [[A, 1, 0, 0.05, 0.25, P1O, 0]] };
-const GROUND_EXIT: Track = { i: REST, s: [[A, 1, 0, 1.65, 0.3, P1I, 0]] };
+const GROUND_EXIT: Track = { i: REST, s: [[A, 1, 0, 0.95, 0.35, P1I, 0]] };
 // The Horizon walker wallpaper takes Unifesto's glass sheet's part: it settles in, then rushes past
-// with the rings. It tops out at WALLPAPER_DIM over the dark ground, so it sits back (owner, 15 Nov).
+// with the O's zoom. It tops out at WALLPAPER_DIM over the dark ground, so it sits back (owner, 15 Nov).
 export const WALLPAPER_DIM = 0.7;
 
 /** The wallpaper (assets/splash/wallpaper.jpg) in px, and how high its artist credit reaches above its foot. */
@@ -336,7 +308,7 @@ export function splashLayout(width: number, height: number, insetBottom: number)
   };
 }
 const PANE: Track = { i: [0, 0, 1.04, 1, 0, 0], s: [[A, 0, WALLPAPER_DIM, 0.1, 1.4, P2O, 0], [S, 1.04, 1, 0.1, 1.4, P2O, 0]] };
-const PANE_EXIT: Track = { i: REST, s: [[S, 1, 1.6, RING_ZOOM, RING_ZOOM_LEN, P3I, 0]] };
+const PANE_EXIT: Track = { i: REST, s: [[S, 1, 1.6, O_ZOOM, EXIT_END - O_ZOOM, P3I, 0]] };
 
 /** The wallpaper: [opacity, scale]. It sits in the ground's layer, so it lifts off Home with it. */
 export function wallpaperFrame(t: number, out: number): number[] {
@@ -412,7 +384,7 @@ export function footerOpacity(t: number, out: number): number {
   return evalTrack(FOOTER, t)[A] * evalTrack(FOOTER_EXIT, out)[A];
 }
 
-/** The ground's opacity: it lifts off Home as the rings zoom out. */
+/** The ground's opacity: it lifts off Home as the O zooms out. */
 export function groundOpacity(out: number): number {
   'worklet';
   return evalTrack(GROUND_EXIT, out)[A];
