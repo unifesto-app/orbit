@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "team_roles_one_open_per_person" ON "team_roles" USING btree ("host_id","user_id") WHERE "team_roles"."ended_at" is null and "team_roles"."user_id" is not null;

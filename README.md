@@ -2,7 +2,7 @@
 
 New app, API, website and contract for Orbit by Unifesto. Plan: see `docs/context/artifacts/orbit-rebuild-plan.md` (draft, not yet approved).
 
-- `api/` - Node 24, Hono (Drizzle and Postgres to come)
+- `api/` - Node 24, Hono, Drizzle on Postgres
 - `app/` - Expo (TypeScript)
 - `web/` - Next.js (TypeScript), the public site at orbit.unifesto.app
 - `galaxy/` - Next.js (TypeScript), the platform admin (Orbit admin)
@@ -19,6 +19,8 @@ pnpm test
 pnpm build
 pnpm --filter @orbit/api dev
 ```
+
+The API's tests need a Postgres: `createdb orbit_test` locally, or set `TEST_DATABASE_URL`. Running the API needs `DATABASE_URL` and `AUTH_SECRET` (32+ characters); off production, sign-in codes print to its log instead of being sent. Schema changes go in `api/src/db/schema.ts`, then `pnpm --filter @orbit/api db:generate` writes the SQL migration, which the API applies when it starts.
 
 ## Deploy
 

@@ -1,0 +1,42 @@
+import { sql } from "drizzle-orm";
+import type { Contact } from "@orbit/contract";
+import { createApp } from "./app.ts";
+import { memoryStore } from "./auth/store.ts";
+import { connect, migrateDb } from "./db/index.ts";
+import type { Notice } from "./http.ts";
+
+// A real Postgres for tests: TEST_DATABASE_URL, or the local orbit_test database (createdb orbit_test). Each call
+// empties it and runs every migration, so a test file starts clean. Test files run one at a time (package.json).
+export async function testApp() {
+  const url = process.env.TEST_DATABASE_URL ?? "postgres://localhost:5432/orbit_test";
+  if (!/_test(\?|$)/.test(url)) throw new Error("Tests empty their database, so its name must end in _test");
+  const { db, close } = connect(url);
+  await db.execute(sql`drop schema if exists public cascade; drop schema if exists drizzle cascade; create schema public;`);
+  await migrateDb(db);
+
+  let clock = Date.now();
+  const sent: { to: Contact; code: string }[] = [];
+  const notices: Notice[] = [];
+  const store = memoryStore(() => clock);
+  const app = createApp({
+    db,
+    store,
+    secret: "test-secret-that-is-at-least-32-characters",
+    now: () => clock,
+    send: async (to, code) => void sent.push({ to, code }),
+    notify: async (n) => void notices.push(n),
+  });
+
+  const call = async (method: string, path: string, body?: unknown, access?: string) => {
+    const res = await app.request(path, {
+      method,
+      headers: { "content-type": "application/json", "cf-connecting-ip": "203.0.113.7", ...(access ? { authorization: `Bearer ${access}` } : {}) },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    return { status: res.status, body: res.status === 204 ? null : ((await res.json()) as any) };
+  };
+  // The code last sent to a phone or email.
+  const lastCode = (to: string) => sent.filter((s) => (s.to.kind === "phone" ? s.to.e164 : s.to.email) === to).at(-1)?.code;
+
+  return { db, app, call, sent, notices, lastCode, close, tick: (ms: number) => void (clock += ms), now: () => clock };
+}
