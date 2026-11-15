@@ -32,7 +32,19 @@ services:
       PORT: "3000"
     expose:
       - "3000"
-    networks: [unifesto]
+    networks: [unifesto, orbit]
+    depends_on: [orbit-redis]
+
+  # Orbit's own Redis (Valkey): sign-in codes, rate limits and spent step tokens, every key with a TTL. Only the API
+  # reaches it, on Orbit's private network; api.env has REDIS_URL=redis://orbit-redis:6379. Nothing in it outlives a
+  # restart that matters (pending codes and counters), so it keeps no snapshot.
+  orbit-redis:
+    image: valkey/valkey:8.1-alpine
+    container_name: orbit-redis
+    restart: unless-stopped
+    logging: *logging
+    command: ["valkey-server", "--maxmemory", "64mb", "--maxmemory-policy", "volatile-ttl", "--save", "", "--appendonly", "no"]
+    networks: [orbit]
 
   orbit-web:
     build:
@@ -62,3 +74,6 @@ networks:
   unifesto:
     external: true
     name: unifesto_default
+  # Orbit's own, for the API and its Redis. Internal: nothing on it reaches out, and no other stack reaches in.
+  orbit:
+    internal: true
