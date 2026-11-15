@@ -20,10 +20,8 @@ import {
   introPropFrame,
   letterFrame,
   nextSwap,
+  O_ZOOM_TO,
   physics,
-  RING_H,
-  RING_W,
-  ringFrame,
   splashLayout,
   swapPropFrame,
   WALLPAPER_DIM,
@@ -111,30 +109,26 @@ test('a letter still landing from a swap settles before the collapse', () => {
   near(letterFrame(2, INTRO_END, 0.4, 0.12)[5], 1, 0.01, 'B back in view');
 });
 
-test('the word collapses into a centred O, which bursts into two rings that revolve in 3D and zoom out over Home', () => {
+test('the word collapses into a centred O, which zooms out past the screen over Home', () => {
+  // [x, y, scale, scaleY, rotate, opacity]
   const o = letterFrame(0, INTRO_END, IDLE, 0.8);
   near(o[0], MARK_W / 2 - (BOX[0].x + 0.494 * BOX[0].w), 0.1, "O's counter to the mark's centre");
   near(o[1], MARK_H / 2 - (BOX[0].y + 0.499 * BOX[0].h), 0.1, "O's counter level with the mark's centre");
   LETTERS.forEach((l, i) => i && assert.equal(letterFrame(i, INTRO_END, IDLE, 0.66)[5], 0, `${l} gone by the collapse's end`));
-  assert.equal(letterFrame(0, INTRO_END, IDLE, 0.95)[5], 0, 'the O has handed over to the rings');
-  [0, 1].forEach((k) => {
-    // [scale, tilt, revolve, opacity]
-    assert.equal(ringFrame(k, 0.6)[3], 0, `ring ${k} unborn before the O shrinks`);
-    near(ringFrame(k, 1.2)[0], 1, 0.15, `ring ${k} at full size while it revolves`);
-    near(Math.abs(ringFrame(k, 1.6)[2]), 360, 1, `ring ${k} has come round face-on`);
-    near(ringFrame(k, EXIT_END)[0], 45, 0.5, `ring ${k} zoomed out past the screen`);
-    near(ringFrame(k, EXIT_END)[3], 0, 1e-6, `ring ${k} gone at the end`);
-  });
-  assert.ok(ringFrame(0, 1.1)[2] > 45 && ringFrame(1, 1.1)[2] < -45, 'the rings revolve in opposite directions');
-  // Never both edge-on at once: at every moment of the turn one of them faces the screen enough to see.
-  for (let out = 0.7; out <= 1.6; out += 0.01) {
-    const face = (k: number) => Math.abs(Math.cos((ringFrame(k, out)[2] * Math.PI) / 180));
-    assert.ok(Math.max(face(0), face(1)) > 0.3, `both rings edge-on at ${out.toFixed(2)}`);
+  let prev = 0;
+  for (let out = 0.8; out <= EXIT_END; out += 0.01) {
+    const scale = letterFrame(0, INTRO_END, IDLE, out)[2];
+    assert.ok(scale >= prev - 1e-9, `the O only grows: shrank at ${out.toFixed(2)}`);
+    prev = scale;
   }
-  // Face-on by the time the zoom has grown them, so the zoom goes cleanly through the middle.
-  [0, 1].forEach((k) => assert.ok(Math.abs(Math.cos((ringFrame(k, 1.65)[2] * Math.PI) / 180)) > 0.99, `ring ${k} face-on into the zoom`));
+  assert.equal(letterFrame(0, INTRO_END, IDLE, 1.1)[5], 1, 'the O shows while it zooms');
+  const end = letterFrame(0, INTRO_END, IDLE, EXIT_END);
+  near(end[2], O_ZOOM_TO, 0.01, 'zoomed out past the screen');
+  near(end[5], 0, 1e-6, 'the O is gone at the end');
+  // Its counter (from assets/splash/letter-o.svg: 364 of the O's 1149 units across) is wider than the widest phone.
+  assert.ok((364 / 1149) * BOX[0].w * O_ZOOM_TO > 440, "the counter clears a phone's width");
   assert.equal(groundOpacity(EXIT_END), 0);
-  near(wallpaperFrame(INTRO_END, EXIT_END)[1], 1.6, 0.01, 'wallpaper rushes past with the rings');
+  near(wallpaperFrame(INTRO_END, EXIT_END)[1], 1.6, 0.01, 'wallpaper rushes past with the O');
 });
 
 test('the wallpaper settles in during the intro', () => {
@@ -172,10 +166,4 @@ test('the wallpaper covers the screen and the footer stays clear of the artist c
     assert.ok(footerBottom > creditTop, `${name}: footer (${footerBottom}) above the credit (${creditTop})`);
     assert.ok(footerBottom >= inset + 30, `${name}: footer above the home indicator`);
   }
-});
-
-test("the ring view's box matches its SVG's viewBox", () => {
-  const svg = readFileSync(new URL('../../assets/splash/orbit-ring.svg', import.meta.url), 'utf8');
-  const [, , w, h] = svg.match(/viewBox="([^"]+)"/)![1].split(/\s+/).map(Number);
-  near(RING_W / RING_H, w / h, 0.001, 'RING_W / RING_H');
 });

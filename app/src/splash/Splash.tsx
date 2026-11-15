@@ -25,8 +25,6 @@ import {
   MARK_H,
   MARK_W,
   ORIGIN,
-  RING_H,
-  RING_W,
   SWAP_LEN,
   SWAP_PROPS,
   footerOpacity,
@@ -34,7 +32,6 @@ import {
   introPropFrame,
   letterFrame,
   nextSwap,
-  ringFrame,
   splashLayout,
   wallpaperFrame,
   swapPropFrame,
@@ -58,8 +55,6 @@ const PROP_SVG: Record<PropArt, ImageSourcePropType> = {
   squiggle: require('../../assets/splash/prop-squiggle.svg'),
 };
 const FOOTER_SVG: ImageSourcePropType = require('../../assets/splash/by-unifesto.svg');
-// One ring, drawn twice and crossed for the exit (owner's reference: the Orbit symbol's two rings).
-const RING_SVG: ImageSourcePropType = require('../../assets/splash/orbit-ring.svg');
 // "Horizon walker" (the Splash board's wallpaper). The artist's credit is part of the image: keep it visible.
 const WALLPAPER: ImageSourcePropType = require('../../assets/splash/wallpaper.jpg');
 const FOOTER_W = 108; // the Splash board's size
@@ -77,30 +72,26 @@ const SVG_WAIT_MS = 1500;
 const COLLAPSE_END = 0.66;
 /** The JS fallback finishes the handover this long after the exit's own end, if its callback was lost. */
 const FALLBACK_MS = 2000;
-/** Camera distance for the rings' 3D turn, in pt: about four ring-widths away, so the turn reads as depth without warping. */
-const RING_PERSPECTIVE = 800;
-/** The rings are drawn at this multiple and scaled down, so they stay sharper through the 45× zoom.
+/** The O is drawn at this multiple and scaled down, so it stays sharper through its 45× zoom out.
  * ponytail: still soft at the very end of the zoom; redraw at a second size mid-zoom if it shows. */
-const RING_RES = 2;
+const O_RES = 2;
 
 type Xml = {
   letters: (string | null)[];
   props: Partial<Record<PropArt, string | null>>;
   footer: string | null;
-  ring: string | null;
 };
 
 /** Reads every SVG file once, before the intro starts. A file that fails stays null and is skipped. */
 async function loadXml(): Promise<Xml> {
   const read = (s: ImageSourcePropType) => loadLocalRawResource(s).catch(() => null);
   const arts = Object.keys(PROP_SVG) as PropArt[];
-  const [letters, props, footer, ring] = await Promise.all([
+  const [letters, props, footer] = await Promise.all([
     Promise.all(LETTER_SVG.map(read)),
     Promise.all(arts.map((a) => read(PROP_SVG[a]))),
     read(FOOTER_SVG),
-    read(RING_SVG),
   ]);
-  return { letters, props: Object.fromEntries(arts.map((a, k) => [a, props[k]])), footer, ring };
+  return { letters, props: Object.fromEntries(arts.map((a, k) => [a, props[k]])), footer };
 }
 
 /** A frame vector ([x, y, scale, scaleY, rotate, opacity]) as a style. Transform and opacity only. */
@@ -122,7 +113,7 @@ function frameStyle(v: number[]) {
 /**
  * The launch splash, over Home: ORBIT arrives letter by letter while props are thrown in with GSAP
  * physics; while the app is still loading, a random letter at a time swaps out for its prop; then
- * the word collapses into its O, which bursts into two orbit rings that revolve and zoom out into Home.
+ * the word collapses into its O, which zooms out past the screen into Home.
  * Motion lives in motion.ts.
  *
  * `ready`: the app can show Home (fonts today; auth later). `onDone`: the splash has left.
@@ -184,7 +175,7 @@ export function Splash({ ready, onLeave, onDone }: { ready: boolean; onLeave: ()
     const s = live.current;
     if (s.exiting) return;
     s.exiting = true;
-    leave.current(); // Home mounts now (if it hasn't), so the rings zoom onto it
+    leave.current(); // Home mounts now (if it hasn't), so the O zooms out onto it
     // Armed first, so even a throw below can't leave the splash up: if the UI thread's callback is lost.
     later(EXIT_END * 1000 + FALLBACK_MS, finish);
     out.value = withTiming(EXIT_END, { duration: EXIT_END * 1000, easing: Easing.linear }, (ok) => {
@@ -305,7 +296,6 @@ export function Splash({ ready, onLeave, onDone }: { ready: boolean; onLeave: ()
               ))}
               {LETTERS.map((_, i) => (i === I ? null : <SwapProp key={`s${i}`} i={i} swap={swaps[i]} xml={xml.props[SWAP_PROPS[i]!.art] ?? null} />))}
             </View>
-            {xml.ring && [0, 1].map((k) => <Ring key={`r${k}`} k={k} out={out} xml={xml.ring!} />)}
           </View>
           {xml.footer && (
             <Animated.View style={[styles.footer, { bottom: layout.footerBottom }, footerStyle]} pointerEvents="none">
@@ -326,33 +316,13 @@ const Art = memo(function Art({ xml, w, h }: { xml: string; w: number; h: number
 function Letter({ i, t, swap, exit, xml }: { i: number; t: SharedValue<number>; swap: SharedValue<number>; exit: SharedValue<number>; xml: string | null }) {
   const style = useAnimatedStyle(() => frameStyle(letterFrame(i, t.value, swap.value, exit.value)));
   const b = BOX[i];
+  const res = i === 0 ? O_RES : 1; // drawn bigger, shown at size: the O's zoom then enlarges a sharper drawing
   if (!xml) return null;
   return (
     <Animated.View style={[styles.abs, { left: b.x, top: b.y, width: b.w, height: b.h, transformOrigin: ORIGIN[i] }, style]}>
-      <Art xml={xml} w={b.w} h={b.h} />
-    </Animated.View>
-  );
-}
-
-/** An orbit ring, centred on the screen (where the O ends up), for the exit. */
-function Ring({ k, out, xml }: { k: number; out: SharedValue<number>; xml: string }) {
-  // Read right to left: scaled, turned over about its own long axis (rotateX, seen in perspective),
-  // then tilted to its place in the cross.
-  const style = useAnimatedStyle(() => {
-    const [scale, tilt, revolve, opacity] = ringFrame(k, out.value);
-    return {
-      opacity: Math.min(Math.max(opacity, 0), 1),
-      transform: [
-        { perspective: RING_PERSPECTIVE },
-        { rotate: `${tilt}deg` },
-        { rotateX: `${revolve}deg` },
-        { scale: Math.max(scale / RING_RES, 0.001) },
-      ],
-    };
-  });
-  return (
-    <Animated.View style={[styles.ring, style]}>
-      <Art xml={xml} w={RING_W * RING_RES} h={RING_H * RING_RES} />
+      <View style={{ width: b.w * res, height: b.h * res, transformOrigin: '0 0', transform: [{ scale: 1 / res }] }}>
+        <Art xml={xml} w={b.w * res} h={b.h * res} />
+      </View>
     </Animated.View>
   );
 }
@@ -395,7 +365,5 @@ const styles = StyleSheet.create({
   abs: { position: 'absolute' },
   centre: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' },
   mark: { width: MARK_W, height: MARK_H },
-  // Centred in `centre` like the mark: the O's counter lands at the mark's centre, so the rings grow from it.
-  ring: { position: 'absolute', width: RING_W * RING_RES, height: RING_H * RING_RES },
   footer: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
 });

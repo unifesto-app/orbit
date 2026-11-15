@@ -1,0 +1,96 @@
+// Mock account for the signed-in viewer in src/mock.ts, until the API serves it. Kept apart from src/mock.ts, which
+// other screens are changing. Shapes follow the User, Booking, Money and Notifications flow docs: amounts in whole paise,
+// times as ISO strings in India time, every paid booking with its frozen price and fee.
+// ponytail: static data, like src/mock.ts; it goes when the account endpoints land in @orbit/contract.
+import { hosts } from '../mock';
+import { me } from '../modes';
+import type { RefundStatus, Way } from './rules';
+
+export type Profile = {
+  name: string;
+  initials: string;
+  phone: string; // E.164, +91 only (User decision 11)
+  email: string | null;
+  dob: string; // fixed after sign-up; only support changes it
+  gender: string | null;
+  since: string; // on Orbit since
+  city: string | null; // for new events nearby, from the city list
+};
+export type Method = { way: Exclude<Way, 'passkey'>; detail: string };
+export type Passkey = { id: string; name: string; added: string };
+export type Device = { id: string; name: string; surface: 'App' | 'Web'; lastActive: string; current?: boolean };
+// A paid booking, with the terms it sold under. The fee is the buyer's, paid on top.
+export type Payment = { id: string; eventId: string; paidAt: string; pricePaise: number; feePaise: number; via: string };
+export type Refund = { id: string; eventId: string; amountPaise: number; status: RefundStatus; asked: string; reason: string; settled?: string };
+// A booking that's no longer a ticket: the event is over, or the booking was cancelled or refunded.
+export type Past = { eventId: string; status: 'Went' | 'Missed' | 'Cancelled' | 'Refunded' };
+
+export const profile: Profile = {
+  name: 'Abhinavtej Reddy',
+  initials: 'AR',
+  phone: '+919876543210',
+  email: 'abhinavtej.reddy@example.com',
+  dob: '2004-03-12',
+  gender: null,
+  since: '2025-08-14T10:00:00+05:30',
+  city: 'Hyderabad',
+};
+
+export const methods: Method[] = [
+  { way: 'phone', detail: profile.phone },
+  { way: 'email', detail: 'abhinavtej.reddy@example.com' },
+  { way: 'google', detail: 'abhinavtej.reddy@example.com' },
+];
+// The same two passkeys as the viewer's in src/modes.ts (`me.passkeys`), with their names.
+export const passkeys: Passkey[] = [
+  { id: 'pk_phone', name: 'iPhone 13 Pro Max', added: '2026-10-02T21:10:00+05:30' },
+  { id: 'pk_laptop', name: 'MacBook Pro', added: '2026-10-05T10:20:00+05:30' },
+];
+export const devices: Device[] = [
+  { id: 'd1', name: 'iPhone 13 Pro Max', surface: 'App', lastActive: '2026-11-20T09:00:00+05:30', current: true },
+  { id: 'd2', name: 'Chrome on Mac', surface: 'Web', lastActive: '2026-11-18T19:40:00+05:30' },
+];
+
+export const saved = ['build-anything-hackathon', 'sunday-jam', 'udaan-cultural-fest', 'open-mic-night-13-nov'];
+
+export const past: Past[] = [
+  { eventId: 'campus-esports-cup', status: 'Refunded' },
+  { eventId: 'open-mic-night-13-nov', status: 'Went' },
+  { eventId: 'monsoon-hack', status: 'Went' },
+  { eventId: 'udaan-2025', status: 'Missed' },
+];
+
+// Newest first. The last one sold under Unifesto's old 4% buyer fee, frozen as it was.
+export const payments: Payment[] = [
+  { id: 'pay_PZ7d2Lq9Vt0c', eventId: 'pottery-for-beginners', paidAt: '2026-11-17T12:15:00+05:30', pricePaise: 149900, feePaise: 8245, via: 'Card' },
+  { id: 'pay_PZ5nA8kRw3Ue', eventId: 'founders-breakfast', paidAt: '2026-11-15T08:05:00+05:30', pricePaise: 19900, feePaise: 1095, via: 'PhonePe' },
+  { id: 'pay_PZ4k8Qm2Xw1a', eventId: 'open-mic-night', paidAt: '2026-11-12T19:02:00+05:30', pricePaise: 29900, feePaise: 1645, via: 'Google Pay' },
+  { id: 'pay_PZ3e6Hs1Bn8y', eventId: 'campus-esports-cup', paidAt: '2026-11-11T18:30:00+05:30', pricePaise: 9900, feePaise: 545, via: 'Google Pay' },
+  { id: 'pay_PY9c1Tg4Mk2r', eventId: 'open-mic-night-13-nov', paidAt: '2026-11-06T20:45:00+05:30', pricePaise: 29900, feePaise: 1645, via: 'Google Pay' },
+  { id: 'pay_PS2w7Jx5Da6p', eventId: 'monsoon-hack', paidAt: '2026-08-10T11:20:00+05:30', pricePaise: 29900, feePaise: 1645, via: 'UPI' },
+  { id: 'pay_OQ4z9Fv3Lc1h', eventId: 'udaan-2025', paidAt: '2025-11-03T17:00:00+05:30', pricePaise: 14900, feePaise: 596, via: 'UPI' },
+];
+
+// A fee paid on top stays with Orbit on a refund the buyer asks for (Money flow, Refunds).
+export const refunds: Refund[] = [
+  { id: 'rf2', eventId: 'pottery-for-beginners', amountPaise: 149900, status: 'With the host', asked: '2026-11-18T10:30:00+05:30', reason: 'Can’t make it that day' },
+  { id: 'rf1', eventId: 'campus-esports-cup', amountPaise: 9900, status: 'Refunded', asked: '2026-11-13T16:00:00+05:30', reason: 'Our team dropped out', settled: '2026-11-16T11:00:00+05:30' },
+];
+
+// The hosts the viewer started, from their owner seats in src/modes.ts: deleting the account waits until these are
+// archived (User doc, Account deletion).
+export const hostsStarted = me.teams
+  .filter((t) => t.owner)
+  .map((t) => ({ name: hosts.find((h) => h.id === t.hostId)?.name ?? t.hostId }));
+
+// A booking behind each of the viewer's tickets (Booking doc, The ticket): one QR admitting `count` people, the
+// 8-character code the crew types when a QR won't scan (Event day doc: online only), and the host's WhatsApp group if
+// it has one. The QR and code are random and separate from the booking id.
+export type Booking = { id: string; eventId: string; tier: string; count: number; qr: string; code: string; group?: string };
+export const bookings: Booking[] = [
+  { id: 'BK-7Q2M9X', eventId: 'open-mic-night', tier: 'General', count: 1, qr: 'q7Hc2LmX9pRt4WzK8vNb3YsD6fJg1AeU', code: 'OM7Q2M9X', group: 'https://example.com/punchline-whatsapp' },
+  { id: 'BK-3HF8KD', eventId: 'founders-breakfast', tier: 'Breakfast seat', count: 1, qr: 'Rt5vN2kQ8xLc4WmZ7pYb1HsD9fJg3AeU', code: 'FB3HF8KD' },
+  { id: 'BK-9PL2WA', eventId: 'pottery-for-beginners', tier: 'Beginner class', count: 1, qr: 'Lm3Xq8Vt2Nc7Rb5Kp9Wz4Yh6Df1Jg8Ae', code: 'PB9PL2WA' },
+];
+// The viewer's booking for an event, for links to its ticket (`/ticket/<booking id>`).
+export const ticketFor = (eventId: string) => bookings.find((b) => b.eventId === eventId);

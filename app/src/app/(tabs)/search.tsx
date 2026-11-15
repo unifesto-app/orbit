@@ -19,21 +19,15 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
+import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import { BarGlass, Glass } from '../../glass';
 import { type Host, events, hosts, now } from '../../mock';
-import { EventRow, Monogram, SEARCH_BOX, SearchBox, SeatCard } from '../../rows';
+import { EventRow, Glow, Monogram, SEARCH_BOX, SearchBox, SeatCard } from '../../rows';
 import { countLine, MAX_QUERY, search, WHEN, type When } from '../../search';
 import { color, font, space } from '../../theme';
 
-const GLOW = 320; // how far down the screen the accent fades out
-const GLOW_STOPS = [
-  [0, 0.35],
-  [0.45, 0.12],
-  [1, 0],
-] as const; // [offset, accent opacity]
 const BAR_BOTTOM = 12; // the glass bar's padding under the chips
 // Each category's own colour (owner, 15 Nov 2026: "bring various accents to each explore", "also based on category
 // give the accent"), for its 3D prop (src/props.tsx) and its card's glow: a terminal's cyan for hackathons, the
@@ -104,7 +98,8 @@ export default function Search() {
 
   return (
     <View style={styles.screen}>
-      <Glow id="glowPage" />
+      {/* The accent from the top (owner, 15 Nov 2026: "add accent from top"), fixed behind the page. */}
+      <Glow />
       <Animated.ScrollView
         keyboardShouldPersistTaps="handled" // one tap on a chip works with the keyboard up
         keyboardDismissMode="on-drag"
@@ -217,25 +212,6 @@ export default function Search() {
   );
 }
 
-const glowStops = GLOW_STOPS.map(([offset, opacity]) => (
-  <Stop key={offset} offset={offset} stopColor={color.accent} stopOpacity={opacity} />
-));
-
-// The accent from the top (owner, 15 Nov 2026: "add accent from top"): #295EFF at the screen's top edge, fading into
-// the page by GLOW. A wash behind everything, never on text.
-function Glow({ id }: { id: string }) {
-  return (
-    <Svg width="100%" height={GLOW} style={styles.glow}>
-      <Defs>
-        <LinearGradient id={id} x1="0" y1="0" x2="0" y2="1">
-          {glowStops}
-        </LinearGradient>
-      </Defs>
-      <Rect width="100%" height="100%" fill={`url(#${id})`} />
-    </Svg>
-  );
-}
-
 // A centred section heading (owner, 15 Nov 2026: "move the explore center", "even coming up too"; side lines tried,
 // then "remove side lines").
 // `script` sets it in Sacramento, for Explore (owner, 15 Nov 2026: "for explore title use handelson three font", then
@@ -313,10 +289,14 @@ function CategoryCard({
   );
 }
 
-// A host that matches. In the doc a host row opens the host page; not a button until that page exists.
+// A host that matches; it opens the host page (Discover doc).
 function HostRow({ host }: { host: Host }) {
   return (
-    <View style={styles.hostRow} accessible accessibilityLabel={`${host.name}, ${host.about}`}>
+    <Pressable
+      onPress={() => router.push(`/host/${host.id}`)}
+      accessibilityRole="button"
+      accessibilityLabel={`${host.name}, ${host.about}`}
+      style={({ pressed }) => [styles.hostRow, pressed && styles.pressed]}>
       <Monogram mark={host} size={40} />
       <View style={styles.grow}>
         <Text style={styles.hostName} numberOfLines={1}>
@@ -326,7 +306,7 @@ function HostRow({ host }: { host: Host }) {
           {host.about}
         </Text>
       </View>
-    </View>
+    </Pressable>
   );
 }
 
@@ -335,7 +315,6 @@ const styles = StyleSheet.create({
   grow: { flex: 1, minWidth: 0 },
   // Pinned over the page; only the box and chips take touches, so the page under the gaps stays tappable.
   bar: { position: 'absolute', top: 0, left: 0, right: 0, paddingBottom: BAR_BOTTOM, pointerEvents: 'box-none' },
-  glow: { position: 'absolute', top: 0, left: 0, right: 0, pointerEvents: 'none' },
   field: { marginHorizontal: 20 },
   // 16 down from the box (owner: "no gap after search box").
   chips: { marginTop: 16, marginHorizontal: 20, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: space.small, pointerEvents: 'box-none' },
@@ -370,6 +349,7 @@ const styles = StyleSheet.create({
   // Home's host card name, shrinking a little in the narrow row of four.
   categoryName: { fontFamily: font.title, fontSize: 14, color: color.text, textAlign: 'center' },
   hostRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  pressed: { opacity: 0.7 },
   hostName: { fontFamily: font.title, fontSize: 15, lineHeight: 20, color: color.text },
   count: { marginTop: space.big, marginHorizontal: 20, fontFamily: font.medium, fontSize: 13, color: color.secondary, textAlign: 'center' },
   rowsTop: { height: space.big },

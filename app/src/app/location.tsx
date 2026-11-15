@@ -11,7 +11,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Glass } from '../glass';
 import { nearAreasFor, viewer } from '../mock';
 import { Blocked, locate, setPlace, usePlace } from '../place';
-import { SearchBox } from '../rows';
+import { CloseButton, GlassFill, SearchBox } from '../rows';
 import { color, font, space } from '../theme';
 
 type Status = 'idle' | 'locating' | 'blocked' | 'failed';
@@ -49,15 +49,12 @@ export default function LocationScreen() {
   return (
     // A sheet on iOS, so a small gap at its top; full screen on Android, so clear of the status bar.
     <View style={[styles.screen, { paddingTop: Platform.OS === 'ios' ? space.big : insets.top + space.small }]}>
+      <GlassFill />
       <View style={styles.head}>
         <Text style={styles.title} accessibilityRole="header">
           Your location
         </Text>
-        <Pressable onPress={() => router.back()} accessibilityRole="button" hitSlop={10}>
-          <Glass style={styles.close}>
-            <Text style={styles.closeText}>Close</Text>
-          </Glass>
-        </Pressable>
+        <CloseButton />
       </View>
 
       {/* Not focused on open: the keyboard would cover the Popular cities (the web does the same on phones). */}
@@ -95,6 +92,8 @@ export default function LocationScreen() {
         style={styles.list}
         contentContainerStyle={{ paddingBottom: insets.bottom + space.big }}
         sections={searching ? (results.length ? [{ title: '', data: results }] : []) : byLetter}
+        // The letters scroll with the list: pinned, each would need a solid strip behind it over the glass.
+        stickySectionHeadersEnabled={false}
         keyExtractor={(c) => `${c.name}|${c.state}`}
         keyboardShouldPersistTaps="handled" // one tap on a city picks it, even with the keyboard up
         keyboardDismissMode="on-drag"
@@ -152,10 +151,11 @@ export default function LocationScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: color.ground },
+  screen: { flex: 1 }, // on the glass (GlassFill), owner: "Glass for all"
   grow: { flex: 1, minWidth: 0 },
   head: { marginHorizontal: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   title: { fontFamily: font.headline, fontSize: 20, color: color.text },
+  // The Settings pill in the blocked note (the sheet's own close is an X, CloseButton in src/rows.tsx).
   close: { height: 32, paddingHorizontal: 12, borderRadius: 16, justifyContent: 'center' },
   closeText: { fontFamily: font.title, fontSize: 13, color: color.text },
 
@@ -177,7 +177,6 @@ const styles = StyleSheet.create({
     fontFamily: font.title,
     fontSize: 13,
     color: color.secondary,
-    backgroundColor: color.ground,
   },
   row: { minHeight: 44, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', gap: space.small },
   pressed: { backgroundColor: color.card },
