@@ -12,3 +12,6 @@ patchedDependencies:
 # expo-router copy that @expo/cli pulls in resolves its own 0.13.1, and two Worklets copies break at runtime.
 overrides:
   react-native-worklets: 0.13.0
+  # drizzle-orm lists expo-sqlite as an optional peer, and pnpm wires it to the app's copy, so the API's install pulled
+  # in React Native and Expo (about 500 MB in the API image). The API never uses it.
+  drizzle-orm>expo-sqlite: "-"

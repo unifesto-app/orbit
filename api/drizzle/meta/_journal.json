@@ -1,0 +1,41 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1794780123153,
+      "tag": "0000_users_and_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1794780967727,
+      "tag": "0001_roles",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794782219139,
+      "tag": "0002_one_seat_per_person",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794782362736,
+      "tag": "0003_fresh_and_new_device",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794782511181,
+      "tag": "0004_deletion",
+      "breakpoints": true
+    }
+  ]
+}
