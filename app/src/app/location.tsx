@@ -11,8 +11,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Glass } from '../glass';
 import { Icon } from '../icons';
 import { nearAreasFor, viewer } from '../mock';
-import { placeName } from '../home/layout';
-import { setPlace, usePlace } from '../place';
+import { Blocked, locate, setPlace, usePlace } from '../place';
 import { color, font, space } from '../theme';
 
 type Status = 'idle' | 'locating' | 'blocked' | 'failed';
@@ -21,29 +20,6 @@ type Status = 'idle' | 'locating' | 'blocked' | 'failed';
 const byLetter = [
   ...allCities.reduce((m, c) => m.set(c.name[0], [...(m.get(c.name[0]) ?? []), c]), new Map<string, City[]>()),
 ].map(([title, data]) => ({ title, data }));
-
-class Blocked extends Error {}
-
-const within = <T,>(ms: number, work: Promise<T>) =>
-  Promise.race([work, new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timed out')), ms))]);
-
-// The phone's position, named by the phone's own geocoder (Apple's or Google's: no key, no server), rounded to about
-// 100 m first as on the web. A position from the last 10 minutes will do; a fresh one gets 10 seconds, so "Locating…"
-// can't stick. expo-location loads only when asked, so Home still runs on a build made before it was added.
-async function locate() {
-  const Location = await import('expo-location');
-  let permission = await Location.getForegroundPermissionsAsync();
-  if (!permission.granted && permission.canAskAgain) permission = await Location.requestForegroundPermissionsAsync();
-  if (!permission.granted) throw new Blocked();
-  const position =
-    (await Location.getLastKnownPositionAsync({ maxAge: 600_000 })) ??
-    (await within(10_000, Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced })));
-  const { latitude, longitude } = position.coords;
-  const [address] = await Location.reverseGeocodeAsync({ latitude: +latitude.toFixed(3), longitude: +longitude.toFixed(3) });
-  const name = address && placeName(address);
-  if (!name) throw new Error('no place name');
-  return name;
-}
 
 export default function LocationScreen() {
   const insets = useSafeAreaInsets();

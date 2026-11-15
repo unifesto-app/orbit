@@ -7,7 +7,8 @@
 import Storage from 'expo-sqlite/kv-store';
 import { useSyncExternalStore } from 'react';
 
-import type { Place } from './home/layout';
+import { type Place, placeName } from './home/layout';
+import { nearAreasFor } from './mock';
 
 const KEY = 'orbit.place';
 
@@ -44,4 +45,47 @@ function subscribe(fn: () => void) {
 // The chosen place, else `fallback`: the mock viewer's, so the preview states in src/mock.ts still show.
 export function usePlace(fallback: Place | null): Place | null {
   return useSyncExternalStore(subscribe, () => chosen) ?? fallback;
+}
+
+// Location isn't allowed for Orbit (or, with `ask: false`, not allowed yet).
+export class Blocked extends Error {}
+
+const within = <T,>(ms: number, work: Promise<T>) =>
+  Promise.race([work, new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timed out')), ms))]);
+
+// The phone's position, named by the phone's own geocoder (Apple's or Google's: no key, no server), rounded to about
+// 100 m first as on the web. A position from the last 10 minutes will do; a fresh one gets 10 seconds, so "Locating…"
+// can't stick. `ask: false` never shows the permission prompt. expo-location loads only when asked, so Home still runs
+// on a build made before it was added.
+export async function locate({ ask = true } = {}) {
+  const Location = await import('expo-location');
+  let permission = await Location.getForegroundPermissionsAsync();
+  if (ask && !permission.granted && permission.canAskAgain) permission = await Location.requestForegroundPermissionsAsync();
+  if (!permission.granted) throw new Blocked();
+  const position =
+    (await Location.getLastKnownPositionAsync({ maxAge: 600_000 })) ??
+    (await within(10_000, Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced })));
+  const { latitude, longitude } = position.coords;
+  const [address] = await Location.reverseGeocodeAsync({ latitude: +latitude.toFixed(3), longitude: +longitude.toFixed(3) });
+  const name = address && placeName(address);
+  if (!name) throw new Error('no place name');
+  return name;
+}
+
+// The quiet refresh (the web's, once a launch here instead of once a visit; owner, 15 Nov 2026: "add the quiet location
+// refresh on launch"): if location is already allowed, look the phone up again, so a found place that went stale (an
+// old neighbourhood, a move across town) doesn't stick. A city the viewer picked is left alone, nothing ever asks for
+// permission, and any failure keeps the place as it was.
+let refreshed = false;
+const picked = () => chosen?.source === 'pick'; // read fresh: it can change while the lookup runs
+export async function refreshPlace() {
+  if (refreshed || picked()) return;
+  refreshed = true;
+  try {
+    const name = await locate({ ask: false });
+    // A city picked while this ran wins.
+    if (!picked()) setPlace({ ...name, source: 'gps', nearAreas: nearAreasFor(name) });
+  } catch {
+    // Not allowed, no fix or no name: keep what's there.
+  }
 }
