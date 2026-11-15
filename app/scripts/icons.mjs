@@ -1,6 +1,9 @@
 // Regenerates src/icons.tsx from Phosphor's duotone icons (MIT) via the Iconify API.
 // Same source and icon keys as web/scripts/icons.mjs (plus the app's own), drawn with react-native-svg.
 // To add an icon: add `name: "phosphor-name-duotone"` below, then run `node app/scripts/icons.mjs`.
+// It also renders the tab bar's icons to PNGs in assets/tabs (the native tab bar takes images, not SVG), which needs
+// rsvg-convert (`brew install librsvg`).
+import { execFileSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 
 const icons = {
@@ -24,7 +27,15 @@ const icons = {
   heart: "heart-duotone",
 };
 
-const res = await fetch(`https://api.iconify.design/ph.json?icons=${Object.values(icons).join(",")}`);
+// The tab bar's icons, Phosphor duotone too (owner, 15 Nov 2026: "Phosphor duotone even in tab bar").
+const tabIcons = {
+  home: "house-duotone",
+  search: "magnifying-glass-duotone",
+};
+const TAB_PT = 25; // Apple's size for a tab bar icon; Android's is 24dp
+
+const names = [...new Set([...Object.values(icons), ...Object.values(tabIcons)])];
+const res = await fetch(`https://api.iconify.design/ph.json?icons=${names.join(",")}`);
 if (!res.ok) throw new Error(`Iconify answered ${res.status}`);
 const data = await res.json();
 if (data.not_found) throw new Error(`Not in Phosphor: ${data.not_found.join(", ")}`);
@@ -63,3 +74,16 @@ export function Icon({ name, size = 24, color }: { name: IconName; size?: number
 `,
 );
 console.log(`icons.tsx: ${Object.keys(icons).join(", ")}`);
+
+// Black on clear, at 1x, 2x and 3x. Both tab bars tint by the image's alpha, so the 20% layer stays 20% in any
+// colour and the icon keeps its duotone.
+for (const [key, name] of Object.entries(tabIcons)) {
+  const [, tint, solid] = data.icons[name].body.match(shape);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><g fill="#000"><path d="${tint}" opacity=".2"/><path d="${solid}"/></g></svg>`;
+  for (const scale of [1, 2, 3]) {
+    const out = new URL(`../assets/tabs/${key}${scale > 1 ? `@${scale}x` : ""}.png`, import.meta.url);
+    const px = String(TAB_PT * scale);
+    execFileSync("rsvg-convert", ["-w", px, "-h", px, "-o", out.pathname], { input: svg });
+  }
+}
+console.log(`assets/tabs: ${Object.keys(tabIcons).join(", ")}`);

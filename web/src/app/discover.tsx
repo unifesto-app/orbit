@@ -1,4 +1,5 @@
 // Discover pieces shared by the home page and /search.
+import { type CategorySlug, categories as orbitCategories } from "@orbit/contract";
 import Link from "next/link";
 import styles from "./discover.module.css";
 import { Icon, type IconName } from "./icons";
@@ -6,21 +7,21 @@ import { Media } from "./media";
 import { allEvents, type EventCard, formatPrice } from "./mock";
 import { seatsNote } from "./seats";
 
-// Categories are browse tiles only (plan, section 4). No alcohol or nightlife categories.
-export const categories: { slug: string; label: string; icon: IconName }[] = [
-  { slug: "hackathons", label: "Hackathons", icon: "code" },
-  { slug: "comedy", label: "Comedy", icon: "comedy" },
-  { slug: "music", label: "Music", icon: "music" },
-  { slug: "meetups", label: "Meetups", icon: "group" },
-  { slug: "workshops", label: "Workshops", icon: "workshop" },
-  { slug: "fests", label: "Fests", icon: "fest" },
-  { slug: "sports", label: "Sports", icon: "sports" },
-  { slug: "theatre", label: "Theatre", icon: "theatre" },
-  { slug: "art", label: "Art", icon: "art" },
-  { slug: "film", label: "Film", icon: "film" },
-  { slug: "startups", label: "Startups", icon: "startup" },
-  { slug: "gaming", label: "Gaming", icon: "gaming" },
-];
+// Categories are browse tiles only (plan, section 4). The list is shared with the app (@orbit/contract); the
+// tile icons are the web's own.
+const icons: Record<CategorySlug, IconName> = {
+  hackathons: "code",
+  comedy: "comedy",
+  music: "music",
+  meetups: "group",
+  workshops: "workshop",
+  fests: "fest",
+  sports: "sports",
+  film: "film",
+  startups: "startup",
+  gaming: "gaming",
+};
+export const categories = orbitCategories.map((c) => ({ ...c, icon: icons[c.slug] }));
 
 // Events matching a query and/or category. Used by /search and /api/search.
 // ponytail: substring match over the mock list; the API's search replaces this.

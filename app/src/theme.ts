@@ -43,4 +43,7 @@ export const font = {
   text: 'DMSans_400Regular',
   medium: 'DMSans_500Medium',
   price: 'DMSans_600SemiBold',
+  // A thin handwritten script for Search's Explore title (owner, 15 Nov 2026: "use Sacramento", after Handelson Three
+  // turned out personal-use only). Google Fonts, OFL.
+  script: 'Sacramento_400Regular',
 } as const;

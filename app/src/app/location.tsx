@@ -5,13 +5,13 @@
 import { allCities, type City, popularCities, searchCities } from '@orbit/contract';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Linking, Platform, Pressable, SectionList, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Linking, Platform, Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Glass } from '../glass';
-import { Icon } from '../icons';
 import { nearAreasFor, viewer } from '../mock';
 import { Blocked, locate, setPlace, usePlace } from '../place';
+import { SearchBox } from '../rows';
 import { color, font, space } from '../theme';
 
 type Status = 'idle' | 'locating' | 'blocked' | 'failed';
@@ -61,24 +61,16 @@ export default function LocationScreen() {
       </View>
 
       {/* Not focused on open: the keyboard would cover the Popular cities (the web does the same on phones). */}
-      <View style={styles.search}>
-        <Icon name="search" size={18} color={color.secondary} />
-        <TextInput
-          style={styles.searchInput}
-          value={query}
-          onChangeText={setQuery}
-          onSubmitEditing={() => results[0] && pick(results[0])}
-          placeholder="Search for your city"
-          placeholderTextColor={color.secondary}
-          accessibilityLabel="Search for your city"
-          autoCorrect={false}
-          autoCapitalize="words"
-          returnKeyType="search"
-          clearButtonMode="while-editing"
-          keyboardAppearance="dark"
-          maxLength={60}
-        />
-      </View>
+      <SearchBox
+        style={styles.search}
+        value={query}
+        onChangeText={setQuery}
+        onSubmitEditing={() => results[0] && pick(results[0])}
+        placeholder="Search for your city"
+        accessibilityLabel="Search for your city"
+        autoCapitalize="words"
+        maxLength={60}
+      />
 
       <Pressable onPress={useCurrent} disabled={status === 'locating'} accessibilityRole="button">
         <Glass style={styles.current}>
@@ -167,18 +159,7 @@ const styles = StyleSheet.create({
   close: { height: 32, paddingHorizontal: 12, borderRadius: 16, justifyContent: 'center' },
   closeText: { fontFamily: font.title, fontSize: 13, color: color.text },
 
-  search: {
-    marginTop: space.big,
-    marginHorizontal: 20,
-    height: 44,
-    paddingHorizontal: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.small,
-    borderRadius: 22, // a pill, like the buttons (owner: "also squared search")
-    backgroundColor: color.raised,
-  },
-  searchInput: { flex: 1, height: '100%', fontFamily: font.text, fontSize: 15, color: color.text },
+  search: { marginTop: space.big, marginHorizontal: 20 },
   current: { marginTop: space.small, marginHorizontal: 20, height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center' },
   currentText: { fontFamily: font.title, fontSize: 15, color: color.text },
   note: { marginTop: space.small, marginHorizontal: 20, flexDirection: 'row', alignItems: 'center', gap: space.small },

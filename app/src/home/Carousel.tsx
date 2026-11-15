@@ -31,7 +31,7 @@ const FADE = 90; // how far into the poster the blur hands over to the sharp ima
 
 // Home's carousel (owner's calls, 15 Nov 2026): each slide is a 4:3 poster edge to edge, its top at the header's
 // bottom (`top`), with the poster's own top-edge colour filling the space above, so it reads as running to the top.
-// A light wash behind the header keeps it readable; bottom corners are radius.lg; one small pill, no text on the poster.
+// A light wash behind the header keeps it readable; one small pill centred at the bottom, no text on the poster.
 export function Carousel({ slides, top }: { slides: CarouselSlide[]; top: number }) {
   const { width } = useWindowDimensions();
   const posterHeight = (width * 3) / 4;
@@ -204,9 +204,8 @@ function Wash({ height, top }: { height: number; top: number }) {
   );
 }
 
-// Corners nest outward from the pill (owner, 15 Nov 2026: "Inner Radius = Outer Radius - Padding", "even carousel"): the
-// pill's corner plus the small gap it sits in from the edges gives the carousel's bottom corners (6 + 8 = 14), and the
-// rim 16.
+// The bottom corners nest like the cards' (owner, 15 Nov 2026: "Inner Radius = Outer Radius - Padding", "even
+// carousel"): the 6px corner plus the small gap gives 14, and the rim 16.
 const BOTTOM = around(radius.md, space.small);
 
 const styles = StyleSheet.create({
@@ -236,7 +235,7 @@ const styles = StyleSheet.create({
   layer: { position: 'absolute', top: 0, left: 0, pointerEvents: 'none' },
   pill: {
     position: 'absolute',
-    left: space.small,
+    alignSelf: 'center', // centred on the slide (owner, 15 Nov 2026: "in carousel, make the button center")
     bottom: space.small,
     height: 34,
     paddingHorizontal: 14,
