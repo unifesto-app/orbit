@@ -12,7 +12,7 @@ import { Glass } from '../glass';
 import { Icon } from '../icons';
 import { nearAreasFor, viewer } from '../mock';
 import { placeName, setPlace, usePlace } from '../place';
-import { color, font, radius, space } from '../theme';
+import { color, font, space } from '../theme';
 
 type Status = 'idle' | 'locating' | 'blocked' | 'failed';
 
@@ -198,11 +198,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.small,
-    borderRadius: radius.md,
+    borderRadius: 22, // a pill, like the buttons (owner: "also squared search")
     backgroundColor: color.raised,
   },
   searchInput: { flex: 1, height: '100%', fontFamily: font.text, fontSize: 15, color: color.text },
-  current: { marginTop: space.small, marginHorizontal: 20, height: 50, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
+  current: { marginTop: space.small, marginHorizontal: 20, height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center' },
   currentText: { fontFamily: font.title, fontSize: 15, color: color.text },
   note: { marginTop: space.small, marginHorizontal: 20, flexDirection: 'row', alignItems: 'center', gap: space.small },
   noteText: { fontFamily: font.text, fontSize: 13, lineHeight: 18, color: color.secondary },
