@@ -54,7 +54,7 @@ const columns: { title: string; links: [string, string][] }[] = [
   },
   {
     title: "Help",
-    links: [["Contact support", `${WWW}/support`], ["Refunds", `${WWW}/refund`], ["Grievance redressal", `${WWW}/grievance`], ["Delete account", `${WWW}/delete-account`]],
+    links: [["Contact support", `${WWW}/support`], ["Refunds", `${WWW}/refund`], ["Grievance redressal", `${WWW}/grievance`], ["Delete account", "/delete-account"]],
   },
 ];
 

@@ -43,6 +43,9 @@ export const sections: { title: string; items: NavItem[] }[] = [
       { label: "Custom domains", href: "/domains" },
       { label: "Legal documents", href: "/legal" },
       { label: "App settings", href: "/settings" },
+      // Galaxy flow (15 Nov): staff and their passkeys, and the audit log of every staff action.
+      { label: "Staff", href: "/staff" },
+      { label: "Audit log", href: "/audit" },
     ],
   },
   {
