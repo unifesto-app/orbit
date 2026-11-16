@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { type Sales, available, earnings, payoutOpens, rupees } from './money.ts';
+import { type Sales, available, earnings, hostDecidesRefunds, payoutOpens, rupees } from './money.ts';
+
+test('the host decides refunds until 24 hours before the start, then Orbit does', () => {
+  const start = '2026-11-20T20:00:00+05:30';
+  assert.equal(hostDecidesRefunds(start, Date.parse('2026-11-19T19:59:00+05:30')), true);
+  assert.equal(hostDecidesRefunds(start, Date.parse('2026-11-19T20:00:00+05:30')), false);
+  assert.equal(hostDecidesRefunds(start, Date.parse('2026-11-20T09:00:00+05:30')), false);
+});
 
 const s = (over: Partial<Sales> = {}): Sales => ({
   eventId: 'e',

@@ -4,7 +4,7 @@
 // Curators, Co-curators and Crew. Back goes to Home, under it.
 import { Page } from '../account/kit';
 import { DoorCard } from '../console/DoorCard';
-import { salesOf } from '../console/data';
+import { endsAt, salesOf } from '../console/data';
 import { Empty } from '../modeKit';
 import { events, hosts, now } from '../mock';
 import { eventsOn, onEventDay } from '../modes';
@@ -14,18 +14,15 @@ export default function CheckIn() {
   const me = useMe(); // signed out, on no team
   const open = me.teams
     .flatMap((t) => eventsOn(t, events))
-    .filter((e) => {
-      const s = salesOf(e.id);
-      return s && onEventDay(e.startsAt, s.endsAt, now);
-    });
+    .filter((e) => onEventDay(e.startsAt, endsAt(e), now));
   return (
     <Page title="Check-in">
       {open.length === 0 ? (
         <Empty>No event today.</Empty>
       ) : (
         open.map((e) => {
-          const s = salesOf(e.id)!;
-          return <DoorCard key={e.id} heading={hosts.find((h) => h.id === e.hostId)?.name ?? ''} title={e.title} when={e.when} checkedIn={s.checkedIn} booked={s.booked} />;
+          const s = salesOf(e.id);
+          return <DoorCard key={e.id} heading={hosts.find((h) => h.id === e.hostId)?.name ?? ''} title={e.title} when={e.when} checkedIn={s?.checkedIn ?? 0} booked={s?.booked ?? 0} />;
         })
       )}
     </Page>
