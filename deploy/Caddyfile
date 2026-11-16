@@ -46,14 +46,14 @@ heyorbit.in {
 	import cf_tls
 	# Passkeys for heyorbit.in (api/src/auth/ways.ts): which apps may use them. Served here rather than by the web app,
 	# which sends every page to /coming-soon until launch; each must answer 200 JSON with no redirect.
-	# - iOS: team 9AH3Z5C5DH, bundle com.unifesto.orbit (app.json's webcredentials:heyorbit.in).
+	# - iOS: team 9AH3Z5C5DH, bundle in.heyorbit.app (app.json's webcredentials:heyorbit.in).
 	# - Android: empty until the Play/EAS signing key's SHA-256 is added as
 	#   [{"relation":["delegate_permission/common.get_login_creds"],"target":{"namespace":"android_app",
-	#   "package_name":"com.unifesto.orbit","sha256_cert_fingerprints":["AA:BB:…"]}}], with its base64url form in
+	#   "package_name":"in.heyorbit.app","sha256_cert_fingerprints":["AA:BB:…"]}}], with its base64url form in
 	#   the API's PASSKEY_ORIGINS as android:apk-key-hash:…; Android passkeys don't work until then.
 	handle /.well-known/apple-app-site-association {
 		header Content-Type application/json
-		respond `{"webcredentials":{"apps":["9AH3Z5C5DH.com.unifesto.orbit"]}}` 200
+		respond `{"webcredentials":{"apps":["9AH3Z5C5DH.in.heyorbit.app"]}}` 200
 	}
 	handle /.well-known/assetlinks.json {
 		header Content-Type application/json

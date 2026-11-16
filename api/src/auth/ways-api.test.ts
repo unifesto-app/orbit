@@ -26,7 +26,7 @@ const stub = (async (url: string | URL | Request) => {
   if (u === "https://oauth2.googleapis.com/token") return Response.json({ id_token: googleToken });
   return new Response("no", { status: 404 });
 }) as typeof fetch;
-const waysCfg: WaysConfig = { passkey: { rpId: "heyorbit.in", origins: ["https://heyorbit.in"] }, apple: { audiences: ["com.unifesto.orbit"] }, google: GOOGLE, fetch: stub };
+const waysCfg: WaysConfig = { passkey: { rpId: "heyorbit.in", origins: ["https://heyorbit.in"] }, apple: { audiences: ["in.heyorbit.app"] }, google: GOOGLE, fetch: stub };
 
 // ---- double: a software passkey (ES256, "none" attestation)
 const sha = (b: Buffer | string) => createHash("sha256").update(b).digest();
@@ -136,7 +136,7 @@ const staleThenFresh = async (a: A) => {
 const nonce = async () => (await t.call("POST", "/auth/nonce")).body.nonce as string;
 const appleProof = async (sub: string, o: { email?: string; verified?: boolean; claimNonce?: string; nonce?: string } = {}) => {
   const nn = o.nonce ?? (await nonce());
-  const idToken = await claims({ sub, email: o.email, email_verified: o.verified ?? true, nonce: o.claimNonce ?? nn }, "https://appleid.apple.com", "com.unifesto.orbit");
+  const idToken = await claims({ sub, email: o.email, email_verified: o.verified ?? true, nonce: o.claimNonce ?? nn }, "https://appleid.apple.com", "in.heyorbit.app");
   return { idToken, nonce: nn };
 };
 const appleIn = async (sub: string, o: Parameters<typeof appleProof>[1] & { name?: string; dev?: object } = {}) =>
@@ -494,7 +494,7 @@ test("apple tokens: wrong aud, iss, expired, unknown kid, HS256 refused; iat 30 
   const now = Math.floor(Date.now() / 1000);
   const tok = async (o: { iss?: string; aud?: string; exp?: number; iat?: number; jwk?: object; alg?: "RS256" | "HS256" }) => {
     const nn = await nonce();
-    const payload = { iss: o.iss ?? "https://appleid.apple.com", aud: o.aud ?? "com.unifesto.orbit", iat: o.iat ?? now, exp: o.exp ?? now + 600, sub, nonce: nn };
+    const payload = { iss: o.iss ?? "https://appleid.apple.com", aud: o.aud ?? "in.heyorbit.app", iat: o.iat ?? now, exp: o.exp ?? now + 600, sub, nonce: nn };
     const idToken = o.alg === "HS256" ? await sign(payload, "shared-secret", "HS256") : await sign(payload, (o.jwk ?? privateJwk) as never, "RS256");
     return t.call("POST", "/auth/apple", { idToken, nonce: nn, device });
   };

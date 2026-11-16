@@ -75,7 +75,7 @@ const notify: Notify = async (n) => console.log(`[notify] ${n.kind} → ${JSON.s
 //   \n for line breaks) let Remove Apple and deletion revoke it.
 const list = (v?: string) => v?.split(",").map((s) => s.trim()).filter(Boolean);
 const apiUrl = env.API_URL?.trim() || "https://api.heyorbit.in";
-const audiences = list(env.APPLE_AUDIENCES) ?? ["com.unifesto.orbit"];
+const audiences = list(env.APPLE_AUDIENCES) ?? ["in.heyorbit.app"];
 const waysConfig: WaysConfig = {
   passkey: { rpId: env.PASSKEY_RP_ID?.trim() || "heyorbit.in", origins: list(env.PASSKEY_ORIGINS) ?? ["https://heyorbit.in"] },
   google:

@@ -40,7 +40,7 @@ export type WaysConfig = {
 
 export const defaultWays: WaysConfig = {
   passkey: { rpId: "heyorbit.in", origins: ["https://heyorbit.in"] },
-  apple: { audiences: ["com.unifesto.orbit"] },
+  apple: { audiences: ["in.heyorbit.app"] },
 };
 
 const MIN = 60 * 1000;
