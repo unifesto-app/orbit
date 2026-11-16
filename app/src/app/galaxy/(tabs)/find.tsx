@@ -3,7 +3,9 @@
 // masked; a person's page has Show. With the API every search by phone or email is logged (Galaxy decision 7), though
 // the screen doesn't say so (owner, 16 Nov 2026: "remove text searches by phone or email are logged"), and it finds
 // ticket codes and Razorpay payment ids too.
-// ponytail: matches the mock only, from 2 letters.
+// Hosts also come from the API (GET /galaxy/hosts: by name, or a host's exact link), listed above the mock's.
+// ponytail: people and events match the mock only, from 2 letters; each letter typed asks the API again, and only the
+// latest answer is drawn.
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -12,11 +14,13 @@ import { Chips, Group, Row } from '../../../account/kit';
 import { maskPhone } from '../../../account/rules';
 import { accounts, reports } from '../../../galaxy/data';
 import { gated } from '../../../galaxy/kit';
+import { hostsApi, markOf } from '../../../hosts';
+import { useLoad } from '../../../load';
 import { Empty, TabPage } from '../../../modeKit';
 import { events, hosts } from '../../../mock';
 import { canActOn, hasFeature } from '../../../modes';
 import { Monogram, SearchBox, Tag } from '../../../rows';
-import { useMe } from '../../../session';
+import { api, useMe } from '../../../session';
 import { color, space } from '../../../theme';
 
 const hostOf = (id: string) => hosts.find((h) => h.id === id);
@@ -38,7 +42,9 @@ export default gated(['people', 'hosts'], function Find() {
     hosts: seesHosts && shows('Hosts') ? hosts.filter((h) => hit(h.name)) : [],
     events: seesHosts && shows('Events') ? events.filter((e) => hit(e.title, hostOf(e.hostId)?.name)) : [],
   };
-  const none = !found.people.length && !found.hosts.length && !found.events.length;
+  const live = useLoad(seesHosts && shows('Hosts') && q.length >= 2 ? `${q}|${me.id}` : null, () => hostsApi(api).find(q));
+  const real = live.data ?? [];
+  const none = !found.people.length && !found.hosts.length && !found.events.length && !real.length && !live.loading;
   return (
     <TabPage head="Find" tint={color.galaxy}>
       <View style={styles.box}>
@@ -63,8 +69,19 @@ export default gated(['people', 'hosts'], function Find() {
           ))}
         </Group>
       )}
-      {found.hosts.length > 0 && (
+      {live.error && <Empty>{live.error.message}</Empty>}
+      {(real.length > 0 || found.hosts.length > 0) && (
         <Group title="Hosts">
+          {real.map((h) => (
+            <Row
+              key={h.id}
+              lead={<Monogram mark={markOf(h)} size={32} />}
+              label={h.name}
+              note={canActOn(me, { hostId: h.id }) ? `${h.city}${h.status === 'live' ? '' : ` · ${h.status[0]!.toUpperCase()}${h.status.slice(1)}`}` : `Your team · ${h.city}`}
+              right={<Tag text={h.verified ? 'Verified' : 'Unverified'} />}
+              onPress={() => router.push(`/galaxy/host/${h.id}`)}
+            />
+          ))}
           {found.hosts.map((h) => (
             <Row
               key={h.id}

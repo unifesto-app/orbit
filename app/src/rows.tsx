@@ -417,6 +417,30 @@ export function NotFound({ what }: { what: string }) {
   );
 }
 
+// A page whose request failed: the API's own message, which says what to do, and Try again. A link to something that
+// isn't there (404) is NotFound instead. A whole mode that failed (Console) also offers Back to Home, since its own tabs,
+// and the re-tap on Home, aren't drawn.
+export function Failed({ message, retry, home = false }: { message: string; retry: () => void; home?: boolean }) {
+  return (
+    <View style={styles.missing}>
+      <Text style={styles.missingText}>{message}</Text>
+      {[
+        { label: 'Try again', onPress: retry },
+        ...(home ? [{ label: 'Back to Home', onPress: () => router.dismissAll() }] : []),
+      ].map((b) => (
+        <Pressable key={b.label} onPress={b.onPress} accessibilityRole="button">
+          <Glass style={styles.wideButton}>
+            <Text style={styles.buttonText}>{b.label}</Text>
+          </Glass>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
+// The empty ground while a page's first answer is on its way, usually well under a second.
+export const Waiting = () => <View style={styles.missing} />;
+
 // The tick beside a verified host's name, in place of the word (owner, 15 Nov 2026: "instead verified use tick mark
 // beside, where unverified stays unverified"), filled ("also use filled verifed instead of duotone"): Phosphor's filled
 // seal in the accent, an element, never text. Its check is cut out of the seal, so a white disc behind it, half the

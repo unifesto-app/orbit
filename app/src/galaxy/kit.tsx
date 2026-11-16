@@ -10,6 +10,7 @@ import { Monogram, Tag } from '../rows';
 import { useMe } from '../session';
 import { color, font, space } from '../theme';
 import { FEATURE_NAMES } from './data';
+import { type Held, hold, release } from './held';
 
 // A pushed Galaxy screen shows only with one of its features, as the tabs do (Roles doc); anyone else goes back to the
 // dashboard, and anyone with no feature at all on to Home (src/app/galaxy/_layout.tsx). The API is the real gate.
@@ -83,7 +84,15 @@ export function Choices({ choices }: { choices: { label: string; onPress?: () =>
 // to everyone holding the feature. It opens the reason sheet, src/app/galaxy/reason.tsx. No passcode again: Galaxy asks
 // for it on entering (Roles decision 11).
 export type Risky = { title: string; line: string; action: string; who: string; feature: StaffFeature };
-export const askReason = (r: Risky) => router.push({ pathname: '/galaxy/reason', params: r });
+// With `run` (an action the API has), the sheet runs it with the reason; its words and the call are held in memory
+// (src/galaxy/held.ts), never in the link. Without one, the sheet only closes.
+export function askReason(r: Risky, run?: Held['run']) {
+  if (!run) {
+    release();
+    return router.push({ pathname: '/galaxy/reason', params: r });
+  }
+  router.push({ pathname: '/galaxy/reason', params: { ticket: hold({ ...r, run }) } });
+}
 
 const styles = StyleSheet.create({
   staffNote: { marginHorizontal: 20, marginTop: space.small, fontFamily: font.text, fontSize: 13, lineHeight: 18, color: color.secondary },

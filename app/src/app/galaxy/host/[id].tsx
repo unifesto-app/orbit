@@ -2,19 +2,120 @@
 // its team, events, money, bank account (last 4 only), reports, the history of staff actions on it, and what staff can
 // do, every one of them risky. Its own colour glows from the top, as on its public page. No host is ever deleted, and
 // nobody acts on a host whose team they're on (Roles doc).
-// ponytail: the custom domains list and its off switch come with the API.
+// A host on the API (a UUID id) reads GET /galaxy/hosts/:id, which logs the open, and verify, suspend and lift go to
+// the API through the reason sheet. Its events, money, bank account and reports come with those slices.
+// ponytail: the custom domains list and its off switch come with the API; setting a parent host needs a host picker and
+// changing the owner needs its request flow, so neither shows on a real host yet.
 import { router, useLocalSearchParams } from 'expo-router';
 
+import type { Result } from '../../../api';
 import { Group, Page, Row } from '../../../account/kit';
 import { hostFiles, reports } from '../../../galaxy/data';
 import { Head, type Risky, StaffNote, askReason, gated, opener } from '../../../galaxy/kit';
+import { hostsApi, isReal, kindLabel, markOf } from '../../../hosts';
+import { useLoad } from '../../../load';
 import { events, hosts } from '../../../mock';
 import { canActOn } from '../../../modes';
-import { NotFound } from '../../../rows';
-import { useMe } from '../../../session';
+import { Failed, NotFound, Waiting } from '../../../rows';
+import { api, useMe } from '../../../session';
 
 export default gated('hosts', function HostPage() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  return isReal(id) ? <LiveHost id={id} /> : <MockHost id={id} />;
+});
+
+const STATUS = { live: 'Live', paused: 'Paused by its owner', archived: 'Archived', suspended: 'Suspended' } as const;
+
+function LiveHost({ id }: { id: string }) {
+  const me = useMe();
+  const page = useLoad(`${id}|${me.id}`, () => hostsApi(api).staffPage(id));
+  if (page.loading) return <Waiting />;
+  if (page.status === 404) return <NotFound what="host" />;
+  if (!page.data) return <Failed message={page.error!.message} retry={page.reload} />;
+
+  const h = page.data;
+  const x = hostsApi(api);
+  // Your own team, as far as the app knows; the API also refuses staff invited to it or gone from it within 30 days,
+  // and the sheet shows its message.
+  const acts = canActOn(me, { hostId: h.id });
+  // A suspension staff placed carries their reason; one with none is a hold while none of its Admins can answer.
+  const held = h.status === 'suspended' && !h.suspendReason;
+  const risky = (r: Omit<Risky, 'who' | 'feature'>, run: (reason: string) => Promise<Result<unknown>>) => () =>
+    askReason({ ...r, who: `${h.name}’s Admins see this`, feature: 'hosts' }, async (reason) => {
+      const done = await run(reason);
+      page.reload(); // a refusal can mean the page is out of date too (a rename since it opened)
+      return done;
+    });
+  const tags = [
+    h.verified ? 'Verified' : 'Unverified',
+    h.status !== 'live' && (held ? 'On hold' : STATUS[h.status]),
+    h.visibility === 'private' && 'Private',
+    !acts && 'Your team',
+  ].filter((t): t is string => !!t);
+  const note = [kindLabel(h.kind), h.city, `${h.followers.toLocaleString('en-IN')} follower${h.followers === 1 ? '' : 's'}`].join(' · ');
+  return (
+    <Page tint={markOf(h).bg}>
+      <Head mark={markOf(h)} name={h.name} note={note} tags={tags} />
+
+      {h.suspendReason && (
+        <Group title="Suspended">
+          <Row label={h.suspendReason} />
+        </Group>
+      )}
+      {held && <StaffNote>On hold: every Admin on its team is suspended, so nothing sells until one is back.</StaffNote>}
+
+      <Group title="Team">
+        {h.team.map((m) => (
+          <Row key={m.userId} label={m.name ?? 'Someone'} value={m.owner ? 'Owner' : 'Admin'} />
+        ))}
+        <Row label="Owner’s contact" value={h.owner.phone ?? h.owner.email ?? undefined} />
+      </Group>
+
+      {(h.parent || h.clubs.length > 0) && (
+        <Group title={h.parent ? 'Part of' : 'Clubs'}>
+          {h.parent && <Row label={h.parent.name} onPress={() => router.push(`/galaxy/host/${h.parent!.id}`)} />}
+          {h.clubs.map((c) => (
+            <Row key={c.id} label={c.name} value={c.status === 'live' ? undefined : STATUS[c.status]} onPress={() => router.push(`/galaxy/host/${c.id}`)} />
+          ))}
+        </Group>
+      )}
+
+      {acts ? (
+        <Group title="Actions">
+          <Row
+            label={h.verified ? 'Remove the verified mark' : 'Verify'}
+            onPress={
+              h.verified
+                ? risky({ title: `Remove ${h.name}’s verified mark?`, line: 'The tick goes from its pages and events.', action: 'Remove it' }, (reason) => x.unverify(h.id, reason))
+                : risky({ title: `Verify ${h.name}?`, line: 'A tick shows beside its name everywhere on Orbit.', action: 'Verify' }, (reason) => x.verify(h.id, reason, h.name))
+            }
+          />
+          {h.status === 'suspended' && !held ? (
+            <Row
+              label="Lift the suspension"
+              onPress={risky(
+                { title: `Lift ${h.name}’s suspension?`, line: 'It goes back to how it was before: live, paused or archived.', action: 'Lift it' },
+                (reason) => x.lift(h.id, reason),
+              )}
+            />
+          ) : (
+            <Row
+              label="Suspend"
+              onPress={risky(
+                { title: `Suspend ${h.name}?`, line: 'They can’t publish, sell or ask for a payout until it’s lifted. Sold tickets still check in.', action: 'Suspend' },
+                (reason) => x.suspend(h.id, reason),
+              )}
+            />
+          )}
+        </Group>
+      ) : (
+        <StaffNote>You’re on this team, so someone else acts on it.</StaffNote>
+      )}
+    </Page>
+  );
+}
+
+function MockHost({ id }: { id: string }) {
   const me = useMe();
   const host = hosts.find((h) => h.id === id);
   if (!host) return <NotFound what="host" />;
@@ -107,4 +208,4 @@ export default gated('hosts', function HostPage() {
       )}
     </Page>
   );
-});
+}
