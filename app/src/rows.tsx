@@ -247,10 +247,11 @@ export function BackBar({ scrollY, children }: { scrollY: Animated.Value; childr
   );
 }
 
-// The heart, on every event row and the event page (`bar`, a 44pt circle like its neighbours). One tap saves, with a
-// note offering Add to a list; on a saved event it unsaves, with Undo (src/session.ts). Signed out, the sign-in sheet
-// comes first. Filled and red when saved (owner, 16 Nov 2026: "for saved events add love red"), else the white duotone
-// outline. It says what a tap will do, its state exposed to screen readers (Saved events and lists doc).
+// The heart, on every event row and the event page (`bar`, a 44pt circle like its neighbours). One tap saves and opens
+// the list modal; on a saved event it opens the modal, where Remove from saved unsaves (src/session.ts; owner, 16 Nov
+// 2026: "instead of toast use modal, when clicked on love"). Signed out, the sign-in sheet comes first. Filled and red
+// when saved ("for saved events add love red"), else the white duotone outline. It says what a tap will do, its state
+// exposed to screen readers (Saved events and lists doc).
 export function SaveButton({ event: e, bar = false }: { event: Pick<Event, 'id' | 'title'>; bar?: boolean }) {
   const saved = useSaved(e.id);
   return (
@@ -260,7 +261,7 @@ export function SaveButton({ event: e, bar = false }: { event: Pick<Event, 'id' 
       hitSlop={bar ? 4 : 0}
       accessibilityRole="button"
       accessibilityLabel={saved ? `Saved, ${e.title}` : `Save ${e.title}`}
-      accessibilityHint={saved ? 'Double-tap to remove' : undefined}
+      accessibilityHint={saved ? 'Opens its lists and Remove from saved' : 'Saves it and opens your lists'}
       accessibilityState={{ selected: saved }}>
       <Glass style={bar ? styles.backGlass : styles.heartGlass}>
         {saved ? <Icon name="heartFill" size={20} color={color.love} /> : <Icon name="heart" size={20} color={color.text} />}

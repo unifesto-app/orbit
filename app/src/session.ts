@@ -150,21 +150,29 @@ function apply(change: (s: saves.Saves) => saves.Saves | string): string | null 
 }
 const saveEvent = (eventId: string) => apply((s) => saves.save(s, eventId, Date.now(), canOpen));
 
-// The heart. `on` is what the tap asked for, never a toggle, so a save tapped while signed out still saves when the
-// account already had it. Signed out, the sign-in sheet comes first and the save lands after, so the note shows then,
-// not over the sheet.
-// ponytail: at the cap the heart doesn't fill first and roll back (doc); it stays empty and the note says why. The
+// The heart (owner, 16 Nov 2026: "instead of toast use modal, when clicked on love"): an empty heart saves at once and
+// opens the list modal over the page (src/app/lists/[event].tsx); a saved one opens it too, where Remove from saved
+// unsaves. `on` is what the tap asked for, never a toggle, so a save tapped while signed out still saves when the
+// account already had it. Signed out, the sign-in sheet comes first and the save lands after; no modal then, as the
+// sheet is still leaving and one opened over it goes astray. The heart turning red says it's saved.
+// ponytail: at the cap the heart doesn't fill first and roll back (doc); it stays empty and an alert says why. The
 // API's answer makes it a real roll-back. The push ask on an event not on sale yet waits for notifications.
-export function tapHeart(eventId: string, on: boolean) {
+export function tapHeart(eventId: string, on: boolean, fromMenu = false) {
+  const signingIn = !current;
+  const openLists = () => router.push(`/lists/${eventId}`);
   needsAccount(() => {
-    if (!on) return removeSaves([eventId]);
-    const problem = saveEvent(eventId);
-    showNote(problem ? { text: problem } : { text: 'Saved', action: { label: 'Add to a list', run: () => addToList(eventId) } });
+    const problem = on ? saveEvent(eventId) : null;
+    if (!signingIn) return problem ? Alert.alert(problem) : openLists();
+    // Just signed in, the sheet still leaving: a note, drawn over it, says what happened instead.
+    if (problem) showNote({ text: problem });
+    else if (fromMenu) showNote({ text: 'Saved', action: { label: 'Add to a list', run: openLists } });
   });
 }
+// Add to a list, from an event's menu or a saved row's: the heart's modal, saving first if it isn't.
+export const addToList = (eventId: string) => tapHeart(eventId, true, true);
 
-// Unsave, from the heart or a saved row's menu: gone from All saved and every list at once, with Undo for 5 seconds
-// (until dismissed with assistive tech on, src/note.tsx). Remove all past passes every past save.
+// Unsave, from the list modal or a saved row's menu: gone from All saved and every list at once, with Undo for 5
+// seconds (until dismissed with assistive tech on, src/note.tsx). Remove all past passes every past save.
 export function removeSaves(ids: readonly string[]) {
   if (!current || ids.length === 0) return;
   const { next, undo } = saves.unsave(current, ids);
@@ -173,15 +181,6 @@ export function removeSaves(ids: readonly string[]) {
     text: ids.length === 1 ? 'Removed from saved' : `Removed ${ids.length} saved events`,
     action: { label: 'Undo', run: () => apply((s) => saves.restore(s, undo)) },
     ms: 5000,
-  });
-}
-
-// Add to a list, from the note or an event's menu: saves first if it isn't, then the list picker (src/app/lists).
-export function addToList(eventId: string) {
-  needsAccount(() => {
-    const problem = saveEvent(eventId);
-    if (problem) showNote({ text: problem });
-    else router.push(`/lists/${eventId}`);
   });
 }
 

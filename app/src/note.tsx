@@ -1,5 +1,6 @@
-// The note at the bottom of the screen after a save or an unsave (Saved events and lists doc): "Saved" with Add to a
-// list for about 4 seconds, Undo for 5. With a screen reader on (or, on Android, any accessibility service, which
+// The note at the bottom of the screen after removing saves (Saved events and lists doc): Undo for 5 seconds, from the
+// heart's list modal, a saved row's menu or Remove all past. The heart itself opens a modal now, not a note (owner,
+// 16 Nov 2026: "instead of toast use modal, when clicked on love"). With a screen reader on (or, on Android, any accessibility service, which
 // covers Switch Access) it's announced and stays until closed, so nobody loses Undo to a timer. One at a time: a new
 // note replaces the last. Mount NoteHost once, at the root (src/app/_layout.tsx).
 // On iOS it's drawn in a window of its own over everything, sheets included (react-native-screens' FullWindowOverlay,
