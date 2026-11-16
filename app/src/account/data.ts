@@ -7,16 +7,6 @@ import { me } from '../modes';
 import type { RefundStatus, Way } from './rules';
 import type { List } from './saves';
 
-export type Profile = {
-  name: string;
-  initials: string;
-  phone: string; // E.164, +91 only (User decision 11)
-  email: string | null;
-  dob: string; // fixed after sign-up; only support changes it
-  gender: string | null;
-  since: string; // on Orbit since
-  city: string | null; // for new events nearby, from the city list
-};
 export type Method = { way: Exclude<Way, 'passkey'>; detail: string };
 export type Passkey = { id: string; name: string; added: string };
 export type Device = { id: string; name: string; surface: 'App' | 'Web'; lastActive: string; current?: boolean };
@@ -26,16 +16,9 @@ export type Refund = { id: string; eventId: string; amountPaise: number; status:
 // A booking that's no longer a ticket: the event is over, or the booking was cancelled or refunded.
 export type Past = { eventId: string; status: 'Went' | 'Missed' | 'Cancelled' | 'Refunded' };
 
-export const profile: Profile = {
-  name: 'Abhinavtej Reddy',
-  initials: 'AR',
-  phone: '+919876543210',
-  email: 'abhinavtej.reddy@example.com',
-  dob: '2004-03-12',
-  gender: null,
-  since: '2025-08-14T10:00:00+05:30',
-  city: 'Hyderabad',
-};
+// The account itself is the API's (/me, src/session.ts). What's left here: the number the mock's sign-in methods show,
+// and the city for new events nearby (Event Request's and Notifications' defaults) until the API keeps one.
+export const profile: { phone: string; city: string | null } = { phone: '+919876543210', city: 'Hyderabad' };
 
 export const methods: Method[] = [
   { way: 'phone', detail: profile.phone },

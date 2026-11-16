@@ -74,3 +74,27 @@ export function calendarLink({ title, startsAt, place }: { title: string; starts
   const q = (s: string) => encodeURIComponent(s);
   return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${q(title)}&dates=${stamp(start)}/${stamp(start + 2 * 3_600_000)}&location=${q(place)}`;
 }
+
+// What Edit profile's Save sends to PATCH /me: only what changed, the name trimmed. Null when nothing changed or the
+// name is empty, which the API refuses (a name can't be cleared; gender can, with null).
+export function profileChanges(was: { name: string | null; gender: string | null }, form: { name: string; gender: string | null }) {
+  const name = form.name.trim();
+  if (!name) return null;
+  const changes = { ...(name !== was.name && { name }), ...(form.gender !== was.gender && { gender: form.gender }) };
+  return Object.keys(changes).length ? changes : null;
+}
+
+// Changing your number or email (User flow; api/src/auth/security.ts): what comes first, from GET /me/security.
+// - 'new': this phone confirmed it's you in the last 10 minutes and no hold stands, so straight to the new one.
+// - 'prove': a code to one of your own first. In the 7 days after "Is this you?" an email change needs your email's,
+//   which lifts the hold only if that email was on the account before then; the phone is never held.
+// - 'wait': the hold stands even after your email's code (an email added since), until `until`.
+// `provedByEmail` is whether this screen just had your email's code.
+export type Security = { phone: string | null; email: string | null; fresh: boolean; heldUntil: string | null };
+export function changeStart(way: 'phone' | 'email', s: Security, provedByEmail: boolean) {
+  const held = way === 'email' ? s.heldUntil : null; // the API sends none without an email
+  if (held && provedByEmail) return { next: 'wait' as const, until: held };
+  if (s.fresh && !held) return { next: 'new' as const };
+  const via = s.email && (held || !s.phone) ? ('email' as const) : s.phone ? ('phone' as const) : null;
+  return via && { next: 'prove' as const, via, to: via === 'email' ? s.email! : s.phone! };
+}

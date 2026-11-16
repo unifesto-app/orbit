@@ -242,6 +242,8 @@ export async function refreshAccount() {
   if (r.ok && current?.me.id === r.data.id) set({ ...current, me: r.data });
 }
 export const setAccount = (me: Account) => current?.me.id === me.id && set({ ...current, me });
+// A field or two the API changed (a new number or email), onto the account as it is now.
+export const patchAccount = (fields: Partial<Account>) => current && set({ ...current, me: { ...current.me, ...fields } });
 
 // Log out, and Delete account, which signs out every device (User doc). The API is told without waiting.
 export function signOut() {

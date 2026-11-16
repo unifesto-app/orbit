@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { calendarLink, canRemove, deletesOn, deletionBlockers, isOpen, maskEmail, maskPhone, spacedCode, ticketActions } from './rules.ts';
+import { calendarLink, canRemove, changeStart, deletesOn, deletionBlockers, isOpen, maskEmail, maskPhone, profileChanges, spacedCode, ticketActions } from './rules.ts';
 
 test('masks the phone and email', () => {
   assert.equal(maskPhone('+919876543210'), '+91 98••• ••210');
@@ -57,4 +57,27 @@ test('the calendar link carries the event in UTC, two hours long', () => {
   assert.match(link, /dates=20261120T143000Z\/20261120T163000Z/);
   assert.match(link, /text=Open%20Mic%20Night/);
   assert.equal(spacedCode('OM7Q2M9X'), 'OM7Q 2M9X');
+});
+
+test('Save sends only what changed, and never an empty name', () => {
+  const was = { name: 'Keerthi Rao', gender: null };
+  assert.equal(profileChanges(was, { name: ' Keerthi Rao ', gender: null }), null);
+  assert.deepEqual(profileChanges(was, { name: 'Keerthi R', gender: null }), { name: 'Keerthi R' });
+  assert.deepEqual(profileChanges(was, { name: 'Keerthi Rao', gender: 'Woman' }), { gender: 'Woman' });
+  assert.deepEqual(profileChanges({ ...was, gender: 'Woman' }, { name: 'Keerthi Rao', gender: null }), { gender: null });
+  assert.equal(profileChanges(was, { name: '  ', gender: 'Woman' }), null);
+  assert.deepEqual(profileChanges({ name: null, gender: null }, { name: 'Keerthi', gender: null }), { name: 'Keerthi' });
+});
+
+test('a number or email change confirms it’s you first, by email while the hold stands', () => {
+  const s = { phone: '+919876543210', email: 'k@example.com', fresh: false, heldUntil: null };
+  const held = { ...s, heldUntil: '2026-11-24T10:00:00.000Z' };
+  assert.deepEqual(changeStart('phone', { ...s, fresh: true }, false), { next: 'new' });
+  assert.deepEqual(changeStart('phone', s, false), { next: 'prove', via: 'phone', to: '+919876543210' });
+  assert.deepEqual(changeStart('phone', { ...held, fresh: true }, false), { next: 'new' }); // the phone is never held
+  assert.deepEqual(changeStart('email', { ...held, fresh: true }, false), { next: 'prove', via: 'email', to: 'k@example.com' });
+  // An email added after "Is this you?" can't lift the hold: after its code, wait.
+  assert.deepEqual(changeStart('email', { ...held, fresh: true }, true), { next: 'wait', until: '2026-11-24T10:00:00.000Z' });
+  assert.deepEqual(changeStart('email', { ...s, phone: null }, false), { next: 'prove', via: 'email', to: 'k@example.com' });
+  assert.equal(changeStart('email', { ...s, phone: null, email: null }, false), null);
 });
