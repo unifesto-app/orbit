@@ -132,6 +132,9 @@ export const masked = (u: typeof users.$inferSelect) => ({
   suspended: !!u.suspendedAt,
   since: u.createdAt.toISOString(),
 });
+// As holders of People see them: contacts in full (owner, 17 Nov 2026: "Contacts dont stay masked"). Holders of Staff
+// alone, who only find someone by the exact contact they typed, and a host's owner on the host page stay masked.
+export const person = (u: typeof users.$inferSelect) => ({ ...masked(u), phone: u.phone, email: u.email });
 
 // The host's started Admins.
 export const adminsOf = async (db: Db, hostId: string) =>

@@ -3,7 +3,8 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { me, read } from "../../../api";
-import { Alert, Badge, Container, day, FEATURE_NAMES, PageHeader, ui } from "../../ui";
+import { Alert, Badge, Container, day, FEATURE_NAMES, ui } from "../../ui";
+import { People } from "../people";
 import { Act } from "../act";
 import { confirmGrant, endGrant } from "../actions";
 
@@ -17,7 +18,7 @@ type Grant = { id: string; userId: string; name: string | null; feature: keyof t
 export default function Staff() {
   return (
     <div className={ui.page}>
-      <PageHeader title="Staff" description="Who has access to Galaxy, feature by feature." />
+      <People current="staff" description="Who has access to Galaxy, feature by feature." />
       <Suspense fallback={null}>
         <List />
       </Suspense>

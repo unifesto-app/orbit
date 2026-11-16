@@ -15,6 +15,9 @@ export function createApp(deps?: Deps) {
   app.get("/health", (c) =>
     c.json(HealthResponse.parse({ status: "ok", service: "orbit-api", version: VERSION })),
   );
+  // api.heyorbit.in opened in a browser (owner, 17 Nov 2026: "add copyright 2027 Orbit"). Other unknown paths keep the
+  // JSON 404 below, which the app and Galaxy read.
+  app.get("/", (c) => c.text("© 2027 Orbit"));
   if (deps) {
     app.route("/", authRoutes(deps));
     app.route("/", securityRoutes(deps));

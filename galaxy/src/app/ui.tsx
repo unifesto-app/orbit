@@ -1,4 +1,5 @@
 import type { StaffFeature } from "@orbit/contract";
+import Link from "next/link";
 import type { ReactNode } from "react";
 import ui from "./ui.module.css";
 
@@ -38,6 +39,9 @@ export const FEATURE_NAMES: Record<StaffFeature, string> = {
   staff: "Staff",
 };
 
+// "+919000000101" as Indian numbers are read, "+91 90000 00101". A masked one passes through.
+export const phone = (e164: string) => e164.replace(/^\+91(\d{5})(\d{5})$/, "+91 $1 $2");
+
 // A day as staff read it, in India's time.
 export const day = (iso: string) =>
   new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" });
@@ -67,5 +71,29 @@ export function Pairs({ pairs }: { pairs: [string, ReactNode][] }) {
         </div>
       ))}
     </dl>
+  );
+}
+
+// A list's pages under its table, on the right as AWS has them; only the page number goes in the address. No prefetch:
+// some of Galaxy's lists are written to the audit log.
+export function Pages({ path, total, page, pageSize }: { path: string; total: number; page: number; pageSize: number }) {
+  const last = Math.max(1, Math.ceil(total / pageSize));
+  if (last === 1) return null;
+  return (
+    <nav aria-label="Pages" className={`${ui.row} ${ui.pager}`}>
+      {page > 1 && (
+        <Link className={ui.btn} href={`${path}?page=${page - 1}`} prefetch={false}>
+          Previous
+        </Link>
+      )}
+      <span className={ui.secondary}>
+        Page {page} of {last}
+      </span>
+      {page < last && (
+        <Link className={ui.btn} href={`${path}?page=${page + 1}`} prefetch={false}>
+          Next
+        </Link>
+      )}
+    </nav>
   );
 }

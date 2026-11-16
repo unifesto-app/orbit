@@ -4,7 +4,7 @@ import { createMiddleware } from "hono/factory";
 import { EditHost, type HostPage, SetParent, StaffReason, VerifyHost } from "@orbit/contract";
 import type { Db } from "../db/index.ts";
 import { auditLog, follows, hosts, hostSlugs, teamRoles, users } from "../db/schema.ts";
-import { type Env, fail, invalid, isUuid, type Notify, parse, signedIn, taken } from "../http.ts";
+import { type Env, fail, invalid, isUuid, type Notify, listPage, parse, signedIn, taken } from "../http.ts";
 import { adminsOf, changeable, holdersOf, holdIfUnanswered, masked, onHost, requireFeature, type StaffEnv, teamOf, tell } from "../roles/access.ts";
 import { type Action, parentRule, statusRule } from "./rules.ts";
 
@@ -209,6 +209,29 @@ export function hostsRoutes({ db, notify, secret, now = Date.now }: Deps) {
       parent: parent ?? null, clubs, followers: await followersOf(h.id),
       team: seats.map((s) => ({ userId: s.userId, name: s.name, role: s.role, owner: s.userId === h.ownerId })),
       owner: masked(owner!),
+    });
+  });
+
+  // GET /galaxy/teams?page=: every started seat on every host's team, newest first: who runs which host. Names only,
+  // as on a host's page, so like the host search it isn't logged.
+  app.get("/galaxy/teams", auth, hostsOnly, async (c) => {
+    const { page, limit, offset } = listPage(c);
+    const live = and(isNotNull(teamRoles.startedAt), isNull(teamRoles.endedAt));
+    const rows = await db
+      .select({ id: teamRoles.id, userId: teamRoles.userId, name: users.name, role: teamRoles.role, since: teamRoles.startedAt, hostId: hosts.id, host: hosts.name, status: hosts.status, ownerId: hosts.ownerId })
+      .from(teamRoles)
+      .innerJoin(users, eq(users.id, teamRoles.userId))
+      .innerJoin(hosts, eq(hosts.id, teamRoles.hostId))
+      .where(live)
+      .orderBy(desc(teamRoles.startedAt), desc(teamRoles.id))
+      .limit(limit)
+      .offset(offset);
+    const [total] = await db.select({ n: count() }).from(teamRoles).where(live);
+    return c.json({
+      seats: rows.map(({ ownerId, since, ...s }) => ({ ...s, owner: ownerId === s.userId, since: since!.toISOString() })),
+      total: total!.n,
+      page,
+      pageSize: limit,
     });
   });
 

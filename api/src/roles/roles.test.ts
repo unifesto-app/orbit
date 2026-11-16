@@ -204,10 +204,41 @@ test("people: search", async () => {
   assert.equal(r.status, 200);
   assert.equal(r.body.length, 1);
   assert.equal(r.body[0].id, other.me.id);
-  assert.equal(r.body[0].phone, `+91 ••••••${other.p.slice(-4)}`);
+  assert.equal(r.body[0].phone, e164(other.p));
   assert.equal((await audits("people.search")).length, 1);
+  const lite = await join();
+  await give(lite, "staff");
+  const m = await as(lite)("GET", `/galaxy/people?q=${encodeURIComponent(e164(other.p))}`);
+  assert.equal(m.body[0].phone, `+91 ••••••${other.p.slice(-4)}`);
   assert.equal((await as(staff)("GET", "/galaxy/people?q=ab")).status, 400);
   assert.equal((await as(nobody)("GET", "/galaxy/people?q=abcdef")).status, 404);
+});
+
+test("people: list and detail", async () => {
+  const staff = await join(), lite = await join(), nobody = await join(), a = await join(), gone = await join();
+  await give(staff, "people");
+  await give(lite, "staff");
+  await t.db.update(users).set({ deletedAt: new Date() }).where(eq(users.id, gone.me.id));
+  const l = await as(staff)("GET", "/galaxy/people");
+  assert.equal(l.status, 200);
+  assert.equal(l.body.page, 1);
+  assert.ok(l.body.people.some((x: any) => x.id === a.me.id && x.phone === e164(a.p)));
+  assert.ok(!l.body.people.some((x: any) => x.id === gone.me.id));
+  assert.equal((await audits("people.list")).length, 1);
+  for (const u of [lite, nobody]) {
+    assert.equal((await as(u)("GET", "/galaxy/people")).status, 404);
+    assert.equal((await as(u)("GET", `/galaxy/people/${a.me.id}`)).status, 404);
+  }
+  const d = await as(staff)("GET", `/galaxy/people/${a.me.id}`);
+  assert.equal(d.status, 200);
+  assert.equal(d.body.phone, e164(a.p));
+  assert.equal((await audits("people.view")).filter((x) => x.targetUser === a.me.id).length, 1);
+  assert.equal((await audits("people.view")).length, 1);
+  for (const id of [gone.me.id, "nope"]) {
+    const r = await as(staff)("GET", `/galaxy/people/${id}`);
+    assert.equal(r.status, 404);
+    assert.equal(r.body.error, "notFound");
+  }
 });
 
 // ---------- after review ----------
