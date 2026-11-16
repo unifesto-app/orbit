@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Container, PageHeader, ui } from "../ui";
+import { Container, PageHeader, ui } from "../../ui";
 import styles from "./page.module.css";
 
 // Token specimen: every swatch reads the live CSS variable from globals.css,

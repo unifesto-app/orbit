@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { PageHeader, ui } from "./ui";
+import { PageHeader, ui } from "../ui";
 
 // Every nav section that isn't built yet lands here too, inside the shell.
 export const metadata: Metadata = { title: "Page not found" };

@@ -12,7 +12,7 @@ import styles from "./shell.module.css";
 // Same breakpoint as the AWS console: below it the side nav is a drawer.
 const DESKTOP = "(min-width: 689px)";
 
-export function Shell({ children }: { children: ReactNode }) {
+export function Shell({ children, account }: { children: ReactNode; account: ReactNode }) {
   // Desktop always shows the side nav. Phones open it as a drawer over the
   // page: everything else goes inert, focus moves in, and returns on close.
   const [drawer, setDrawer] = useState(false);
@@ -55,9 +55,10 @@ export function Shell({ children }: { children: ReactNode }) {
           <Icon name="search" />
           <input type="search" name="q" placeholder="Search" aria-label="Search Galaxy" />
         </form>
-        <a className={styles.topLink} href="https://heyorbit.in" target="_blank" rel="noreferrer">
+        <a className={`${styles.topLink} ${styles.site}`} href="https://heyorbit.in" target="_blank" rel="noreferrer">
           heyorbit.in <Icon name="external" />
         </a>
+        {account}
       </header>
 
       <div className={styles.toolbar} inert={drawer}>
