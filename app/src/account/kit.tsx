@@ -132,24 +132,30 @@ export function Panel({ extra = 0, settled = false, children }: { extra?: number
 }
 
 // A card of rows, under a section heading when it has one. A hairline between rows, in the middle of the gap (owner,
-// 15 Nov 2026: "add hairline").
-export function Group({ title, children }: { title?: string; children: ReactNode }) {
+// 15 Nov 2026: "add hairline"). `bare` drops the frosted rim, leaving the face alone (owner, 17 Nov 2026: "in Delete
+// Account, remove the rim of all cards").
+export function Group({ title, bare = false, children }: { title?: string; bare?: boolean; children: ReactNode }) {
   const rows = Children.toArray(children); // drops the false and null of rows shown only sometimes
   // With icons, the hairline starts where the text does, as in iOS Settings.
   const indent = rows.some((r) => isValidElement<{ icon?: IconName }>(r) && !!r.props.icon) ? ICON + ICON_GAP : 0;
+  const face = (
+    <View style={styles.face}>
+      {rows.map((row, i) => (
+        <Fragment key={i}>
+          {i > 0 && <View style={[styles.hairline, { marginLeft: indent }]} />}
+          {row}
+        </Fragment>
+      ))}
+    </View>
+  );
   return (
     <>
       {title && <Section title={title} />}
-      <Glass style={[styles.rim, !title && styles.spaced]}>
-        <View style={styles.face}>
-          {rows.map((row, i) => (
-            <Fragment key={i}>
-              {i > 0 && <View style={[styles.hairline, { marginLeft: indent }]} />}
-              {row}
-            </Fragment>
-          ))}
-        </View>
-      </Glass>
+      {bare ? (
+        <View style={[styles.bare, !title && styles.spaced]}>{face}</View>
+      ) : (
+        <Glass style={[styles.rim, !title && styles.spaced]}>{face}</Glass>
+      )}
     </>
   );
 }
@@ -319,6 +325,7 @@ export const styles = StyleSheet.create({
   panelField: { position: 'absolute', left: 0, right: 0 },
 
   rim: { marginHorizontal: 20, padding: EDGE, borderRadius: RIM },
+  bare: { marginHorizontal: 20 },
   spaced: { marginTop: space.big },
   face: { borderRadius: FACE, backgroundColor: color.card, padding: PAD },
   // Inside the card's padding on both sides (owner: "right side make it full hairline", then "dont use full hairline").
