@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import { sign } from "hono/jwt";
 import { createApp } from "../app.ts";
 import { testApp } from "../testkit.ts";
-import { identities, passkeys, users } from "../db/schema.ts";
+import { identities, passkeys, sessions, users } from "../db/schema.ts";
 import { runDeletions } from "./deletion.ts";
 import type { WaysConfig } from "./ways.ts";
 
@@ -153,8 +153,8 @@ const googleTrip = async (token: string | null, query = "code=x") => {
   assert.equal(res.status, 302);
   return Object.assign(new URL(res.headers.get("location")!), { verifier });
 };
-const googleToken_ = (sub: string, o: { email?: string; verified?: boolean } = {}) =>
-  claims({ sub, email: o.email ?? `${sub}@gmail.test`, email_verified: o.verified ?? true, name: "Gia Shah" }, "https://accounts.google.com", GOOGLE.clientId);
+const googleToken_ = (sub: string, o: { email?: string; verified?: boolean; hd?: string } = {}) =>
+  claims({ sub, email: o.email ?? `${sub}@gmail.test`, email_verified: o.verified ?? true, name: "Gia Shah", hd: o.hd }, "https://accounts.google.com", GOOGLE.clientId);
 const googleProof = async (sub: string, o: Parameters<typeof googleToken_>[1] = {}) => {
   const loc = await googleTrip(await googleToken_(sub, o));
   return { grant: loc.searchParams.get("grant")!, verifier: loc.verifier };
@@ -402,4 +402,125 @@ test("deletion day 30: passkeys and identities go, Apple's refresh token is revo
   assert.equal((await t.db.select().from(identities).where(eq(identities.userId, a.me.id))).length, 0);
   assert.deepEqual(revoked, ["refresh-1"]);
   assert.ok((await userRow(a.me.id)).deletedAt);
+});
+
+// ---- review fixes (2214c19)
+test("hold: a second Is this you? keeps the running mark; after 7 days it moves", async () => {
+  const a = await join(true);
+  const b = await newDevice(a, "dev-B");
+  const t0 = (await userRow(a.me.id)).newDevicePhoneAt!.getTime();
+  t.tick(1000);
+  const { k, r } = await addPasskey(b);
+  assert.equal(r.status, 201);
+  t.tick(1000);
+  await newDevice(a, "dev-C");
+  assert.equal((await userRow(a.me.id)).newDevicePhoneAt!.getTime(), t0);
+  assert.equal((await as(b)("POST", "/me/fresh", { via: "passkey", ...(await passkeyProof(k)) })).status, 200);
+  const held = await as(b)("DELETE", "/me/email");
+  assert.equal(held.status, 403);
+  assert.equal(held.body.error, "held");
+
+  t.tick(7 * DAY + MIN);
+  await newDevice(a, "dev-D");
+  assert.ok((await userRow(a.me.id)).newDevicePhoneAt!.getTime() > t0 + 7 * DAY);
+});
+
+test("hold: covers removing Google, Apple, a passkey and deleting the account when only the phone proved freshness", async () => {
+  const a = await join(true);
+  const pk = await addPasskey(a.access);
+  assert.equal((await as(a.access)("POST", "/me/apple", await appleProof(`apple-${randomBytes(6).toString("hex")}`))).status, 201);
+  assert.equal((await as(a.access)("POST", "/me/google", await googleProof(`g-${randomBytes(6).toString("hex")}`))).status, 201);
+  t.tick(1000);
+  const b = await newDevice(a, "dev-B");
+  for (const [m, path] of [["DELETE", "/me/google"], ["DELETE", "/me/apple"], ["DELETE", `/me/passkeys/${pk.r.body.id}`], ["POST", "/me/deletion"]] as const) {
+    const r = await as(b)(m, path);
+    assert.equal(r.status, 403, path);
+    assert.equal(r.body.error, "held", path);
+  }
+});
+
+test("google: a non-Gmail address without hd finds no account; with hd or @gmail.com it does", async () => {
+  const work = `riya${++n}@oldjob${n}.com`, gm = `riya${++n}@gmail.com`;
+  const a = await join(), g = await join();
+  await t.db.update(users).set({ email: work, emailVerifiedAt: new Date() }).where(eq(users.id, a.me.id));
+  await t.db.update(users).set({ email: gm, emailVerifiedAt: new Date() }).where(eq(users.id, g.me.id));
+  const post = async (sub: string, o: Parameters<typeof googleToken_>[1]) => t.call("POST", "/auth/google", { ...(await googleProof(sub, o)), device });
+
+  assert.equal((await post(`g-${randomBytes(6).toString("hex")}`, { email: work })).body.step, "phone");
+  const hd = await post(`g-${randomBytes(6).toString("hex")}`, { email: work, hd: work.split("@")[1] });
+  assert.equal(hd.body.step, "signedIn");
+  assert.equal(hd.body.me.id, a.me.id);
+  const gmail = await post(`g-${randomBytes(6).toString("hex")}`, { email: gm });
+  assert.equal(gmail.body.step, "signedIn");
+  assert.equal(gmail.body.me.id, g.me.id);
+});
+
+test("/me/ways: works once, and not from another account's session", async () => {
+  const offer = async () => {
+    const a = await join();
+    const first = await appleIn(`apple-${randomBytes(6).toString("hex")}`);
+    const v = await verify(a.p, { signup: first.body.signup, device: { ...device, id: a.device } });
+    assert.ok(v.body.addWay.token);
+    return { a, access: v.body.access as string, token: v.body.addWay.token as string };
+  };
+  const o = await offer();
+  assert.equal((await as(o.access)("POST", "/me/ways", { token: o.token })).status, 201);
+  const again = await as(o.access)("POST", "/me/ways", { token: o.token });
+  assert.equal(again.status, 400);
+  assert.equal(again.body.error, "expired");
+
+  const p = await offer(), other = await join();
+  const stolen = await as(other.access)("POST", "/me/ways", { token: p.token });
+  assert.equal(stolen.status, 400);
+  assert.equal(stolen.body.error, "expired");
+  assert.equal((await as(p.access)("POST", "/me/ways", { token: p.token })).status, 201); // still the owner's
+});
+
+test("linking when not fresh is refused without spending the Google grant or Apple nonce", async () => {
+  const a = await join();
+  const stale = () => t.db.update(sessions).set({ freshAt: null }).where(eq(sessions.userId, a.me.id));
+  const g = await googleProof(`g-${randomBytes(6).toString("hex")}`);
+  const ap = await appleProof(`apple-${randomBytes(6).toString("hex")}`);
+  await stale();
+  assert.equal((await as(a.access)("POST", "/me/google", g)).body.error, "needsFresh");
+  assert.equal((await as(a.access)("POST", "/me/apple", ap)).body.error, "needsFresh");
+  assert.equal((await as(a.access)("POST", "/me/fresh", { via: "phone", code: await codeTo(a.p) })).status, 200);
+  assert.equal((await as(a.access)("POST", "/me/google", g)).status, 201);
+  assert.equal((await as(a.access)("POST", "/me/apple", ap)).status, 201);
+});
+
+test("apple tokens: wrong aud, iss, expired, unknown kid, HS256 refused; iat 30 s ahead ok, 5 min ahead refused", async () => {
+  const sub = `apple-${randomBytes(6).toString("hex")}`;
+  const now = Math.floor(Date.now() / 1000);
+  const tok = async (o: { iss?: string; aud?: string; exp?: number; iat?: number; jwk?: object; alg?: "RS256" | "HS256" }) => {
+    const nn = await nonce();
+    const payload = { iss: o.iss ?? "https://appleid.apple.com", aud: o.aud ?? "com.unifesto.orbit", iat: o.iat ?? now, exp: o.exp ?? now + 600, sub, nonce: nn };
+    const idToken = o.alg === "HS256" ? await sign(payload, "shared-secret", "HS256") : await sign(payload, (o.jwk ?? privateJwk) as never, "RS256");
+    return t.call("POST", "/auth/apple", { idToken, nonce: nn, device });
+  };
+  const refused = async (label: string, o: Parameters<typeof tok>[0]) => {
+    const r = await tok(o);
+    assert.equal(r.status, 400, label);
+    assert.equal(r.body.error, "notProven", label);
+  };
+  await refused("aud", { aud: "com.other.app" });
+  await refused("iss", { iss: "https://evil.example" });
+  await refused("expired", { exp: now - 100, iat: now - 700 });
+  await refused("kid", { jwk: { ...privateJwk, kid: "unknown-kid" } });
+  await refused("hs256", { alg: "HS256" });
+  await refused("iat +5min", { iat: now + 300 });
+  assert.equal((await tok({ iat: now + 30 })).body.step, "phone");
+});
+
+test("hold notice skips an Apple private-relay address", async () => {
+  const a = await join();
+  const relayMail = `x${++n}@privaterelay.appleid.com`;
+  await t.db.insert(identities).values({ userId: a.me.id, provider: "apple", subject: `apple-${randomBytes(6).toString("hex")}`, email: relayMail, createdAt: new Date(t.now() - 1000) });
+  const b = await newDevice(a, "dev-B");
+  const before = t.notices.length;
+  const r = await as(b)("DELETE", "/me/apple");
+  assert.equal(r.status, 403);
+  assert.equal(r.body.error, "held");
+  assert.equal(t.notices.slice(before).filter((x) => x.kind === "signInMethodChangeHeld").length, 0);
+  assert.equal(t.notices.filter((x) => (x.to as any).contact === relayMail).length, 0);
 });
