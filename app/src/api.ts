@@ -10,6 +10,7 @@ import type { ApiError } from '@orbit/contract';
 export const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://api.heyorbit.in';
 
 const TIMEOUT_MS = 15_000;
+const UPLOAD_MS = 60_000; // a form with a file (a photo of up to 5 MB) on a slow connection
 const EARLY_S = 30; // renew this long before the access token runs out
 
 export type Result<T> = { ok: true; data: T } | { ok: false; status: number; error: ApiError };
@@ -32,18 +33,20 @@ export function makeApi(deps: {
 }) {
   const now = deps.now ?? Date.now;
 
+  // A FormData body (an upload) goes as it is, and fetch sets its content-type; anything else goes as JSON.
   async function call<T>(method: Method, path: string, body?: unknown, access?: string): Promise<Result<T>> {
+    const form = body instanceof FormData;
     // AbortController and a timer rather than AbortSignal.timeout, which Hermes may not have.
     const abort = new AbortController();
-    const timer = setTimeout(() => abort.abort(), TIMEOUT_MS);
+    const timer = setTimeout(() => abort.abort(), form ? UPLOAD_MS : TIMEOUT_MS);
     try {
       const res = await deps.fetch(deps.base + path, {
         method,
         headers: {
-          ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+          ...(body === undefined || form ? {} : { 'content-type': 'application/json' }),
           ...(access ? { authorization: `Bearer ${access}` } : {}),
         },
-        body: body === undefined ? undefined : JSON.stringify(body),
+        body: body === undefined ? undefined : form ? body : JSON.stringify(body),
         signal: abort.signal,
       });
       const data: unknown = res.status === 204 ? null : await res.json().catch(() => undefined);

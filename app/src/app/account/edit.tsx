@@ -3,16 +3,19 @@
 // it. Phone and email change with codes, on their own screen (src/app/account/contact.tsx). The photo is a circle, as on
 // Account (owner, 17 Nov 2026: "instead of squared profile use rounded one").
 // Save sends the name and gender that changed to the API (PATCH /me) and goes back with the account it answers.
-// ponytail: no photo uploads or city on the API yet, so Add photo says so and the city shows Not set. Each needs its API
-// part first (uploads; a city on the account), and the photo picker a native module and a rebuild.
-import type { Me as Account } from '@orbit/contract';
+// The photo is picked from the library and cropped square there (decision 7), then sent to PUT /me/photo, which checks it
+// and keeps its own copy (api/src/media.ts); Remove asks first. Either one shows at once, here and on Account.
+// ponytail: no city on the account yet, so it shows Not set; it needs its API part first.
+import { type Me as Account, PHOTO_MAX_BYTES } from '@orbit/contract';
 import { router } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
 import { useEffect, useRef, useState } from 'react';
 import { Alert, StyleSheet, View } from 'react-native';
 
 import { Chips, Field, Group, Note, Page, Pill, Row, SignInNote } from '../../account/kit';
 import { Photo } from '../../account/profile';
 import { maskEmail, maskPhone, profileChanges } from '../../account/rules';
+import type { Result } from '../../api';
 import { Section } from '../../rows';
 import { api, setAccount, useSession } from '../../session';
 import { space } from '../../theme';
@@ -37,8 +40,10 @@ function Form({ me }: { me: Account }) {
   const [name, setName] = useState(me.name ?? '');
   const [gender, setGender] = useState<string | null>(me.gender);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const working = useRef(false); // the same, read at once: a double tap saves once
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  // What's being sent. One at a time, so a save's answer can't put back the photo an upload just changed.
+  const [busy, setBusy] = useState<'save' | 'photo' | null>(null);
+  const working = useRef(false); // the same, read at once: a double tap sends once
   const open = useRef(true); // left (back) while saving: the save still counts, but there's nothing to go back from
   useEffect(() => {
     open.current = true;
@@ -48,26 +53,64 @@ function Form({ me }: { me: Account }) {
   }, []);
   const changes = profileChanges(me, { name, gender });
 
-  async function save() {
-    if (!changes || working.current) return;
+  // The answer is the account as it is now. False when the API said no (its message shows), or something else was out.
+  async function send(what: 'save' | 'photo', request: () => Promise<Result<Account>>, show: (m: string | null) => void) {
+    if (working.current) return false;
     working.current = true;
-    setBusy(true);
-    setError(null);
-    const r = await api.authed<Account>('PATCH', '/me', changes);
+    setBusy(what);
+    show(null);
+    const r = await request();
     working.current = false;
-    setBusy(false);
-    if (!r.ok) return setError(r.error.message); // what was typed stays, to try again
-    setAccount(r.data);
-    if (open.current) router.back();
+    setBusy(null);
+    if (!r.ok) show(r.error.message);
+    else setAccount(r.data);
+    return r.ok;
   }
+
+  async function save() {
+    // What was typed stays when it fails, to try again.
+    if (changes && (await send('save', () => api.authed<Account>('PATCH', '/me', changes), setError)) && open.current) router.back();
+  }
+
+  // iOS always crops square; `aspect` is Android's, and its crop shows the circle the photo is drawn in.
+  async function choose() {
+    if (working.current) return;
+    let picked: ImagePicker.ImagePickerResult;
+    try {
+      picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], shape: 'oval', quality: 0.8 });
+    } catch {
+      return setPhotoError('Couldn’t open your photos. Try again.');
+    }
+    const a = picked.canceled ? null : picked.assets[0];
+    if (!a) return;
+    if (a.fileSize && a.fileSize > PHOTO_MAX_BYTES) return setPhotoError('That photo is over 5 MB. Choose a smaller one.');
+    const form = new FormData();
+    // React Native's FormData sends the file at `uri`.
+    form.append('photo', { uri: a.uri, name: a.fileName ?? 'photo.jpg', type: a.mimeType ?? 'image/jpeg' } as unknown as Blob);
+    await send('photo', () => api.authed<Account>('PUT', '/me/photo', form), setPhotoError);
+  }
+  const remove = () =>
+    Alert.alert('Remove your photo?', undefined, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Remove', style: 'destructive', onPress: () => void send('photo', () => api.authed<Account>('DELETE', '/me/photo'), setPhotoError) },
+    ]);
   const change = (way: 'phone' | 'email') => router.push({ pathname: '/account/contact', params: { way } });
 
   return (
     <Page title="Edit profile">
       <View style={styles.photo}>
         <Photo me={me} size={PHOTO} />
-        <Pill label={me.photo ? 'Change photo' : 'Add photo'} size="small" onPress={() => Alert.alert('Adding a photo isn’t ready yet')} />
+        <View style={styles.photoPills}>
+          <Pill
+            label={busy === 'photo' ? 'Saving…' : me.photo ? 'Change photo' : 'Add photo'}
+            size="small"
+            disabled={!!busy}
+            onPress={() => void choose()}
+          />
+          {me.photo && <Pill label="Remove" size="small" disabled={!!busy} onPress={remove} />}
+        </View>
       </View>
+      {photoError && <Note>{photoError}</Note>}
 
       <View style={styles.fields}>
         <Field label="Name" value={name} onChangeText={setName} autoCapitalize="words" autoComplete="name" textContentType="name" maxLength={100} />
@@ -91,7 +134,7 @@ function Form({ me }: { me: Account }) {
       </View>
 
       <View style={styles.save}>
-        <Pill label="Save" size="wide" disabled={!changes || busy} onPress={() => void save()} />
+        <Pill label="Save" size="wide" disabled={!changes || !!busy} onPress={() => void save()} />
         {error && <Note>{error}</Note>}
       </View>
     </Page>
@@ -100,6 +143,7 @@ function Form({ me }: { me: Account }) {
 
 const styles = StyleSheet.create({
   photo: { marginTop: space.big, marginHorizontal: 20, flexDirection: 'row', alignItems: 'center', gap: 16 },
+  photoPills: { flexDirection: 'row', gap: space.small },
   fields: { marginTop: space.big, marginHorizontal: 20 },
   chips: { marginHorizontal: 20 },
   save: { marginTop: space.big },
