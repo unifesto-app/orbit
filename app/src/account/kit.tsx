@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Glass } from '../glass';
 import { Icon, type IconName } from '../icons';
-import { BackBar, FaceWash, Section, TOP } from '../rows';
+import { BackBar, FaceWash, Glow, Section, TOP } from '../rows';
 import { needsAccount } from '../session';
 import { around, color, font, radius, space } from '../theme';
 
@@ -36,11 +36,13 @@ export function Page({
   title,
   onPull,
   scrollY: given,
+  tint,
   children,
 }: {
   title?: string;
   onPull?: () => void;
   scrollY?: Animated.Value;
+  tint?: string; // a colour glowing from the top, as a host's own pages have (Galaxy's host page)
   children: ReactNode;
 }) {
   const insets = useSafeAreaInsets();
@@ -48,6 +50,7 @@ export function Page({
   const scrollY = given ?? own;
   return (
     <View style={styles.screen}>
+      {tint && <Glow tint={tint} />}
       <Animated.ScrollView
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
@@ -119,6 +122,7 @@ export function Group({ title, children }: { title?: string; children: ReactNode
 export function Row({
   icon,
   tone = color.text,
+  lead,
   label,
   note,
   value,
@@ -127,6 +131,7 @@ export function Row({
 }: {
   icon?: IconName;
   tone?: string;
+  lead?: ReactNode; // a host's logo or an event's poster in place of the icon (Galaxy's rows)
   label: string;
   note?: string;
   value?: string;
@@ -140,6 +145,7 @@ export function Row({
           <Icon name={icon} size={ICON} color={tone} />
         </View>
       )}
+      {lead}
       <View style={[styles.grow, styles.lines]}>
         <Text style={styles.label}>{label}</Text>
         {note && <Text style={styles.note}>{note}</Text>}
@@ -225,9 +231,9 @@ export function Field({ label, ...input }: TextInputProps & { label: string }) {
   return (
     <View style={styles.field}>
       <Text style={styles.fieldLabel}>{label}</Text>
-      <Glass style={styles.input}>
+      <Glass style={[styles.input, input.multiline && styles.area]}>
         <TextInput
-          style={styles.inputText}
+          style={[styles.inputText, input.multiline && styles.areaText]}
           placeholderTextColor={color.secondary}
           keyboardAppearance="dark"
           accessibilityLabel={label}
@@ -295,6 +301,9 @@ export const styles = StyleSheet.create({
   fieldLabel: { fontFamily: font.medium, fontSize: 12, color: color.secondary },
   input: { height: 44, paddingHorizontal: 16, borderRadius: 22, justifyContent: 'center' },
   inputText: { fontFamily: font.text, fontSize: 15, color: color.text, height: '100%' },
+  // A few lines (a note, a reason): the card's corner, since a pill can't grow taller.
+  area: { height: undefined, minHeight: 96, paddingVertical: 12, borderRadius: RIM, justifyContent: 'flex-start' },
+  areaText: { height: undefined, lineHeight: 21, textAlignVertical: 'top' },
 
   pageNote: { marginHorizontal: 20, marginTop: space.small, fontFamily: font.text, fontSize: 13, lineHeight: 18, color: color.secondary },
   signIn: { gap: space.big },

@@ -34,6 +34,8 @@ export const previews = {
   staff: { id: 'u_viewer', teams, staff: { owner: true, features: STAFF_FEATURES, confirmed: true } },
   host: { id: 'u_viewer', teams, staff: null },
   attendee: { id: 'u_viewer', teams: [], staff: null },
+  // A staff member with Money and Queues only, to see Galaxy's feature gates (rows that don't open, read-only requests).
+  moneyStaff: { id: 'imran', teams: [], staff: { owner: false, features: ['money', 'queues'], confirmed: true } },
 } satisfies Record<string, Me>;
 // ponytail: change this word to see another role's switcher on a device; the API replaces it.
 export const me: Me = previews.staff;
@@ -58,6 +60,11 @@ export const onEventDay = (startsAt: string, endsAt: string, now: number) =>
 // A staff feature counts once confirmed; the platform owner holds them all. Galaxy shows only the features held.
 export const hasFeature = (me: Me, f: StaffFeature) => !!me.staff?.confirmed && (me.staff.owner || me.staff.features.includes(f));
 export const isStaff = (me: Me) => STAFF_FEATURES.some((f) => hasFeature(me, f));
+// Staff never act on themselves, nor on a host whose team they're on (Galaxy doc, Staff; Roles doc). Galaxy still shows
+// those, with their actions off.
+// ponytail: "invited to, or left in the last 30 days" comes with the API's team history.
+export const canActOn = (me: Me, target: { accountId?: string; hostId?: string }) =>
+  target.accountId !== me.id && !me.teams.some((t) => t.hostId === target.hostId);
 
 // The switcher's three cards (owner, 16 Nov 2026): Home for everyone; then Console on a team, or "Host an event"; then
 // a third that fits the person. Staff get Galaxy; hosts (Admins, Curators, Co-curators, Crew) get Check-in, their events'
