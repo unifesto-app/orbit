@@ -55,6 +55,7 @@ const icons = {
   help: "question-duotone",
   terms: "file-text-duotone",
   privacy: "lock-duotone",
+  sliders: "sliders-horizontal-duotone", // Galaxy's Platform, a circle at the right of its dashboard's header (owner, 16 Nov 2026)
   // Saved lists (Saved doc, 16 Nov 2026): the ⋯ menus’ Add to a list, Rename list and Take out of a list.
   list: "list-heart-duotone", // a list in Account › Saved
   listPlus: "list-plus-duotone",

@@ -23,14 +23,15 @@ import { useEffect, useState } from 'react';
 import { Image, type ImageSourcePropType, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import Animated, { Easing, type SharedValue, useAnimatedProps, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Circle, Ellipse } from 'react-native-svg';
+import Svg, { Ellipse } from 'react-native-svg';
 import { scheduleOnRN } from 'react-native-worklets';
 
 import { Glass } from '../glass';
 import { type Mode, type Third, modesFor } from '../modes';
-import { SeatCard } from '../rows';
+import { ScriptTitle, SeatCard } from '../rows';
 import { useMe } from '../session';
-import { EXIT, OPEN_END, SLIDE, STEP, type Star, backdropOpacity, cardFrame, dustFrame, ringOpacity, starLayerOpacity, starLayerTurn, starLayers } from '../switchMotion';
+import { StarLayer } from '../stars';
+import { EXIT, OPEN_END, SLIDE, STEP, backdropOpacity, cardFrame, dustFrame, ringOpacity, starLayers } from '../switchMotion';
 import { color, font, space } from '../theme';
 import { Wordmark } from '../wordmark';
 
@@ -59,7 +60,7 @@ type Item = { key: string; label: string; art: ImageSourcePropType; tint: string
 // saved"): Saved in the app's love red, a saved event's heart. Host an event is yellow (Explore's comedy yellow; owner:
 // "change the color of host an event to yellow"), so the two never sit side by side in red.
 const THIRD: Record<Third, Item> = {
-  galaxy: { key: 'galaxy', label: 'Galaxy', art: ART.galaxy, tint: '#7598FF', route: 'galaxy' },
+  galaxy: { key: 'galaxy', label: 'Galaxy', art: ART.galaxy, tint: color.galaxy, route: 'galaxy' },
   checkin: { key: 'checkin', label: 'Check-in', art: ART.checkin, tint: '#E8590C', route: 'checkin' },
   saved: { key: 'saved', label: 'Saved', art: ART.saved, tint: color.love, route: 'account/saved' },
 };
@@ -200,35 +201,13 @@ export default function Switch() {
       {/* "Switch" at the top centre in Explore's script (owner: "add top center Switch with same font as explore"): Sacramento
           has one thin weight, so as on Search a second copy 0.8pt lower, each with a crisp shadow, thickens it. */}
       <Animated.View style={[styles.head, { top: insets.top + space.big }, backdrop]} pointerEvents="none">
-        <Text style={styles.script} accessibilityRole="header">
-          Switch
-        </Text>
-        <Text style={[styles.script, styles.scriptCopy]} accessible={false} importantForAccessibility="no">
-          Switch
-        </Text>
+        <ScriptTitle title="Switch" />
       </Animated.View>
       {/* The ORBIT wordmark at the foot (owner: "add orbit logo at bottom"), as at the foot of Account. */}
       <Animated.View style={[styles.foot, { bottom: insets.bottom + space.big }, backdrop]} pointerEvents="none">
         <Wordmark width={120} />
       </Animated.View>
     </View>
-  );
-}
-
-// One wave of dots. Squash, rotate, unsquash about the screen's centre moves every dot along its own ellipse round it.
-function StarLayer({ layer, dots, open, flat }: { layer: number; dots: Star[]; open: SharedValue<number>; flat: number }) {
-  const style = useAnimatedStyle(() => ({
-    opacity: starLayerOpacity(layer, open.value),
-    transform: [{ scaleY: flat }, { rotate: `${starLayerTurn(layer, open.value)}deg` }, { scaleY: 1 / flat }],
-  }));
-  return (
-    <Animated.View style={[StyleSheet.absoluteFill, style]}>
-      <Svg style={StyleSheet.absoluteFill}>
-        {dots.map((s, i) => (
-          <Circle key={i} cx={s.x} cy={s.y} r={s.r} fill="#FFFFFF" fillOpacity={s.o} />
-        ))}
-      </Svg>
-    </Animated.View>
   );
 }
 
@@ -292,17 +271,6 @@ const styles = StyleSheet.create({
   middle: { ...StyleSheet.absoluteFill, justifyContent: 'center' },
   foot: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
   head: { position: 'absolute', left: 0, right: 0 },
-  // As Search's Explore title. No lineHeight: anything under Sacramento's natural height clips its capitals.
-  script: {
-    fontFamily: font.script,
-    fontSize: 44,
-    color: color.text,
-    textAlign: 'center',
-    textShadowColor: color.text,
-    textShadowOffset: { width: 0.8, height: 0 },
-    textShadowRadius: 0.1, // Android draws no shadow at 0
-  },
-  scriptCopy: { position: 'absolute', top: 0.8, left: 0, right: 0 },
   slot: { position: 'absolute', left: '50%' },
   // As Explore's: the name centred in the face below the drawing.
   text: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: space.small },

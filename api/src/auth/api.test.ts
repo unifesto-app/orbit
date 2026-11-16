@@ -1,9 +1,11 @@
+import { createHmac } from "node:crypto";
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { eq } from "drizzle-orm";
 import { sign } from "hono/jwt";
 import { testApp } from "../testkit.ts";
 import * as schema from "../db/schema.ts";
+import { sha256 } from "./tokens.ts";
 
 let t: Awaited<ReturnType<typeof testApp>>;
 before(async () => (t = await testApp()));
@@ -201,7 +203,7 @@ test("suspension blocks a right code and a live token, not a wrong code", async 
   assert.equal(wrong.body.error, "wrongCode");
 });
 
-test("refresh rotates, tolerates reuse for 60 s, then ends every session", async () => {
+test("refresh rotates, tolerates reuse for 60 s, then, once its answer is used, ends every session", async () => {
   const a = await join();
   const r1 = await t.call("POST", "/auth/refresh", { refresh: a.refresh });
   assert.equal(r1.status, 200);
@@ -209,11 +211,55 @@ test("refresh rotates, tolerates reuse for 60 s, then ends every session", async
   const r2 = await t.call("POST", "/auth/refresh", { refresh: a.refresh });
   assert.equal(r2.status, 200);
   assert.equal(r2.body.refresh, r1.body.refresh);
+  assert.equal((await t.call("GET", "/me", undefined, r1.body.access)).status, 200); // the app has the new token
   t.tick(61_000);
   const late = await t.call("POST", "/auth/refresh", { refresh: a.refresh });
   assert.equal(late.status, 401);
   assert.equal((await t.call("GET", "/me", undefined, r1.body.access)).status, 401);
   assert.equal((await t.call("GET", "/me", undefined, a.access)).status, 401);
+});
+
+test("a lost refresh answer signs nobody out: the old token gets the same new one until that one's access is used", async () => {
+  const a = await join();
+  assert.equal((await t.call("GET", "/me", undefined, a.access)).status, 200); // acks the sign-in; a rotation clears it
+  const r1 = await t.call("POST", "/auth/refresh", { refresh: a.refresh }); // the answer never reaches the app
+  assert.equal((await t.call("GET", "/me", undefined, a.access)).status, 200); // the older access token acks nothing
+  t.tick(61_000);
+  const again = await t.call("POST", "/auth/refresh", { refresh: a.refresh });
+  assert.equal(again.status, 200);
+  assert.equal(again.body.refresh, r1.body.refresh);
+  assert.equal((await t.call("GET", "/me", undefined, again.body.access)).status, 200);
+  t.tick(61_000);
+  assert.equal((await t.call("POST", "/auth/refresh", { refresh: a.refresh })).status, 401);
+  assert.equal((await t.call("GET", "/me", undefined, again.body.access)).status, 401);
+});
+
+test("a thief who refreshes twice, or more, is caught by the owner's older token", async () => {
+  for (const times of [2, 3]) {
+    const a = await join();
+    let thief = { refresh: a.refresh, access: a.access };
+    for (let i = 0; i < times; i++) thief = (await t.call("POST", "/auth/refresh", { refresh: thief.refresh })).body;
+    // A made-up tag ends nothing.
+    assert.equal((await t.call("POST", "/auth/refresh", { refresh: a.refresh.replace(/[^.]+$/, "A".repeat(22)) })).status, 401);
+    assert.equal((await t.call("GET", "/me", undefined, thief.access)).status, 200);
+    assert.equal((await t.call("POST", "/auth/refresh", { refresh: a.refresh })).status, 401);
+    assert.equal((await t.call("GET", "/me", undefined, thief.access)).status, 401, `after ${times} refreshes`);
+  }
+});
+
+test("refresh tokens from before tags still refresh, live or the one before", async () => {
+  const a = await join();
+  const sid = a.refresh.split(".")[0]!;
+  // Rotated before tags with its answer lost: the row holds the old code's bare successor, the app still has `old`.
+  const bare = createHmac("sha256", SECRET).update(`refresh:${sid}.old`).digest("base64url");
+  await t.db.update(sessions).set({ prevRefreshHash: sha256("old"), refreshHash: sha256(bare), acked: false }).where(eq(sessions.id, sid));
+  t.tick(61_000);
+  const again = await t.call("POST", "/auth/refresh", { refresh: `${sid}.old` });
+  assert.equal(again.body.refresh, `${sid}.${bare}`);
+  const r = await t.call("POST", "/auth/refresh", { refresh: again.body.refresh });
+  assert.equal(r.status, 200);
+  assert.equal((await t.call("POST", "/auth/refresh", { refresh: r.body.refresh })).status, 200);
+  assert.equal((await t.call("GET", "/me", undefined, a.access)).status, 200);
 });
 
 test("two refreshes at once both succeed", async () => {

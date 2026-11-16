@@ -140,9 +140,11 @@ export const sessions = pgTable(
     deviceHash: text("device_hash").notNull(), // sha256 of the device id the API issued; the id itself stays on the device
     client: text("client", { enum: ["app", "web"] }).notNull(),
     name: text("name").notNull(), // "iPhone", "Chrome on macOS"
-    refreshHash: text("refresh_hash").notNull(),
-    prevRefreshHash: text("prev_refresh_hash"), // still good for 60 s after `rotatedAt`, for refreshes at once
+    refreshHash: text("refresh_hash").notNull(), // sha256 of the token's part after the session id
+    // Good for 60 s after `rotatedAt`, for refreshes at once, and after that until `acked` (sessions.ts, refresh).
+    prevRefreshHash: text("prev_refresh_hash"),
     rotatedAt: at("rotated_at").notNull().defaultNow(),
+    acked: boolean("acked").notNull().default(false), // an access token from the last rotation has been used
     // The last code (or, later, passkey) proved on this device, and which way in it used. Changing a sign-in method
     // needs one in the last 10 minutes.
     freshAt: at("fresh_at"),

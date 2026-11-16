@@ -9,12 +9,17 @@
 import * as LocalAuthentication from 'expo-local-authentication';
 import { Stack, router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Easing, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Pill } from '../../account/kit';
+import { Glass } from '../../glass';
 import { isStaff } from '../../modes';
+import { Glow, ScriptTitle } from '../../rows';
 import { useMe } from '../../session';
+import { StarLayer } from '../../stars';
+import { OPEN_END, starLayers } from '../../switchMotion';
 import { color, font, space } from '../../theme';
 
 export const unstable_settings = { anchor: '(tabs)' };
@@ -22,10 +27,15 @@ export const unstable_settings = { anchor: '(tabs)' };
 type Lock = 'checking' | 'open' | 'locked' | 'no-passcode';
 
 // The phone's own lock: Face ID or a fingerprint, falling back to the passcode. No passcode set means no Galaxy.
+// Anything going wrong asking leaves it locked, with Unlock to try again.
 async function askPhoneLock(): Promise<Lock> {
-  if ((await LocalAuthentication.getEnrolledLevelAsync()) === LocalAuthentication.SecurityLevel.NONE) return 'no-passcode';
-  const res = await LocalAuthentication.authenticateAsync({ promptMessage: 'Unlock Galaxy', cancelLabel: 'Cancel' });
-  return res.success ? 'open' : 'locked';
+  try {
+    if ((await LocalAuthentication.getEnrolledLevelAsync()) === LocalAuthentication.SecurityLevel.NONE) return 'no-passcode';
+    const res = await LocalAuthentication.authenticateAsync({ promptMessage: 'Unlock Galaxy', cancelLabel: 'Cancel' });
+    return res.success ? 'open' : 'locked';
+  } catch {
+    return 'locked';
+  }
 }
 
 export default function GalaxyLayout() {
@@ -49,37 +59,59 @@ export default function GalaxyLayout() {
     void askPhoneLock().then(setLock);
   };
   if (lock !== 'open') return <Locked lock={lock} onUnlock={retry} />;
-  return <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: color.ground } }} />;
+  return (
+    <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: color.ground } }}>
+      {/* Every risky action's reason, see-through like every other modal (src/app/_layout.tsx MODAL). */}
+      <Stack.Screen name="reason" options={{ presentation: 'modal', contentStyle: { backgroundColor: 'transparent' } }} />
+    </Stack>
+  );
 }
 
+// The lock, the switch screen's glass (owner, 16 Nov 2026: "entering page glass one with Galaxy ( explore font )",
+// "shortn the subtitle add space dots from switch screen"): frosted glass with the ground at 70% over Galaxy's glow,
+// "Galaxy" in Explore's script, one short line, and the switch screen's dots gathering in waves. Nothing of Galaxy
+// itself is drawn under the glass: without Liquid Glass it falls back to a clear fill, which would show staff data
+// before the passcode.
+const FLAT = 0.45; // the dots' orbits, height over width, about the switch screen's
 function Locked({ lock, onUnlock }: { lock: Lock; onUnlock: () => void }) {
   const insets = useSafeAreaInsets();
-  const line =
-    lock === 'no-passcode'
-      ? 'Set a passcode on this phone to use Galaxy.'
-      : lock === 'locked'
-        ? 'Galaxy stays locked until you use your passcode.'
-        : 'Use your passcode to open Galaxy.';
+  const { width, height } = useWindowDimensions();
+  const [stars] = useState(() => starLayers(width, height));
+  const reduced = useReducedMotion();
+  const open = useSharedValue(reduced ? OPEN_END : 0);
+  useEffect(() => {
+    if (!reduced) open.value = withTiming(OPEN_END, { duration: OPEN_END * 1000, easing: Easing.linear });
+  }, [open, reduced]);
+  const line = lock === 'no-passcode' ? 'Set a passcode on this phone first.' : 'Use your passcode to enter.';
   return (
-    <View style={[styles.screen, { paddingTop: insets.top + space.big, paddingBottom: insets.bottom + space.big }]}>
-      <View style={styles.middle}>
-        <Text style={styles.title} accessibilityRole="header">
-          Galaxy
-        </Text>
-        <Text style={styles.line}>{line}</Text>
+    <View style={styles.screen}>
+      <Glow tint={color.galaxy} />
+      <Glass style={StyleSheet.absoluteFill} />
+      <View style={[StyleSheet.absoluteFill, styles.shade]} />
+      <View style={StyleSheet.absoluteFill} pointerEvents="none">
+        {stars.map((dots, k) => (
+          <StarLayer key={k} layer={k} dots={dots} open={open} flat={FLAT} />
+        ))}
       </View>
-      <View style={styles.buttons}>
-        {lock === 'locked' && <Pill label="Unlock" size="wide" onPress={onUnlock} />}
-        <Pill label="Back to Home" size="wide" muted onPress={() => router.dismissAll()} />
+      <View style={[styles.content, { paddingTop: insets.top + space.big, paddingBottom: insets.bottom + space.big }]}>
+        <View style={styles.middle}>
+          <ScriptTitle title="Galaxy" />
+          <Text style={styles.line}>{line}</Text>
+        </View>
+        <View style={styles.buttons}>
+          {lock === 'locked' && <Pill label="Unlock" size="wide" onPress={onUnlock} />}
+          <Pill label="Back to Home" size="wide" muted onPress={() => router.dismissAll()} />
+        </View>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: color.ground, paddingHorizontal: 20 },
-  middle: { flex: 1, justifyContent: 'center', gap: space.small },
-  title: { fontFamily: font.headline, fontSize: 28, lineHeight: 34, color: color.text, textAlign: 'center' },
-  line: { fontFamily: font.text, fontSize: 15, lineHeight: 21, color: color.secondary, textAlign: 'center' },
+  screen: { flex: 1, backgroundColor: color.ground },
+  shade: { backgroundColor: `${color.ground}B3` }, // the ground at 70% over the glass, as on the switch screen
+  content: { flex: 1 },
+  middle: { flex: 1, justifyContent: 'center', gap: 4 },
+  line: { marginHorizontal: 20, fontFamily: font.text, fontSize: 15, lineHeight: 21, color: color.secondary, textAlign: 'center' },
   buttons: { gap: space.small },
 });

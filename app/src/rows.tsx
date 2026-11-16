@@ -441,6 +441,24 @@ export function CloseButton() {
   );
 }
 
+// A title in Explore's script, centred (owner, 15 Nov 2026: "use Sacramento"): "Switch" on the mode switcher, "Galaxy" on
+// Galaxy's lock (owner, 16 Nov 2026: "Galaxy ( explore font )"). Sacramento comes in one thin weight and iOS won't
+// thicken a custom font, so a second copy 0.8pt lower, each with a crisp shadow 0.8pt right, fills the strokes out, as
+// Search's Explore title does. No lineHeight: anything under Sacramento's natural height clips its capitals.
+// `size` makes it smaller where it heads a tab, as on Galaxy's dashboard (owner, 16 Nov 2026: "make it small").
+export function ScriptTitle({ title, size = 44 }: { title: string; size?: number }) {
+  return (
+    <View>
+      <Text style={[styles.script, { fontSize: size }]} accessibilityRole="header">
+        {title}
+      </Text>
+      <Text style={[styles.script, styles.scriptCopy, { fontSize: size }]} accessible={false} importantForAccessibility="no">
+        {title}
+      </Text>
+    </View>
+  );
+}
+
 export function Tag({ text }: { text: string }) {
   return (
     <View style={styles.tag}>
@@ -450,6 +468,16 @@ export function Tag({ text }: { text: string }) {
 }
 
 const styles = StyleSheet.create({
+  script: {
+    fontFamily: font.script,
+    fontSize: 44,
+    color: color.text,
+    textAlign: 'center',
+    textShadowColor: color.text,
+    textShadowOffset: { width: 0.8, height: 0 },
+    textShadowRadius: 0.1, // Android draws no shadow at 0
+  },
+  scriptCopy: { position: 'absolute', top: 0.8, left: 0, right: 0 },
   grow: { flex: 1, minWidth: 0 },
   lines: { gap: 3 },
   row: { marginHorizontal: 20, marginBottom: 12, flexDirection: 'row', alignItems: 'center', gap: 12 },
