@@ -5,7 +5,12 @@ import type { Db } from "../db/index.ts";
 import { auditLog, hosts, staffGrants, teamRoles, users } from "../db/schema.ts";
 import type { User } from "../auth/sessions.ts";
 import { type Env, fail, isUuid, type Notify } from "../http.ts";
-import { type Actor, holds } from "./rules.ts";
+import { ownerOnly } from "../hosts/rules.ts";
+import { type Actor, holds, INVITE_DAYS } from "./rules.ts";
+
+// `ownerOnly` for queries: an archived host, or one archived and then suspended. `is not distinct from` keeps it
+// true or false when lift_to is null.
+export const ownerOnlySql = sql`(${hosts.status} = 'archived' or (${hosts.status} = 'suspended' and ${hosts.liftTo} is not distinct from 'archived'))`;
 
 // A person's roles, read from the tables on every request, never from a token, so taking one away is immediate.
 
@@ -34,7 +39,7 @@ export async function rolesOf(db: Db, u: User, now: number): Promise<Roles> {
         eq(teamRoles.userId, u.id),
         isNotNull(teamRoles.startedAt),
         isNull(teamRoles.endedAt),
-        or(sql`not (${hosts.status} = 'archived' or (${hosts.status} = 'suspended' and ${hosts.liftTo} is not distinct from 'archived'))`, eq(hosts.ownerId, u.id)),
+        or(sql`not ${ownerOnlySql}`, eq(hosts.ownerId, u.id)),
       ),
     );
   return {
@@ -66,9 +71,6 @@ const seatOf = async (db: Db, hostId: string, userId: string) =>
       .where(and(eq(teamRoles.hostId, hostId), eq(teamRoles.userId, userId), isNotNull(teamRoles.startedAt), isNull(teamRoles.endedAt)))
   )[0] ?? null;
 
-// Archived, or archived and then suspended by staff (a lift puts it back archived): closed to all but its owner.
-export const ownerOnly = (h: typeof hosts.$inferSelect) => h.status === "archived" || (h.status === "suspended" && h.liftTo === "archived");
-
 // The host in the path and the person's started seat on it.
 export const teamOf = async (db: Db, hostId: string, userId: string) => {
   if (!isUuid(hostId)) return null;
@@ -82,9 +84,10 @@ export const teamOf = async (db: Db, hostId: string, userId: string) => {
 export const changeable = (h: typeof hosts.$inferSelect) => h.status === "live" || h.status === "paused";
 
 // Staff never act on a host whose team they're on, or have just left (Roles flow). Matches by account or by a verified
-// phone or email an invite went to. Only places they took count: one they accepted or started, or one that had started
-// and ended in the last 30 days. An invite they never accepted doesn't, or an Admin could shield a host from staff by
-// inviting one of them, then withdrawing it or letting it lapse.
+// phone or email an invite went to. Only places they took count: one they started, one they accepted while it's still
+// waiting (14 days), or one that had started and ended in the last 30 days. An invite they never accepted doesn't, or an
+// Admin could shield a host from staff by inviting one of them, then withdrawing it or letting it lapse; and one they
+// accepted that was never confirmed stops counting when it lapses, since they can't leave a place that never started.
 export const onHost = async (db: Db, hostId: string, u: User, now: number) => {
   const mine = [u.phoneVerifiedAt && u.phone, u.emailVerifiedAt && u.email].filter((x): x is string => !!x);
   const [seat] = await db
@@ -95,7 +98,10 @@ export const onHost = async (db: Db, hostId: string, u: User, now: number) => {
         eq(teamRoles.hostId, hostId),
         mine.length ? or(eq(teamRoles.userId, u.id), inArray(teamRoles.contact, mine)) : eq(teamRoles.userId, u.id),
         or(
-          and(isNull(teamRoles.endedAt), or(isNotNull(teamRoles.startedAt), isNotNull(teamRoles.acceptedAt))),
+          and(
+            isNull(teamRoles.endedAt),
+            or(isNotNull(teamRoles.startedAt), and(isNotNull(teamRoles.acceptedAt), gt(teamRoles.addedAt, new Date(now - INVITE_DAYS * 24 * 3600 * 1000)))),
+          ),
           and(isNotNull(teamRoles.startedAt), gt(teamRoles.endedAt, new Date(now - 30 * 24 * 3600 * 1000))),
         ),
       ),

@@ -517,7 +517,26 @@ test("a withdrawn or lapsed invite never blocks staff; one they accepted and lef
   assert.equal((await as(st)("POST", `/galaxy/hosts/${h.id}/suspend`, R)).body.error, "ownHost");
   await as(a)("DELETE", `/hosts/${h.id}/team/${inv3.body.id}`);
   assert.equal((await as(st)("POST", `/galaxy/hosts/${h.id}/suspend`, R)).status, 200);
+  assert.equal((await as(st)("POST", `/galaxy/hosts/${h.id}/lift`, R)).status, 200);
+  // Accepted but never confirmed: it blocks while it waits, and stops when it lapses (they can't leave it).
+  const inv4 = await as(a)("POST", `/hosts/${h.id}/team`, { to: st.p });
+  await as(st)("POST", `/invites/${inv4.body.id}/accept`);
+  assert.equal((await as(st)("POST", `/galaxy/hosts/${h.id}/suspend`, R)).body.error, "ownHost");
+  t.tick(15 * DAY);
+  assert.equal((await as(st)("POST", `/galaxy/hosts/${h.id}/suspend`, R)).status, 200);
   void inv2;
+});
+
+test("an archived host that staff suspend stays ended: no deletion blocker, never a parent", async () => {
+  const a = await join(), b = await join(), st = await staff("hosts");
+  const h = await start(a), club = await start(b);
+  assert.equal((await as(a)("POST", `/hosts/${h.id}/archive`)).status, 200);
+  assert.equal((await as(st)("POST", `/galaxy/hosts/${h.id}/suspend`, R)).status, 200);
+  const del = (await as(a)("GET", "/me/deletion")).body;
+  assert.equal(JSON.stringify(del).includes(h.id), false); // the owner can still leave
+  const r = await as(st)("PUT", `/galaxy/hosts/${club.id}/parent`, { parentId: h.id, ...R });
+  assert.equal(r.status, 404);
+  assert.equal(r.body.error, "notFound");
 });
 
 test("a person suspension racing a host suspension leaves the staff suspension alone", async () => {

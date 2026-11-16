@@ -31,12 +31,14 @@ test("pause and archive wait for bookings and money; resume and restore don't", 
 
 test("a club sits one level under a host", () => {
   const host = { id: "h", hasClubs: false };
-  const top = { id: "p", status: "live" as Status, parentId: null };
+  const top = { id: "p", status: "live" as Status, liftTo: null as string | null, parentId: null };
   assert.deepEqual(parentRule(host, top), { ok: true });
   assert.deepEqual(parentRule(host, { ...top, status: "paused" }), { ok: true }); // only archived is refused
   assert.deepEqual(parentRule(host, { ...top, id: "h" }), { ok: false, error: "self" });
   assert.deepEqual(parentRule(host, null), { ok: false, error: "notFound" });
   assert.deepEqual(parentRule(host, { ...top, status: "archived" }), { ok: false, error: "notFound" });
+  assert.deepEqual(parentRule(host, { ...top, status: "suspended", liftTo: "archived" }), { ok: false, error: "notFound" }); // archived, then suspended
+  assert.deepEqual(parentRule(host, { ...top, status: "suspended", liftTo: "live" }), { ok: true });
   assert.deepEqual(parentRule(host, { ...top, parentId: "g" }), { ok: false, error: "tooDeep" }); // the parent is a club
   assert.deepEqual(parentRule({ ...host, hasClubs: true }, top), { ok: false, error: "tooDeep" }); // the host has clubs
 });

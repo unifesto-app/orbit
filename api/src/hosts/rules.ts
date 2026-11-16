@@ -5,6 +5,10 @@ export type Action = "pause" | "resume" | "archive" | "restore";
 // What an owner's pause or archive must wait for.
 export type Blockers = { eventsWithBookings: number; openMoney: number };
 
+// Archived, or archived and then suspended by staff (a lift puts it back archived): the host has ended, and only its
+// owner may open it. `ownerOnlySql` in roles/access.ts is the same test for queries.
+export const ownerOnly = (h: { status: string; liftTo: string | null }) => h.status === "archived" || (h.status === "suspended" && h.liftTo === "archived");
+
 const MOVES: Record<Action, { from: Status[]; to: Status }> = {
   pause: { from: ["live"], to: "paused" },
   resume: { from: ["paused"], to: "live" },
@@ -20,12 +24,12 @@ export function statusRule(from: Status, action: Action, blockers: Blockers): { 
   return { ok: true, to: move.to };
 }
 
-type Parent = { id: string; status: Status; parentId: string | null };
+type Parent = { id: string; status: Status; liftTo: string | null; parentId: string | null };
 
 // Putting a host under another: one level deep (Hosts decision 3). `hasClubs` is whether the host has clubs of its own.
 export function parentRule(host: { id: string; hasClubs: boolean }, parent: Parent | null): { ok: true } | { ok: false; error: "self" | "notFound" | "tooDeep" } {
   if (parent?.id === host.id) return { ok: false, error: "self" };
-  if (!parent || parent.status === "archived") return { ok: false, error: "notFound" };
+  if (!parent || ownerOnly(parent)) return { ok: false, error: "notFound" };
   if (parent.parentId || host.hasClubs) return { ok: false, error: "tooDeep" };
   return { ok: true };
 }
