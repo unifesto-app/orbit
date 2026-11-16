@@ -1,8 +1,10 @@
 // The splash photo's fine dots, one wave at a time: on the mode switcher (src/app/switch.tsx) and on Galaxy's lock
-// (owner, 16 Nov 2026: "add space dots from switch screen"). Where they sit and how they move is src/switchMotion.ts.
-import { StyleSheet } from 'react-native';
+// (owner, 16 Nov 2026: "add space dots from switch screen"), and on Account's glass panel. Where they sit and how they
+// move is src/switchMotion.ts. Each dot is a plain round view, not an SVG circle (owner, 17 Nov 2026: "Draw dots as
+// Views"): an SVG keeps a bitmap the size of its whole box, six layers of them about 70 MB a screen, while a round
+// view is a layer the GPU draws with nothing kept.
+import { StyleSheet, View } from 'react-native';
 import Animated, { type SharedValue, useAnimatedStyle } from 'react-native-reanimated';
-import Svg, { Circle } from 'react-native-svg';
 
 import { type Star, starLayerOpacity, starLayerTurn } from './switchMotion';
 
@@ -14,11 +16,14 @@ export function StarLayer({ layer, dots, open, flat }: { layer: number; dots: St
   }));
   return (
     <Animated.View style={[StyleSheet.absoluteFill, style]}>
-      <Svg style={StyleSheet.absoluteFill}>
-        {dots.map((s, i) => (
-          <Circle key={i} cx={s.x} cy={s.y} r={s.r} fill="#FFFFFF" fillOpacity={s.o} />
-        ))}
-      </Svg>
+      {dots.map((s, i) => (
+        <View
+          key={i}
+          style={[styles.dot, { left: s.x - s.r, top: s.y - s.r, width: 2 * s.r, height: 2 * s.r, borderRadius: s.r, backgroundColor: `rgba(255, 255, 255, ${s.o})` }]}
+        />
+      ))}
     </Animated.View>
   );
 }
+
+const styles = StyleSheet.create({ dot: { position: 'absolute' } });
