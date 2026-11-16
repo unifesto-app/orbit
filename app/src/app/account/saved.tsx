@@ -55,7 +55,7 @@ export default function Saved() {
       </Group>
 
       <Section title="All saved" />
-      {session.saved.length === 0 && <Note>Nothing saved yet.</Note>}
+      {upcoming.length + past.length === 0 && <Note>Nothing saved yet.</Note>}
       <SavedRows events={upcoming.slice(0, FIRST)} />
       {upcoming.length > FIRST && (
         <View style={{ marginTop: space.small }}>

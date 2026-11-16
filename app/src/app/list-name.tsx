@@ -2,8 +2,8 @@
 // (from a list's menu). A full modal with the field at the top, as the sign-in sheet, so the keyboard never covers it.
 // A name is 1 to 40 letters, trimmed, and no two lists share one, ignoring case (src/account/saves.ts).
 import { router, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { useRef, useState } from 'react';
+import { AccessibilityInfo, StyleSheet, Text, View } from 'react-native';
 
 import { Field, Pill } from '../account/kit';
 import { GONE } from '../account/saves';
@@ -16,10 +16,17 @@ export default function ListName() {
   const old = useSession()?.lists.find((l) => l.id === list);
   const [name, setName] = useState(old?.name ?? '');
   const [problem, setProblem] = useState<string | null>(list && !old ? GONE : null);
+  const finished = useRef(false); // a second tap while the modal leaves would rename again and pop the page under it
   const done = () => {
+    if (finished.current) return;
     const p = list ? renameList(list, name) : newList(name, event);
-    if (p) setProblem(p);
-    else router.back();
+    if (p) {
+      setProblem(p);
+      AccessibilityInfo.announceForAccessibility(p);
+    } else {
+      finished.current = true;
+      router.back();
+    }
   };
 
   return (

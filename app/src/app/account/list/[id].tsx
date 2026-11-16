@@ -39,7 +39,8 @@ export default function ListScreen() {
         onPress: () => {
           setDeleted(l.name);
           deleteList(l.id);
-          router.back();
+          if (router.canGoBack()) router.back();
+          else router.replace('/account/saved');
         },
       },
     ]);
@@ -58,7 +59,7 @@ export default function ListScreen() {
           />
         )
       }>
-      {ids.length === 0 && <Note>{list ? 'Nothing in this list yet.' : 'Nothing saved yet.'}</Note>}
+      {upcoming.length + past.length === 0 && <Note>{list ? 'Nothing in this list yet.' : 'Nothing saved yet.'}</Note>}
       <View style={{ marginTop: space.big }}>
         <SavedRows events={upcoming} list={list} />
       </View>

@@ -62,9 +62,13 @@ export function restore(s: Saves, undo: Undo): Saves {
 }
 
 // A name's length as people count it, each emoji or Indic letter as one. Without Intl.Segmenter (Hermes may lack it),
-// code points over-count a few, so a long name is refused a little early, never let through.
+// code points less the marks that join the one before: vowel signs and viramas, skin tones, variation selectors and the
+// joiner. An emoji made of several joined ones still over-counts, so a long name is refused a little early, never let
+// through.
 const letters = typeof Intl.Segmenter === 'function' ? new Intl.Segmenter() : null;
-export const nameLength = (name: string) => (letters ? [...letters.segment(name)].length : [...name].length);
+const JOINING = /[\p{M}\u200D\uFE0F\u{1F3FB}-\u{1F3FF}]/gu;
+export const nameLength = (name: string, segmenter = letters) =>
+  segmenter ? [...segmenter.segment(name)].length : [...name.replace(JOINING, '')].length;
 
 // What's wrong with a list's name, or null. Trimmed; two lists can't share a name, ignoring case.
 export function nameProblem(lists: readonly List[], name: string, except?: string): string | null {

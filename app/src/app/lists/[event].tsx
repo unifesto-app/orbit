@@ -3,7 +3,7 @@
 // once; taking an event out of a list leaves it saved.
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions } from 'react-native';
+import { AccessibilityInfo, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions } from 'react-native';
 
 import { MAX_LISTS, TOO_MANY, byTouched } from '../../account/saves';
 import { Icon } from '../../icons';
@@ -18,7 +18,13 @@ export default function ListPicker() {
   const [problem, setProblem] = useState<string | null>(null);
   const { height } = useWindowDimensions();
   const title = events.find((e) => e.id === event)?.title;
-  const newList = () => (lists.length >= MAX_LISTS ? setProblem(TOO_MANY) : router.push(`/list-name?event=${event}`));
+  const fail = (p: string | null) => {
+    setProblem(p);
+    if (p) AccessibilityInfo.announceForAccessibility(p);
+  };
+  const newList = () => (lists.length >= MAX_LISTS ? fail(TOO_MANY) : router.push(`/list-name?event=${event}`));
+  // Only events that can be opened are saved (doc): a stale or made-up link adds nothing.
+  if (!title) return <Sheet title="Add to a list" note="This event isn’t on Orbit">{null}</Sheet>;
 
   return (
     <Sheet title="Add to a list" note={title}>
@@ -27,7 +33,7 @@ export default function ListPicker() {
         <Choice label="New list" onPress={newList} />
         {lists.map((l) => {
           const on = l.events.includes(event);
-          return <Choice key={l.id} label={l.name} ticked={on} onPress={() => setProblem(tickList(l.id, event, !on))} />;
+          return <Choice key={l.id} label={l.name} ticked={on} onPress={() => fail(tickList(l.id, event, !on))} />;
         })}
       </ScrollView>
       {problem && <Text style={styles.problem}>{problem}</Text>}

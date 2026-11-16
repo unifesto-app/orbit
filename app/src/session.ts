@@ -20,7 +20,7 @@ import { API_URL, makeApi } from './api';
 import type { Viewer } from './home/layout';
 import { events, viewer } from './mock';
 import { type Me, nobody } from './modes';
-import { showNote } from './note';
+import { hideNote, showNote } from './note';
 
 const KEY = 'orbit.session';
 const DEVICE = 'orbit.device';
@@ -83,6 +83,7 @@ let current = stored();
 const listeners = new Set<() => void>();
 
 function set(next: Session | null) {
+  if (!next) hideNote(); // a note's Undo or Add to a list belongs to the account that showed it
   current = next;
   for (const fn of listeners) fn();
   try {

@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { FULL, GONE, MAX_LISTS, MAX_SAVED, TOO_MANY, byTouched, create, drop, nameProblem, normalise, restore, save, split, tick, unsave } from './saves.ts';
+import { FULL, GONE, MAX_LISTS, MAX_SAVED, TOO_MANY, byTouched, create, drop, nameLength, nameProblem, normalise, rename, restore, save, split, tick, unsave } from './saves.ts';
 import type { List, Saves } from './saves.ts';
 
 const all = () => true;
@@ -98,4 +98,28 @@ test('split: upcoming soonest first, past latest first, unknown ids hidden', () 
   const r = split(['p1', 'u2', 'p2', 'u1', 'hidden'], events, Date.parse('2026-11-16T00:00:00Z'));
   assert.deepEqual(r.upcoming.map((e) => e.id), ['u1', 'u2']);
   assert.deepEqual(r.past.map((e) => e.id), ['p2', 'p1']);
+});
+
+test('rename: gone list, duplicate name, own name in another case, trimming', () => {
+  const s: Saves = { saved: [], lists: [list('l1', 'Music'), list('l2', 'Food')] };
+  assert.equal(rename(s, 'nope', 'X'), GONE);
+  assert.equal(typeof rename(s, 'l2', 'music'), 'string');
+  const up = rename(s, 'l1', 'MUSIC') as Saves;
+  assert.equal(up.lists[0].name, 'MUSIC');
+  const trimmed = rename(s, 'l1', '  Gigs  ') as Saves;
+  assert.equal(trimmed.lists[0].name, 'Gigs');
+});
+
+test('nameLength without Intl.Segmenter counts letters, and the default segmenter counts an emoji once', () => {
+  assert.equal(nameLength('abc', null), 3);
+  assert.equal(nameLength('कि', null), 1);
+  assert.equal(nameLength('कि'.repeat(40), null), 40);
+  assert.equal(nameLength('👍🏽', null), 1);
+  assert.equal(nameLength('❤️', null), 1);
+  assert.equal(nameLength('👍🏽'), 1);
+});
+
+test('tick on an event already in the list returns the same state', () => {
+  const s: Saves = { saved: [{ id: 'a', at: 1 }], lists: [list('l', 'L', ['a'])] };
+  assert.equal(tick(s, 'l', 'a', true, 9, all), s);
 });
