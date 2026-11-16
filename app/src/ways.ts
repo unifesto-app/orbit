@@ -8,23 +8,27 @@
 // - Google: the API's own Google page in the system's sign-in browser (expo-web-browser). It comes back through
 //   heyorbit://google with a grant only the secret the API gave this phone can redeem.
 import type { ApiError, Security } from '@orbit/contract';
+import { requireOptionalNativeModule } from 'expo';
 import { router } from 'expo-router';
 import * as Linking from 'expo-linking';
-import { Alert, Platform } from 'react-native';
+import { Alert, NativeModules, Platform } from 'react-native';
 
 import { api } from './session';
 
+// Each is used only when its native half is in this build: the JS of all three loads anyway (the passkey module's
+// stands in a proxy that throws on use, Apple's a stand-in that says it isn't available), so the check is native.
 /* eslint-disable @typescript-eslint/no-require-imports -- optional: a static import throws on a build without them */
-const load = <T>(get: () => T): T | null => {
+const load = <T>(native: boolean, get: () => T): T | null => {
+  if (!native) return null;
   try {
     return get();
   } catch {
     return null;
   }
 };
-const passkeyModule = load(() => require('react-native-passkey') as typeof import('react-native-passkey'));
-const appleModule = Platform.OS === 'ios' ? load(() => require('expo-apple-authentication') as typeof import('expo-apple-authentication')) : null;
-const browserModule = load(() => require('expo-web-browser') as typeof import('expo-web-browser'));
+const passkeyModule = load(!!NativeModules.Passkey, () => require('react-native-passkey') as typeof import('react-native-passkey'));
+const appleModule = load(Platform.OS === 'ios' && !!requireOptionalNativeModule('ExpoAppleAuthentication'), () => require('expo-apple-authentication') as typeof import('expo-apple-authentication'));
+const browserModule = load(!!requireOptionalNativeModule('ExpoWebBrowser'), () => require('expo-web-browser') as typeof import('expo-web-browser'));
 /* eslint-enable @typescript-eslint/no-require-imports */
 
 // A proof, or why not: null when the person closed the sheet, which says nothing.
@@ -39,7 +43,7 @@ export function passkeysHere(): 'ready' | 'update' | 'no' {
   try {
     return passkeyModule.Passkey.isSupported() ? 'ready' : 'no';
   } catch {
-    return 'update'; // the JS is there but the native half isn't linked in this build
+    return 'update';
   }
 }
 // Continue with Apple shows on iPhones only; a build without it still shows it and says to update.
@@ -103,18 +107,35 @@ const GOOGLE_SAYS: Record<string, string> = {
   unverified: 'Google hasn’t verified that account’s email. Use another account, or your phone number.',
   notSetUp: 'Google sign-in isn’t set up yet. Use your phone number or email.',
 };
+// What came back from Google's page. On Android the link also reaches the router (src/app/google.tsx), and the
+// browser can report "closed" before it does, so the route hands it here too.
+type Back = { grant?: unknown; error?: unknown };
+let returned: Back | null = null;
+let waiting: ((b: Back) => void) | undefined;
+export function googleReturned(b: Back) {
+  if (waiting) waiting(b);
+  else returned = b;
+}
+const later = (ms: number) => new Promise<null>((resolve) => setTimeout(() => resolve(null), ms));
+
 export async function googleProof(): Promise<Got<{ grant: string; verifier: string }>> {
   if (!browserModule) return no(UPDATE);
   const s = await api.call<{ url: string; verifier: string }>('POST', '/auth/google/start');
   if (!s.ok) return no(s.error);
+  returned = null;
   try {
     const r = await browserModule.openAuthSessionAsync(s.data.url, 'heyorbit://google');
-    if (r.type !== 'success') return no(null);
-    const q = Linking.parse(r.url).queryParams ?? {};
+    let q: Back | null = r.type === 'success' ? (Linking.parse(r.url).queryParams ?? {}) : returned;
+    if (!q && Platform.OS === 'android')
+      q = await Promise.race([new Promise<Back>((resolve) => (waiting = resolve)), later(1500)]); // the link may still be on its way
+    waiting = undefined;
+    returned = null;
+    if (!q) return no(null);
     if (typeof q.grant === 'string') return { ok: true, proof: { grant: q.grant, verifier: s.data.verifier } };
     if (q.error === 'cancelled') return no(null);
     return no(said(GOOGLE_SAYS[String(q.error)] ?? 'Google didn’t finish. Try again.'));
   } catch {
+    waiting = undefined;
     return no(said('Google didn’t finish. Try again.'));
   }
 }
@@ -136,9 +157,12 @@ export async function ensureFresh(): Promise<boolean> {
     router.push('/account/verify');
   });
 }
-// The sheet closing: confirmed or not. Once only.
+// The sheet closing: confirmed or not. Once only. Confirmed answers once the sheet has slid away, as what comes next
+// is often another sheet (a passkey, Apple, Google) or an alert, which iOS won't show over one still leaving.
+// ponytail: a fixed 400 ms for iOS's modal slide; a dismiss callback, if expo-router gets one, would be exact.
 export function freshDone(ok: boolean) {
   const answer = confirmed;
   confirmed = undefined;
-  answer?.(ok);
+  if (ok) setTimeout(() => answer?.(true), 400);
+  else answer?.(false);
 }

@@ -1,7 +1,7 @@
 // Rename a passkey (User doc: named after the device that made it; Rename is new). A modal with the field at the top,
 // like naming a list (src/app/list-name.tsx). Only a name, so no "Confirm it's you".
 import { router, useLocalSearchParams } from 'expo-router';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { Field, Pill } from '../../account/kit';
@@ -14,13 +14,21 @@ export default function PasskeyName() {
   const [name, setName] = useState(old ?? '');
   const [problem, setProblem] = useState<string | null>(null);
   const busy = useRef(false);
+  const open = useRef(true); // closed while saving: the rename still counts, but there's nothing to go back from
+  useEffect(
+    () => () => {
+      open.current = false;
+    },
+    [],
+  );
   const done = async () => {
     if (busy.current || !name.trim()) return;
     busy.current = true;
     const r = await api.authed('PATCH', `/me/passkeys/${id}`, { name: name.trim() });
     busy.current = false;
-    if (r.ok) router.back();
-    else setProblem(r.error.message);
+    if (r.ok) {
+      if (open.current) router.back();
+    } else setProblem(r.error.message);
   };
 
   return (

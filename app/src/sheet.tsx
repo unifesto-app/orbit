@@ -40,9 +40,16 @@ export function Frame({ title, note, error, children }: { title: string; note?: 
 }
 
 // Continue with Google or Apple: a frosted pill like every button, the company's mark beside a white label.
-export function With({ label, mark, onPress }: { label: string; mark: ReactNode; onPress: () => void }) {
+export function With({ label, mark, onPress, disabled = false }: { label: string; mark: ReactNode; onPress: () => void; disabled?: boolean }) {
   return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`Continue with ${label}`} style={kit.grow}>
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={`Continue with ${label}`}
+      accessibilityState={{ disabled }}
+      style={[kit.grow, disabled && { opacity: 0.5 }]}
+    >
       <Glass style={styles.way}>
         {mark}
         <Text style={styles.wayText}>{label}</Text>

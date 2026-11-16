@@ -247,10 +247,17 @@ export const patchAccount = (fields: Partial<Account>) => current && set({ ...cu
 
 // Keep my account (User doc, Account deletion): signing in within the 30 days stops the deletion. Answers the API's
 // message when it said no, or null.
+let keeping = false; // a second tap while the first is out says nothing
 export async function keepAccount() {
-  const r = await api.authed('POST', '/me/deletion/keep');
-  if (r.ok || r.error.error === 'notPending') await refreshAccount();
-  return r.ok ? null : r.error.message;
+  if (keeping) return null;
+  keeping = true;
+  try {
+    const r = await api.authed('POST', '/me/deletion/keep');
+    if (r.ok || r.error.error === 'notPending') await refreshAccount();
+    return r.ok || r.error.error === 'notPending' ? null : r.error.message;
+  } finally {
+    keeping = false;
+  }
 }
 
 // Log out, and Delete account, which signs out every device (User doc). The API is told without waiting.

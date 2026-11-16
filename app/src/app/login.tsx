@@ -90,9 +90,15 @@ export default function Login() {
   // back from.
   const done = useRef(false);
   const open = useRef(true);
+  const signedInHere = useRef(false); // the questions after signing in may follow; closing at one still counts
   useEffect(
     () => () => {
       open.current = false;
+      // Closed (X, a swipe) at a question after signing in: still do what was tapped.
+      if (signedInHere.current && !done.current) {
+        done.current = true;
+        runPending();
+      }
     },
     [],
   );
@@ -114,6 +120,7 @@ export default function Login() {
   const next = (s: AuthStep) => {
     if (s.step === 'signedIn') {
       signIn(s, via.current);
+      signedInHere.current = true;
       const phoneOnly = made.current && via.current === 'phone' && !s.me.email && passkeysHere() === 'ready';
       later.current = [
         ...(s.addEmail ? [{ at: 'link' as const, token: s.addEmail.token }] : []),
@@ -166,10 +173,15 @@ export default function Login() {
     );
   // Continue with Google or Apple, or Use a passkey: the proof from the phone first (nothing said if they closed its
   // sheet), then the API's next step.
+  // Locked while its sheet is up, so a second tap (or Continue) doesn't start another sign-in over it.
   const prove = async <P extends object>(way: 'google' | 'apple' | 'passkey', get: () => Promise<Got<P>>) => {
     if (working.current) return;
+    working.current = true;
+    setBusy(true);
     setError(null);
     const g = await get();
+    working.current = false;
+    setBusy(false);
     if (!g.ok) return g.error && setError(g.error.message);
     via.current = way;
     void run(() => api.call<AuthStep>('POST', `/auth/${way}`, { ...g.proof, device: thisDevice() }), next);
@@ -301,8 +313,8 @@ function Start({
       {/* Side by side at the same size (User doc). Short labels, so both fit a phone's width; each still says the
           whole "Continue with" to a screen reader. */}
       <View style={styles.pair}>
-        <With label="Google" onPress={onGoogle} mark={<GoogleMark />} />
-        {appleHere && <With label="Apple" onPress={onApple} mark={<Icon name="apple" size={20} color={color.text} />} />}
+        <With label="Google" onPress={onGoogle} mark={<GoogleMark />} disabled={busy} />
+        {appleHere && <With label="Apple" onPress={onApple} mark={<Icon name="apple" size={20} color={color.text} />} disabled={busy} />}
       </View>
       {/* Only where the phone can use passkeys (User doc); a build without the module shows it and says to update. */}
       {passkeysHere() !== 'no' && <Pill label="Use a passkey" size="wide" disabled={busy} onPress={onPasskey} />}
