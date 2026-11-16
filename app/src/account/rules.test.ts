@@ -64,4 +64,6 @@ test('a number or email change confirms it’s you first, by email while the hol
   assert.deepEqual(changeStart('email', { ...held, fresh: true }, true), { next: 'wait', until: '2026-11-24T10:00:00.000Z' });
   assert.deepEqual(changeStart('email', { ...s, phone: null }, false), { next: 'prove', via: 'email', to: 'k@example.com' });
   assert.equal(changeStart('email', { ...s, phone: null, email: null }, false), null);
+  // Adding an email is never held, though a hold stands for the account's Google, Apple or passkeys.
+  assert.deepEqual(changeStart('email', { ...held, email: null, fresh: true }, false), { next: 'new' });
 });

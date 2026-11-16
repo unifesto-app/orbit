@@ -75,7 +75,9 @@ export function profileChanges(was: { name: string | null; gender: string | null
 // `provedByEmail` is whether this screen just had your email's code.
 export type Security = { phone: string | null; email: string | null; fresh: boolean; heldUntil: string | null };
 export function changeStart(way: 'phone' | 'email', s: Security, provedByEmail: boolean) {
-  const held = way === 'email' ? s.heldUntil : null; // the API sends none without an email
+  // Only changing an email that's there is held; adding one never is (the API's hold covers Google, Apple and passkeys
+  // too, so it can stand on an account with no email).
+  const held = way === 'email' && s.email ? s.heldUntil : null;
   if (held && provedByEmail) return { next: 'wait' as const, until: held };
   if (s.fresh && !held) return { next: 'new' as const };
   const via = s.email && (held || !s.phone) ? ('email' as const) : s.phone ? ('phone' as const) : null;
