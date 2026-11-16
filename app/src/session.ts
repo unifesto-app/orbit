@@ -4,7 +4,7 @@
 // The account comes from the Orbit API (src/api.ts). What the first frame needs (signed in, the account and its roles)
 // is saved on the phone and read back synchronously at launch, the way the location is (src/place.ts); the refresh
 // token is kept in the Keychain, and the access token only in memory.
-// ponytail: saved events and followed hosts stay on this phone, seeded from the mock (src/account/data.ts,
+// ponytail: saved events, saved lists and followed hosts stay on this phone, seeded from the mock (src/account/data.ts,
 // src/mock.ts), until the API has them.
 import type { AuthStep, Me as Account } from '@orbit/contract';
 import Constants from 'expo-constants';
@@ -13,18 +13,21 @@ import Storage from 'expo-sqlite/kv-store';
 import { useSyncExternalStore } from 'react';
 import { Alert, Platform } from 'react-native';
 
-import { saved as savedMock } from './account/data';
+import { lists as listsMock, saved as savedMock } from './account/data';
 import type { Way } from './account/rules';
+import * as saves from './account/saves';
 import { API_URL, makeApi } from './api';
 import type { Viewer } from './home/layout';
-import { viewer } from './mock';
+import { events, viewer } from './mock';
 import { type Me, nobody } from './modes';
+import { hideNote, showNote } from './note';
 
 const KEY = 'orbit.session';
 const DEVICE = 'orbit.device';
 const REFRESH = 'orbit.refresh';
 
-export type Session = { via: Way; saved: readonly string[]; follows: readonly string[]; me: Account };
+// Saved events and lists (src/account/saves.ts) ride along: each save with when it was made, and the lists.
+export type Session = { via: Way; follows: readonly string[]; me: Account } & saves.Saves;
 
 // The refresh token, in the Keychain (Android: the Keystore), readable once the phone has been unlocked after a restart
 // and never copied to a backup or another phone. expo-secure-store is a native module: on a build made before it was
@@ -66,7 +69,7 @@ function stored(): Session | null {
   try {
     const s = JSON.parse(Storage.getItemSync(KEY) ?? 'null');
     const ok = typeof s?.via === 'string' && Array.isArray(s.saved) && Array.isArray(s.follows) && typeof s.me?.id === 'string';
-    if (ok && refreshToken.get()) return s;
+    if (ok && refreshToken.get()) return { ...s, ...saves.normalise(s, Date.now()) }; // one stored before lists keeps its saves
     // No refresh token: a session from before the API, or one whose token stayed in memory, so signed out, and the
     // account's details aren't left behind on the phone.
     if (s && !unreadable) Storage.removeItemSync(KEY);
@@ -80,6 +83,7 @@ let current = stored();
 const listeners = new Set<() => void>();
 
 function set(next: Session | null) {
+  if (!next) hideNote(); // a note's Undo or Add to a list belongs to the account that showed it
   current = next;
   for (const fn of listeners) fn();
   try {
@@ -110,13 +114,10 @@ export function useViewer(): Viewer {
 // Roles for the mode switcher and the Console and Galaxy guards, from the API: none while signed out, so Home only.
 export const useMe = (): Me => useSession()?.me ?? nobody;
 
-export const useSaved = (eventId: string) => useSession()?.saved.includes(eventId) ?? false;
+export const useSaved = (eventId: string) => useSession()?.saved.some((x) => x.id === eventId) ?? false;
 export const useFollowing = (hostId: string) => useSession()?.follows.includes(hostId) ?? false;
 
 const turn = (list: readonly string[], id: string, on: boolean) => (on ? [...new Set([...list, id])] : list.filter((x) => x !== id));
-// `on` is what the tap asked for, never a toggle, so a save tapped while signed out still saves when the account
-// already had it.
-export const setSaved = (eventId: string, on: boolean) => current && set({ ...current, saved: turn(current.saved, eventId, on) });
 export const setFollowing = (hostId: string, on: boolean) => current && set({ ...current, follows: turn(current.follows, hostId, on) });
 
 // Anything that needs an account: done at once when signed in; otherwise the sign-in sheet opens over the screen and
@@ -135,6 +136,68 @@ export function runPending() {
   pending = undefined;
   action?.();
 }
+
+// Saving (Saved events and lists doc). Only saves of events that can still be opened count toward the 1,000.
+export const canOpen = (id: string) => events.some((e) => e.id === id);
+
+// Applies a change to the saves: null once done, or the problem to show ("You have 1,000 saved…").
+function apply(change: (s: saves.Saves) => saves.Saves | string): string | null {
+  if (!current) return null;
+  const next = change(current);
+  if (typeof next === 'string') return next;
+  set({ ...current, ...next });
+  return null;
+}
+const saveEvent = (eventId: string) => apply((s) => saves.save(s, eventId, Date.now(), canOpen));
+
+// The heart. `on` is what the tap asked for, never a toggle, so a save tapped while signed out still saves when the
+// account already had it. Signed out, the sign-in sheet comes first and the save lands after, so the note shows then,
+// not over the sheet.
+// ponytail: at the cap the heart doesn't fill first and roll back (doc); it stays empty and the note says why. The
+// API's answer makes it a real roll-back. The push ask on an event not on sale yet waits for notifications.
+export function tapHeart(eventId: string, on: boolean) {
+  needsAccount(() => {
+    if (!on) return removeSaves([eventId]);
+    const problem = saveEvent(eventId);
+    showNote(problem ? { text: problem } : { text: 'Saved', action: { label: 'Add to a list', run: () => addToList(eventId) } });
+  });
+}
+
+// Unsave, from the heart or a saved row's menu: gone from All saved and every list at once, with Undo for 5 seconds
+// (until dismissed with assistive tech on, src/note.tsx). Remove all past passes every past save.
+export function removeSaves(ids: readonly string[]) {
+  if (!current || ids.length === 0) return;
+  const { next, undo } = saves.unsave(current, ids);
+  set({ ...current, ...next });
+  showNote({
+    text: ids.length === 1 ? 'Removed from saved' : `Removed ${ids.length} saved events`,
+    action: { label: 'Undo', run: () => apply((s) => saves.restore(s, undo)) },
+    ms: 5000,
+  });
+}
+
+// Add to a list, from the note or an event's menu: saves first if it isn't, then the list picker (src/app/lists).
+export function addToList(eventId: string) {
+  needsAccount(() => {
+    const problem = saveEvent(eventId);
+    if (problem) showNote({ text: problem });
+    else router.push(`/lists/${eventId}`);
+  });
+}
+
+// The lists. Each answers null once done, or the problem to show where the person is.
+const newId = () => `l_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+export function newList(name: string, eventId?: string) {
+  const id = newId();
+  const at = Date.now();
+  return apply((s) => {
+    const made = saves.create(s, name, id, at);
+    return typeof made === 'string' || !eventId ? made : saves.tick(made, id, eventId, true, at, canOpen);
+  });
+}
+export const renameList = (id: string, name: string) => apply((s) => saves.rename(s, id, name));
+export const deleteList = (id: string) => apply((s) => saves.drop(s, id));
+export const tickList = (listId: string, eventId: string, on: boolean) => apply((s) => saves.tick(s, listId, eventId, on, Date.now(), canOpen));
 
 // Signed out by the API: a suspension says why and until when (the API keeps the token unspent so it can).
 export const api = makeApi({
@@ -169,7 +232,8 @@ export function signIn(done: Extract<AuthStep, { step: 'signedIn' }>, via: Way) 
     // Not kept: the next sign-in is a new device.
   }
   api.start(done);
-  set({ via, saved: current?.saved ?? savedMock, follows: current?.follows ?? viewer.follows, me: done.me });
+  const kept = current ? { saved: current.saved, lists: current.lists } : saves.normalise({ saved: savedMock, lists: listsMock }, Date.now());
+  set({ via, ...kept, follows: current?.follows ?? viewer.follows, me: done.me });
 }
 
 // The account as the API has it now (a name, a role or a deletion changed elsewhere). Once at launch.

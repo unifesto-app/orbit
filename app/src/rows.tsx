@@ -2,7 +2,7 @@
 // box, section headings, the top glow, and the back bar and not-found view of the pages pushed over the tabs.
 import { formatPrice } from '@orbit/contract';
 import { router } from 'expo-router';
-import { type ReactNode, useId, useRef, useState } from 'react';
+import { type ComponentRef, type ReactNode, useId, useRef, useState } from 'react';
 import {
   type Animated,
   Modal,
@@ -16,6 +16,7 @@ import {
   type TextInputProps,
   View,
   type ViewStyle,
+  useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, LinearGradient, RadialGradient, Rect, Stop } from 'react-native-svg';
@@ -24,7 +25,7 @@ import { BarGlass, Glass } from './glass';
 import { Icon, type IconName } from './icons';
 import { Media, type MediaItem } from './media';
 import type { Event, Host } from './mock';
-import { needsAccount, setSaved, useSaved } from './session';
+import { tapHeart, useSaved } from './session';
 import { around, color, font, radius, rim, space } from './theme';
 
 export const SEAT = 48; // the 1:1 square on a seat card's top rim
@@ -36,20 +37,22 @@ const RIM = around(FACE, rim);
 // A plain row (no card), so it keeps its Save heart, on the app's frosted glass (owner, 15 Nov 2026). The poster and
 // text open the event page; the heart stays a target of its own. `tag` takes the repeat tag's place (a person's role
 // on their sheet); a `past` row drops the price and the heart. `onPress` replaces opening the event the usual way.
+// `menu` adds a ⋯ after the heart, as saved rows have (Saved events and lists doc: Add to a list, Remove from saved).
 export function EventRow({
   event: e,
   host,
   tag = e.repeats,
   past = false,
+  menu,
   onPress = () => router.push(`/event/${e.id}`),
 }: {
   event: Event;
   host: Host;
   tag?: string;
   past?: boolean;
+  menu?: MenuAction[];
   onPress?: () => void;
 }) {
-  const saved = useSaved(e.id);
   return (
     <View style={styles.row}>
       <Pressable onPress={onPress} accessibilityRole="button" style={({ pressed }) => [styles.grow, styles.rowLink, pressed && styles.pressed]}>
@@ -64,18 +67,8 @@ export function EventRow({
           {!past && <Price event={e} />}
         </View>
       </Pressable>
-      {/* Signed out, it asks to sign in first, then saves (src/session.ts). */}
-      {!past && (
-        <Pressable
-          onPress={() => needsAccount(() => setSaved(e.id, !saved))}
-          style={styles.heart}
-          accessibilityRole="button"
-          accessibilityLabel={saved ? `Saved: ${e.title}` : `Save ${e.title}`}>
-          <Glass style={styles.heartGlass}>
-            <SaveIcon eventId={e.id} />
-          </Glass>
-        </Pressable>
-      )}
+      {!past && <SaveButton event={e} />}
+      {menu && <MenuButton actions={menu} label={`More for ${e.title}`} anchored />}
     </View>
   );
 }
@@ -254,10 +247,26 @@ export function BackBar({ scrollY, children }: { scrollY: Animated.Value; childr
   );
 }
 
-// A saved event's heart is filled and red (owner, 16 Nov 2026: "for saved events add love red"); any other keeps the
-// white duotone outline. What's saved comes from the session (src/session.ts): signed out, nothing is.
-export function SaveIcon({ eventId }: { eventId: string }) {
-  return useSaved(eventId) ? <Icon name="heartFill" size={20} color={color.love} /> : <Icon name="heart" size={20} color={color.text} />;
+// The heart, on every event row and the event page (`bar`, a 44pt circle like its neighbours). One tap saves, with a
+// note offering Add to a list; on a saved event it unsaves, with Undo (src/session.ts). Signed out, the sign-in sheet
+// comes first. Filled and red when saved (owner, 16 Nov 2026: "for saved events add love red"), else the white duotone
+// outline. It says what a tap will do, its state exposed to screen readers (Saved events and lists doc).
+export function SaveButton({ event: e, bar = false }: { event: Pick<Event, 'id' | 'title'>; bar?: boolean }) {
+  const saved = useSaved(e.id);
+  return (
+    <Pressable
+      onPress={() => tapHeart(e.id, !saved)}
+      style={bar ? undefined : styles.heart}
+      hitSlop={bar ? 4 : 0}
+      accessibilityRole="button"
+      accessibilityLabel={saved ? `Saved, ${e.title}` : `Save ${e.title}`}
+      accessibilityHint={saved ? 'Double-tap to remove' : undefined}
+      accessibilityState={{ selected: saved }}>
+      <Glass style={bar ? styles.backGlass : styles.heartGlass}>
+        {saved ? <Icon name="heartFill" size={20} color={color.love} /> : <Icon name="heart" size={20} color={color.text} />}
+      </Glass>
+    </Pressable>
+  );
 }
 
 // A frosted 44pt circle holding one icon, as every icon-only button in a bar (owner, 15 Nov 2026: "never use squared
@@ -287,10 +296,23 @@ export const shareLink = (line: string, path: string) => Share.share({ message: 
 // Each item has its icon on the right of its label, as iOS's own pull-down menus do (owner: "add icons in menu").
 // React Native's own Modal, so no native module: expo-router's native menus open only from a long press on a link or
 // from the system header, and these pages draw their own.
+// `anchored`, on a row: a 36pt circle like the row's heart, its menu opening under it, or over it near the bottom.
 export type MenuAction = { label: string; icon: IconName; onPress?: () => void };
-export function MenuButton({ actions }: { actions: MenuAction[] }) {
+export function MenuButton({ actions, label = 'More', anchored = false }: { actions: MenuAction[]; label?: string; anchored?: boolean }) {
   const insets = useSafeAreaInsets();
+  const { height } = useWindowDimensions();
   const [open, setOpen] = useState(false);
+  const [top, setTop] = useState(0);
+  const button = useRef<ComponentRef<typeof View>>(null);
+  const show = () => {
+    if (!anchored) return setOpen(true);
+    button.current?.measureInWindow((_x, y, _w, h) => {
+      const tall = actions.length * 44 + 2 * space.small;
+      const below = y + h + space.small;
+      setTop(below + tall > height - insets.bottom - space.big ? y - space.small - tall : below);
+      setOpen(true);
+    });
+  };
   const picked = useRef<(() => void) | undefined>(undefined);
   const run = () => {
     const action = picked.current;
@@ -304,7 +326,15 @@ export function MenuButton({ actions }: { actions: MenuAction[] }) {
   };
   return (
     <>
-      <CircleButton icon="more" label="More" onPress={() => setOpen(true)} />
+      {anchored ? (
+        <Pressable ref={button} onPress={show} style={styles.heart} accessibilityRole="button" accessibilityLabel={label}>
+          <Glass style={styles.heartGlass}>
+            <Icon name="more" size={20} color={color.text} />
+          </Glass>
+        </Pressable>
+      ) : (
+        <CircleButton icon="more" label={label} onPress={show} />
+      )}
       {/* Under the status bar on Android too, so `top` is measured from the screen's top as on iOS. */}
       <Modal
         transparent
@@ -314,7 +344,7 @@ export function MenuButton({ actions }: { actions: MenuAction[] }) {
         onRequestClose={() => setOpen(false)}
         onDismiss={run}>
         <Pressable style={styles.menuScrim} onPress={() => setOpen(false)} accessibilityLabel="Close menu" />
-        <View style={[styles.menu, { top: insets.top + BAR + space.small }]} accessibilityViewIsModal>
+        <View style={[styles.menu, { top: anchored ? top : insets.top + BAR + space.small }]} accessibilityViewIsModal>
           <Glass style={styles.menuFill} />
           <View style={[styles.menuFill, styles.menuShade]} />
           {actions.map((a) => (

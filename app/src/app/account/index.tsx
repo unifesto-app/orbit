@@ -16,9 +16,11 @@ import { useState } from 'react';
 import { Alert, Animated, Linking, StyleSheet, Text, View } from 'react-native';
 
 import { methods, passkeys, past, refunds } from '../../account/data';
-import { Group, Page, Panel, Pill, REVEAL, Row } from '../../account/kit';
+import { Group, Page, Panel, Pill, REVEAL, Row, TONE } from '../../account/kit';
 import { ProfileHead } from '../../account/profile';
 import { isOpen } from '../../account/rules';
+import { split } from '../../account/saves';
+import { events, now } from '../../mock';
 import { usePlace } from '../../place';
 import { needsAccount, signOut, useSession, useViewer } from '../../session';
 import { color, font, space } from '../../theme';
@@ -26,24 +28,10 @@ import { Wordmark } from '../../wordmark';
 
 const WWW = 'https://www.unifesto.app'; // the legal pages, as the web's footer links them
 const go = (href: Href) => () => router.push(href);
-// Each row's icon in its own colour (owner, 15 Nov 2026: "should have various acents"): Search's Explore colours, Open
-// Color shades plus the brand blue, no two alike within a card. The icon only: labels stay white.
-const TONE = {
-  orange: '#E8590C',
-  pink: '#D6336C',
-  violet: '#7048E8',
-  cyan: '#1098AD',
-  green: '#2F9E44',
-  yellow: '#FCC419',
-  mint: '#099268',
-  red: '#E03131',
-  blue: color.accent,
-  grape: '#AE3EC9',
-} as const;
-
 export default function Account() {
   const viewer = useViewer(); // signed in or out on this phone (src/session.ts)
-  const saved = useSession()?.saved ?? [];
+  // Saved counts upcoming events only (Saved events and lists doc).
+  const saved = split((useSession()?.saved ?? []).map((x) => x.id), events, now).upcoming;
   const place = usePlace(viewer.place);
   const open = refunds.filter((r) => isOpen(r.status)).length;
   const logOut = () =>
@@ -98,7 +86,7 @@ export default function Account() {
         <>
           <Group title="Your events">
             <Row icon="ticket" tone={TONE.orange} label="Tickets" value={`${viewer.tickets?.length ?? 0} upcoming`} onPress={go('/account/tickets')} />
-            <Row icon="heart" tone={TONE.pink} label="Saved" value={`${saved.length}`} onPress={go('/account/saved')} />
+            <Row icon="heart" tone={TONE.pink} label="Saved" value={`${saved.length} upcoming`} onPress={go('/account/saved')} />
             <Row icon="following" tone={TONE.violet} label="Following" value={`${viewer.follows.length} hosts`} onPress={go('/account/following')} />
             <Row icon="history" tone={TONE.cyan} label="History" value={`${past.length}`} onPress={go('/account/history')} />
           </Group>

@@ -1,0 +1,67 @@
+// What Account › Saved and a list's screen are made of (Saved events and lists doc): saved event rows, each with its
+// heart and a ⋯ (Add to a list, Take out of this list, Remove from saved), and Past, folded.
+import { useState } from 'react';
+import { Pressable, StyleSheet, Text } from 'react-native';
+
+import { Icon } from '../icons';
+import { type Event, hosts } from '../mock';
+import { EventRow, type MenuAction } from '../rows';
+import { addToList, removeSaves, tickList } from '../session';
+import { color, font, space } from '../theme';
+import { Pill } from './kit';
+import type { List } from './saves';
+
+const hostOf = (id: string) => hosts.find((h) => h.id === id)!;
+
+// A saved row's ⋯. On a list's screen it can also take the event out of that list, leaving it saved.
+function menuFor(e: Event, list?: List): MenuAction[] {
+  const actions: MenuAction[] = [{ label: 'Add to a list', icon: 'listPlus', onPress: () => addToList(e.id) }];
+  if (list) actions.push({ label: 'Take out of this list', icon: 'takeOut', onPress: () => void tickList(list.id, e.id, false) });
+  actions.push({ label: 'Remove from saved', icon: 'trash', onPress: () => removeSaves([e.id]) });
+  return actions;
+}
+
+// The row's status tag where one applies (doc: Sold out, Rescheduled, Cancelled, Registrations open), else the series.
+// ponytail: only Sold out can be told from the mock (every ticket type sold out); the others come with the API's event
+// status.
+const statusTag = (e: Event) => (e.tiers?.length && e.tiers.every((t) => t.soldOut) ? 'Sold out' : e.repeats);
+
+export function SavedRows({ events, list }: { events: readonly Event[]; list?: List }) {
+  return (
+    <>
+      {events.map((e) => (
+        <EventRow key={e.id} event={e} host={hostOf(e.hostId)} tag={statusTag(e)} menu={menuFor(e, list)} />
+      ))}
+    </>
+  );
+}
+
+// Past saves stay, folded, until removed (doc, decision 10): each row's ⋯ removes it, and in All saved Remove all past
+// clears them all, with Undo.
+export function PastFold({ events, list }: { events: readonly Event[]; list?: List }) {
+  const [open, setOpen] = useState(false);
+  if (events.length === 0) return null;
+  return (
+    <>
+      <Pressable
+        onPress={() => setOpen(!open)}
+        accessibilityRole="button"
+        accessibilityLabel={`Past, ${events.length}`}
+        accessibilityState={{ expanded: open }}
+        style={styles.fold}>
+        <Text style={styles.h2}>Past</Text>
+        <Text style={styles.count}>{events.length}</Text>
+        <Icon name={open ? 'chevronDown' : 'chevron'} size={14} color={color.secondary} />
+      </Pressable>
+      {open && events.map((e) => <EventRow key={e.id} event={e} host={hostOf(e.hostId)} past menu={menuFor(e, list)} />)}
+      {open && !list && <Pill label="Remove all past" size="wide" muted onPress={() => removeSaves(events.map((e) => e.id))} />}
+    </>
+  );
+}
+
+const styles = StyleSheet.create({
+  // Section's heading (src/rows.tsx), pressable, with its count and a caret.
+  fold: { marginTop: space.big, marginBottom: 16, marginHorizontal: 20, flexDirection: 'row', alignItems: 'center', gap: space.small },
+  h2: { fontFamily: font.headline, fontSize: 18, color: color.text },
+  count: { flex: 1, fontFamily: font.medium, fontSize: 15, color: color.secondary },
+});

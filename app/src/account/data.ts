@@ -5,6 +5,7 @@
 import { hosts } from '../mock';
 import { me } from '../modes';
 import type { RefundStatus, Way } from './rules';
+import type { List } from './saves';
 
 export type Profile = {
   name: string;
@@ -51,7 +52,12 @@ export const devices: Device[] = [
   { id: 'd2', name: 'Chrome on Mac', surface: 'Web', lastActive: '2026-11-18T19:40:00+05:30' },
 ];
 
+// Saved events, oldest save first, and two lists over them (Saved events and lists doc).
 export const saved = ['build-anything-hackathon', 'sunday-jam', 'udaan-cultural-fest', 'open-mic-night-13-nov'];
+export const lists: List[] = [
+  { id: 'l_weekend', name: 'This weekend', events: ['build-anything-hackathon', 'sunday-jam'], touched: Date.parse('2026-11-18T21:00:00+05:30') },
+  { id: 'l_friends', name: 'With the gang', events: ['udaan-cultural-fest', 'open-mic-night-13-nov'], touched: Date.parse('2026-11-10T19:30:00+05:30') },
+];
 
 export const past: Past[] = [
   { eventId: 'campus-esports-cup', status: 'Refunded' },
