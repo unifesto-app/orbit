@@ -1,11 +1,11 @@
 import { randomBytes } from "node:crypto";
-import { and, count, desc, eq, gt, ilike, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, gt, ilike, inArray, isNotNull, isNull, lte, ne, notLike, or, sql } from "drizzle-orm";
 import { Hono, type Context } from "hono";
 import { GrantFeatures, InviteAdmin, Lift, readPhone, STAFF_FEATURES, type StaffFeature, StaffReason, StartHost, Suspend } from "@orbit/contract";
 import type { Db } from "../db/index.ts";
 import { auditLog, hosts, hostSlugs, sessions, staffGrants, teamRoles, users } from "../db/schema.ts";
 import { contactOf, type Env, fail, invalid, isUuid, type Notify, listPage, parse, signedIn, taken } from "../http.ts";
-import { adminsOf, changeable, holdersOf, masked, holdIfUnanswered, liftHostsOf, person, type StaffEnv, requireFeature, teamOf as teamOf_, tell } from "./access.ts";
+import { activeFeatures, adminsOf, changeable, holdersOf, masked, holdIfUnanswered, liftHostsOf, person, type StaffEnv, requireFeature, teamOf as teamOf_, tell } from "./access.ts";
 import { acceptRule, addRule, confirmRule, confirmSeatRule, endRule, endSeatRule, expired, holds, INVITE_DAYS, suspendRule, waiting } from "./rules.ts";
 
 // Hosts and their teams, and Galaxy's staff and People tools (Orbit flows: Roles, Hosts and Galaxy).
@@ -364,7 +364,7 @@ export function rolesRoutes({ db, notify, secret, now = Date.now }: Deps) {
     // Holders of Staff alone find someone to give access to by their exact number or email; browsing by name is People's.
     if (!exact && !holds(c.var.actor, "people")) return fail(c, 400, "invalid", "Search by their exact phone number or email.");
     const where = exact ?? ilike(users.name, `%${q.replace(/[%_\\]/g, (m) => `\\${m}`)}%`);
-    const rows = await db.select().from(users).where(where).limit(20);
+    const rows = await db.select().from(users).where(and(where, isNull(users.deletedAt))).limit(20);
     // Only ids are kept, never the phone or email typed, so a deleted person leaves no contact in the log.
     const by = exact ? (q.includes("@") ? "email" : "phone") : "name";
     await db.transaction((tx) => audit(tx, { actorId: c.var.actor.id, action: "people.search", data: { by, results: rows.map((r) => r.id) } }));
@@ -377,14 +377,9 @@ export function rolesRoutes({ db, notify, secret, now = Date.now }: Deps) {
     const id = c.req.param("id");
     const [u] = isUuid(id) ? await db.select().from(users).where(and(eq(users.id, id), isNull(users.deletedAt))) : [];
     if (!u) return fail(c, 404, "notFound", "No account with that id.");
-    const staff = u.platformOwner
-      ? [...STAFF_FEATURES]
-      : (
-          await db
-            .select({ feature: staffGrants.feature })
-            .from(staffGrants)
-            .where(and(eq(staffGrants.userId, u.id), isNull(staffGrants.endedAt), isNotNull(staffGrants.startsAt), lte(staffGrants.startsAt, at())))
-        ).map((g) => g.feature);
+    // Staff access, and the staff.* rows in the history, are for holders of Staff, as the Staff page is.
+    const seesStaff = holds(c.var.actor, "staff");
+    const staff = !seesStaff ? null : u.platformOwner ? [...STAFF_FEATURES] : await activeFeatures(db, u.id, now());
     const onHosts = await db
       .select({ id: hosts.id, slug: hosts.slug, name: hosts.name, status: hosts.status, ownerId: hosts.ownerId })
       .from(teamRoles)
@@ -396,12 +391,12 @@ export function rolesRoutes({ db, notify, secret, now = Date.now }: Deps) {
       .from(sessions)
       .where(and(eq(sessions.userId, u.id), isNull(sessions.endedAt), gt(sessions.expiresAt, at())))
       .orderBy(desc(sessions.lastActiveAt));
-    // Rows written before this view, so the page doesn't list its own opening.
+    // What was done to the account, never who opened this page: views would push the suspensions out of the last 50.
     const history = await db
       .select({ action: auditLog.action, by: users.name, reason: auditLog.reason, at: auditLog.at })
       .from(auditLog)
       .innerJoin(users, eq(users.id, auditLog.actorId))
-      .where(eq(auditLog.targetUser, u.id))
+      .where(and(eq(auditLog.targetUser, u.id), ne(auditLog.action, "people.view"), seesStaff ? undefined : notLike(auditLog.action, "staff.%")))
       .orderBy(desc(auditLog.at))
       .limit(50);
     await db.transaction((tx) => audit(tx, { actorId: c.var.actor.id, action: "people.view", targetUser: u.id }));
@@ -414,7 +409,7 @@ export function rolesRoutes({ db, notify, secret, now = Date.now }: Deps) {
       suspendedUntil: u.suspendedUntil?.toISOString() ?? null,
       suspensionReason: u.suspensionReason,
       deletionDue: u.deletionDueAt?.toISOString() ?? null,
-      owner: u.platformOwner,
+      owner: seesStaff ? u.platformOwner : null,
       staff,
       hosts: onHosts.map(({ ownerId, ...h }) => ({ ...h, owner: ownerId === u.id })),
       devices: devices.map((d) => ({ ...d, since: d.since.toISOString(), lastActive: d.lastActive.toISOString() })),

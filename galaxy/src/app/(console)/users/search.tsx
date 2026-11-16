@@ -2,7 +2,7 @@
 
 import { STAFF_FEATURES, type StaffFeature } from "@orbit/contract";
 import Link from "next/link";
-import { startTransition, useActionState } from "react";
+import { startTransition, useActionState, useEffect, useEffectEvent } from "react";
 import { Alert, Badge, Container, day, FEATURE_NAMES, Pages, phone, ui } from "../../ui";
 import { Act } from "../act";
 import { grantFeatures, liftPerson, type Person, searchPeople, suspendPerson } from "../actions";
@@ -20,6 +20,12 @@ export function PeopleSearch({ features, self, list }: { features: StaffFeature[
     startTransition(() => search(f));
   };
   const table = { features, self };
+  // Next keeps a page kept, hidden, when you leave it (cacheComponents), and runs its effects again when you come back:
+  // search again then, so a person suspended on their page meanwhile doesn't still show Active here.
+  const again = useEffectEvent(() => {
+    if (found.q) run(found.q);
+  });
+  useEffect(() => again(), []);
 
   return (
     <>

@@ -241,6 +241,39 @@ test("people: list and detail", async () => {
   }
 });
 
+test("people: detail hides views, and staff access unless the viewer holds Staff", async () => {
+  const owner = await join(), po = await join(), both = await join(), target = await join(), gone = await join();
+  await makeOwner(owner);
+  await give(po, "people");
+  await give(both, "people", "staff");
+  const first = await as(po)("GET", `/galaxy/people/${target.me.id}`);
+  const second = await as(po)("GET", `/galaxy/people/${target.me.id}`);
+  assert.equal(first.status, 200);
+  assert.ok(!second.body.history.some((h: any) => h.action === "people.view"));
+  assert.equal(second.body.staff, null);
+  assert.equal(second.body.owner, null);
+
+  const g = await as(owner)("POST", "/galaxy/staff/grants", { userId: target.me.id, features: ["hosts"], reason: "for the team" });
+  assert.equal(g.status, 201);
+  t.tick(DAY + 1);
+  const full = await as(both)("GET", `/galaxy/people/${target.me.id}`);
+  assert.ok(Array.isArray(full.body.staff));
+  assert.ok(full.body.staff.includes("hosts"));
+  assert.equal(full.body.owner, false);
+  assert.ok(full.body.history.some((h: any) => h.action === "staff.grant"));
+  assert.ok(!full.body.history.some((h: any) => h.action === "people.view"));
+  const lite = await as(po)("GET", `/galaxy/people/${target.me.id}`);
+  assert.ok(!lite.body.history.some((h: any) => h.action.startsWith("staff.")));
+  assert.equal(lite.body.staff, null);
+
+  await t.db.update(users).set({ deletedAt: new Date() }).where(eq(users.id, gone.me.id));
+  const found = await as(po)("GET", `/galaxy/people?q=${encodeURIComponent("Riya")}`);
+  assert.equal(found.status, 200);
+  assert.ok(!found.body.some((x: any) => x.id === gone.me.id));
+  const byPhone = await as(both)("GET", `/galaxy/people?q=${encodeURIComponent(e164(gone.p))}`);
+  assert.equal(byPhone.body.length, 0);
+});
+
 // ---------- after review ----------
 
 const setStatus = (id: string, status: string) => t.db.update(hosts).set({ status: status as any }).where(eq(hosts.id, id));

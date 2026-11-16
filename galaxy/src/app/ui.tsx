@@ -78,11 +78,12 @@ export function Pairs({ pairs }: { pairs: [string, ReactNode][] }) {
 // some of Galaxy's lists are written to the audit log.
 export function Pages({ path, total, page, pageSize }: { path: string; total: number; page: number; pageSize: number }) {
   const last = Math.max(1, Math.ceil(total / pageSize));
-  if (last === 1) return null;
+  if (last === 1 && page === 1) return null;
   return (
     <nav aria-label="Pages" className={`${ui.row} ${ui.pager}`}>
       {page > 1 && (
-        <Link className={ui.btn} href={`${path}?page=${page - 1}`} prefetch={false}>
+        // From past the end (an old link), straight back to the last page.
+        <Link className={ui.btn} href={`${path}?page=${Math.min(page - 1, last)}`} prefetch={false}>
           Previous
         </Link>
       )}

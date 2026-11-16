@@ -21,8 +21,8 @@ type PersonFile = Person & {
   suspendedUntil: string | null;
   suspensionReason: string | null;
   deletionDue: string | null;
-  owner: boolean;
-  staff: StaffFeature[];
+  owner: boolean | null; // null, with staff, for viewers without Staff
+  staff: StaffFeature[] | null;
   hosts: { id: string; slug: string; name: string; status: string; owner: boolean }[];
   devices: { name: string; client: "app" | "web"; since: string; lastActive: string }[];
   history: { action: string; by: string | null; reason: string | null; at: string }[];
@@ -33,7 +33,6 @@ const DID: Record<string, string> = {
   "people.suspend": "Suspended the account",
   "people.lift": "Lifted the suspension",
   "people.lapse": "Suspension ran out",
-  "people.view": "Opened this page",
   "staff.grant": "Gave staff access",
   "staff.confirm": "Confirmed staff access",
   "staff.end": "Ended staff access",
@@ -78,7 +77,7 @@ async function User({ params }: Pick<PageProps<"/users/[id]">, "params">) {
             ["Email", p.email && <>{p.email} {verified(p.emailVerified)}</>],
             ["Date of birth", p.dob && day(p.dob)],
             ["Gender", p.gender],
-            ["Staff access", p.owner ? "Platform owner" : p.staff.length ? p.staff.map((f) => FEATURE_NAMES[f]).join(", ") : "None"],
+            ...(p.staff ? [["Staff access", p.owner ? "Platform owner" : p.staff.length ? p.staff.map((f) => FEATURE_NAMES[f]).join(", ") : "None"] as [string, string]] : []),
             ...(p.suspensionReason ? [["Suspended for", p.suspensionReason] as [string, string]] : []),
             ...(p.deletionDue ? [["Deletion", <Badge key="d" tone="warning">{`Deletes on ${day(p.deletionDue)} unless they keep the account`}</Badge>] as [string, ReactNode]] : []),
           ]}
@@ -101,10 +100,14 @@ async function User({ params }: Pick<PageProps<"/users/[id]">, "params">) {
               {p.hosts.map((h) => (
                 <tr key={h.id}>
                   <td>
-                    {/* No prefetch: opening a host's page is written to the audit log. */}
-                    <Link href={`/hosts/${h.id}`} prefetch={false}>
-                      {h.name}
-                    </Link>
+                    {/* A host's page is Hosts'. No prefetch: opening it is written to the audit log. */}
+                    {features.includes("hosts") ? (
+                      <Link href={`/hosts/${h.id}`} prefetch={false}>
+                        {h.name}
+                      </Link>
+                    ) : (
+                      h.name
+                    )}
                   </td>
                   <td>{h.owner ? "Admin, Owner" : "Admin"}</td>
                   <td>
@@ -146,7 +149,7 @@ async function User({ params }: Pick<PageProps<"/users/[id]">, "params">) {
 
       <Container title="History" count={p.history.length}>
         {p.history.length === 0 ? (
-          <p className={ui.secondary}>Staff haven&apos;t touched this account.</p>
+          <p className={ui.secondary}>Nothing has been done to this account.</p>
         ) : (
           <table className={ui.table}>
             <thead>
