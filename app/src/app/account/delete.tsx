@@ -36,29 +36,29 @@ export default function DeleteAccount() {
   return (
     <Page title="Delete account">
       {/* The date only; the confirm says the rest (every device signs out, sign in before then to keep it). */}
-      <Group>
+      <Group bare>
         <Row label="Deleted on" value={on} />
       </Group>
 
       {blockers.length > 0 && (
-        <Group title="Before it can go">
+        <Group title="Before it can go" bare>
           {blockers.map((b) => (
             <Row key={b} label={b} />
           ))}
         </Group>
       )}
 
-      <Group title="What is deleted">
+      <Group title="What is deleted" bare>
         <Row label="Sign-in methods, passkeys and sessions" />
         <Row label="Devices, notification settings, saved events, follows and notifications" />
         <Row label="Roles on hosts, your photo and anything you uploaded" />
       </Group>
 
-      <Group title="What is wiped from what stays">
+      <Group title="What is wiped from what stays" bare>
         <Row label="Your name, phone, email and date of birth, your answers to hosts, names on tickets and support messages" />
       </Group>
 
-      <Group title="What is kept">
+      <Group title="What is kept" bare>
         <Row label="Bookings, payments, refunds and payouts, with your details removed" />
       </Group>
 

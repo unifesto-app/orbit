@@ -2,14 +2,17 @@
 // cards like every other card in the app (6px contents, 8 padding, face 14, frosted rim 16), and a card holds text
 // only: no leading icons, no chevrons (owner, 15 Nov 2026: "never use icons in card"). Buttons are frosted pills with
 // white labels, never squared; a chip's pick is an accent dot, never accent text.
-import { Children, Fragment, type ReactNode, isValidElement, useState } from 'react';
+import { Children, Fragment, type ReactNode, isValidElement, useEffect, useState } from 'react';
 import { Animated, Pressable, StyleSheet, Switch, Text, TextInput, type TextInputProps, View, useWindowDimensions } from 'react-native';
+import { Easing, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Glass } from '../glass';
 import { Icon, type IconName } from '../icons';
 import { BackBar, FaceWash, Glow, Section, TOP } from '../rows';
 import { needsAccount } from '../session';
+import { StarLayer } from '../stars';
+import { OPEN_END, starLayers } from '../switchMotion';
 import { around, color, font, radius, space } from '../theme';
 
 // Room in every card (owner, 15 Nov 2026: "add proper spacing and padding to cards"): 16 inside and 16 between rows,
@@ -93,17 +96,35 @@ export function Page({
 // `extra`, its contents centred under the back bar, the accent glowing up from its bottom centre in a 4:3 box. Native
 // glass rounds every corner alike, so the glass runs STRETCH above the screen, where its top corners can't be seen even
 // while the page is pulled down; its bottom corners are the cards'. Put it first in a Page.
+// The switch screen's space dots sit on the glass (owner, 17 Nov 2026: "apply space dots to glass card in account
+// section"): the switcher's own field, a screen tall and centred on the 4:3 panel, clipped to the glass. It hangs from
+// the panel's bottom, so Account pulled down by REVEAL and the profile's grown panel show the same dots. They gather
+// once as Account opens, as on Galaxy's lock; `settled` (the profile, fading in over Account) shows them already there.
 const STRETCH = 400;
-export function Panel({ extra = 0, children }: { extra?: number; children: ReactNode }) {
+const FLAT = 0.45; // the dots' orbits, height over width, as on Galaxy's lock
+export function Panel({ extra = 0, settled = false, children }: { extra?: number; settled?: boolean; children: ReactNode }) {
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const rest = (width * 3) / 4;
   const lift = insets.top + TOP; // how far down Page starts its content; the panel starts above that, at the top
+  const [stars] = useState(() => starLayers(width, height));
+  const still = useReducedMotion() || settled;
+  const open = useSharedValue(still ? OPEN_END : 0);
+  useEffect(() => {
+    if (!still) open.value = withTiming(OPEN_END, { duration: OPEN_END * 1000, easing: Easing.linear });
+  }, [open, still]);
   return (
     <View style={[styles.panel, { height: rest + extra, marginTop: -lift, paddingTop: lift }]}>
       <Glass style={styles.panelGlass} />
       <View style={[styles.panelGlow, { height: rest }]}>
         <FaceWash tint={color.accent} opacity={TINT} corner={RIM} />
+      </View>
+      <View style={styles.panelDots} pointerEvents="none">
+        <View style={[styles.panelField, { height, bottom: (rest - height) / 2 }]}>
+          {stars.map((dots, k) => (
+            <StarLayer key={k} layer={k} dots={dots} open={open} flat={FLAT} />
+          ))}
+        </View>
       </View>
       {children}
     </View>
@@ -111,24 +132,30 @@ export function Panel({ extra = 0, children }: { extra?: number; children: React
 }
 
 // A card of rows, under a section heading when it has one. A hairline between rows, in the middle of the gap (owner,
-// 15 Nov 2026: "add hairline").
-export function Group({ title, children }: { title?: string; children: ReactNode }) {
+// 15 Nov 2026: "add hairline"). `bare` drops the frosted rim, leaving the face alone (owner, 17 Nov 2026: "in Delete
+// Account, remove the rim of all cards").
+export function Group({ title, bare = false, children }: { title?: string; bare?: boolean; children: ReactNode }) {
   const rows = Children.toArray(children); // drops the false and null of rows shown only sometimes
   // With icons, the hairline starts where the text does, as in iOS Settings.
   const indent = rows.some((r) => isValidElement<{ icon?: IconName }>(r) && !!r.props.icon) ? ICON + ICON_GAP : 0;
+  const face = (
+    <View style={styles.face}>
+      {rows.map((row, i) => (
+        <Fragment key={i}>
+          {i > 0 && <View style={[styles.hairline, { marginLeft: indent }]} />}
+          {row}
+        </Fragment>
+      ))}
+    </View>
+  );
   return (
     <>
       {title && <Section title={title} />}
-      <Glass style={[styles.rim, !title && styles.spaced]}>
-        <View style={styles.face}>
-          {rows.map((row, i) => (
-            <Fragment key={i}>
-              {i > 0 && <View style={[styles.hairline, { marginLeft: indent }]} />}
-              {row}
-            </Fragment>
-          ))}
-        </View>
-      </Glass>
+      {bare ? (
+        <View style={[styles.bare, !title && styles.spaced]}>{face}</View>
+      ) : (
+        <Glass style={[styles.rim, !title && styles.spaced]}>{face}</Glass>
+      )}
     </>
   );
 }
@@ -294,8 +321,11 @@ export const styles = StyleSheet.create({
   panel: { justifyContent: 'center' },
   panelGlass: { position: 'absolute', top: -STRETCH, left: 0, right: 0, bottom: 0, borderRadius: RIM },
   panelGlow: { position: 'absolute', left: 0, right: 0, bottom: 0 },
+  panelDots: { position: 'absolute', top: -STRETCH, left: 0, right: 0, bottom: 0, borderRadius: RIM, overflow: 'hidden' },
+  panelField: { position: 'absolute', left: 0, right: 0 },
 
   rim: { marginHorizontal: 20, padding: EDGE, borderRadius: RIM },
+  bare: { marginHorizontal: 20 },
   spaced: { marginTop: space.big },
   face: { borderRadius: FACE, backgroundColor: color.card, padding: PAD },
   // Inside the card's padding on both sides (owner: "right side make it full hairline", then "dont use full hairline").

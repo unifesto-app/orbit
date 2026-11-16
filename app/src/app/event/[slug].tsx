@@ -226,7 +226,7 @@ function Fact({ label, value, note, onPress }: { label: string; value: string; n
   );
 }
 
-// One person on the event, a plain row like Search's hosts: their 1:1 photo (a rounded square; the monogram until
+// One person on the event, a plain row like Search's hosts: their 1:1 photo (a circle, as your own; the monogram until
 // photos exist), name and one line. Tapping opens the person sheet.
 function PersonRow({ person: p }: { person: Person }) {
   return (
@@ -234,7 +234,7 @@ function PersonRow({ person: p }: { person: Person }) {
       onPress={() => router.push(`/person/${p.id}`)}
       accessibilityRole="button"
       style={({ pressed }) => [styles.personRow, pressed && styles.pressed]}>
-      <Monogram mark={p} size={PHOTO} />
+      <Monogram mark={p} size={PHOTO} round />
       <View style={styles.grow}>
         <Text style={styles.name} numberOfLines={1}>
           {p.name}
