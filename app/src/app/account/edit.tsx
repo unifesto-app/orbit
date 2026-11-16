@@ -7,8 +7,9 @@
 // and keeps its own copy (api/src/media.ts); Remove asks first. Either one shows at once, here and on Account.
 // ponytail: no city on the account yet, so it shows Not set; it needs its API part first.
 import { type Me as Account, PHOTO_MAX_BYTES } from '@orbit/contract';
-import { router } from 'expo-router';
+import { File } from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
+import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Alert, StyleSheet, View } from 'react-native';
 
@@ -85,8 +86,8 @@ function Form({ me }: { me: Account }) {
     if (!a) return;
     if (a.fileSize && a.fileSize > PHOTO_MAX_BYTES) return setPhotoError('That photo is over 5 MB. Choose a smaller one.');
     const form = new FormData();
-    // React Native's FormData sends the file at `uri`.
-    form.append('photo', { uri: a.uri, name: a.fileName ?? 'photo.jpg', type: a.mimeType ?? 'image/jpeg' } as unknown as Blob);
+    // As a File: SDK 58's fetch (expo/fetch) sends a part with bytes(), not React Native's { uri, name, type }.
+    form.append('photo', new File(a.uri));
     await send('photo', () => api.authed<Account>('PUT', '/me/photo', form), setPhotoError);
   }
   const remove = () =>
