@@ -2,10 +2,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
-import { Icon } from "../../icons";
-import { Media } from "../../media";
-import { allEvents, formatPrice, getEvent } from "../../mock";
-import { seatsNote } from "../../seats";
+import { Icon } from "../../../icons";
+import { Media } from "../../../media";
+import { allEvents, formatPrice, getEvent } from "../../../mock";
+import { seatsNote } from "../../../seats";
 import styles from "./page.module.css";
 
 // Prerender every known event; an unknown slug falls through to the 404 page.

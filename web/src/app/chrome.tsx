@@ -6,6 +6,7 @@ import f from "./footer.module.css";
 import { LocationButton } from "./location-button";
 import { NavSearch } from "./nav-search";
 import { SearchBox } from "./search-box";
+import { Socials } from "./socials";
 
 // The company site keeps about, legal and help (plan, section 3).
 const WWW = "https://www.unifesto.app";
@@ -60,14 +61,6 @@ const columns: { title: string; links: [string, string][] }[] = [
 
 const legal: [string, string][] = [["Terms", `${WWW}/terms`], ["Privacy", `${WWW}/privacy`], ["Cookies", `${WWW}/cookies`], ["Code of conduct", `${WWW}/code-of-conduct`]];
 
-// Brand marks in their own colours (public/social, from thesvg, MIT). X is white, per its rules for dark backgrounds.
-const social = [
-  { label: "Instagram", href: "https://www.instagram.com/unifesto.app/", src: "/social/instagram.svg" },
-  { label: "LinkedIn", href: "https://www.linkedin.com/company/unifesto", src: "/social/linkedin.svg" },
-  { label: "X", href: "https://x.com/unifestoapp", src: "/social/x.svg" },
-  { label: "YouTube", href: "https://www.youtube.com/@unifesto-app", src: "/social/youtube.svg" },
-];
-
 // Three tiers: the host call to action with the app QR, the link columns, then the base line.
 export function Footer() {
   return (
@@ -110,15 +103,7 @@ export function Footer() {
           <div className={f.baseRow}>
             <div className={f.brandRow}>
               <Image src="/orbit-wordmark.svg" alt="Orbit" width={124} height={18} />
-              <ul className={f.social} aria-label="Unifesto on social media">
-                {social.map(({ label, href, src }) => (
-                  <li key={label}>
-                    <a href={href} rel="noopener" className={f.socialLink}>
-                      <Image src={src} alt={`Unifesto on ${label}`} width={20} height={20} />
-                    </a>
-                  </li>
-                ))}
-              </ul>
+              <Socials />
             </div>
             <ul className={f.legal} aria-label="Legal">
               {legal.map(([label, href]) => (

@@ -1,37 +1,14 @@
-import type { CategorySlug } from "@orbit/contract";
-import { Sacramento } from "next/font/google";
-import Image from "next/image";
 import Link from "next/link";
-import type { CSSProperties } from "react";
-import { categories, EventGrid } from "./discover";
-import { Icon, type IconName } from "./icons";
-import { Media } from "./media";
+import { categories, EventGrid } from "../discover";
+import { ExploreCard, scriptTitle } from "../explore";
+import { Icon, type IconName } from "../icons";
+import { Media } from "../media";
 import styles from "./page.module.css";
-import { formatPrice, spotlight, thisWeek } from "./mock";
-import { seatsNote } from "./seats";
+import { formatPrice, spotlight, thisWeek } from "../mock";
+import { seatsNote } from "../seats";
 
-// Explore is the app's Search tab Explore (owner, 15 Nov 2026: "apply the explore from app to web"): a script title,
-// then a box per category in its own colour with its line drawing on the top edge.
-// The title font is loaded here, not in the layout, so only the home page fetches it.
-const script = Sacramento({ weight: "400", subsets: ["latin"] });
-
-// The colours are the app's CATEGORY_COLOR (app/src/app/(tabs)/search.tsx); film is the brand blue. The drawings are
-// the app's (app/assets/explore/*.png) as 320px WebP in public/explore, made once with sharp: redo them when those change.
-const exploreColor: Record<CategorySlug, string> = {
-  hackathons: "#1098ad",
-  comedy: "#fcc419",
-  music: "#d6336c",
-  meetups: "#e8590c",
-  workshops: "#099268",
-  fests: "#e03131",
-  sports: "#2f9e44",
-  film: "var(--accent)",
-  startups: "#7048e8",
-  gaming: "#ae3ec9",
-};
-// As the app: a lone shape fills its square where a scene doesn't, so music is a little smaller, and fests, wide and
-// short, a little bigger.
-const artScale: Partial<Record<CategorySlug, number>> = { music: 0.85, fests: 1.15 };
+// Explore is the app's Search tab Explore (owner, 15 Nov 2026: "apply the explore from app to web"); the card is
+// explore.tsx, shared with Coming Soon.
 
 // Who Orbit is for, in the founder's examples.
 const hostTypes: { label: string; icon: IconName }[] = [
@@ -54,21 +31,11 @@ export default function Home() {
         <h1 className="sr-only">Events near you</h1>
 
         <section aria-labelledby="explore">
-          <h2 id="explore" className={`${styles.script} ${script.className}`}>Explore</h2>
+          <h2 id="explore" className={`${scriptTitle} ${styles.script}`}>Explore</h2>
           <ul className={styles.explore}>
             {categories.map((c) => (
               <li key={c.slug}>
-                <Link
-                  href={`/search?c=${c.slug}`}
-                  className={styles.cat}
-                  style={{ "--tint": exploreColor[c.slug], "--art": artScale[c.slug] ?? 1 } as CSSProperties}
-                >
-                  {/* Already small WebPs, so served as they are. */}
-                  <Image src={`/explore/${c.slug}.webp`} alt="" width={320} height={320} unoptimized loading="eager" className={styles.art} />
-                  <span className={styles.face}>
-                    <span className={styles.name}>{c.label}</span>
-                  </span>
-                </Link>
+                <ExploreCard slug={c.slug} label={c.label} href={`/search?c=${c.slug}`} />
               </li>
             ))}
           </ul>
