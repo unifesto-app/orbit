@@ -223,6 +223,54 @@
   border-bottom: var(--border-divider-section-width) solid var(--color-border-divider-secondary);
 }
 
+.success {
+  background: var(--color-background-status-indicator-success);
+  color: var(--color-text-status-success);
+}
+
+.info {
+  background: var(--color-background-status-indicator-info);
+  color: var(--color-text-status-info);
+}
+
+.warning {
+  background: var(--color-background-status-indicator-warning);
+  color: var(--color-text-status-warning);
+}
+
+.error {
+  background: var(--color-background-status-indicator-error);
+  color: var(--color-text-status-error);
+}
+
+.neutral {
+  background: var(--color-background-status-indicator-neutral);
+  color: var(--color-text-status-inactive);
+}
+
+.alert {
+  padding: var(--space-xs) var(--space-s);
+  border: var(--border-width-field) solid var(--color-border-status-error);
+  border-radius: var(--border-radius-input);
+  background: var(--color-background-status-indicator-error);
+  color: var(--color-text-status-error);
+}
+
+.pairs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-m) var(--space-xl);
+}
+
+.pairs dt {
+  color: var(--color-text-form-label);
+  font-weight: var(--font-weight-bold);
+}
+
+.pairs dd {
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 600px) {
   .input {
     width: 100%;

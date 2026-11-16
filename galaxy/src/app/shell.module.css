@@ -111,6 +111,33 @@
   color: var(--color-text-interactive-hover);
 }
 
+/* The top bar's right end: heyorbit.in, then the account and Sign out */
+.site + .account {
+  margin-left: 0;
+}
+
+.account {
+  display: flex;
+  align-items: center;
+  gap: var(--space-m);
+  margin-left: auto;
+  flex: none;
+}
+
+.account .topLink {
+  margin-left: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: var(--font-weight-button);
+  cursor: pointer;
+}
+
+.accountName {
+  color: var(--color-text-body-secondary);
+}
+
 /* ── Toolbar: breadcrumbs (+ drawer toggle on phones) ──── */
 
 .toolbar {
@@ -308,8 +335,13 @@
     padding: 0 var(--space-m);
   }
 
-  .topLink {
+  .site,
+  .accountName {
     display: none;
+  }
+
+  .site + .account {
+    margin-left: auto;
   }
 
   .toolbar {

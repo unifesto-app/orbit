@@ -1,0 +1,160 @@
+"use client";
+
+import { useSearchParams } from "next/navigation";
+import { type FormEvent, useState, useTransition } from "react";
+import { ui } from "../ui";
+import { confirmMe, type Outcome, sendCode, verifyCode } from "./actions";
+import styles from "./login.module.css";
+
+type Stage = { at: "contact" } | { at: "code"; to: string } | { at: "confirm"; to: string; ticket: string; name: string; since: number };
+
+export function LoginForm() {
+  const next = useSearchParams().get("next") ?? "/";
+  const [stage, setStage] = useState<Stage>({ at: "contact" });
+  const [error, setError] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+
+  // Each step asks the server, then shows the API's own message when it says no.
+  const run = (e: FormEvent<HTMLFormElement>, step: (form: FormData) => Promise<Outcome | void>) => {
+    e.preventDefault();
+    const form = new FormData(e.currentTarget);
+    start(async () => {
+      const r = await step(form);
+      setError(r?.error ?? null);
+    });
+  };
+
+  const field = (form: FormData, name: string) => String(form.get(name) ?? "").trim();
+
+  if (stage.at === "confirm")
+    return (
+      <form
+        key="confirm"
+        className={styles.form}
+        onSubmit={(e) =>
+          run(e, async () => {
+            const r = await confirmMe(stage.ticket, next);
+            if (r.error) setStage({ at: "contact" }); // the ticket works once
+            return r;
+          })
+        }
+      >
+        <h1 className={styles.title}>Is this you?</h1>
+        <p className={styles.who}>
+          {stage.name}
+          <span className={ui.secondary}>On Orbit since {stage.since}</span>
+        </p>
+        <p className={ui.secondary}>This browser hasn’t signed in to this account before.</p>
+        <Alert error={error} />
+        <div className={styles.buttons}>
+          <button className={`${ui.btn} ${ui.primary}`} disabled={pending}>
+            Yes, it’s me
+          </button>
+          <button
+            type="button"
+            className={ui.btnLink}
+            onClick={() => {
+              setStage({ at: "contact" });
+              setError("Then this number is on someone else's Orbit account. Sign in with your own.");
+            }}
+          >
+            Not me
+          </button>
+        </div>
+      </form>
+    );
+
+  if (stage.at === "code")
+    return (
+      <form
+        key="code"
+        className={styles.form}
+        onSubmit={(e) =>
+          run(e, async (form) => {
+            const r = await verifyCode(stage.to, field(form, "code"), next);
+            if (r.confirm) setStage({ at: "confirm", to: stage.to, ...r.confirm });
+            return r;
+          })
+        }
+      >
+        <h1 className={styles.title}>Enter your code</h1>
+        <p className={ui.secondary}>
+          We sent a 6-digit code to <strong>{stage.to}</strong>.
+        </p>
+        <label className={styles.label}>
+          Code
+          <input
+            className={`${ui.input} ${styles.input}`}
+            name="code"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            pattern="\d{6}"
+            maxLength={6}
+            required
+            autoFocus
+          />
+        </label>
+        <Alert error={error} />
+        <div className={styles.buttons}>
+          <button className={`${ui.btn} ${ui.primary}`} disabled={pending}>
+            Sign in
+          </button>
+          <button
+            type="button"
+            className={ui.btnLink}
+            disabled={pending}
+            onClick={() => start(async () => setError((await sendCode(stage.to)).error ?? null))}
+          >
+            Send a new code
+          </button>
+        </div>
+        <button
+          type="button"
+          className={styles.back}
+          onClick={() => {
+            setStage({ at: "contact" });
+            setError(null);
+          }}
+        >
+          Use a different number or email
+        </button>
+      </form>
+    );
+
+  // Each step's form has its own key, so no typed value carries into the next step's field.
+  return (
+    <form
+      key="contact"
+      className={styles.form}
+      onSubmit={(e) =>
+        run(e, async (form) => {
+          const to = field(form, "to");
+          const r = await sendCode(to);
+          if (!r.error) setStage({ at: "code", to });
+          return r;
+        })
+      }
+    >
+      <h1 className={styles.title}>Sign in to Galaxy</h1>
+      <p className={ui.secondary}>For Orbit’s staff. We’ll send a code on WhatsApp or by email.</p>
+      <label className={styles.label}>
+        Phone number or email
+        <input className={`${ui.input} ${styles.input}`} name="to" autoComplete="username" required autoFocus />
+      </label>
+      <Alert error={error} />
+      <div className={styles.buttons}>
+        <button className={`${ui.btn} ${ui.primary}`} disabled={pending}>
+          Send code
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function Alert({ error }: { error: string | null }) {
+  return error ? (
+    <p role="alert" className={styles.alert}>
+      {error}
+    </p>
+  ) : null;
+}

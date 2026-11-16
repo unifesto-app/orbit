@@ -81,6 +81,10 @@ services:
     restart: unless-stopped
     logging: *logging
     env_file: ./galaxy.env
+    environment:
+      # Galaxy's server calls the API directly on `edge`, not through Caddy, and passes on the visitor's address
+      # (galaxy/src/session.ts).
+      ORBIT_API_URL: http://orbit-api:3000
     expose:
       - "3000"
     networks: [edge]

@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { DM_Sans, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
-import { Shell } from "./shell";
 
 // Same type as the web app: Plus Jakarta Sans for headings, titles and
 // buttons; DM Sans for text. latin-ext carries ₹ (U+20B9).
@@ -17,7 +16,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`${display.variable} ${text.variable}`}>
       <body>
-        <Shell>{children}</Shell>
+        {children}
       </body>
     </html>
   );
