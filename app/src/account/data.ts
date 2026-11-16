@@ -16,9 +16,8 @@ export type Refund = { id: string; eventId: string; amountPaise: number; status:
 // A booking that's no longer a ticket: the event is over, or the booking was cancelled or refunded.
 export type Past = { eventId: string; status: 'Went' | 'Missed' | 'Cancelled' | 'Refunded' };
 
-// The account itself is the API's (/me, src/session.ts). What's left here: the number the mock's sign-in methods show,
-// and the city for new events nearby (Event Request's and Notifications' defaults) until the API keeps one.
-export const profile: { phone: string; city: string | null } = { phone: '+919876543210', city: 'Hyderabad' };
+// The account itself is the API's (/me, src/session.ts). What's left here: the number the mock's sign-in methods show.
+export const profile = { phone: '+919876543210' };
 
 export const methods: Method[] = [
   { way: 'phone', detail: profile.phone },

@@ -17,6 +17,7 @@ export const users = pgTable("users", {
   dob: date("dob", { mode: "string" }), // only support changes it after sign-up
   gender: text("gender"),
   photo: text("photo"),
+  city: text("city"), // for new events nearby: a name from @orbit/contract's allCities, never a Google place; seen by nobody else
   // Suspended until `suspendedUntil`, or for good when that is null. Set in Galaxy.
   suspendedAt: at("suspended_at"),
   suspendedUntil: at("suspended_until"),

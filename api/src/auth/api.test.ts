@@ -442,3 +442,22 @@ test("a migrated account without terms goes through About you", async () => {
   assert.equal(rows.length, 1);
   assert.equal(rows[0]!.document, "terms");
 });
+
+test("PATCH /me keeps a city from the list, refuses any other, and null clears it", async () => {
+  const a = await join();
+  assert.equal(a.me.city, null);
+  const set = await t.call("PATCH", "/me", { city: "Hyderabad" }, a.access);
+  assert.equal(set.status, 200);
+  assert.equal(set.body.city, "Hyderabad");
+  assert.equal((await t.call("GET", "/me", undefined, a.access)).body.city, "Hyderabad");
+  for (const city of ["Atlantis", "hyderabad", "Hyderabad, Telangana", "Banjara Hills, Hyderabad, Telangana 500034, India"]) {
+    const bad = await t.call("PATCH", "/me", { city }, a.access);
+    assert.equal(bad.status, 400, city);
+    assert.equal(bad.body.error, "invalid");
+  }
+  assert.equal((await t.call("GET", "/me", undefined, a.access)).body.city, "Hyderabad"); // a refused city changes nothing
+  const cleared = await t.call("PATCH", "/me", { city: null }, a.access);
+  assert.equal(cleared.status, 200);
+  assert.equal(cleared.body.city, null);
+  assert.equal((await t.call("GET", "/me", undefined, a.access)).body.city, null);
+});
