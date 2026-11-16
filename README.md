@@ -26,11 +26,12 @@ The API's tests need a Postgres: `createdb orbit_test` locally, or set `TEST_DAT
 
 - `api/Dockerfile`, `web/Dockerfile` and `galaxy/Dockerfile` build from the repo root.
 - CI (`.github/workflows/ci.yml`) runs typecheck, tests, build and both Docker builds on every push and PR.
-- `.github/workflows/deploy.yml` pushes images to GHCR on `main`. Running them on the AWS box is not set up yet.
-- On the box, `~/orbit/api.env` holds `DATABASE_URL` (the `orbit` database on the shared RDS, login `orbit_app`), `AUTH_SECRET` and `REDIS_URL=redis://orbit-redis:6379`, Orbit's own Valkey container from `deploy/docker-compose.yml`.
+- `deploy/deploy.sh` copies the repo to Orbit's own server, `orbit-server` (ap-south-1, its own VPC, nothing shared with Unifesto), and builds and starts `deploy/docker-compose.yml` there: the API, web, Galaxy, Valkey and Caddy. Deploy from a worktree at `origin/main`. It needs `aws login --profile orbit` and `~/.ssh/orbit-key`; port 22 is closed and SSH goes through Session Manager.
+- Caddy (`deploy/Caddyfile`) serves heyorbit.in, www., api. and galaxy. behind Cloudflare (Full strict, Authenticated Origin Pulls) with the origin cert in `~/orbit/certs` on the server.
+- On the server, `~/orbit/api.env` holds `DATABASE_URL` (database `orbit`, login `orbit_app`, on Orbit's own RDS `orbit-db`), `AUTH_SECRET` and `REDIS_URL=redis://orbit-redis:6379`, Orbit's own Valkey container.
 - Sign-in codes (`api/src/auth/senders.ts`), each channel switched on by its own settings in `api.env`:
   - WhatsApp: `WHATSAPP_PHONE_NUMBER_ID` and `WHATSAPP_ACCESS_TOKEN` (the approved `otp` template).
-  - Email by Amazon SES: `SES_REGION`, with AWS credentials from the usual chain; `EMAIL_FROM` defaults to `Orbit <no-reply@updates.heyorbit.in>`.
+  - Email by Amazon SES: `SES_REGION`, with AWS credentials from the usual chain (on the server, the `orbit-box` instance role, allowed to send only as `@heyorbit.in`); `EMAIL_FROM` defaults to `Orbit <no-reply@updates.heyorbit.in>`.
   - `OPEN_TO`: the opening gate. `*` for everyone (only once Turnstile and App Attest check sends), or a comma-separated list of numbers and emails. Unset, nobody gets a code wherever codes really go out.
   - `CODE_DAILY_CAP` (default 500): past this many codes a day on a channel, the API logs an alert; sends go on.
   - Off production, a channel without its settings prints codes to the API's log instead.
