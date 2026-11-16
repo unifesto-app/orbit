@@ -11,76 +11,152 @@
 // - New people: About you, a name (prefilled from Google or Apple) and a date of birth with the age shown back, and the
 //   terms line. Under 18 makes no account (decision 5). A phone-only account is then offered a passkey.
 // Nothing asks for an email, push or anything else here.
-// ponytail: no API, so every code works, Google signs in to the mock account, Apple comes back as a new person, and a
-// passkey signs straight in. The mock account's phone or email (src/account/data.ts) is a returning person; anything
-// else is new. Real Google, Apple and passkeys need native modules (expo-web-browser for Cognito's hosted page,
-// expo-apple-authentication, a passkey module with the unifesto.app associated domain): a rebuild each.
+// Every step is the Orbit API's (api/src/auth/routes.ts): it checks the codes, knows the accounts and says which step is
+// next; its messages show as they come.
+// ponytail: Google, Apple and passkeys aren't in the API yet, so their buttons only say so, and a new phone account
+// isn't offered a passkey. Each needs the API side and a native module (expo-web-browser, expo-apple-authentication,
+// a passkey module with the unifesto.app associated domain): a rebuild each.
 import { router } from 'expo-router';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { Linking, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 
-import { profile } from '../account/data';
+import type { AuthStep, Me } from '@orbit/contract';
+
 import { Field, Pill, RIM, styles as kit } from '../account/kit';
-import { type Way, year } from '../account/rules';
+import type { Way } from '../account/rules';
+import { BROKEN, type Result } from '../api';
 import { Glass } from '../glass';
 import { Icon } from '../icons';
 import { CloseButton, GlassFill } from '../rows';
-import { runPending, signIn } from '../session';
-import { ADULT, ageOn, type Contact, maskName, readContact, readDob, readPhone, showPhone, typeDob } from '../signin';
+import { api, runPending, setAccount, signIn, thisDevice } from '../session';
+import { ADULT, ageOn, type Contact, readContact, readDob, readPhone, showPhone, typeDob } from '../signin';
 import { color, font, space } from '../theme';
 
 const WWW = 'https://www.unifesto.app'; // the legal pages, as Account links them
-const RESEND = 30; // seconds before a code can be sent again (User doc, Code limits)
 const CODE = 6;
 
 type Step =
   | { at: 'start' }
-  | { at: 'code'; to: Contact }
-  | { at: 'phone' }
-  | { at: 'whose'; then: 'link' | 'done' }
-  | { at: 'link' }
-  | { at: 'about' }
-  | { at: 'passkey' };
+  | { at: 'code'; to: Contact; signup?: string; wait: number }
+  | { at: 'phone'; signup: string }
+  | { at: 'whose'; ticket: string; name: string; since: number }
+  | { at: 'link'; token: string }
+  | { at: 'about'; signup: string };
 
-// ponytail: the mock's one account stands in for the API's lookup.
-const known = (c: Contact) => (c.kind === 'phone' ? c.e164 === profile.phone : c.email === profile.email);
-const WAY_NAME: Partial<Record<Way, string>> = { google: 'Google', apple: 'Apple', email: 'this email' };
+const SOON: Partial<Record<Way, string>> = { google: 'Google', apple: 'Apple', passkey: 'Passkey' };
+const toOf = (c: Contact) => (c.kind === 'phone' ? c.e164 : c.email);
 
 export default function Login() {
   const insets = useSafeAreaInsets();
-  const [step, setStep] = useState<Step>({ at: 'start' });
+  const [step, go] = useState<Step>({ at: 'start' });
   const [via, setVia] = useState<Way>('phone'); // how they came in
-  const [name, setName] = useState(''); // prefilled from Google or Apple
+  const [name, setName] = useState(''); // About you's, prefilled when the API knows it
+  const [error, setError] = useState<string | null>(null); // the API's message, under the title
+  const [busy, setBusy] = useState(false);
+  const working = useRef(false); // the same, read at once: a code filled in twice sends it once
 
-  // Once only: a second tap (or a code filled in twice) would go back again, off the page that opened the sheet.
+  const setStep = (next: Step) => {
+    setError(null);
+    go(next);
+  };
+  // One request at a time. False when the API said no (its message shows), null when one was already under way.
+  async function run<T>(request: () => Promise<Result<T>>, then: (data: T) => void): Promise<boolean | null> {
+    if (working.current) return null;
+    working.current = true;
+    setBusy(true);
+    setError(null);
+    const r = await request();
+    working.current = false;
+    setBusy(false);
+    if (!r.ok) {
+      // A step that took too long (its token or ticket ran out) can't be finished: start again, with the API's word why.
+      // Not from "Add this email?": they're signed in by then, and Not now still closes.
+      if (r.error.error === 'expired' && step.at !== 'link') go({ at: 'start' });
+      setError(r.error.message);
+      return false;
+    }
+    then(r.data);
+    return true;
+  }
+
+  // Back to what opened the sheet, and do what was tapped there. Once only, and not at all if the sheet was already
+  // closed (X, a swipe, back) while the last request was under way: the sign-in still counts, but there's nothing to go
+  // back from.
   const done = useRef(false);
-  const finish = (way: Way = via) => {
-    if (done.current) return;
+  const open = useRef(true);
+  useEffect(
+    () => () => {
+      open.current = false;
+    },
+    [],
+  );
+  const close = () => {
+    if (done.current || !open.current) return;
     done.current = true;
-    signIn(way);
     router.back();
     runPending();
   };
-  // A proven phone that's on an account: "Is this you?", then, if they came in another way, whether to add that way.
-  // ponytail: the doc asks only on a device the account hasn't used, which the API knows (it issues the device id), so
-  // the mock asks every time.
-  const toAccount = () => setStep({ at: 'whose', then: via === 'phone' ? 'done' : 'link' });
-  const proven = (to: Contact) => {
-    if (to.kind === 'email') return known(to) ? finish() : setStep({ at: 'phone' });
-    return known(to) ? toAccount() : setStep({ at: 'about' });
+  // Where the API says to go next. Signed in counts at once, before any question after it, so closing the sheet then
+  // keeps the session the API just made.
+  const next = (s: AuthStep) => {
+    if (s.step === 'signedIn') {
+      signIn(s, via);
+      return s.addEmail ? setStep({ at: 'link', token: s.addEmail.token }) : close();
+    }
+    if (s.step === 'confirm') return setStep({ at: 'whose', ticket: s.ticket, name: s.name, since: s.since });
+    if (s.step === 'phone') return setStep({ at: 'phone', signup: s.signup });
+    if (s.step === 'aboutYou') {
+      setName((n) => n || s.name || '');
+      return setStep({ at: 'about', signup: s.signup });
+    }
+    setError(BROKEN.message); // a step this version of the app doesn't know
   };
-  const created = () => (via === 'phone' ? setStep({ at: 'passkey' }) : finish());
+
+  const send = (to: Contact, signup?: string) =>
+    run(
+      async () => {
+        const r = await api.call<{ retryIn: number }>('POST', '/auth/code', { to: toOf(to) });
+        // A code went there under 30 seconds ago (Change number, then the same one again): it still works, so go to it.
+        return !r.ok && r.error.error === 'tooSoon' ? { ok: true as const, data: { retryIn: r.error.retryIn ?? 30 } } : r;
+      },
+      (r) => setStep({ at: 'code', to, signup, wait: r.retryIn }),
+    );
+  const verify = (to: Contact, code: string, signup?: string) =>
+    run(() => api.call<AuthStep>('POST', '/auth/code/verify', { to: toOf(to), code, device: thisDevice(), ...(signup && { signup }) }), next);
+  // A new code to the same place. The wait comes back either way: from the send, or from "too soon".
+  const resend = async (to: Contact) => {
+    if (working.current) return null;
+    working.current = true;
+    setBusy(true);
+    setError(null);
+    const r = await api.call<{ retryIn: number }>('POST', '/auth/code', { to: toOf(to) });
+    working.current = false;
+    setBusy(false);
+    if (!r.ok) setError(r.error.message);
+    return r.ok ? r.data.retryIn : (r.error.retryIn ?? null);
+  };
+  const confirm = (ticket: string, me: boolean) => run(() => api.call<AuthStep>('POST', '/auth/confirm', { ticket, me, device: thisDevice() }), next);
+  const create = (signup: string, dob: string) =>
+    run(() => api.call<AuthStep>('POST', '/auth/signup', { signup, name: name.trim(), dob, device: thisDevice() }), next);
+  // "Add this email to your account?": signed in already, by the number; yes adds the email, then closes.
+  const addEmail = (token: string) =>
+    void run(
+      () => api.authed<Me>('POST', '/me/email', { token }),
+      (me) => {
+        setAccount(me);
+        close();
+      },
+    );
 
   const head = {
     start: { title: 'Sign in or sign up' },
     code: { title: 'Enter the code', note: step.at === 'code' ? sentTo(step.to) : undefined },
     phone: { title: 'Your WhatsApp number' },
     whose: { title: 'Is this you?' },
-    link: { title: `Add ${WAY_NAME[via] ?? 'it'} to your account?`, note: 'Your number is already on Orbit.' },
+    link: { title: 'Add this email to your account?', note: 'Your number is already on Orbit.' },
     about: { title: 'About you' },
-    passkey: { title: 'Add a passkey?', note: 'Sign in with Face ID or your fingerprint, even without your SIM.' },
   }[step.at];
 
   return (
@@ -96,53 +172,48 @@ export default function Login() {
         </View>
         <CloseButton />
       </View>
+      {error && (
+        <Text style={[styles.line, styles.block]} accessibilityLiveRegion="polite">
+          {error}
+        </Text>
+      )}
 
       {step.at === 'start' && (
         <Start
+          busy={busy}
           onContact={(c) => {
             setVia(c.kind);
-            setStep({ at: 'code', to: c });
+            void send(c);
           }}
-          // ponytail: Google's account is the mock account's email, so it signs in (a proven email on an account).
-          onGoogle={() => finish('google')}
-          onApple={() => {
-            // ponytail: Apple hides the email, so it's a new person; Apple gives the name.
-            setVia('apple');
-            setName(profile.name);
-            setStep({ at: 'phone' });
-          }}
-          onPasskey={() => finish('passkey')}
+          onSoon={(way) => setError(`${SOON[way]} sign-in isn’t ready yet. Use your phone number or email.`)}
         />
       )}
-      {step.at === 'code' && <Code key={step.to.kind} to={step.to} onProven={() => proven(step.to)} onChange={() => setStep(step.to.kind === via ? { at: 'start' } : { at: 'phone' })} />}
-      {step.at === 'phone' && <Phone onPhone={(e164) => setStep({ at: 'code', to: { kind: 'phone', e164 } })} />}
+      {step.at === 'code' && (
+        <Code
+          key={toOf(step.to)}
+          to={step.to}
+          wait={step.wait}
+          onCode={(code) => verify(step.to, code, step.signup)}
+          onResend={() => resend(step.to)}
+          onChange={() => setStep(step.signup ? { at: 'phone', signup: step.signup } : { at: 'start' })}
+        />
+      )}
+      {step.at === 'phone' && <Phone busy={busy} onPhone={(e164) => void send({ kind: 'phone', e164 }, step.signup)} />}
       {step.at === 'whose' && (
-        <Choice yes="Yes, sign in" no="Not me, start fresh" onYes={() => (step.then === 'link' ? setStep({ at: 'link' }) : finish())} onNo={() => setStep({ at: 'about' })}>
-          <Account />
+        <Choice yes="Yes, sign in" no="Not me, start fresh" busy={busy} onYes={() => void confirm(step.ticket, true)} onNo={() => void confirm(step.ticket, false)}>
+          <Account name={step.name} since={step.since} />
         </Choice>
       )}
       {/* Both answers sign in: the number proved the account. */}
-      {step.at === 'link' && <Choice yes={via === 'email' ? 'Add email' : `Add ${WAY_NAME[via]}`} no="Not now" onYes={() => finish()} onNo={() => finish()} />}
-      {step.at === 'about' && <About name={name} onName={setName} onDone={created} />}
-      {/* ponytail: no passkey module yet, so Add a passkey only finishes; it comes with the native rebuild. */}
-      {step.at === 'passkey' && <Choice yes="Add a passkey" no="Not now" onYes={() => finish()} onNo={() => finish()} />}
+      {step.at === 'link' && <Choice yes="Add email" no="Not now" busy={busy} onYes={() => addEmail(step.token)} onNo={close} />}
+      {step.at === 'about' && <About name={name} busy={busy} onName={setName} onDone={(dob) => void create(step.signup, dob)} />}
     </View>
   );
 }
 
 const sentTo = (to: Contact) => (to.kind === 'phone' ? `On WhatsApp to ${showPhone(to.e164)}` : `Emailed to ${to.email}`);
 
-function Start({
-  onContact,
-  onGoogle,
-  onApple,
-  onPasskey,
-}: {
-  onContact: (c: Contact) => void;
-  onGoogle: () => void;
-  onApple: () => void;
-  onPasskey: () => void;
-}) {
+function Start({ busy, onContact, onSoon }: { busy: boolean; onContact: (c: Contact) => void; onSoon: (way: Way) => void }) {
   const [text, setText] = useState('');
   const read = readContact(text);
   const contact = read && read !== 'abroad' ? read : null;
@@ -164,17 +235,17 @@ function Start({
         />
         {read === 'abroad' && <Text style={styles.line}>Orbit takes Indian (+91) numbers only.</Text>}
       </View>
-      <Pill label="Continue" size="wide" disabled={!contact} onPress={go} />
+      <Pill label="Continue" size="wide" disabled={!contact || busy} onPress={go} />
 
       <Text style={styles.or}>or</Text>
       {/* Side by side at the same size (User doc). Short labels, so both fit a phone's width; each still says the
           whole "Continue with" to a screen reader. */}
       <View style={styles.pair}>
-        <With label="Google" onPress={onGoogle} mark={<GoogleMark />} />
-        {Platform.OS === 'ios' && <With label="Apple" onPress={onApple} mark={<Icon name="apple" size={20} color={color.text} />} />}
+        <With label="Google" onPress={() => onSoon('google')} mark={<GoogleMark />} />
+        {Platform.OS === 'ios' && <With label="Apple" onPress={() => onSoon('apple')} mark={<Icon name="apple" size={20} color={color.text} />} />}
       </View>
       {/* ponytail: shown on every phone until the passkey module can ask whether this one supports them. */}
-      <Pill label="Use a passkey" size="wide" onPress={onPasskey} />
+      <Pill label="Use a passkey" size="wide" onPress={() => onSoon('passkey')} />
     </View>
   );
 }
@@ -204,15 +275,35 @@ function GoogleMark() {
 }
 
 // The 6-digit code: it goes on by itself once the sixth digit is in; iOS offers an emailed or texted code above the
-// keyboard (not a WhatsApp one). Resend waits 30 seconds (User doc).
-function Code({ to, onProven, onChange }: { to: Contact; onProven: () => void; onChange: () => void }) {
+// keyboard (not a WhatsApp one). A wrong one clears for another try. Resend waits as long as the API says (30 seconds,
+// User doc).
+function Code({
+  to,
+  wait,
+  onCode,
+  onResend,
+  onChange,
+}: {
+  to: Contact;
+  wait: number;
+  onCode: (code: string) => Promise<boolean | null>;
+  onResend: () => Promise<number | null>;
+  onChange: () => void;
+}) {
   const [code, setCode] = useState('');
-  const [left, setLeft] = useState(RESEND);
+  // Counted against the clock, not ticks: timers stop while they're in WhatsApp reading the code.
+  const [until, setUntil] = useState(() => Date.now() + wait * 1000);
+  const [now, setNow] = useState(Date.now);
+  const left = Math.max(0, Math.ceil((until - now) / 1000));
   useEffect(() => {
     if (!left) return;
-    const t = setTimeout(() => setLeft(left - 1), 1000);
+    const t = setTimeout(() => setNow(Date.now()), 1000);
     return () => clearTimeout(t);
-  }, [left]);
+  }, [left, now]);
+  const waitFor = (s: number) => {
+    setUntil(Date.now() + s * 1000);
+    setNow(Date.now());
+  };
   return (
     <View style={styles.body}>
       <Glass style={[styles.codeBox, styles.block]}>
@@ -221,7 +312,7 @@ function Code({ to, onProven, onChange }: { to: Contact; onProven: () => void; o
           onChangeText={(t) => {
             const digits = t.replace(/\D/g, '').slice(0, CODE);
             setCode(digits);
-            if (digits.length === CODE) onProven(); // ponytail: every code works until the API checks it
+            if (digits.length === CODE) void onCode(digits).then((ok) => ok === false && setCode(''));
           }}
           style={styles.codeText}
           keyboardType="number-pad"
@@ -236,7 +327,12 @@ function Code({ to, onProven, onChange }: { to: Contact; onProven: () => void; o
         />
       </Glass>
       <View style={styles.pair}>
-        <Pill label={left ? `Resend in ${left}s` : 'Resend code'} size="small" disabled={left > 0} onPress={() => setLeft(RESEND)} />
+        <Pill
+          label={left ? `Resend in ${left}s` : 'Resend code'}
+          size="small"
+          disabled={left > 0}
+          onPress={() => void onResend().then((s) => s !== null && waitFor(s))}
+        />
         <Pill label={to.kind === 'phone' ? 'Change number' : 'Change email'} size="small" onPress={onChange} />
       </View>
     </View>
@@ -244,7 +340,7 @@ function Code({ to, onProven, onChange }: { to: Contact; onProven: () => void; o
 }
 
 // Anyone who came in by email, Google or Apple adds a WhatsApp number: every account has a verified phone (decision 2).
-function Phone({ onPhone }: { onPhone: (e164: string) => void }) {
+function Phone({ busy, onPhone }: { busy: boolean; onPhone: (e164: string) => void }) {
   const [text, setText] = useState('');
   const read = readPhone(text);
   const phone = read && read !== 'abroad' ? read : null;
@@ -264,37 +360,51 @@ function Phone({ onPhone }: { onPhone: (e164: string) => void }) {
         />
         {read === 'abroad' && <Text style={styles.line}>Orbit takes Indian (+91) numbers only.</Text>}
       </View>
-      <Pill label="Send code" size="wide" disabled={!phone} onPress={go} />
+      <Pill label="Send code" size="wide" disabled={!phone || busy} onPress={go} />
     </View>
   );
 }
 
-// The masked account a phone number opens, so someone with a recycled SIM can say it isn't theirs.
-function Account() {
+// The masked account a phone number opens (masked by the API), so someone with a recycled SIM can say it isn't theirs.
+function Account({ name, since }: { name: string; since: number }) {
   return (
     <Glass style={styles.accountRim}>
       <View style={styles.accountFace}>
-        <Text style={styles.accountName}>{maskName(profile.name)}</Text>
-        <Text style={styles.line}>On Orbit since {year(profile.since)}</Text>
+        <Text style={styles.accountName}>{name}</Text>
+        <Text style={styles.line}>On Orbit since {since}</Text>
       </View>
     </Glass>
   );
 }
 
 // A question with two answers, the second in grey: "Not me, start fresh", "Not now".
-function Choice({ yes, no, onYes, onNo, children }: { yes: string; no: string; onYes: () => void; onNo: () => void; children?: ReactNode }) {
+function Choice({
+  yes,
+  no,
+  busy,
+  onYes,
+  onNo,
+  children,
+}: {
+  yes: string;
+  no: string;
+  busy: boolean;
+  onYes: () => void;
+  onNo: () => void;
+  children?: ReactNode;
+}) {
   return (
     <View style={styles.body}>
       {children}
-      <Pill label={yes} size="wide" onPress={onYes} />
-      <Pill label={no} size="wide" muted onPress={onNo} />
+      <Pill label={yes} size="wide" disabled={busy} onPress={onYes} />
+      <Pill label={no} size="wide" muted disabled={busy} onPress={onNo} />
     </View>
   );
 }
 
 // About you, the last sign-up screen: Continue makes the account. The date can't be changed afterwards except by
 // support, so the age shows back under it. Under 18, no account: a host can add them as a guest (decision 5).
-function About({ name, onName, onDone }: { name: string; onName: (n: string) => void; onDone: () => void }) {
+function About({ name, busy, onName, onDone }: { name: string; busy: boolean; onName: (n: string) => void; onDone: (dob: string) => void }) {
   const [dobText, setDobText] = useState('');
   const [today] = useState(() => Date.now());
   const dob = readDob(dobText, today);
@@ -335,7 +445,7 @@ function About({ name, onName, onDone }: { name: string; onName: (n: string) => 
           Privacy Policy
         </Text>
       </Text>
-      <Pill label="Continue" size="wide" disabled={!ok} onPress={onDone} />
+      <Pill label="Continue" size="wide" disabled={!ok || busy} onPress={() => dob && onDone(dob)} />
     </View>
   );
 }

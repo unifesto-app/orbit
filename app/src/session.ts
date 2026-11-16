@@ -1,30 +1,76 @@
 // Signed in or signed out on this phone (User flow doc, settled 15 Nov 2026). A fresh install starts signed out, and
 // browsing Home, Search, events and hosts never asks. Saving, following, booking and anything of your own ask through
 // the sign-in sheet (src/app/login.tsx), then finish what was tapped ("come back to where you were").
-// Saved on the phone and read back synchronously at launch, the way the location is (src/place.ts), so the first frame
-// is already right.
-// ponytail: no API yet, so a session is a flag plus the saved events and followed hosts, and every sign-in opens the
-// one mock account (src/account/data.ts, src/mock.ts `viewer`, src/modes.ts `me`). The seam for real auth is signIn
-// and signOut: they'll hold the API's refresh token in the Keychain (expo-secure-store, a native module, so a rebuild)
-// and fetch the account instead of seeding the mock.
+// The account comes from the Orbit API (src/api.ts). What the first frame needs (signed in, the account and its roles)
+// is saved on the phone and read back synchronously at launch, the way the location is (src/place.ts); the refresh
+// token is kept in the Keychain, and the access token only in memory.
+// ponytail: saved events and followed hosts stay on this phone, seeded from the mock (src/account/data.ts,
+// src/mock.ts), until the API has them.
+import type { AuthStep, Me as Account } from '@orbit/contract';
+import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import Storage from 'expo-sqlite/kv-store';
 import { useSyncExternalStore } from 'react';
+import { Alert, Platform } from 'react-native';
 
 import { saved as savedMock } from './account/data';
 import type { Way } from './account/rules';
+import { API_URL, makeApi } from './api';
 import type { Viewer } from './home/layout';
 import { viewer } from './mock';
-import { me, nobody } from './modes';
+import { type Me, nobody } from './modes';
 
 const KEY = 'orbit.session';
+const DEVICE = 'orbit.device';
+const REFRESH = 'orbit.refresh';
 
-export type Session = { via: Way; saved: readonly string[]; follows: readonly string[] };
+export type Session = { via: Way; saved: readonly string[]; follows: readonly string[]; me: Account };
+
+// The refresh token, in the Keychain (Android: the Keystore), readable once the phone has been unlocked after a restart
+// and never copied to a backup or another phone. expo-secure-store is a native module: on a build made before it was
+// added, it isn't there, and the token stays in memory only, so a sign-in lasts until the app closes. Never kv-store.
+let secure: typeof import('expo-secure-store') | null = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- optional: a static import throws on a build without it
+  secure = require('expo-secure-store');
+} catch {
+  secure = null;
+}
+const KEYCHAIN = secure ? { keychainAccessible: secure.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY } : {};
+let token: string | null | undefined; // undefined: not read from the Keychain yet
+let unreadable = false; // the Keychain failed to answer (a launch before the first unlock): signed out this time only
+// Keychain writes go one after another, in order: a delete still under way must never land after the next sign-in's
+// token and wipe it. Reads come from memory once the first one is done.
+let writes = Promise.resolve();
+const refreshToken = {
+  get(): string | null {
+    if (token !== undefined) return token;
+    try {
+      token = secure?.getItem(REFRESH, KEYCHAIN) ?? null;
+    } catch {
+      token = null;
+      unreadable = true;
+    }
+    return token;
+  },
+  set(next: string | null) {
+    token = next;
+    const store = secure;
+    if (!store) return;
+    // Not kept, on a failure: still signed in until the app closes.
+    writes = writes.then(() => (next ? store.setItemAsync(REFRESH, next, KEYCHAIN) : store.deleteItemAsync(REFRESH, KEYCHAIN))).catch(() => {});
+  },
+};
 
 function stored(): Session | null {
   try {
     const s = JSON.parse(Storage.getItemSync(KEY) ?? 'null');
-    return typeof s?.via === 'string' && Array.isArray(s.saved) && Array.isArray(s.follows) ? s : null;
+    const ok = typeof s?.via === 'string' && Array.isArray(s.saved) && Array.isArray(s.follows) && typeof s.me?.id === 'string';
+    if (ok && refreshToken.get()) return s;
+    // No refresh token: a session from before the API, or one whose token stayed in memory, so signed out, and the
+    // account's details aren't left behind on the phone.
+    if (s && !unreadable) Storage.removeItemSync(KEY);
+    return null;
   } catch {
     return null; // unreadable: signed out
   }
@@ -54,14 +100,15 @@ function subscribe(fn: () => void) {
 export const useSession = () => useSyncExternalStore(subscribe, () => current);
 export const useSignedIn = () => useSession() !== null;
 
-// Who Home and the pages draw for: the mock viewer once signed in, with the follows made here; signed out, only the
-// place, which never needs an account.
+// Who Home and the pages draw for: once signed in, the account's initial, the follows made here and the rest of the
+// mock viewer; signed out, only the place, which never needs an account.
 export function useViewer(): Viewer {
   const s = useSession();
-  return s ? { ...viewer, signedIn: true, follows: s.follows } : { signedIn: false, follows: [], place: viewer.place };
+  const initial = s?.me.name?.trim()[0]?.toUpperCase();
+  return s ? { ...viewer, signedIn: true, follows: s.follows, ...(initial && { initial }) } : { signedIn: false, follows: [], place: viewer.place };
 }
-// Roles for the mode switcher and the Console and Galaxy guards: none while signed out, so Home only.
-export const useMe = () => (useSession() ? me : nobody);
+// Roles for the mode switcher and the Console and Galaxy guards, from the API: none while signed out, so Home only.
+export const useMe = (): Me => useSession()?.me ?? nobody;
 
 export const useSaved = (eventId: string) => useSession()?.saved.includes(eventId) ?? false;
 export const useFollowing = (hostId: string) => useSession()?.follows.includes(hostId) ?? false;
@@ -89,7 +136,52 @@ export function runPending() {
   action?.();
 }
 
-export const signIn = (via: Way) => set({ via, saved: savedMock, follows: viewer.follows });
+// Signed out by the API: a suspension says why and until when (the API keeps the token unspent so it can).
+export const api = makeApi({
+  base: API_URL,
+  fetch,
+  refreshToken,
+  onEnded: (why) => {
+    set(null);
+    if (why.error === 'suspended') Alert.alert('Signed out', why.message);
+  },
+});
 
-// Log out, and Delete account, which signs out every device (User doc).
-export const signOut = () => set(null);
+// This phone, as the API knows it. The id is the one the API gave it at the first sign-in, kept across sign-outs:
+// without it every sign-in is a new device, and a phone code on a new device asks "Is this you?" and starts the
+// account's 7-day hold.
+export function thisDevice() {
+  let id: string | null = null;
+  try {
+    id = Storage.getItemSync(DEVICE);
+  } catch {
+    // unreadable: a new device to the API
+  }
+  const name = Constants.deviceName?.trim() || (Platform.OS === 'ios' ? 'iPhone' : 'Android phone');
+  return { ...(id && { id }), name: name.slice(0, 100), client: 'app' as const };
+}
+
+// The sign-in sheet's last step: keep the device id and the tokens, and draw the account.
+export function signIn(done: Extract<AuthStep, { step: 'signedIn' }>, via: Way) {
+  try {
+    Storage.setItemSync(DEVICE, done.device);
+  } catch {
+    // Not kept: the next sign-in is a new device.
+  }
+  api.start(done);
+  set({ via, saved: current?.saved ?? savedMock, follows: current?.follows ?? viewer.follows, me: done.me });
+}
+
+// The account as the API has it now (a name, a role or a deletion changed elsewhere). Once at launch.
+export async function refreshAccount() {
+  if (!current) return;
+  const r = await api.authed<Account>('GET', '/me');
+  if (r.ok && current?.me.id === r.data.id) set({ ...current, me: r.data });
+}
+export const setAccount = (me: Account) => current?.me.id === me.id && set({ ...current, me });
+
+// Log out, and Delete account, which signs out every device (User doc). The API is told without waiting.
+export function signOut() {
+  api.signOut();
+  set(null);
+}

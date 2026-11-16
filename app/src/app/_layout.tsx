@@ -4,8 +4,9 @@ import { Sacramento_400Regular } from '@expo-google-fonts/sacramento';
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
+import { refreshAccount } from '../session';
 import { Splash } from '../splash/Splash';
 import { color } from '../theme';
 
@@ -36,6 +37,10 @@ export default function RootLayout() {
   const ready = loaded || !!error;
   const [splashLeaving, setSplashLeaving] = useState(false);
   const [splashDone, setSplashDone] = useState(false);
+  // The account as the API has it now: its name and roles may have changed since this phone last saw them.
+  useEffect(() => {
+    void refreshAccount();
+  }, []);
 
   return (
     <>
