@@ -390,8 +390,11 @@ export function rolesRoutes({ db, notify, secret, now = Date.now }: Deps) {
                           where o.host_id = h.id and o.role = 'admin' and o.started_at is not null and o.ended_at is null
                             and o.user_id <> ${target.id}
                             and not (ou.suspended_at is not null and (ou.suspended_until is null or ou.suspended_until > ${at().toISOString()}::timestamptz)))`);
-      const ids = [...alone].map((r) => r.id);
-      if (ids.length) await tx.update(hosts).set({ status: "suspended", suspendedWith: target.id, updatedAt: at() }).where(inArray(hosts.id, ids));
+      const found = [...alone].map((r) => r.id);
+      // Still live when the update lands: a host staff suspended meanwhile keeps its own suspension.
+      const ids = found.length
+        ? (await tx.update(hosts).set({ status: "suspended", suspendedWith: target.id, updatedAt: at() }).where(and(inArray(hosts.id, found), eq(hosts.status, "live"))).returning({ id: hosts.id })).map((r) => r.id)
+        : [];
       await audit(tx, { actorId: c.var.actor.id, action: "people.suspend", targetUser: target.id, reason: b.reason, data: { until: b.until, hosts: ids } });
       return ids;
     });

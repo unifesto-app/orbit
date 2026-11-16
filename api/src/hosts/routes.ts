@@ -1,7 +1,7 @@
 import { and, count, desc, eq, ilike, inArray, isNotNull, isNull, or } from "drizzle-orm";
 import { Hono, type Context } from "hono";
 import { createMiddleware } from "hono/factory";
-import { EditHost, type HostPage, SetParent, StaffReason } from "@orbit/contract";
+import { EditHost, type HostPage, SetParent, StaffReason, VerifyHost } from "@orbit/contract";
 import type { Db } from "../db/index.ts";
 import { auditLog, follows, hosts, hostSlugs, teamRoles, users } from "../db/schema.ts";
 import { type Env, fail, invalid, isUuid, type Notify, parse, signedIn, taken } from "../http.ts";
@@ -63,25 +63,36 @@ export function hostsRoutes({ db, notify, secret, now = Date.now }: Deps) {
     if (t?.mine.role !== "admin") return nothing(c);
     const { host } = t;
     if (!changeable(host)) return fail(c, 409, "hostClosed", "This host can't be edited right now.");
-    const renamed = b.name !== undefined && b.name !== host.name;
     try {
+      // The host and the person's seat are read again under a lock: a suspension or removal that landed since the
+      // first read stands.
       const done = await db.transaction(async (tx) => {
-        if (b.slug && b.slug !== host.slug) {
+        const [cur] = await tx.select().from(hosts).where(eq(hosts.id, host.id)).for("update");
+        const [seat] = await tx
+          .select({ id: teamRoles.id })
+          .from(teamRoles)
+          .where(and(eq(teamRoles.hostId, host.id), eq(teamRoles.userId, c.var.user.id), eq(teamRoles.role, "admin"), isNotNull(teamRoles.startedAt), isNull(teamRoles.endedAt)));
+        if (!seat) return "gone" as const;
+        if (!changeable(cur!)) return "closed" as const;
+        if (b.slug && b.slug !== cur!.slug) {
           // Every slug stays held by its host: its own old one is free to come back to, anyone else's is not.
           const [got] = await tx
             .insert(hostSlugs)
             .values({ slug: b.slug, hostId: host.id, createdAt: at() })
             .onConflictDoUpdate({ target: hostSlugs.slug, set: { hostId: host.id }, setWhere: eq(hostSlugs.hostId, host.id) })
             .returning();
-          if (!got) return false;
+          if (!got) return "taken" as const;
         }
+        const renamed = b.name !== undefined && b.name !== cur!.name;
         await tx
           .update(hosts)
           .set({ ...b, ...(renamed ? { verifiedAt: null, verifiedBy: null } : {}), updatedAt: at() })
           .where(eq(hosts.id, host.id));
-        return true;
+        return "done" as const;
       });
-      if (!done) return fail(c, 409, "linkTaken", "That link is taken. Try another.");
+      if (done === "gone") return nothing(c);
+      if (done === "closed") return fail(c, 409, "hostClosed", "This host can't be edited right now.");
+      if (done === "taken") return fail(c, 409, "linkTaken", "That link is taken. Try another.");
     } catch (e) {
       if (taken(e)) return fail(c, 409, "linkTaken", "That link is taken. Try another.");
       throw e;
@@ -142,9 +153,10 @@ export function hostsRoutes({ db, notify, secret, now = Date.now }: Deps) {
 
   // ---------- The public read ----------
 
-  // GET /hosts/by-slug/:slug: any slug the host has had finds it; the body carries the current one, so the client
-  // redirects when it differs. Events come with the events slice.
-  app.get("/hosts/by-slug/:slug", maybe, async (c) => {
+  // GET /public/hosts/:slug: any slug the host has had finds it; the body carries the current one, so the client
+  // redirects when it differs. Public reads live under /public so no host's link can collide with /hosts/:id/<word>.
+  // Events come with the events slice.
+  app.get("/public/hosts/:slug", maybe, async (c) => {
     const [row] = await db
       .select({ host: hosts })
       .from(hostSlugs)
@@ -206,19 +218,24 @@ export function hostsRoutes({ db, notify, secret, now = Date.now }: Deps) {
     return true;
   };
 
-  // POST /galaxy/hosts/:id/verify
+  // POST /galaxy/hosts/:id/verify: carries the name staff saw. A rename since then refuses it (Hosts flow: renaming
+  // removes verification), so the badge never lands on a name nobody checked.
   app.post("/galaxy/hosts/:id/verify", auth, hostsOnly, async (c) => {
-    const b = await parse(c, StaffReason);
+    const b = await parse(c, VerifyHost);
     if (!b) return invalid(c);
     const h = await hostById(c.req.param("id"));
     if (!h) return nothing(c);
     if (!(await actable(c, h.id))) return ownHost(c);
     const done = await db.transaction(async (tx) => {
-      const [row] = await tx.update(hosts).set({ verifiedAt: at(), verifiedBy: c.var.actor.id, updatedAt: at() }).where(and(eq(hosts.id, h.id), isNull(hosts.verifiedAt))).returning();
-      if (row) await audit(tx, { actorId: c.var.actor.id, action: "hosts.verify", targetHost: h.id, reason: b.reason });
-      return row;
+      const [cur] = await tx.select().from(hosts).where(eq(hosts.id, h.id)).for("update");
+      if (cur!.name !== b.name) return "changed" as const;
+      if (cur!.verifiedAt) return "already" as const;
+      await tx.update(hosts).set({ verifiedAt: at(), verifiedBy: c.var.actor.id, updatedAt: at() }).where(eq(hosts.id, h.id));
+      await audit(tx, { actorId: c.var.actor.id, action: "hosts.verify", targetHost: h.id, reason: b.reason, data: { name: cur!.name } });
+      return "done" as const;
     });
-    if (!done) return fail(c, 409, "already", "That host is already verified.");
+    if (done === "changed") return fail(c, 409, "changed", "The host changed its name since you opened it. Open it again and check.");
+    if (done === "already") return fail(c, 409, "already", "That host is already verified.");
     await sayStaff(h, "hostVerified", {}, "hosts.verify", b.reason, c.var.actor.id);
     return c.json({ id: h.id, verified: true });
   });
@@ -240,7 +257,7 @@ export function hostsRoutes({ db, notify, secret, now = Date.now }: Deps) {
     return c.json({ id: h.id, verified: false });
   });
 
-  // POST /galaxy/hosts/:id/suspend: from live, paused, or held for want of an Admin. Tied to no account, so an account
+  // POST /galaxy/hosts/:id/suspend: from live, paused, archived, or held for want of an Admin. Tied to no account, so an account
   // coming back never lifts it (liftHostsOf only lifts holds tied to one).
   // ponytail: open payouts holding and refunds going to Orbit come with the Money slice.
   app.post("/galaxy/hosts/:id/suspend", auth, hostsOnly, async (c) => {
@@ -251,14 +268,13 @@ export function hostsRoutes({ db, notify, secret, now = Date.now }: Deps) {
     if (!(await actable(c, h.id))) return ownHost(c);
     const done = await db.transaction(async (tx) => {
       const [cur] = await tx.select().from(hosts).where(eq(hosts.id, h.id)).for("update");
-      if (cur!.status === "archived") return "archived" as const;
       if (cur!.status === "suspended" && !cur!.suspendedWith) return "already" as const;
-      const liftTo = cur!.status === "paused" ? "paused" : "live";
+      // An archived host is suspended too, and a lift puts it back archived: the owner can't restore it meanwhile.
+      const liftTo = cur!.status === "paused" || cur!.status === "archived" ? cur!.status : "live";
       await tx.update(hosts).set({ status: "suspended", suspendReason: b.reason, suspendedWith: null, liftTo, updatedAt: at() }).where(eq(hosts.id, h.id));
       await audit(tx, { actorId: c.var.actor.id, action: "hosts.suspend", targetHost: h.id, reason: b.reason, data: { from: cur!.status, liftTo } });
       return "done" as const;
     });
-    if (done === "archived") return fail(c, 409, "archived", "That host is archived, so there's nothing to suspend.");
     if (done === "already") return fail(c, 409, "already", "That host is already suspended by staff.");
     await sayStaff(h, "hostSuspended", { reason: b.reason }, "hosts.suspend", b.reason, c.var.actor.id);
     return c.json({ id: h.id, status: "suspended" });
@@ -291,7 +307,7 @@ export function hostsRoutes({ db, notify, secret, now = Date.now }: Deps) {
     if (!b) return invalid(c);
     const h = await hostById(c.req.param("id"));
     if (!h) return nothing(c);
-    if (!(await actable(c, ...(b.parentId ? [h.id, b.parentId] : [h.id])))) return ownHost(c);
+    if (!(await actable(c, h.id, ...(b.parentId ? [b.parentId] : []), ...(h.parentId ? [h.parentId] : [])))) return ownHost(c);
     const out = await db.transaction(async (tx) => {
       // Both rows locked in id order, so two moves at once can't each pass the depth check or deadlock.
       const ids = [...new Set([h.id, ...(b.parentId ? [b.parentId] : [])])];

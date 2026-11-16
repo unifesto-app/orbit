@@ -1,4 +1,4 @@
-import { and, eq, gt, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import { createMiddleware } from "hono/factory";
 import { type Roles, STAFF_FEATURES, type StaffFeature } from "@orbit/contract";
 import type { Db } from "../db/index.ts";
@@ -28,8 +28,15 @@ export async function rolesOf(db: Db, u: User, now: number): Promise<Roles> {
     .select({ hostId: hosts.id, ownerId: hosts.ownerId, role: teamRoles.role })
     .from(teamRoles)
     .innerJoin(hosts, eq(hosts.id, teamRoles.hostId))
-    // An archived host is closed to all but its owner.
-    .where(and(eq(teamRoles.userId, u.id), isNotNull(teamRoles.startedAt), isNull(teamRoles.endedAt), or(ne(hosts.status, "archived"), eq(hosts.ownerId, u.id))));
+    // An archived host is closed to all but its owner, also while staff suspend it.
+    .where(
+      and(
+        eq(teamRoles.userId, u.id),
+        isNotNull(teamRoles.startedAt),
+        isNull(teamRoles.endedAt),
+        or(sql`not (${hosts.status} = 'archived' or (${hosts.status} = 'suspended' and ${hosts.liftTo} is not distinct from 'archived'))`, eq(hosts.ownerId, u.id)),
+      ),
+    );
   return {
     teams: seats.map((s) => ({ hostId: s.hostId, owner: s.ownerId === u.id, admin: s.role === "admin", events: {} })),
     staff: a.owner || a.features.length ? { owner: a.owner, features: [...a.features], confirmed: true } : null,
@@ -59,11 +66,14 @@ const seatOf = async (db: Db, hostId: string, userId: string) =>
       .where(and(eq(teamRoles.hostId, hostId), eq(teamRoles.userId, userId), isNotNull(teamRoles.startedAt), isNull(teamRoles.endedAt)))
   )[0] ?? null;
 
-// The host in the path and the person's started seat on it. An archived host is closed to all but its owner.
+// Archived, or archived and then suspended by staff (a lift puts it back archived): closed to all but its owner.
+export const ownerOnly = (h: typeof hosts.$inferSelect) => h.status === "archived" || (h.status === "suspended" && h.liftTo === "archived");
+
+// The host in the path and the person's started seat on it.
 export const teamOf = async (db: Db, hostId: string, userId: string) => {
   if (!isUuid(hostId)) return null;
   const [host] = await db.select().from(hosts).where(eq(hosts.id, hostId));
-  if (!host || (host.status === "archived" && host.ownerId !== userId)) return null;
+  if (!host || (ownerOnly(host) && host.ownerId !== userId)) return null;
   const mine = await seatOf(db, host.id, userId);
   return mine ? { host, mine } : null;
 };
@@ -71,9 +81,10 @@ export const teamOf = async (db: Db, hostId: string, userId: string) => {
 // Team changes need a live or paused host; a suspended one's team can still read (Hosts flow).
 export const changeable = (h: typeof hosts.$inferSelect) => h.status === "live" || h.status === "paused";
 
-// Staff never act on a host whose team they're on, are invited to, or left in the last 30 days (Roles flow). Matches by
-// account or by a verified phone or email an invite went to.
-// An unaccepted invite past 14 days still has no end date, so it still counts: conservative, and fine.
+// Staff never act on a host whose team they're on, or have just left (Roles flow). Matches by account or by a verified
+// phone or email an invite went to. Only places they took count: one they accepted or started, or one that had started
+// and ended in the last 30 days. An invite they never accepted doesn't, or an Admin could shield a host from staff by
+// inviting one of them, then withdrawing it or letting it lapse.
 export const onHost = async (db: Db, hostId: string, u: User, now: number) => {
   const mine = [u.phoneVerifiedAt && u.phone, u.emailVerifiedAt && u.email].filter((x): x is string => !!x);
   const [seat] = await db
@@ -83,7 +94,10 @@ export const onHost = async (db: Db, hostId: string, u: User, now: number) => {
       and(
         eq(teamRoles.hostId, hostId),
         mine.length ? or(eq(teamRoles.userId, u.id), inArray(teamRoles.contact, mine)) : eq(teamRoles.userId, u.id),
-        or(isNull(teamRoles.endedAt), gt(teamRoles.endedAt, new Date(now - 30 * 24 * 3600 * 1000))),
+        or(
+          and(isNull(teamRoles.endedAt), or(isNotNull(teamRoles.startedAt), isNotNull(teamRoles.acceptedAt))),
+          and(isNotNull(teamRoles.startedAt), gt(teamRoles.endedAt, new Date(now - 30 * 24 * 3600 * 1000))),
+        ),
       ),
     )
     .limit(1);

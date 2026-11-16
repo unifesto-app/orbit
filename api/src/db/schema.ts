@@ -64,7 +64,7 @@ export const hosts = pgTable("hosts", {
   // A club under a host, one level deep (Hosts decision 3). Nothing is inherited.
   parentId: uuid("parent_id").references((): AnyPgColumn => hosts.id),
   suspendReason: text("suspend_reason"), // what staff said, shown to the host's Admins
-  liftTo: text("lift_to", { enum: ["live", "paused"] }), // where a staff lift returns a staff-suspended host
+  liftTo: text("lift_to", { enum: ["live", "paused", "archived"] }), // where a staff lift returns a staff-suspended host
   createdAt: at("created_at").notNull().defaultNow(),
   updatedAt: at("updated_at").notNull().defaultNow(),
 }, (t) => [index().on(t.parentId)]);

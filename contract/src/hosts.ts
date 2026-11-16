@@ -27,7 +27,10 @@ export const EditHost = z
 // PUT /galaxy/hosts/:id/parent: make it a club of another host, or null to clear. A risky action, so a reason.
 export const SetParent = z.object({ parentId: z.uuid().nullable(), reason: z.string().trim().min(3).max(500) });
 
-// What anyone reads of a public, live host: GET /hosts/by-slug/:slug. The slug is the current one, so a client that
+// POST /galaxy/hosts/:id/verify: carries the name the staff member saw, so the badge can't land on a name they never checked.
+export const VerifyHost = z.object({ reason: z.string().trim().min(3).max(500), name: z.string() });
+
+// What anyone reads of a public, live host: GET /public/hosts/:slug. The slug is the current one, so a client that
 // came by an old link redirects. `followers` is null under 10 (Discover decision 16); `following` is null signed out.
 const Link = z.object({ slug: z.string(), name: z.string() });
 export const PublicHost = z.object({

@@ -1,14 +1,36 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { eq } from "drizzle-orm";
+import postgres from "postgres";
 import { sign } from "hono/jwt";
 import { testApp } from "../testkit.ts";
 import { runDeletions } from "../auth/deletion.ts";
 import { auditLog, follows, hosts, staffGrants, users } from "../db/schema.ts";
 
 let t: Awaited<ReturnType<typeof testApp>>;
-before(async () => (t = await testApp()));
-after(() => t.close());
+// A second connection that holds a row lock, to make two requests meet in a chosen order.
+let lock: ReturnType<typeof postgres>;
+before(async () => {
+  t = await testApp();
+  lock = postgres(process.env.TEST_DATABASE_URL ?? "postgres://localhost:5432/orbit_test", { max: 1, onnotice: () => {} });
+});
+after(async () => {
+  await lock.end();
+  await t.close();
+});
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+// Runs `first`, then `second`, while the host's row is locked, so `second` reaches the database after `first` has queued.
+const meet = async (hostId: string, first: () => Promise<any>, second: () => Promise<any>) => {
+  let p1: Promise<any>, p2: Promise<any>;
+  await lock.begin(async (sql: any) => {
+    await sql`select 1 from hosts where id = ${hostId} for update`;
+    p1 = first();
+    await sleep(400);
+    p2 = second();
+    await sleep(400);
+  });
+  return [await p1!, await p2!];
+};
 
 const device = { name: "iPhone", client: "app" as const };
 let n = 0;
@@ -50,12 +72,14 @@ const addAdmin = async (owner: P, hostId: string, who: P) => {
 const audits = async (action: string, hostId: string) => (await t.db.select().from(auditLog)).filter((a) => a.action === action && a.targetHost === hostId);
 const row = async (id: string) => (await t.db.select().from(hosts).where(eq(hosts.id, id)))[0]!;
 const R = { reason: "checked the page" };
+// A verify body: the host's name as staff would have just read it.
+const vb = async (id: string) => ({ ...R, name: (await row(id)).name });
 
 test("an Admin edits the host; renaming removes verification", async () => {
   const a = await join(), b = await join(), out = await join(), st = await staff("hosts");
   const h = await start(a);
   await addAdmin(a, h.id, b);
-  assert.equal((await as(st)("POST", `/galaxy/hosts/${h.id}/verify`, R)).status, 200);
+  assert.equal((await as(st)("POST", `/galaxy/hosts/${h.id}/verify`, await vb(h.id))).status, 200);
   const e = await as(b)("PATCH", `/hosts/${h.id}`, { about: "Stand-up nights", website: "https://punchline.in", city: "Pune" });
   assert.equal(e.status, 200);
   assert.equal(e.body.about, "Stand-up nights");
@@ -88,17 +112,17 @@ test("a new link keeps the old one, and nobody else can take it", async () => {
   const h = await start(a), other = await start(b, "Other Crew");
   const old = h.slug;
   assert.equal((await as(a)("PATCH", `/hosts/${h.id}`, { slug: "punchline" })).body.slug, "punchline");
-  const viaOld = await t.call("GET", `/hosts/by-slug/${old}`);
+  const viaOld = await t.call("GET", `/public/hosts/${old}`);
   assert.equal(viaOld.status, 200);
   assert.equal(viaOld.body.slug, "punchline"); // the client redirects
-  assert.equal((await t.call("GET", "/hosts/by-slug/punchline")).body.id, h.id);
+  assert.equal((await t.call("GET", "/public/hosts/punchline")).body.id, h.id);
   for (const slug of [old, "punchline"]) {
     const r = await as(b)("PATCH", `/hosts/${other.id}`, { slug });
     assert.equal(r.status, 409);
     assert.equal(r.body.error, "linkTaken");
   }
   assert.equal((await as(a)("PATCH", `/hosts/${h.id}`, { slug: old })).body.slug, old); // its own old link is free to return to
-  assert.equal((await t.call("GET", "/hosts/by-slug/punchline")).body.slug, old);
+  assert.equal((await t.call("GET", "/public/hosts/punchline")).body.slug, old);
   assert.equal((await as(a)("PATCH", `/hosts/${h.id}`, { slug: "Bad Slug" })).status, 400);
 });
 
@@ -148,39 +172,39 @@ test("the public read: private and paused hosts aren't there; the count shows fr
   const a = await join(), g = await join();
   const h = await start(a, "Open Mic");
   await as(a)("PATCH", `/hosts/${h.id}`, { about: "Mic nights" });
-  const pub = await t.call("GET", `/hosts/by-slug/${h.slug}`);
+  const pub = await t.call("GET", `/public/hosts/${h.slug}`);
   assert.equal(pub.status, 200);
   assert.deepEqual(Object.keys(pub.body).sort(), ["about", "banner", "city", "clubs", "following", "followers", "id", "kind", "logo", "name", "parent", "slug", "verified", "website"].sort());
   assert.equal(pub.body.following, null);
   assert.equal(pub.body.followers, null);
-  assert.equal((await as(g)("GET", `/hosts/by-slug/${h.slug}`)).body.following, false);
+  assert.equal((await as(g)("GET", `/public/hosts/${h.slug}`)).body.following, false);
   await as(g)("POST", `/hosts/${h.id}/follow`);
-  assert.equal((await as(g)("GET", `/hosts/by-slug/${h.slug}`)).body.following, true);
-  assert.equal((await t.call("GET", `/hosts/by-slug/${h.slug}`, undefined, "garbage")).status, 401);
+  assert.equal((await as(g)("GET", `/public/hosts/${h.slug}`)).body.following, true);
+  assert.equal((await t.call("GET", `/public/hosts/${h.slug}`, undefined, "garbage")).status, 401);
   assert.equal((await as(a)("GET", `/hosts/${h.id}`)).body.followers, 1); // exact for the team
   for (let i = 0; i < 8; i++) await as(await join())("POST", `/hosts/${h.id}/follow`);
-  assert.equal((await t.call("GET", `/hosts/by-slug/${h.slug}`)).body.followers, null); // 9
+  assert.equal((await t.call("GET", `/public/hosts/${h.slug}`)).body.followers, null); // 9
   await as(await join())("POST", `/hosts/${h.id}/follow`);
-  assert.equal((await t.call("GET", `/hosts/by-slug/${h.slug}`)).body.followers, 10);
+  assert.equal((await t.call("GET", `/public/hosts/${h.slug}`)).body.followers, 10);
   await as(a)("POST", `/hosts/${h.id}/pause`);
-  assert.equal((await t.call("GET", `/hosts/by-slug/${h.slug}`)).status, 404);
+  assert.equal((await t.call("GET", `/public/hosts/${h.slug}`)).status, 404);
   await as(a)("POST", `/hosts/${h.id}/resume`);
   await as(a)("PATCH", `/hosts/${h.id}`, { visibility: "private" });
-  assert.equal((await t.call("GET", `/hosts/by-slug/${h.slug}`)).status, 404);
-  assert.equal((await t.call("GET", `/hosts/by-slug/nowhere`)).status, 404);
+  assert.equal((await t.call("GET", `/public/hosts/${h.slug}`)).status, 404);
+  assert.equal((await t.call("GET", `/public/hosts/nowhere`)).status, 404);
 });
 
 test("clubs and parent appear on the public read only when public and live", async () => {
   const a = await join(), st = await staff("hosts");
   const p = await start(a, "Parent"), c1 = await start(a, "Club One"), c2 = await start(a, "Club Two");
   for (const c of [c1, c2]) assert.equal((await as(st)("PUT", `/galaxy/hosts/${c.id}/parent`, { parentId: p.id, ...R })).status, 200);
-  assert.deepEqual((await t.call("GET", `/hosts/by-slug/${p.slug}`)).body.clubs.map((x: any) => x.name), ["Club One", "Club Two"]);
-  assert.equal((await t.call("GET", `/hosts/by-slug/${c1.slug}`)).body.parent.name, "Parent");
+  assert.deepEqual((await t.call("GET", `/public/hosts/${p.slug}`)).body.clubs.map((x: any) => x.name), ["Club One", "Club Two"]);
+  assert.equal((await t.call("GET", `/public/hosts/${c1.slug}`)).body.parent.name, "Parent");
   await as(a)("PATCH", `/hosts/${c2.id}`, { visibility: "private" });
   await as(a)("POST", `/hosts/${p.id}/pause`);
-  assert.equal((await t.call("GET", `/hosts/by-slug/${c1.slug}`)).body.parent, null);
+  assert.equal((await t.call("GET", `/public/hosts/${c1.slug}`)).body.parent, null);
   await as(a)("POST", `/hosts/${p.id}/resume`);
-  assert.deepEqual((await t.call("GET", `/hosts/by-slug/${p.slug}`)).body.clubs.map((x: any) => x.name), ["Club One"]);
+  assert.deepEqual((await t.call("GET", `/public/hosts/${p.slug}`)).body.clubs.map((x: any) => x.name), ["Club One"]);
 });
 
 test("Galaxy hosts are for holders of Hosts alone", async () => {
@@ -189,7 +213,7 @@ test("Galaxy hosts are for holders of Hosts alone", async () => {
   for (const u of [nobody, people]) {
     assert.equal((await as(u)("GET", "/galaxy/hosts?q=punchline")).status, 404);
     assert.equal((await as(u)("GET", `/galaxy/hosts/${h.id}`)).status, 404);
-    assert.equal((await as(u)("POST", `/galaxy/hosts/${h.id}/verify`, R)).status, 404);
+    assert.equal((await as(u)("POST", `/galaxy/hosts/${h.id}/verify`, await vb(h.id))).status, 404);
   }
 });
 
@@ -218,8 +242,8 @@ test("verify and unverify, audited and announced", async () => {
   await addAdmin(a, h.id, b);
   assert.equal((await as(st)("DELETE", `/galaxy/hosts/${h.id}/verify`, R)).body.error, "notVerified");
   assert.equal((await as(st)("POST", `/galaxy/hosts/${h.id}/verify`, { reason: "x" })).status, 400);
-  assert.equal((await as(st)("POST", `/galaxy/hosts/${h.id}/verify`, R)).status, 200);
-  assert.equal((await as(st)("POST", `/galaxy/hosts/${h.id}/verify`, R)).body.error, "already");
+  assert.equal((await as(st)("POST", `/galaxy/hosts/${h.id}/verify`, await vb(h.id))).status, 200);
+  assert.equal((await as(st)("POST", `/galaxy/hosts/${h.id}/verify`, await vb(h.id))).body.error, "already");
   const h1 = await row(h.id);
   assert.equal(h1.verifiedBy, st.me.id);
   const [v] = await audits("hosts.verify", h.id);
@@ -258,7 +282,12 @@ test("staff suspend and lift; a paused host goes back to paused", async () => {
   assert.equal((await audits("hosts.lift", h.id)).length, 1);
   await as(a)("POST", `/hosts/${h.id}/resume`);
   await as(a)("POST", `/hosts/${h.id}/archive`);
-  assert.equal((await as(st)("POST", `/galaxy/hosts/${h.id}/suspend`, R)).body.error, "archived");
+  // Staff suspend an archived host too; the owner can't restore it, and a lift puts it back archived.
+  assert.equal((await as(st)("POST", `/galaxy/hosts/${h.id}/suspend`, R)).status, 200);
+  assert.equal((await row(h.id)).liftTo, "archived");
+  assert.equal((await as(a)("POST", `/hosts/${h.id}/restore`)).body.error, "notNow");
+  assert.equal((await as(st)("POST", `/galaxy/hosts/${h.id}/lift`, R)).body.status, "archived");
+  assert.equal((await row(h.id)).status, "archived");
 });
 
 test("a staff suspension survives the account-tied lift; an account-tied hold can be taken over", async () => {
@@ -307,7 +336,7 @@ test("staff never act on a host they're on, invited to, or left in the last 30 d
   const other = await start(await join(), "Elsewhere");
   const h = await start(a);
   const acts = async () => [
-    (await as(st)("POST", `/galaxy/hosts/${h.id}/verify`, R)).status,
+    (await as(st)("POST", `/galaxy/hosts/${h.id}/verify`, await vb(h.id))).status,
     (await as(st)("DELETE", `/galaxy/hosts/${h.id}/verify`, R)).status,
     (await as(st)("POST", `/galaxy/hosts/${h.id}/suspend`, R)).status,
     (await as(st)("POST", `/galaxy/hosts/${h.id}/lift`, R)).status,
@@ -315,15 +344,16 @@ test("staff never act on a host they're on, invited to, or left in the last 30 d
     (await as(st)("PUT", `/galaxy/hosts/${other.id}/parent`, { parentId: h.id, ...R })).status, // the parent counts too
   ];
   const all = async (code: number) => assert.deepEqual(await acts(), Array(6).fill(code));
-  // Invited by their phone, not yet accepted.
+  // Invited by their phone, not yet accepted: the host alone controls that, so it blocks nothing.
   const inv = await as(a)("POST", `/hosts/${h.id}/team`, { to: st.p });
+  assert.equal((await as(st)("POST", `/galaxy/hosts/${h.id}/lift`, R)).body.error, "notSuspended");
+  // Accepted: theirs now, even before the adder confirms.
+  await as(st)("POST", `/invites/${inv.body.id}/accept`);
   await all(403);
-  assert.equal((await as(st)("POST", `/galaxy/hosts/${h.id}/verify`, R)).body.error, "ownHost");
+  assert.equal((await as(st)("POST", `/galaxy/hosts/${h.id}/verify`, await vb(h.id))).body.error, "ownHost");
   assert.equal((await as(st)("GET", `/galaxy/hosts/${h.id}`)).status, 200); // viewing is fine
   assert.equal((await audits("hosts.verify", h.id)).length, 0);
-  // Accepted and confirmed: on the team.
-  await as(st)("POST", `/invites/${inv.body.id}/accept`);
-  await as(a)("POST", `/hosts/${h.id}/team/${inv.body.id}/confirm`);
+  await as(a)("POST", `/hosts/${h.id}/team/${inv.body.id}/confirm`); // on the team
   await all(403);
   // Left 29 days ago: still refused. 31 days ago: allowed.
   await as(st)("POST", `/hosts/${h.id}/leave`);
@@ -347,7 +377,7 @@ test("deleting an account removes its follows", async () => {
 
 test("slugs of hosts started now are recorded", async () => {
   const h = await start(await join());
-  const r = await t.call("GET", `/hosts/by-slug/${h.slug}`);
+  const r = await t.call("GET", `/public/hosts/${h.slug}`);
   assert.equal(r.body.id, h.id);
 });
 
@@ -358,6 +388,13 @@ test("an archived host is closed to a non-owner Admin on read and edit; the owne
   await as(a)("POST", `/hosts/${h.id}/archive`);
   assert.equal((await as(b)("GET", `/hosts/${h.id}`)).status, 404);
   assert.equal((await as(b)("PATCH", `/hosts/${h.id}`, { about: "x" })).status, 404);
+  // Staff suspending it doesn't open it to the team again, on reads or in the mode switcher.
+  const st = await staff("hosts");
+  assert.equal((await as(st)("POST", `/galaxy/hosts/${h.id}/suspend`, R)).status, 200);
+  assert.equal((await as(b)("GET", `/hosts/${h.id}`)).status, 404);
+  assert.deepEqual((await as(b)("GET", "/me")).body.teams, []);
+  assert.equal((await as(a)("GET", `/hosts/${h.id}`)).status, 200);
+  assert.equal((await as(st)("POST", `/galaxy/hosts/${h.id}/lift`, R)).body.status, "archived");
   assert.equal((await as(a)("POST", `/hosts/${h.id}/restore`)).status, 200);
   assert.equal((await as(b)("PATCH", `/hosts/${h.id}`, { about: "x" })).status, 200);
 });
@@ -368,8 +405,8 @@ test("the public read with an expired or garbage token is 401, never 500", async
   // Expiry runs on the real clock, so forge a token the server signed for itself, already expired.
   const claims = JSON.parse(Buffer.from(a.access.split(".")[1]!, "base64url").toString());
   const expired = await sign({ ...claims, use: "access", iat: 1, exp: 2 }, "test-secret-that-is-at-least-32-characters", "HS256");
-  assert.equal((await t.call("GET", `/hosts/by-slug/${h.slug}`, undefined, expired)).status, 401);
-  for (const bad of ["", "a.b.c", "Bearer", "x".repeat(500)]) assert.equal((await t.call("GET", `/hosts/by-slug/${h.slug}`, undefined, bad)).status < 500, true, bad);
+  assert.equal((await t.call("GET", `/public/hosts/${h.slug}`, undefined, expired)).status, 401);
+  for (const bad of ["", "a.b.c", "Bearer", "x".repeat(500)]) assert.equal((await t.call("GET", `/public/hosts/${h.slug}`, undefined, bad)).status < 500, true, bad);
 });
 
 test("a link that differs by case or has a hyphen at either end is refused", async () => {
@@ -383,7 +420,7 @@ test("a link that differs by case or has a hyphen at either end is refused", asy
 test("a rename that only changes whitespace keeps the verification", async () => {
   const a = await join(), st = await staff("hosts");
   const h = await start(a, "Plain Name");
-  await as(st)("POST", `/galaxy/hosts/${h.id}/verify`, R);
+  await as(st)("POST", `/galaxy/hosts/${h.id}/verify`, await vb(h.id));
   const r = await as(a)("PATCH", `/hosts/${h.id}`, { name: "  Plain Name " });
   assert.equal(r.status, 200);
   assert.equal(r.body.verified, true);
@@ -428,15 +465,16 @@ test("a refused staff action writes no audit row", async () => {
   const h = await start(a), other = await start(o, "Away");
   assert.equal((await as(st)("POST", `/galaxy/hosts/${h.id}/lift`, R)).status, 409);
   assert.equal((await as(st)("DELETE", `/galaxy/hosts/${h.id}/verify`, R)).status, 409);
-  await as(st)("POST", `/galaxy/hosts/${h.id}/verify`, R);
-  assert.equal((await as(st)("POST", `/galaxy/hosts/${h.id}/verify`, R)).status, 409);
+  await as(st)("POST", `/galaxy/hosts/${h.id}/verify`, await vb(h.id));
+  assert.equal((await as(st)("POST", `/galaxy/hosts/${h.id}/verify`, await vb(h.id))).status, 409);
   await as(st)("POST", `/galaxy/hosts/${h.id}/suspend`, R);
   assert.equal((await as(st)("POST", `/galaxy/hosts/${h.id}/suspend`, R)).status, 409);
   assert.equal((await as(st)("PUT", `/galaxy/hosts/${h.id}/parent`, { parentId: h.id, ...R })).status, 400);
   for (const [action, n] of [["hosts.verify", 1], ["hosts.unverify", 0], ["hosts.suspend", 1], ["hosts.lift", 0], ["hosts.parent", 0]] as const)
     assert.equal((await audits(action, h.id)).length, n, action);
   // staff who sit on the host: refused, nothing written
-  await as(o)("POST", `/hosts/${other.id}/team`, { to: st.p });
+  const inv = await as(o)("POST", `/hosts/${other.id}/team`, { to: st.p });
+  await as(st)("POST", `/invites/${inv.body.id}/accept`);
   assert.equal((await as(st)("POST", `/galaxy/hosts/${other.id}/suspend`, R)).status, 403);
   assert.equal((await as(st)("PUT", `/galaxy/hosts/${other.id}/parent`, { parentId: null, ...R })).status, 403);
   for (const action of ["hosts.suspend", "hosts.parent"]) assert.equal((await audits(action, other.id)).length, 0, action);
@@ -450,4 +488,121 @@ test("day-30 deletion drops the host's follower count", async () => {
   await t.db.update(users).set({ deletionRequestedAt: new Date(t.now()), deletionDueAt: new Date(t.now() - 1000) }).where(eq(users.id, f.me.id));
   await runDeletions(t.db, async () => {}, t.now());
   assert.equal((await as(a)("GET", `/hosts/${h.id}`)).body.followers, 0);
+});
+
+test("a host whose link is 'team' has a public page", async () => {
+  const a = await join();
+  const h = await start(a);
+  assert.equal((await as(a)("PATCH", `/hosts/${h.id}`, { slug: "team" })).status, 200);
+  assert.equal((await t.call("GET", "/public/hosts/team")).body.id, h.id);
+  assert.equal((await as(a)("GET", "/public/hosts/team")).body.id, h.id);
+  assert.equal((await as(a)("GET", `/hosts/${h.id}/team`)).status, 200); // the team route is untouched
+});
+
+test("a withdrawn or lapsed invite never blocks staff; one they accepted and left does not either", async () => {
+  const a = await join(), st = await staff("hosts");
+  const h = await start(a);
+  const inv = await as(a)("POST", `/hosts/${h.id}/team`, { to: st.p });
+  assert.equal((await as(a)("DELETE", `/hosts/${h.id}/team/${inv.body.id}`)).status, 204);
+  assert.equal((await as(st)("POST", `/galaxy/hosts/${h.id}/suspend`, R)).status, 200);
+  assert.equal((await as(st)("POST", `/galaxy/hosts/${h.id}/lift`, R)).status, 200);
+  // Lapses after 14 days, and the host's Admins never confirmed it.
+  const inv2 = await as(a)("POST", `/hosts/${h.id}/team`, { to: st.p });
+  t.tick(15 * DAY);
+  assert.equal((await as(st)("POST", `/galaxy/hosts/${h.id}/suspend`, R)).status, 200);
+  assert.equal((await as(st)("POST", `/galaxy/hosts/${h.id}/lift`, R)).status, 200);
+  // Accepted, then withdrawn before it started: it never was a seat.
+  const inv3 = await as(a)("POST", `/hosts/${h.id}/team`, { to: st.p });
+  await as(st)("POST", `/invites/${inv3.body.id}/accept`);
+  assert.equal((await as(st)("POST", `/galaxy/hosts/${h.id}/suspend`, R)).body.error, "ownHost");
+  await as(a)("DELETE", `/hosts/${h.id}/team/${inv3.body.id}`);
+  assert.equal((await as(st)("POST", `/galaxy/hosts/${h.id}/suspend`, R)).status, 200);
+  void inv2;
+});
+
+test("a person suspension racing a host suspension leaves the staff suspension alone", async () => {
+  const a = await join(), st = await staff("hosts", "people");
+  const h = await start(a);
+  const [r1, r2] = await meet(
+    h.id,
+    () => as(st)("POST", `/galaxy/hosts/${h.id}/suspend`, { reason: "fake events" }),
+    () => as(st)("POST", `/galaxy/people/${a.me.id}/suspend`, { reason: "chargeback", until: null }),
+  );
+  assert.equal(r1.status, 200);
+  assert.equal(r2.status, 200);
+  assert.deepEqual(r2.body.hosts, []); // not held by the account: staff got there first
+  const s = await row(h.id);
+  assert.equal(s.suspendedWith, null);
+  assert.equal(s.suspendReason, "fake events");
+  assert.deepEqual((await audits("hosts.suspend", h.id)).length, 1);
+  assert.equal((await as(st)("POST", `/galaxy/people/${a.me.id}/lift`, R)).status, 200);
+  assert.equal((await row(h.id)).status, "suspended"); // the account coming back doesn't lift it
+  assert.equal((await as(st)("POST", `/galaxy/hosts/${h.id}/lift`, R)).status, 200);
+});
+
+test("a PATCH racing a staff suspension is refused, and changes nothing", async () => {
+  const a = await join(), st = await staff("hosts");
+  const h = await start(a);
+  const [r1, r2] = await meet(
+    h.id,
+    () => as(st)("POST", `/galaxy/hosts/${h.id}/suspend`, R),
+    () => as(a)("PATCH", `/hosts/${h.id}`, { about: "edited after suspension", visibility: "private" }),
+  );
+  assert.equal(r1.status, 200);
+  assert.equal(r2.status, 409);
+  assert.equal(r2.body.error, "hostClosed");
+  const s = await row(h.id);
+  assert.equal(s.about, null);
+  assert.equal(s.visibility, "public");
+});
+
+test("a PATCH from someone removed from the team is refused", async () => {
+  const a = await join(), b = await join();
+  const h = await start(a);
+  const seat = await addAdmin(a, h.id, b);
+  const [r1, r2] = await meet(
+    h.id,
+    () => as(a)("DELETE", `/hosts/${h.id}/team/${seat}`), // not blocked by the row lock, so this only shows the seat check
+    () => as(b)("PATCH", `/hosts/${h.id}`, { about: "still here?" }),
+  );
+  assert.equal(r1.status, 204);
+  assert.equal(r2.status, 404);
+  assert.equal((await row(h.id)).about, null);
+});
+
+test("verifying needs the name staff saw", async () => {
+  const a = await join(), st = await staff("hosts");
+  const h = await start(a, "Hyderabad Comedy Club");
+  const seen = (await as(st)("GET", `/galaxy/hosts/${h.id}`)).body.name;
+  await as(a)("PATCH", `/hosts/${h.id}`, { name: "HDFC Bank Events" });
+  const r = await as(st)("POST", `/galaxy/hosts/${h.id}/verify`, { ...R, name: seen });
+  assert.equal(r.status, 409);
+  assert.equal(r.body.error, "changed");
+  assert.equal((await row(h.id)).verifiedAt, null);
+  assert.equal((await audits("hosts.verify", h.id)).length, 0);
+  assert.equal((await as(st)("POST", `/galaxy/hosts/${h.id}/verify`, R)).status, 400); // no name at all
+  // A rename that lands while the verify waits for the row.
+  const [r1, r2] = await meet(
+    h.id,
+    () => as(a)("PATCH", `/hosts/${h.id}`, { name: "Third Name" }),
+    () => as(st)("POST", `/galaxy/hosts/${h.id}/verify`, { ...R, name: "HDFC Bank Events" }),
+  );
+  assert.equal(r1.status, 200);
+  assert.equal(r2.status, 409);
+  assert.equal((await row(h.id)).verifiedAt, null);
+  const ok = await as(st)("POST", `/galaxy/hosts/${h.id}/verify`, { ...R, name: "Third Name" });
+  assert.equal(ok.status, 200);
+  assert.deepEqual((await audits("hosts.verify", h.id))[0]!.data, { name: "Third Name" });
+});
+
+test("staff on a parent's team can't detach or move its club", async () => {
+  const st = await staff("hosts"), st2 = await staff("hosts"), a = await join();
+  const p = await start(st, "Staff Parent"), c = await start(a, "Club"), q = await start(a, "Other Parent");
+  assert.equal((await as(st2)("PUT", `/galaxy/hosts/${c.id}/parent`, { parentId: p.id, ...R })).status, 200);
+  for (const parentId of [null, q.id]) {
+    const r = await as(st)("PUT", `/galaxy/hosts/${c.id}/parent`, { parentId, ...R });
+    assert.equal(r.status, 403);
+    assert.equal(r.body.error, "ownHost");
+  }
+  assert.equal((await row(c.id)).parentId, p.id);
 });
