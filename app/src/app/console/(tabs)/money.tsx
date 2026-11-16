@@ -13,11 +13,11 @@ import { now } from '../../../mock';
 const sum = (all: Sales[], f: (s: Sales) => number) => rupees(all.reduce((n, s) => n + f(s), 0));
 
 export default function Money() {
-  const { team, events } = useHost();
+  const { team, host, events } = useHost();
   const money = eventsOn(team, events).filter((e) => seesEventMoney(team, e.id));
   if (money.length === 0 && !seesHostMoney(team))
     return (
-      <TabPage head="Money">
+      <TabPage head="Money" tint={host.bg}>
         <Empty>Only Admins and Curators see money.</Empty>
       </TabPage>
     );
@@ -28,7 +28,7 @@ export default function Money() {
   const all = mine.map((m) => m.s);
   const bank = seesHostMoney(team) ? banks[team.hostId] : undefined;
   return (
-    <TabPage head="Money">
+    <TabPage head="Money" tint={host.bg}>
       {mine.length === 0 && <Empty>No sales yet.</Empty>}
       {seesHostMoney(team) && mine.length > 0 && (
         <Group title="All events">

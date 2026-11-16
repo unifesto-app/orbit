@@ -15,22 +15,26 @@ export const sales: Sales[] = [
   { eventId: 'sunday-5-a-side', endsAt: '2026-11-22T09:00:00+05:30', booked: 18, seats: 20, checkedIn: 0, salesPaise: 268200, feesPaise: 14751, feeBy: 'buyers', refundedPaise: 0, paidOutPaise: 0, openRefundsPaise: 0, refundsWaiting: 0 },
 ];
 export const salesOf = (eventId: string) => sales.find((s) => s.eventId === eventId);
+// When an event is scheduled to end, for its check-in window and payouts.
+// ponytail: mock events carry no end time, so it comes from the sales record, else the start; the API's events have one.
+export const endsAt = (e: { id: string; startsAt: string }) => salesOf(e.id)?.endsAt ?? e.startsAt;
 
 // Drafts are saved from their name on (Hosts flow, Listing an event).
 export const drafts = [{ id: 'draft-new-year-open-mic', hostId: 'punchline', name: 'New Year’s Eve Open Mic' }];
 
-// Each host's team, as the Host tab lists it. "You" is the viewer. Waiting roles are invites not yet accepted.
-export type Member = { name: string; role: string; you?: boolean; waiting?: boolean };
+// Each host's team, as the Host tab lists it. "You" is the viewer. Waiting roles are invites not yet accepted. An event
+// role names its event, so a waiting invite shows on that event's card on Console's first tab.
+export type Member = { name: string; role: string; eventId?: string; you?: boolean; waiting?: boolean };
 export const teams: Record<string, Member[]> = {
   punchline: [
     { name: 'Abhinavtej Reddy', role: 'Owner', you: true },
     { name: 'Sana Mirza', role: 'Admin' },
-    { name: 'Arjun Rao', role: 'Curator · Open Mic Night' },
-    { name: 'Vikram Shetty', role: 'Crew · Open Mic Night' },
-    { name: '+91 ••••• ••417', role: 'Crew · Open Mic Night', waiting: true },
+    { name: 'Arjun Rao', role: 'Curator · Open Mic Night', eventId: 'open-mic-night' },
+    { name: 'Vikram Shetty', role: 'Crew · Open Mic Night', eventId: 'open-mic-night' },
+    { name: '+91 ••••• ••417', role: 'Crew · Open Mic Night', eventId: 'open-mic-night', waiting: true },
   ],
-  circuitfeed: [{ name: 'Abhinavtej Reddy', role: 'Curator · Build Anything Hackathon', you: true }],
-  kickoff: [{ name: 'Abhinavtej Reddy', role: 'Crew · Sunday 5-a-side', you: true }],
+  circuitfeed: [{ name: 'Abhinavtej Reddy', role: 'Curator · Build Anything Hackathon', eventId: 'build-anything-hackathon', you: true }],
+  kickoff: [{ name: 'Abhinavtej Reddy', role: 'Crew · Sunday 5-a-side', eventId: 'sunday-5-a-side', you: true }],
 };
 
 // Where a host is paid: Admins only, shown by its last 4 digits (Money flow, Bank account and payouts).
