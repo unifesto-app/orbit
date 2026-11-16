@@ -5,7 +5,7 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { z } from "zod";
 import { type Contact, readContact } from "@orbit/contract";
 import type { Db } from "./db/index.ts";
-import { isSuspended, sessionUser, type User } from "./auth/sessions.ts";
+import { ack, isSuspended, sessionUser, type User } from "./auth/sessions.ts";
 import { read } from "./auth/tokens.ts";
 
 // What every route file shares: the error shape, body parsing and the signed-in check.
@@ -46,10 +46,12 @@ export const suspended = (c: Context, u: User) => {
 export const signedIn = (db: Db, secret: string, now: () => number) =>
   createMiddleware<Env>(async (c, next) => {
     const h = c.req.header("authorization");
-    const claims = h?.startsWith("Bearer ") ? await read<{ sub: string; sid: string }>(secret, "access", h.slice(7)) : null;
+    const claims = h?.startsWith("Bearer ") ? await read<{ sub: string; sid: string; rh?: string }>(secret, "access", h.slice(7)) : null;
     const found = claims && (await sessionUser(db, claims.sid, claims.sub, now()));
     if (found && isSuspended(found.user, now())) return suspended(c, found.user);
-    if (!claims || !found?.live) return fail(c, 401, "signedOut", "You're signed out. Sign in again.");
+    if (!claims || !found?.live || !found.refreshHash) return fail(c, 401, "signedOut", "You're signed out. Sign in again.");
+    // An access token from the last refresh: the app has its refresh token, so a late reuse of the one before is theft.
+    if (!found.acked && claims.rh && found.refreshHash.startsWith(claims.rh)) await ack(db, claims.sid, found.refreshHash);
     c.set("user", found.user);
     c.set("sid", claims.sid);
     await next();

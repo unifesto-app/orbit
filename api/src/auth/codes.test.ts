@@ -114,6 +114,15 @@ test("an unsure send keeps the code and the wait", async () => {
   assert.deepEqual(await checkCode(store, secret, phone(1), last, "ip"), { ok: true });
 });
 
+test("tooMany leaves no 30 s wait: the next try is tooMany again, not tooSoon", async () => {
+  let clock = 0;
+  const store = memoryStore(() => clock);
+  const send = async () => {};
+  for (let i = 0; i < 10; i++, clock += 30_000) assert.deepEqual(await sendCode(store, send, secret, phone(1), "ip"), { ok: true });
+  assert.deepEqual(await sendCode(store, send, secret, phone(1), "ip"), { ok: false, error: "tooMany" });
+  assert.deepEqual(await sendCode(store, send, secret, phone(1), "ip"), { ok: false, error: "tooMany" });
+});
+
 test("a plain Error from the sender still throws", async () => {
   await assert.rejects(sendCode(memoryStore(), async () => Promise.reject(new Error("bug")), secret, phone(1), "ip"), /bug/);
 });

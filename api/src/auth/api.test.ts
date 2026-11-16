@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { sign } from "hono/jwt";
 import { testApp } from "../testkit.ts";
 import * as schema from "../db/schema.ts";
+import { sha256 } from "./tokens.ts";
 
 let t: Awaited<ReturnType<typeof testApp>>;
 before(async () => (t = await testApp()));
@@ -201,7 +202,7 @@ test("suspension blocks a right code and a live token, not a wrong code", async 
   assert.equal(wrong.body.error, "wrongCode");
 });
 
-test("refresh rotates, tolerates reuse for 60 s, then ends every session", async () => {
+test("refresh rotates, tolerates reuse for 60 s, then, once its answer is used, ends every session", async () => {
   const a = await join();
   const r1 = await t.call("POST", "/auth/refresh", { refresh: a.refresh });
   assert.equal(r1.status, 200);
@@ -209,11 +210,48 @@ test("refresh rotates, tolerates reuse for 60 s, then ends every session", async
   const r2 = await t.call("POST", "/auth/refresh", { refresh: a.refresh });
   assert.equal(r2.status, 200);
   assert.equal(r2.body.refresh, r1.body.refresh);
+  assert.equal((await t.call("GET", "/me", undefined, r1.body.access)).status, 200); // the app has the new token
   t.tick(61_000);
   const late = await t.call("POST", "/auth/refresh", { refresh: a.refresh });
   assert.equal(late.status, 401);
   assert.equal((await t.call("GET", "/me", undefined, r1.body.access)).status, 401);
   assert.equal((await t.call("GET", "/me", undefined, a.access)).status, 401);
+});
+
+test("a lost refresh answer signs nobody out: the old token gets the same new one until that one's access is used", async () => {
+  const a = await join();
+  const r1 = await t.call("POST", "/auth/refresh", { refresh: a.refresh }); // the answer never reaches the app
+  assert.equal((await t.call("GET", "/me", undefined, a.access)).status, 200); // the older access token acks nothing
+  t.tick(61_000);
+  const again = await t.call("POST", "/auth/refresh", { refresh: a.refresh });
+  assert.equal(again.status, 200);
+  assert.equal(again.body.refresh, r1.body.refresh);
+  assert.equal((await t.call("GET", "/me", undefined, again.body.access)).status, 200);
+  t.tick(61_000);
+  assert.equal((await t.call("POST", "/auth/refresh", { refresh: a.refresh })).status, 401);
+  assert.equal((await t.call("GET", "/me", undefined, again.body.access)).status, 401);
+});
+
+test("a thief who refreshes twice, or more, is caught by the owner's older token", async () => {
+  for (const times of [2, 3]) {
+    const a = await join();
+    let thief = { refresh: a.refresh, access: a.access };
+    for (let i = 0; i < times; i++) thief = (await t.call("POST", "/auth/refresh", { refresh: thief.refresh })).body;
+    // A made-up tag ends nothing.
+    assert.equal((await t.call("POST", "/auth/refresh", { refresh: a.refresh.replace(/[^.]+$/, "A".repeat(22)) })).status, 401);
+    assert.equal((await t.call("GET", "/me", undefined, thief.access)).status, 200);
+    assert.equal((await t.call("POST", "/auth/refresh", { refresh: a.refresh })).status, 401);
+    assert.equal((await t.call("GET", "/me", undefined, thief.access)).status, 401, `after ${times} refreshes`);
+  }
+});
+
+test("a refresh token from before tags still refreshes", async () => {
+  const a = await join();
+  const sid = a.refresh.split(".")[0]!;
+  await t.db.update(sessions).set({ refreshHash: sha256("old") }).where(eq(sessions.id, sid));
+  const r = await t.call("POST", "/auth/refresh", { refresh: `${sid}.old` });
+  assert.equal(r.status, 200);
+  assert.equal((await t.call("POST", "/auth/refresh", { refresh: r.body.refresh })).status, 200);
 });
 
 test("two refreshes at once both succeed", async () => {

@@ -40,7 +40,11 @@ export async function sendCode(store: Store, send: Sender, secret: string, to: C
     store.incr(`send:day:${id}`, DAY),
     store.incr(`send:hour:${ip}`, HOUR),
   ]);
-  if (counts[0] > 10 || counts[1] > 20 || counts[2] > 100) return { ok: false, error: "tooMany" };
+  if (counts[0] > 10 || counts[1] > 20 || counts[2] > 100) {
+    // Nothing went: without this the next try says tooSoon, which the app reads as a code on its way.
+    await store.del(`send:gap:${id}:${ip}`);
+    return { ok: false, error: "tooMany" };
+  }
   if ((await store.incr(`send:all:${to.kind}`, DAY)) === policy.dailyCap + 1)
     console.error(`[codes] more than ${policy.dailyCap} ${to.kind} codes in a day: check for abuse`);
 
