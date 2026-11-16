@@ -1,0 +1,1 @@
+ALTER TABLE "sessions" ADD COLUMN "acked" boolean DEFAULT false NOT NULL;
