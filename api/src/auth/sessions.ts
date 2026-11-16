@@ -111,8 +111,9 @@ export async function refresh(db: Db, secret: string, token: string, now: number
 
   // The successor follows from the token presented, so every refresh with one token, at once, within the grace or
   // after a lost answer, gets the same new token and nothing forks.
-  const next = tagged(secret, sid, mac(secret, `refresh:${sid}.${presented}`));
-  const ok = async (): Promise<Refreshed> => ({ ok: true, access: await access(secret, found.user.id, sid, sha256(next)), refresh: `${sid}.${next}` });
+  const r = mac(secret, `refresh:${sid}.${presented}`);
+  const next = tagged(secret, sid, r);
+  const ok = async (n: string): Promise<Refreshed> => ({ ok: true, access: await access(secret, found.user.id, sid, sha256(n)), refresh: `${sid}.${n}` });
 
   let s: Session | undefined = found.s;
   if (h === s.refreshHash) {
@@ -128,12 +129,14 @@ export async function refresh(db: Db, secret: string, token: string, now: number
       })
       .where(and(eq(sessions.id, sid), eq(sessions.refreshHash, h), isNull(sessions.endedAt), gt(sessions.expiresAt, at)))
       .returning();
-    if (rotated) return ok();
+    if (rotated) return ok(next);
     // Another refresh with this token got there first, or the session just ended.
     [s] = await db.select().from(sessions).where(eq(sessions.id, sid));
   }
   if (!s || !live(s) || s.prevRefreshHash !== h) return { ok: false };
-  if (s.rotatedAt.getTime() > now - GRACE_MS || !s.acked) return ok();
+  // A rotation from before tags stored the bare successor: hand that back, or its next use would look like theft.
+  // ponytail: drop the `: r` once sessions rotated before tags (16 Nov 2026) have expired, 180 days on.
+  if (s.rotatedAt.getTime() > now - GRACE_MS || !s.acked) return ok(sha256(next) === s.refreshHash ? next : r);
   // The token before the live one, used late after the live one's answer was used: someone else holds a successor.
   await endSessions(db, s.userId, now);
   return { ok: false };
