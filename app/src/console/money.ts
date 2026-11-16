@@ -22,5 +22,11 @@ export const earnings = (s: Sales) => s.salesPaise - (s.feeBy === 'host' ? s.fee
 // ponytail: leaves out a shortfall on the host's other events, which the server takes off too.
 export const available = (s: Sales) => earnings(s) - s.paidOutPaise - s.openRefundsPaise;
 export const payoutOpens = (s: Sales) => Date.parse(s.endsAt) + 3 * 86_400_000;
+// The host decides refund requests until a time they set before the start, 24 hours by default (Money flow: "I decide
+// refunds until [time] before it starts"); after that a request is Orbit's, and the card says "With Orbit" (owner, 16
+// Nov 2026).
+// ponytail: every event takes the default, and a request unanswered for 3 days (also Orbit's) isn't counted; both come
+// with the refund endpoints.
+export const hostDecidesRefunds = (startsAt: string, now: number, hoursBefore = 24) => now < Date.parse(startsAt) - hoursBefore * 3_600_000;
 // A money figure: "₹0" where formatPrice, made for ticket prices, says "Free".
 export const rupees = (paise: number) => (paise === 0 ? '₹0' : formatPrice(paise));

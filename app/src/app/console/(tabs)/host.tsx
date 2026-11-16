@@ -14,7 +14,7 @@ import { color, font, space } from '../../../theme';
 export default function Host() {
   const { team, host } = useHost();
   return (
-    <TabPage head="Host">
+    <TabPage head="Host" tint={host.bg}>
       <View style={styles.head}>
         <Monogram mark={host} size={56} />
         <View style={styles.lines}>
