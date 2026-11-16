@@ -150,30 +150,6 @@
   gap: 12px;
 }
 
-.social {
-  display: flex;
-  gap: 2px;
-}
-
-/* 40px tap target around a 20px brand mark (YouTube is wider than tall). */
-.socialLink {
-  width: 40px;
-  height: 40px;
-  border-radius: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background-color 150ms ease;
-}
-
-.socialLink img {
-  object-fit: contain;
-}
-
-.socialLink:hover {
-  background: var(--card);
-}
-
 .legal {
   display: flex;
   flex-wrap: wrap;

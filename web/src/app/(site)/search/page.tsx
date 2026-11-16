@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
-import { categories, EventGrid, searchEvents } from "../discover";
-import { Icon } from "../icons";
+import { categories, EventGrid, searchEvents } from "../../discover";
+import { Icon } from "../../icons";
 import styles from "./page.module.css";
 
 export const metadata: Metadata = { title: "Search · Orbit" };

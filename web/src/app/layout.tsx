@@ -1,8 +1,5 @@
 import type { Metadata, Viewport } from "next";
 import { DM_Sans, Plus_Jakarta_Sans } from "next/font/google";
-import { AppCard } from "./app-card";
-import { Footer, Navbar } from "./chrome";
-import { CookieBanner } from "./cookie-banner";
 import "./globals.css";
 
 // Approved type: Plus Jakarta Sans for headlines, titles and buttons; DM Sans for text and prices.
@@ -20,13 +17,8 @@ export const viewport: Viewport = { themeColor: "#121215" };
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`${display.variable} ${text.variable}`}>
-      <body>
-        <Navbar />
-        {children}
-        <Footer />
-        <CookieBanner />
-        <AppCard />
-      </body>
+      {/* The navbar and footer are the (site) group's; Coming Soon has none. */}
+      <body>{children}</body>
     </html>
   );
 }

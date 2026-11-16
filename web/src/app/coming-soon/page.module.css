@@ -1,0 +1,258 @@
+/* Coming Soon: exactly one screen, the orbit in its middle (owner: "should be within the page"). The orbit is set by
+   custom properties on .page, larger from 768px and 1200px: --card (a card's width at the side of the ring), --r (the
+   ring's radius), --p (how deep the scene looks), --stage (the height that holds it) and --tilt (how far we look down
+   on the ring). They and the title are in --u, 1px at each size's reference screen and less on a narrower or shorter
+   one, so the whole orbit shrinks to fit rather than run off the screen. */
+.page {
+  /* Phones look down on the ring more steeply, so its near and far halves part and the front cards don't overlap. */
+  --u: min(1px, 100vw / 375, 100svh / 625);
+  --card: calc(72 * var(--u));
+  --r: calc(140 * var(--u)); /* the side cards stay clear of the screen's edges */
+  --p: calc(700 * var(--u));
+  --stage: calc(290 * var(--u));
+  --tilt: -26deg;
+  --turn: 60s; /* one full turn of the ring */
+  --name: calc(10 * var(--u)); /* the cards' names, small enough for "Hackathons" on a narrow card */
+
+  position: relative;
+  isolation: isolate;
+  height: 100vh;
+  height: 100svh; /* the screen with the browser's bars showing, so nothing hides under them */
+  overflow: hidden;
+  padding: 64px 20px 20px; /* the tagline's room */
+  /* Equal rows above and below hold the orbit in the middle of the screen (owner: "make the orbit in center"): the
+     title at the foot of the top one, the bar at the foot of the bottom one. */
+  display: grid;
+  grid-template-rows: 1fr auto 1fr;
+  justify-items: center;
+}
+
+/* The accent from the top, as the app's Glow: the accent at 35% at the top edge, about a third of that by 45% of the
+   way down, gone by 320px. The 27% colour hint bends the fade to match. */
+.page::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: -2;
+  height: 320px;
+  background: linear-gradient(var(--accent), 27%, transparent);
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.dots {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* "Keep your people in orbit." top left after a bar in the accent (owner: "on left top | Keep your people in orbit.").
+   Out of the grid, so the orbit stays centred; the page's top padding keeps the title clear of it where the title is
+   wide enough to reach it (phones and tablets). */
+.tagline {
+  position: absolute;
+  top: 24px;
+  left: 20px;
+  padding-left: 10px;
+  border-left: 2px solid var(--accent);
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+/* At the foot of the top row, just above the orbit. */
+.title {
+  align-self: end;
+  margin-bottom: 12px;
+  font-size: calc(64 * var(--u));
+}
+
+/* The orbit. The stage holds the perspective; the ring tilts and turns; each slot sits round the ring; each billboard
+   turns its card back the other way, so the cards always face you. Both turns share --turn and start together, so
+   they stay in step. */
+.stage {
+  position: relative;
+  width: 100%;
+  height: var(--stage);
+  perspective: var(--p);
+}
+
+.ring,
+.path {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+}
+
+.ring {
+  transform-style: preserve-3d;
+  transform: rotateX(var(--tilt)) rotateY(0deg);
+  animation: turn var(--turn) linear infinite;
+}
+
+@keyframes turn {
+  to {
+    transform: rotateX(var(--tilt)) rotateY(-360deg);
+  }
+}
+
+/* A card's centre on the ring: a card is 1.06 times as tall as it is wide (its drawing above the 4:3 box). */
+.slot {
+  position: absolute;
+  top: calc(var(--card) * -0.53);
+  left: calc(var(--card) / -2);
+  width: var(--card);
+  transform-style: preserve-3d;
+  transform: rotateY(calc(var(--i) * 36deg)) translateZ(var(--r));
+}
+
+.billboard {
+  transform: rotateY(calc(var(--i) * -36deg)) rotateX(calc(-1 * var(--tilt)));
+  animation: face var(--turn) linear infinite;
+}
+
+@keyframes face {
+  to {
+    transform: rotateY(calc(var(--i) * -36deg + 360deg)) rotateX(calc(-1 * var(--tilt)));
+  }
+}
+
+/* The ring itself, laid flat and tilted like the cards' ring, drawn first so it passes behind every card. */
+.path {
+  width: calc(var(--r) * 2);
+  height: calc(var(--r) * 2);
+  margin: calc(var(--r) * -1) 0 0 calc(var(--r) * -1);
+  border: 1px solid rgb(255 255 255 / 0.16);
+  border-radius: 50%;
+  transform: rotateX(var(--tilt)) rotateX(90deg);
+}
+
+/* The bar along the foot: "Orbit by Unifesto" left, the copyright right, the social links between them on wide screens
+   and above them on phones. */
+.bar {
+  align-self: end;
+  justify-self: stretch;
+  padding-top: 24px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    "social social"
+    "brand copy";
+  align-items: center;
+  gap: 12px 16px;
+}
+
+.brand {
+  grid-area: brand;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.wordmark {
+  width: 88px;
+  height: auto;
+}
+
+/* "by unifesto", the splash's white art, set back like secondary text. Nudged right so the stem of its "b" lines up
+   with where the O of ORBIT looks to start (owner: "it was outside on left", "still"): the O is a stadium, round top to
+   bottom, so it reaches its leftmost point (1.1px into its box here, 1.5px at 112px wide) only at mid-height and reads
+   2-3px further in; the byline's ink starts 0.25px into its box. */
+.by {
+  width: 64px;
+  height: auto;
+  margin-left: 3px;
+  opacity: 0.64;
+}
+
+.social {
+  grid-area: social;
+  justify-self: center;
+}
+
+.copy {
+  grid-area: copy;
+  font-size: 12px;
+  color: var(--text-2);
+  text-align: right;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ring,
+  .billboard {
+    animation: none;
+  }
+}
+
+@media (min-width: 768px) {
+  .page {
+    --u: min(1px, 100vw / 768, 100svh / 790);
+    --card: calc(112 * var(--u));
+    --r: calc(280 * var(--u));
+    --p: calc(1500 * var(--u));
+    --stage: calc(380 * var(--u));
+    --tilt: -20deg;
+    --name: calc(13 * var(--u));
+
+    padding: 88px 40px 28px;
+  }
+
+  .page::before {
+    height: 480px;
+  }
+
+  .bar {
+    grid-template-columns: 1fr auto 1fr;
+    grid-template-areas: "brand social copy";
+  }
+
+  .wordmark {
+    width: 112px;
+  }
+
+  .by {
+    width: 76px;
+    margin-left: 3.5px;
+  }
+
+  .copy {
+    font-size: 13px;
+  }
+
+  .title {
+    font-size: calc(88 * var(--u));
+  }
+
+  .tagline {
+    top: 40px;
+    left: 40px;
+    padding-left: 12px;
+    font-size: 17px;
+  }
+}
+
+@media (min-width: 1200px) {
+  .page {
+    --u: min(1px, 100vw / 1100, 100svh / 935);
+    --card: calc(136 * var(--u));
+    --r: calc(420 * var(--u));
+    --p: calc(2000 * var(--u));
+    --stage: calc(540 * var(--u));
+    --name: calc(14 * var(--u));
+
+    padding-top: 40px; /* the title is narrow enough here to stay clear of the tagline */
+  }
+
+  .title {
+    font-size: calc(104 * var(--u));
+  }
+
+  .tagline {
+    font-size: 18px;
+  }
+}
