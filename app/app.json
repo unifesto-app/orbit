@@ -57,6 +57,27 @@
         }
       ],
       [
+        "expo-alternate-app-icons",
+        [
+          {
+            "name": "Ticket",
+            "ios": "./assets/icons/ticket.png",
+            "android": {
+              "foregroundImage": "./assets/icons/ticket-android.png",
+              "backgroundColor": "#121215"
+            }
+          },
+          {
+            "name": "Hologram",
+            "ios": "./assets/icons/hologram.png",
+            "android": {
+              "foregroundImage": "./assets/icons/hologram-android.png",
+              "backgroundColor": "#121215"
+            }
+          }
+        ]
+      ],
+      [
         "expo-secure-store",
         {
           "faceIDPermission": "Orbit uses Face ID to unlock Galaxy, the staff tools, instead of your passcode."
