@@ -1,5 +1,5 @@
-// Naming a list: New list (from the picker, with the event to put in it, or from Account › Saved) and Rename list
-// (from a list's menu). A full modal with the field at the top, as the sign-in sheet, so the keyboard never covers it.
+// Naming a list: New list from Account › Saved, and Rename list from a list's menu (the heart's list modal names its
+// new lists in place). A full modal with the field at the top, as the sign-in sheet, so the keyboard never covers it.
 // A name is 1 to 40 letters, trimmed, and no two lists share one, ignoring case (src/account/saves.ts).
 import { router, useLocalSearchParams } from 'expo-router';
 import { useRef, useState } from 'react';
@@ -12,14 +12,14 @@ import { newList, renameList, useSession } from '../session';
 import { color, font, space } from '../theme';
 
 export default function ListName() {
-  const { event, list } = useLocalSearchParams<{ event?: string; list?: string }>();
+  const { list } = useLocalSearchParams<{ list?: string }>();
   const old = useSession()?.lists.find((l) => l.id === list);
   const [name, setName] = useState(old?.name ?? '');
   const [problem, setProblem] = useState<string | null>(list && !old ? GONE : null);
   const finished = useRef(false); // a second tap while the modal leaves would rename again and pop the page under it
   const done = () => {
     if (finished.current) return;
-    const p = list ? renameList(list, name) : newList(name, event);
+    const p = list ? renameList(list, name) : newList(name);
     if (p) {
       setProblem(p);
       AccessibilityInfo.announceForAccessibility(p);
