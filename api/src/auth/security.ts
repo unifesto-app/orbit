@@ -43,6 +43,7 @@ export function heldUntil(
 }
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+const LAST = new Error("last way in"); // thrown to undo a removal that would leave no way in
 // Every way in the account has, counted: the phone, the email, Google, Apple and each passkey.
 export async function waysIn(db: Db | Tx, u: Pick<User, "id" | "phone" | "email">) {
   const [ids] = await db.select({ n: count() }).from(identities).where(eq(identities.userId, u.id));
@@ -245,13 +246,22 @@ export function securityRoutes({ db, store, notify, secret, now = Date.now, ways
   };
 
   // Removes a way in only while another stays: the account's row is locked first, so two removals at once can't both
-  // see the other and leave none. `remove` answers the rows it removed; none removed is "notFound".
-  const lastWayGuard = (userId: string, remove: (tx: Tx) => Promise<unknown[]>) =>
-    db.transaction(async (tx) => {
-      const [u] = await tx.select().from(users).where(eq(users.id, userId)).for("update");
-      if ((await waysIn(tx, u!)) <= 1) return "last" as const;
-      return (await remove(tx)).length ? ("done" as const) : ("notFound" as const);
-    });
+  // see the other and leave none, and a removal that would leave none is undone. `remove` answers the rows it removed;
+  // none removed is "notFound", whatever else the account has.
+  const lastWayGuard = async (userId: string, remove: (tx: Tx) => Promise<unknown[]>) => {
+    try {
+      return await db.transaction(async (tx) => {
+        await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for("update");
+        if (!(await remove(tx)).length) return "notFound" as const;
+        const [u] = await tx.select().from(users).where(eq(users.id, userId));
+        if ((await waysIn(tx, u!)) < 1) throw LAST;
+        return "done" as const;
+      });
+    } catch (e) {
+      if (e === LAST) return "last" as const;
+      throw e;
+    }
+  };
   const lastWay = (c: Context) => fail(c, 409, "lastWay", "That's your only way to sign in. Add another before removing it.");
 
   // Ready for a change: fresh, and not held. Answers the refusal, or null.
