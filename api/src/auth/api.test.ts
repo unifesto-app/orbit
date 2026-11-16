@@ -450,9 +450,9 @@ test("PATCH /me keeps a city from the list, refuses any other, and null clears i
   assert.equal(set.status, 200);
   assert.equal(set.body.city, "Hyderabad");
   assert.equal((await t.call("GET", "/me", undefined, a.access)).body.city, "Hyderabad");
-  for (const city of ["Atlantis", "hyderabad", "Hyderabad, Telangana", "Banjara Hills, Hyderabad, Telangana 500034, India"]) {
+  for (const city of ["Atlantis", "hyderabad", " Hyderabad", "Hyderabad ", "", "Hyderabad, Telangana", "Banjara Hills, Hyderabad, Telangana 500034, India", 123, ["Hyderabad"]]) {
     const bad = await t.call("PATCH", "/me", { city }, a.access);
-    assert.equal(bad.status, 400, city);
+    assert.equal(bad.status, 400, String(city));
     assert.equal(bad.body.error, "invalid");
   }
   assert.equal((await t.call("GET", "/me", undefined, a.access)).body.city, "Hyderabad"); // a refused city changes nothing

@@ -9,14 +9,15 @@ import { StyleSheet, View } from 'react-native';
 
 import { Note, Pill } from '../../account/kit';
 import { CitySheet } from '../../citySheet';
-import { api, setAccount, useSession } from '../../session';
+import { api, needsAccount, setAccount, useSession } from '../../session';
 import { space } from '../../theme';
 
 export default function AccountCity() {
   const me = useSession()?.me;
   const city = me?.city ?? null; // an account from before the API kept cities has none
   const [error, setError] = useState<string | null>(null);
-  const working = useRef(false); // a second tap while saving does nothing
+  const [busy, setBusy] = useState(false);
+  const working = useRef(false); // set from the first tap until the sheet closes or the save fails: one save, one close
   const open = useRef(true); // swiped away while saving: the save still counts, but there's nothing to close
   useEffect(() => {
     open.current = true;
@@ -26,13 +27,20 @@ export default function AccountCity() {
   }, []);
 
   async function save(next: string | null) {
-    if (!me || working.current) return;
-    if (next === city) return router.back();
+    if (!me) return needsAccount();
+    if (working.current) return;
     working.current = true;
+    if (next === city) return router.back();
+    setBusy(true);
     setError(null);
     const r = await api.authed<Account>('PATCH', '/me', { city: next });
-    working.current = false;
-    if (!r.ok) return setError(r.error.message);
+    setBusy(false);
+    // An API from before cities drops the field and answers 200 with no city: that isn't saved either.
+    const saved = r.ok && (r.data.city ?? null) === next;
+    if (!saved) {
+      working.current = false;
+      return setError(r.ok ? 'Couldn’t save your city. Try again in a moment.' : r.error.message);
+    }
     setAccount(r.data);
     if (open.current) router.back();
   }
@@ -41,10 +49,10 @@ export default function AccountCity() {
     <CitySheet title="City for new events" chosen={(c) => c.name === city} onPick={(c) => void save(c.name)}>
       {city && (
         <View style={styles.remove}>
-          <Pill label="Remove city" size="wide" onPress={() => void save(null)} />
+          <Pill label="Remove city" size="wide" disabled={busy} onPress={() => void save(null)} />
         </View>
       )}
-      {error && <Note>{error}</Note>}
+      {busy ? <Note>Saving…</Note> : error && <Note>{error}</Note>}
     </CitySheet>
   );
 }
