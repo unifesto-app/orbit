@@ -15,14 +15,14 @@ import { type Href, router } from 'expo-router';
 import { useState } from 'react';
 import { Alert, Animated, Linking, StyleSheet, Text, View } from 'react-native';
 
-import { methods, passkeys, past, refunds } from '../../account/data';
+import { past, refunds } from '../../account/data';
 import { Group, Page, Panel, Pill, REVEAL, Row, TONE } from '../../account/kit';
 import { ProfileHead } from '../../account/profile';
-import { isOpen } from '../../account/rules';
+import { day, isOpen } from '../../account/rules';
 import { split } from '../../account/saves';
 import { events, now } from '../../mock';
 import { usePlace } from '../../place';
-import { needsAccount, signOut, useSession, useViewer } from '../../session';
+import { keepAccount, needsAccount, signOut, useSession, useViewer } from '../../session';
 import { color, font, space } from '../../theme';
 import { Wordmark } from '../../wordmark';
 
@@ -30,6 +30,7 @@ const WWW = 'https://www.unifesto.app'; // the legal pages, as the web's footer 
 const go = (href: Href) => () => router.push(href);
 export default function Account() {
   const viewer = useViewer(); // signed in or out on this phone (src/session.ts)
+  const due = useSession()?.me.deletionDue; // set to be deleted: Keep my account in place of Delete account
   // Saved counts upcoming events only (Saved events and lists doc).
   const saved = split((useSession()?.saved ?? []).map((x) => x.id), events, now).upcoming;
   const place = usePlace(viewer.place);
@@ -37,7 +38,7 @@ export default function Account() {
   const logOut = () =>
     Alert.alert('Log out of Orbit?', 'You’ll sign back in on this phone with a code or your passkey.', [
       { text: 'Cancel', style: 'cancel' },
-      // Back to Home signed out. ponytail: the API's session ends here too once it exists.
+      // Back to Home signed out; the API's session ends too.
       {
         text: 'Log out',
         style: 'destructive',
@@ -110,8 +111,12 @@ export default function Account() {
           Host an event card, which opens the Event Request (src/app/account/host.tsx); a host's team uses the Console. */}
       {viewer.signedIn && (
         <Group title="Account">
-          <Row icon="key" tone={TONE.yellow} label="Sign-in and security" value={`${methods.length + passkeys.length} ways in`} onPress={go('/account/security')} />
-          <Row icon="trash" tone={TONE.red} label="Delete account" onPress={go('/account/delete')} />
+          <Row icon="key" tone={TONE.yellow} label="Sign-in and security" onPress={go('/account/security')} />
+          {due ? (
+            <Row icon="trash" tone={TONE.red} label={`Deleted on ${day(due)}`} right={<Pill label="Keep my account" size="small" onPress={() => void keepAccount().then((m) => m && Alert.alert(m))} />} />
+          ) : (
+            <Row icon="trash" tone={TONE.red} label="Delete account" onPress={go('/account/delete')} />
+          )}
         </Group>
       )}
 

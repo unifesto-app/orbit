@@ -2,9 +2,7 @@
 // other screens are changing. Shapes follow the User, Booking, Money and Notifications flow docs: amounts in whole paise,
 // times as ISO strings in India time, every paid booking with its frozen price and fee.
 // ponytail: static data, like src/mock.ts; it goes when the account endpoints land in @orbit/contract.
-import { hosts } from '../mock';
-import { me } from '../modes';
-import type { RefundStatus, Way } from './rules';
+import type { RefundStatus } from './rules';
 import type { List } from './saves';
 
 export type Profile = {
@@ -17,9 +15,6 @@ export type Profile = {
   since: string; // on Orbit since
   city: string | null; // for new events nearby, from the city list
 };
-export type Method = { way: Exclude<Way, 'passkey'>; detail: string };
-export type Passkey = { id: string; name: string; added: string };
-export type Device = { id: string; name: string; surface: 'App' | 'Web'; lastActive: string; current?: boolean };
 // A paid booking, with the terms it sold under. The fee is the buyer's, paid on top.
 export type Payment = { id: string; eventId: string; paidAt: string; pricePaise: number; feePaise: number; via: string };
 export type Refund = { id: string; eventId: string; amountPaise: number; status: RefundStatus; asked: string; reason: string; settled?: string };
@@ -36,21 +31,6 @@ export const profile: Profile = {
   since: '2025-08-14T10:00:00+05:30',
   city: 'Hyderabad',
 };
-
-export const methods: Method[] = [
-  { way: 'phone', detail: profile.phone },
-  { way: 'email', detail: 'abhinavtej.reddy@example.com' },
-  { way: 'google', detail: 'abhinavtej.reddy@example.com' },
-];
-// The same two passkeys as the viewer's in src/modes.ts (`me.passkeys`), with their names.
-export const passkeys: Passkey[] = [
-  { id: 'pk_phone', name: 'iPhone 13 Pro Max', added: '2026-10-02T21:10:00+05:30' },
-  { id: 'pk_laptop', name: 'MacBook Pro', added: '2026-10-05T10:20:00+05:30' },
-];
-export const devices: Device[] = [
-  { id: 'd1', name: 'iPhone 13 Pro Max', surface: 'App', lastActive: '2026-11-20T09:00:00+05:30', current: true },
-  { id: 'd2', name: 'Chrome on Mac', surface: 'Web', lastActive: '2026-11-18T19:40:00+05:30' },
-];
 
 // Saved events, oldest save first, and two lists over them (Saved events and lists doc).
 export const saved = ['build-anything-hackathon', 'sunday-jam', 'udaan-cultural-fest', 'open-mic-night-13-nov'];
@@ -82,12 +62,6 @@ export const refunds: Refund[] = [
   { id: 'rf2', eventId: 'pottery-for-beginners', amountPaise: 149900, status: 'With the host', asked: '2026-11-18T10:30:00+05:30', reason: 'Can’t make it that day' },
   { id: 'rf1', eventId: 'campus-esports-cup', amountPaise: 9900, status: 'Refunded', asked: '2026-11-13T16:00:00+05:30', reason: 'Our team dropped out', settled: '2026-11-16T11:00:00+05:30' },
 ];
-
-// The hosts the viewer started, from their owner seats in src/modes.ts: deleting the account waits until these are
-// archived (User doc, Account deletion).
-export const hostsStarted = me.teams
-  .filter((t) => t.owner)
-  .map((t) => ({ name: hosts.find((h) => h.id === t.hostId)?.name ?? t.hostId }));
 
 // A booking behind each of the viewer's tickets (Booking doc, The ticket): one QR admitting `count` people, the
 // 8-character code the crew types when a QR won't scan (Event day doc: online only), and the host's WhatsApp group if

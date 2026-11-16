@@ -2,6 +2,7 @@
 // No username, bio or links (decision 6 dropped them). The date of birth is shown, never edited: only support changes
 // it. Phone and email change with a code sent to the new one (Sign-in and security), so here
 // they only show. The photo is a 1:1 rounded square, not a circle.
+import { router } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
@@ -10,6 +11,7 @@ import { Chips, EDGE, Field, Group, Page, Pill, Row } from '../../account/kit';
 import { maskEmail, maskPhone } from '../../account/rules';
 import { Glass } from '../../glass';
 import { Monogram, Section } from '../../rows';
+import { useSession } from '../../session';
 import { around, color, radius, space } from '../../theme';
 
 // Optional; a host's form that asks for it fills it in here next time.
@@ -17,6 +19,9 @@ const GENDERS = ['Woman', 'Man', 'Non-binary', 'Rather not say'] as const;
 const birthday = new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
 
 export default function EditProfile() {
+  const account = useSession()?.me;
+  const phone = account?.phone ?? null;
+  const email = account?.email ?? null;
   const [name, setName] = useState(profile.name);
   const [gender, setGender] = useState(profile.gender as (typeof GENDERS)[number] | null);
   const changed = name.trim() !== profile.name || gender !== profile.gender;
@@ -36,8 +41,9 @@ export default function EditProfile() {
       <Group>
         {/* Fixed after sign-up: only support changes it, so it shows and never edits. */}
         <Row label="Date of birth" value={birthday.format(new Date(profile.dob))} />
-        <Row label="Phone" note={maskPhone(profile.phone)} right={<Pill label="Change" size="small" />} />
-        <Row label="Email" note={profile.email ? maskEmail(profile.email) : 'Not added'} right={<Pill label={profile.email ? 'Change' : 'Add'} size="small" />} />
+        {/* The account's own, changed through Confirm it's you (src/app/account/verify.tsx). */}
+        <Row label="Phone" note={phone ? maskPhone(phone) : 'Not added'} right={<Pill label={phone ? 'Change' : 'Add'} size="small" onPress={() => router.push('/account/verify?change=phone')} />} />
+        <Row label="Email" note={email ? maskEmail(email) : 'Not added'} right={<Pill label={email ? 'Change' : 'Add'} size="small" onPress={() => router.push('/account/verify?change=email')} />} />
         <Row label="City for new events" value={profile.city ?? 'Not set'} />
       </Group>
 

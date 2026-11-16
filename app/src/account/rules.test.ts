@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { calendarLink, canRemove, deletesOn, deletionBlockers, isOpen, maskEmail, maskPhone, spacedCode, ticketActions } from './rules.ts';
+import { calendarLink, canRemove, deletesOn, isOpen, maskEmail, maskPhone, spacedCode, ticketActions } from './rules.ts';
 
 test('masks the phone and email', () => {
   assert.equal(maskPhone('+919876543210'), '+91 98••• ••210');
@@ -20,22 +20,6 @@ test('only Refunded and Declined are closed', () => {
   assert.equal(isOpen('Refund failed, retrying'), true);
   assert.equal(isOpen('Refunded'), false);
   assert.equal(isOpen('Declined'), false);
-});
-
-test('upcoming tickets and started hosts block deletion, unless a refund is open', () => {
-  const blockers = deletionBlockers({
-    tickets: [
-      { eventId: 'a', title: 'Open Mic Night' },
-      { eventId: 'b', title: 'Pottery for Beginners' },
-    ],
-    openRefunds: ['b'],
-    hostsStarted: [{ name: 'Clay Days' }],
-  });
-  assert.deepEqual(blockers, [
-    'Archive Clay Days, the host you started',
-    'Cancel your ticket for Open Mic Night, or wait until it’s over',
-  ]);
-  assert.deepEqual(deletionBlockers({ tickets: [], openRefunds: [], hostsStarted: [] }), []);
 });
 
 test('deletion runs 30 days later, in India time', () => {

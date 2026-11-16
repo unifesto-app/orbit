@@ -243,6 +243,14 @@ export async function refreshAccount() {
 }
 export const setAccount = (me: Account) => current?.me.id === me.id && set({ ...current, me });
 
+// Keep my account (User doc, Account deletion): signing in within the 30 days stops the deletion. Answers the API's
+// message when it said no, or null.
+export async function keepAccount() {
+  const r = await api.authed('POST', '/me/deletion/keep');
+  if (r.ok || r.error.error === 'notPending') await refreshAccount();
+  return r.ok ? null : r.error.message;
+}
+
 // Log out, and Delete account, which signs out every device (User doc). The API is told without waiting.
 export function signOut() {
   api.signOut();

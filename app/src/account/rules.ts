@@ -34,23 +34,6 @@ export const canRemove = (way: Way, ways: readonly Way[]) => way !== 'phone' && 
 // A refund still being decided or sent.
 export const isOpen = (s: RefundStatus) => s !== 'Refunded' && s !== 'Declined';
 
-// What stops a deletion, checked when it's asked for (User flow, Account deletion): a host the person started that isn't
-// archived, and a ticket for an event that hasn't ended, unless a refund request is already open on it.
-export function deletionBlockers({
-  tickets,
-  openRefunds,
-  hostsStarted,
-}: {
-  tickets: readonly { eventId: string; title: string }[]; // upcoming bookings
-  openRefunds: readonly string[]; // event ids with a refund request open
-  hostsStarted: readonly { name: string }[]; // live hosts the person started
-}) {
-  return [
-    ...hostsStarted.map((h) => `Archive ${h.name}, the host you started`),
-    ...tickets.filter((t) => !openRefunds.includes(t.eventId)).map((t) => `Cancel your ticket for ${t.title}, or wait until it’s over`),
-  ];
-}
-
 // The day a deletion asked for now runs: 30 days later.
 export const deletesOn = (now: number) => day(now + 30 * DAY);
 

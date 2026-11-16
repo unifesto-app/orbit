@@ -18,7 +18,11 @@
       "appleTeamId": "9AH3Z5C5DH",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
-      }
+      },
+      "usesAppleSignIn": true,
+      "associatedDomains": [
+        "webcredentials:heyorbit.in"
+      ]
     },
     "android": {
       "package": "com.unifesto.orbit",
@@ -82,7 +86,9 @@
         {
           "faceIDPermission": "Orbit uses Face ID to unlock Galaxy, the staff tools, instead of your passcode."
         }
-      ]
+      ],
+      "expo-web-browser",
+      "expo-apple-authentication"
     ],
     "extra": {
       "eas": {
