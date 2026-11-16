@@ -3,10 +3,17 @@
 // (decision 11), and the date of birth is asked once, on About you, with no account under 18 (decision 5).
 
 // The contact and age rules are the API's own (@orbit/contract), so the app and the API read a contact the same way.
+import type { Contact } from '@orbit/contract';
+
 export { ADULT, ageOn, type Contact, maskName, readContact, readPhone } from '@orbit/contract';
 
 // "+91 98765 43210".
 export const showPhone = (e164: string) => `+91 ${e164.slice(3, 8)} ${e164.slice(8)}`;
+
+// A contact as the API takes it: the number or the address.
+export const toOf = (c: Contact) => (c.kind === 'phone' ? c.e164 : c.email);
+// Where a code went, shown over the code field.
+export const sentTo = (c: Contact) => (c.kind === 'phone' ? `On WhatsApp to ${showPhone(c.e164)}` : `Emailed to ${c.email}`);
 
 // The date field as it's typed, digits only, shown as "DD/MM/YYYY".
 export function typeDob(text: string) {

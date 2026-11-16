@@ -24,14 +24,14 @@ import { Linking, StyleSheet, Text, View } from 'react-native';
 
 import type { AuthStep, Me } from '@orbit/contract';
 
-import { Field, Pill, RIM } from '../account/kit';
+import { Code, Field, Pill, RIM } from '../account/kit';
 import { day, type Way } from '../account/rules';
 import { BROKEN, type Result } from '../api';
 import { Glass } from '../glass';
 import { Icon } from '../icons';
 import { api, keepAccount, runPending, setAccount, signIn, thisDevice } from '../session';
-import { Choice, Code, Frame, GoogleMark, Phone, sentTo, styles as sheet, With } from '../sheet';
-import { ADULT, ageOn, type Contact, readContact, readDob, typeDob } from '../signin';
+import { Choice, Frame, GoogleMark, Phone, styles as sheet, With } from '../sheet';
+import { ADULT, ageOn, type Contact, readContact, readDob, sentTo, toOf, typeDob } from '../signin';
 import { color, font } from '../theme';
 import { addPasskey, appleHere, appleProof, type Got, googleProof, passkeyAnswer, passkeysHere } from '../ways';
 
@@ -51,7 +51,6 @@ type Step =
 // The questions after signing in: the session is made by then, so closing the sheet keeps it.
 const AFTER: readonly Step['at'][] = ['link', 'way', 'keep', 'passkey'];
 const NAMES = { google: 'Google', apple: 'Apple' } as const;
-const toOf = (c: Contact) => (c.kind === 'phone' ? c.e164 : c.email);
 
 export default function Login() {
   const [step, go] = useState<Step>({ at: 'start' });

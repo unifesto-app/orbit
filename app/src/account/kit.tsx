@@ -2,14 +2,18 @@
 // cards like every other card in the app (6px contents, 8 padding, face 14, frosted rim 16), and a card holds text
 // only: no leading icons, no chevrons (owner, 15 Nov 2026: "never use icons in card"). Buttons are frosted pills with
 // white labels, never squared; a chip's pick is an accent dot, never accent text.
-import { Children, Fragment, type ReactNode, isValidElement, useState } from 'react';
+import { Children, Fragment, type ReactNode, isValidElement, useEffect, useState } from 'react';
 import { Animated, Pressable, StyleSheet, Switch, Text, TextInput, type TextInputProps, View, useWindowDimensions } from 'react-native';
+import { Easing, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Glass } from '../glass';
 import { Icon, type IconName } from '../icons';
 import { BackBar, FaceWash, Glow, Section, TOP } from '../rows';
 import { needsAccount } from '../session';
+import type { Contact } from '../signin';
+import { StarLayer } from '../stars';
+import { OPEN_END, starLayers } from '../switchMotion';
 import { around, color, font, radius, space } from '../theme';
 
 // Room in every card (owner, 15 Nov 2026: "add proper spacing and padding to cards"): 16 inside and 16 between rows,
@@ -93,17 +97,35 @@ export function Page({
 // `extra`, its contents centred under the back bar, the accent glowing up from its bottom centre in a 4:3 box. Native
 // glass rounds every corner alike, so the glass runs STRETCH above the screen, where its top corners can't be seen even
 // while the page is pulled down; its bottom corners are the cards'. Put it first in a Page.
+// The switch screen's space dots sit on the glass (owner, 17 Nov 2026: "apply space dots to glass card in account
+// section"): the switcher's own field, a screen tall and centred on the 4:3 panel, clipped to the glass. It hangs from
+// the panel's bottom, so Account pulled down by REVEAL and the profile's grown panel show the same dots. They gather
+// once as Account opens, as on Galaxy's lock; `settled` (the profile, fading in over Account) shows them already there.
 const STRETCH = 400;
-export function Panel({ extra = 0, children }: { extra?: number; children: ReactNode }) {
+const FLAT = 0.45; // the dots' orbits, height over width, as on Galaxy's lock
+export function Panel({ extra = 0, settled = false, children }: { extra?: number; settled?: boolean; children: ReactNode }) {
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const rest = (width * 3) / 4;
   const lift = insets.top + TOP; // how far down Page starts its content; the panel starts above that, at the top
+  const [stars] = useState(() => starLayers(width, height));
+  const still = useReducedMotion() || settled;
+  const open = useSharedValue(still ? OPEN_END : 0);
+  useEffect(() => {
+    if (!still) open.value = withTiming(OPEN_END, { duration: OPEN_END * 1000, easing: Easing.linear });
+  }, [open, still]);
   return (
     <View style={[styles.panel, { height: rest + extra, marginTop: -lift, paddingTop: lift }]}>
       <Glass style={styles.panelGlass} />
       <View style={[styles.panelGlow, { height: rest }]}>
         <FaceWash tint={color.accent} opacity={TINT} corner={RIM} />
+      </View>
+      <View style={styles.panelDots} pointerEvents="none">
+        <View style={[styles.panelField, { height, bottom: (rest - height) / 2 }]}>
+          {stars.map((dots, k) => (
+            <StarLayer key={k} layer={k} dots={dots} open={open} flat={FLAT} />
+          ))}
+        </View>
       </View>
       {children}
     </View>
@@ -111,24 +133,30 @@ export function Panel({ extra = 0, children }: { extra?: number; children: React
 }
 
 // A card of rows, under a section heading when it has one. A hairline between rows, in the middle of the gap (owner,
-// 15 Nov 2026: "add hairline").
-export function Group({ title, children }: { title?: string; children: ReactNode }) {
+// 15 Nov 2026: "add hairline"). `bare` drops the frosted rim, leaving the face alone (owner, 17 Nov 2026: "in Delete
+// Account, remove the rim of all cards").
+export function Group({ title, bare = false, children }: { title?: string; bare?: boolean; children: ReactNode }) {
   const rows = Children.toArray(children); // drops the false and null of rows shown only sometimes
   // With icons, the hairline starts where the text does, as in iOS Settings.
   const indent = rows.some((r) => isValidElement<{ icon?: IconName }>(r) && !!r.props.icon) ? ICON + ICON_GAP : 0;
+  const face = (
+    <View style={styles.face}>
+      {rows.map((row, i) => (
+        <Fragment key={i}>
+          {i > 0 && <View style={[styles.hairline, { marginLeft: indent }]} />}
+          {row}
+        </Fragment>
+      ))}
+    </View>
+  );
   return (
     <>
       {title && <Section title={title} />}
-      <Glass style={[styles.rim, !title && styles.spaced]}>
-        <View style={styles.face}>
-          {rows.map((row, i) => (
-            <Fragment key={i}>
-              {i > 0 && <View style={[styles.hairline, { marginLeft: indent }]} />}
-              {row}
-            </Fragment>
-          ))}
-        </View>
-      </Glass>
+      {bare ? (
+        <View style={[styles.bare, !title && styles.spaced]}>{face}</View>
+      ) : (
+        <Glass style={[styles.rim, !title && styles.spaced]}>{face}</Glass>
+      )}
     </>
   );
 }
@@ -268,6 +296,73 @@ export function Field({ label, ...input }: TextInputProps & { label: string }) {
   );
 }
 
+// The 6-digit code (the sign-in sheet, and changing your number or email): it goes on by itself once the sixth digit is
+// in; iOS offers an emailed or texted code above the keyboard (not a WhatsApp one). A wrong one clears for another try.
+// Resend waits as long as the API says (30 seconds, User doc). `onChange` shows Change number or Change email.
+// A code that didn't go (refused, or typed while a resend was out) clears for another try.
+const CODE = 6;
+export function Code({
+  to,
+  wait,
+  onCode,
+  onResend,
+  onChange,
+}: {
+  to: Contact;
+  wait: number;
+  onCode: (code: string) => Promise<boolean | null>;
+  onResend: () => Promise<number | null>;
+  onChange?: () => void;
+}) {
+  const [code, setCode] = useState('');
+  // Counted against the clock, not ticks: timers stop while they're in WhatsApp reading the code.
+  const [until, setUntil] = useState(() => Date.now() + wait * 1000);
+  const [now, setNow] = useState(Date.now);
+  const left = Math.max(0, Math.ceil((until - now) / 1000));
+  useEffect(() => {
+    if (!left) return;
+    const t = setTimeout(() => setNow(Date.now()), 1000);
+    return () => clearTimeout(t);
+  }, [left, now]);
+  const waitFor = (s: number) => {
+    setUntil(Date.now() + s * 1000);
+    setNow(Date.now());
+  };
+  return (
+    <View style={styles.code}>
+      <Glass style={styles.codeBox}>
+        <TextInput
+          value={code}
+          onChangeText={(t) => {
+            const digits = t.replace(/\D/g, '').slice(0, CODE);
+            setCode(digits);
+            if (digits.length === CODE) void onCode(digits).then((ok) => ok !== true && setCode('')); // refused, or another request was out
+          }}
+          style={styles.codeText}
+          keyboardType="number-pad"
+          textContentType="oneTimeCode"
+          autoComplete="one-time-code"
+          keyboardAppearance="dark"
+          maxLength={CODE}
+          autoFocus
+          placeholder="••••••"
+          placeholderTextColor={color.secondary}
+          accessibilityLabel={`${CODE}-digit code`}
+        />
+      </Glass>
+      <View style={styles.codePair}>
+        <Pill
+          label={left ? `Resend in ${left}s` : 'Resend code'}
+          size="small"
+          disabled={left > 0}
+          onPress={() => void onResend().then((s) => s !== null && waitFor(s))}
+        />
+        {onChange && <Pill label={to.kind === 'phone' ? 'Change number' : 'Change email'} size="small" onPress={onChange} />}
+      </View>
+    </View>
+  );
+}
+
 // Grey text under a page's title when the page has nothing to list yet. The only text that isn't a title or a value:
 // descriptions are gone from Account (owner, 15 Nov 2026: "keep only titles remove all descriptions").
 export function Note({ children }: { children: ReactNode }) {
@@ -294,8 +389,11 @@ export const styles = StyleSheet.create({
   panel: { justifyContent: 'center' },
   panelGlass: { position: 'absolute', top: -STRETCH, left: 0, right: 0, bottom: 0, borderRadius: RIM },
   panelGlow: { position: 'absolute', left: 0, right: 0, bottom: 0 },
+  panelDots: { position: 'absolute', top: -STRETCH, left: 0, right: 0, bottom: 0, borderRadius: RIM, overflow: 'hidden' },
+  panelField: { position: 'absolute', left: 0, right: 0 },
 
   rim: { marginHorizontal: 20, padding: EDGE, borderRadius: RIM },
+  bare: { marginHorizontal: 20 },
   spaced: { marginTop: space.big },
   face: { borderRadius: FACE, backgroundColor: color.card, padding: PAD },
   // Inside the card's padding on both sides (owner: "right side make it full hairline", then "dont use full hairline").
@@ -328,6 +426,11 @@ export const styles = StyleSheet.create({
   // A few lines (a note, a reason): the card's corner, since a pill can't grow taller.
   area: { height: undefined, minHeight: 96, paddingVertical: 12, borderRadius: RIM, justifyContent: 'flex-start' },
   areaText: { height: undefined, lineHeight: 21, textAlignVertical: 'top' },
+
+  code: { gap: space.small + 4 },
+  codeBox: { marginHorizontal: 20, height: 56, borderRadius: 28, justifyContent: 'center' },
+  codeText: { height: '100%', fontFamily: font.price, fontSize: 24, letterSpacing: 12, color: color.text, textAlign: 'center' },
+  codePair: { marginHorizontal: 20, flexDirection: 'row', justifyContent: 'center', gap: space.small },
 
   pageNote: { marginHorizontal: 20, marginTop: space.small, fontFamily: font.text, fontSize: 13, lineHeight: 18, color: color.secondary },
   signIn: { gap: space.big },

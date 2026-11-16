@@ -5,6 +5,7 @@
 // - The phone can be changed but never removed, and nothing removes the last way in (canRemove here, the API too).
 // - For 7 days after "Is this you?" on a new phone, removing a way in waits; the API says until when.
 // - Apple is iOS only, as the sign-in sheet; a linked Apple still shows on Android so it can be removed.
+// Change number and Add/Change email are Edit profile's screen (src/app/account/contact.tsx), which confirms by code.
 // Read again each time the screen comes back (from Confirm it's you, Change number, Rename).
 import type { ApiError, Security as Sec } from '@orbit/contract';
 import { router, useFocusEffect } from 'expo-router';
@@ -96,14 +97,15 @@ export default function Security() {
       const p = w === 'google' ? await googleProof() : await appleProof();
       return p.ok ? api.authed('POST', `/me/${w}`, p.proof) : p;
     });
+  const contact = (way: 'phone' | 'email') => router.push({ pathname: '/account/contact', params: { way } });
   const action = (w: (typeof shown)[number]) => {
-    if (w === 'phone') return <Pill label={sec.phone ? 'Change' : 'Add'} size="small" onPress={() => router.push('/account/verify?change=phone')} />;
+    if (w === 'phone') return <Pill label={sec.phone ? 'Change' : 'Add'} size="small" onPress={() => contact('phone')} />;
     const on = w === 'email' ? !!sec.email : !!sec[w];
-    if (!on) return <Pill label={w === 'email' ? 'Add' : 'Link'} size="small" onPress={() => (w === 'email' ? router.push('/account/verify?change=email') : void link(w))} />;
+    if (!on) return <Pill label={w === 'email' ? 'Add' : 'Link'} size="small" onPress={() => (w === 'email' ? contact('email') : void link(w))} />;
     if (w === 'email')
       return (
         <View style={styles.pills}>
-          <Pill label="Change" size="small" onPress={() => router.push('/account/verify?change=email')} />
+          <Pill label="Change" size="small" onPress={() => contact('email')} />
           {canRemove('email', ways) && <Pill label="Remove" size="small" muted onPress={() => remove('email')} />}
         </View>
       );

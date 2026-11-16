@@ -625,3 +625,20 @@ test("staff on a parent's team can't detach or move its club", async () => {
   }
   assert.equal((await row(c.id)).parentId, p.id);
 });
+
+test("galaxy teams lists a host's starter as an owner Admin; hosts staff only; junk page is page 1", async () => {
+  const a = await join(), st = await staff("hosts"), plain = await staff("people");
+  const h = await start(a, "Teams Listing Collective");
+  assert.equal((await as(plain)("GET", "/galaxy/teams")).status, 404);
+  const r = await as(st)("GET", "/galaxy/teams");
+  assert.equal(r.status, 200);
+  assert.equal(r.body.page, 1);
+  assert.equal(r.body.pageSize, 50);
+  const seat = r.body.seats.find((s: any) => s.hostId === h.id);
+  assert.equal(seat.userId, a.me.id);
+  assert.equal(seat.role, "admin");
+  assert.equal(seat.owner, true);
+  assert.equal(seat.host, "Teams Listing Collective");
+  assert.ok(r.body.total >= 1);
+  assert.equal((await as(st)("GET", "/galaxy/teams?page=junk")).body.page, 1);
+});

@@ -62,29 +62,29 @@ export default function DeleteAccount() {
   return (
     <Page title="Delete account">
       {/* The date only; the confirm says the rest (every device signs out, sign in before then to keep it). */}
-      <Group>
+      <Group bare>
         <Row label="Deleted on" value={data.dueAt ? day(data.dueAt) : on} />
       </Group>
 
       {blocked && (
-        <Group title="Before it can go">
+        <Group title="Before it can go" bare>
           {data.blockers.map((b) => (
             <Row key={b.kind === 'ownsHost' ? b.hostId : b.kind} label={say(b)} />
           ))}
         </Group>
       )}
 
-      <Group title="What is deleted">
+      <Group title="What is deleted" bare>
         {data.deleted.map((x) => (
           <Row key={x} label={x} />
         ))}
       </Group>
-      <Group title="What is wiped from what stays">
+      <Group title="What is wiped from what stays" bare>
         {data.scrubbed.map((x) => (
           <Row key={x} label={x} />
         ))}
       </Group>
-      <Group title="What is kept">
+      <Group title="What is kept" bare>
         {data.kept.map((x) => (
           <Row key={x} label={x} />
         ))}

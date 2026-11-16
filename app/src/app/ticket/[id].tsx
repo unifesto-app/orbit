@@ -12,14 +12,14 @@ import { useMemo } from 'react';
 import { Alert, Linking, Share, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
-import { bookings, payments, profile, refunds } from '../../account/data';
+import { bookings, payments, refunds } from '../../account/data';
 import { EDGE, Group, PAD, Page, Pill, RIM, Row, SignInNote } from '../../account/kit';
 import { calendarLink, isOpen, spacedCode, ticketActions } from '../../account/rules';
 import { Glass } from '../../glass';
 import { events, hosts, now } from '../../mock';
 import { qr } from '../../qr';
 import { EventRow, NotFound } from '../../rows';
-import { useSignedIn } from '../../session';
+import { useSession, useSignedIn } from '../../session';
 import { around, color, font, radius, space } from '../../theme';
 
 const WEB = 'https://heyorbit.in'; // the event's page on the web, for sharing
@@ -29,6 +29,7 @@ export default function Ticket() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { width } = useWindowDimensions();
   const signedIn = useSignedIn();
+  const holder = useSession()?.me.name ?? '';
   const b = bookings.find((x) => x.id === id);
   const e = b && events.find((x) => x.id === b.eventId);
   const host = e && hosts.find((h) => h.id === e.hostId);
@@ -82,7 +83,7 @@ export default function Ticket() {
 
       <Group>
         <Row label="Ticket" value={b.tier} />
-        <Row label="Holder" value={profile.name} />
+        <Row label="Holder" value={holder} />
         <Row label="Booking" value={b.id} />
         <Row label="Venue" value={e.venue.name} />
         <Row label="Paid" value={paid ? formatPrice(paid.pricePaise + paid.feePaise) : 'Free'} />

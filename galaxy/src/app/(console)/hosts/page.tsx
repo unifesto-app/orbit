@@ -3,7 +3,8 @@ import Form from "next/form";
 import Link from "next/link";
 import { Suspense } from "react";
 import { read } from "../../../api";
-import { Alert, Badge, Container, PageHeader, ui } from "../../ui";
+import { Alert, Badge, Container, ui } from "../../ui";
+import { People } from "../people";
 import { HostStatus } from "./status";
 
 // Hosts (Galaxy flow, Hosts; API: GET /galaxy/hosts), for holders of Hosts and events.
@@ -14,7 +15,7 @@ type Found = { id: string; slug: string; name: string; city: string; status: str
 export default function Hosts({ searchParams }: PageProps<"/hosts">) {
   return (
     <div className={ui.page}>
-      <PageHeader title="Hosts" description="Find a host by name, or by any link it has had." />
+      <People current="hosts" description="Find a host by name, or by any link it has had." />
       <Suspense fallback={null}>
         <Search searchParams={searchParams} />
       </Suspense>

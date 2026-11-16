@@ -242,6 +242,8 @@ export async function refreshAccount() {
   if (r.ok && current?.me.id === r.data.id) set({ ...current, me: r.data });
 }
 export const setAccount = (me: Account) => current?.me.id === me.id && set({ ...current, me });
+// A field or two the API changed (a new number or email), onto the account as it is now.
+export const patchAccount = (fields: Partial<Account>) => current && set({ ...current, me: { ...current.me, ...fields } });
 
 // Keep my account (User doc, Account deletion): signing in within the 30 days stops the deletion. Answers the API's
 // message when it said no, or null.
