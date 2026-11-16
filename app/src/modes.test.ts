@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { type Me, eventsOn, hasFeature, me, modesFor, nobody, onEventDay, previews, roleOn, seesEventMoney, seesHostMoney } from './modes.ts';
+import { type Me, canActOn, eventsOn, hasFeature, me, modesFor, nobody, onEventDay, previews, roleOn, seesEventMoney, seesHostMoney } from './modes.ts';
 
 const staff = (over: Partial<Me> = {}): Me => ({ ...me, ...over });
 
@@ -55,4 +55,13 @@ test('event day runs from 24 hours before the start to 3 hours after the end', (
   assert.equal(onEventDay(start, end, at('2026-11-19T20:00:00+05:30')), true);
   assert.equal(onEventDay(start, end, at('2026-11-21T02:00:00+05:30')), true);
   assert.equal(onEventDay(start, end, at('2026-11-21T02:01:00+05:30')), false);
+});
+
+test('staff never act on their own account or their own hosts', () => {
+  const owner = previews.staff; // on Punchline, CircuitFeed and Kickoff
+  assert.equal(canActOn(owner, { accountId: owner.id }), false);
+  assert.equal(canActOn(owner, { hostId: 'punchline' }), false);
+  assert.equal(canActOn(owner, { hostId: 'kickoff' }), false); // Crew on one event still counts
+  assert.equal(canActOn(owner, { accountId: 'sreeja', hostId: 'reel-society' }), true);
+  assert.equal(canActOn(nobody, { accountId: 'sreeja' }), true); // the API refuses the signed out anyway
 });

@@ -6,6 +6,7 @@ import { Animated, Platform, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BarGlass } from './glass';
+import { Glow } from './rows';
 import type { Mode } from './modes';
 import { color, font, space } from './theme';
 
@@ -34,12 +35,15 @@ const HEADER = 44; // as Home's
 
 // A tab's page: `head` pinned at the top (a title, or the host switcher), with glass fading in behind it as the page
 // scrolls, and `right` at its end. The tab's own trigger turns off iOS's automatic insets, so the page pads itself.
-export function TabPage({ head, right, children }: { head: ReactNode; right?: ReactNode; children: ReactNode }) {
+// `tint` glows from the top in the mode's colour (Galaxy's; a proposal on the Galaxy canvas, 16 Nov 2026, not yet
+// accepted by the owner: drop the prop to take it away).
+export function TabPage({ head, right, tint, children }: { head: ReactNode; right?: ReactNode; tint?: string; children: ReactNode }) {
   const insets = useSafeAreaInsets();
   const [scrollY] = useState(() => new Animated.Value(0));
   const top = insets.top + 4;
   return (
     <View style={styles.screen}>
+      {tint && <Glow tint={tint} />}
       <Animated.ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingTop: top + HEADER, paddingBottom: (Platform.OS === 'ios' ? insets.bottom : 0) + 32 }}

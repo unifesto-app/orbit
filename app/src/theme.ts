@@ -10,6 +10,9 @@ export const color = {
   text: '#FFFFFF',
   secondary: 'rgba(255, 255, 255, 0.64)',
   accent: '#295EFF',
+  // Galaxy's own colour, its card on the mode switcher (owner, 16 Nov 2026, after #7048E8 and #94AFFF). The glow at the top
+  // of Galaxy's pages and its lock, so staff always know where they are. An element, never text.
+  galaxy: '#7598FF',
   // A saved event's heart, filled (owner, 16 Nov 2026: "for saved events add love red"). iOS's dark-mode red. An element,
   // like the accent, never text.
   love: '#FF453A',

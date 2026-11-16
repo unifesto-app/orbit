@@ -55,6 +55,7 @@ const icons = {
   help: "question-duotone",
   terms: "file-text-duotone",
   privacy: "lock-duotone",
+  sliders: "sliders-horizontal-duotone", // Galaxy's Platform, a circle at the right of its dashboard's header (owner, 16 Nov 2026)
 };
 
 // The tab bar's icons, Phosphor duotone too (owner, 15 Nov 2026: "Phosphor duotone even in tab bar").
