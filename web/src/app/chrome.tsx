@@ -10,8 +10,9 @@ import { Socials } from "./socials";
 
 // The company site keeps about, legal and help (plan, section 3).
 const WWW = "https://www.unifesto.app";
-// The organiser console lives on this site at /console (owner's call, 14 Nov), not on its own subdomain.
-const CONSOLE = "/console";
+// Hosting starts in the Orbit app with an Event Request (owner's call, 16 Nov); the web has no console.
+// Host links open the app page with host wording ((site)/app/page.tsx).
+export const HOST = "/app?for=hosts";
 
 export function Navbar() {
   return (
@@ -32,7 +33,7 @@ export function Navbar() {
 
         {/* The web is Discover, event pages and registration only; tickets, profile and following live in the app. */}
         <div className={styles.actions}>
-          <Link href={CONSOLE} className={styles.host}>Host an event</Link>
+          <Link href={HOST} className={styles.host}>Host an event</Link>
           <Link href="/login" className={styles.signIn}>Sign in</Link>
         </div>
       </div>
@@ -47,7 +48,7 @@ const columns: { title: string; links: [string, string][] }[] = [
   },
   {
     title: "For hosts",
-    links: [["Host an event", CONSOLE], ["Pricing", `${WWW}/pricing`], ["Help for hosts", `${WWW}/help`]],
+    links: [["Host an event", HOST], ["Pricing", `${WWW}/pricing`], ["Help for hosts", `${WWW}/help`]],
   },
   {
     title: "Unifesto",
@@ -71,7 +72,7 @@ export function Footer() {
             {/* Tagline idea from the name decision (rename.md); not yet final. */}
             <h2 id="footer-hosts" className={f.bandTitle}>Keep your people in orbit.</h2>
             <p className={f.bandText}>For hosts with a following.</p>
-            <Link href={CONSOLE} className={`button ${f.bandCta}`}>Host on Orbit</Link>
+            <Link href={HOST} className={`button ${f.bandCta}`}>Host on Orbit</Link>
           </div>
           {/* Desktop: scan the QR. Phones can't scan themselves, so they get a link to /app instead. */}
           <div className={f.app}>

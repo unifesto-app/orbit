@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { HOST } from "../chrome";
 import { categories, EventGrid } from "../discover";
 import { ExploreCard, scriptTitle } from "../explore";
 import { Icon, type IconName } from "../icons";
@@ -102,7 +103,7 @@ export default function Home() {
                 </li>
               ))}
             </ul>
-            <Link href="/console" className={`button ${styles.hostCta}`}>Host on Orbit</Link>
+            <Link href={HOST} className={`button ${styles.hostCta}`}>Host on Orbit</Link>
           </div>
         </section>
       </main>
