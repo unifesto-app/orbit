@@ -23,8 +23,13 @@ const TONES = Object.values(TONE); // each list's icon a colour in turn, as in A
 export default function ListModal() {
   const { event } = useLocalSearchParams<{ event: string }>();
   const insets = useSafeAreaInsets();
-  const lists = byTouched(useSession()?.lists ?? []);
-  const saved = useSaved(event);
+  const all = useSession()?.lists ?? [];
+  // The lists in the order they had when it opened, so a tick doesn't move a row (or its colour) under the finger;
+  // lists made here go first.
+  const [order] = useState(() => byTouched(all).map((l) => l.id));
+  const lists = byTouched(all).sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+  const [leaving, setLeaving] = useState(false); // after Remove from saved, so it doesn't change as it slides away
+  const saved = useSaved(event) || leaving;
   const [naming, setNaming] = useState(false);
   const [name, setName] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
@@ -40,6 +45,7 @@ export default function ListModal() {
     setProblem(null);
   };
   const make = () => {
+    if (!name.trim()) return setNaming(false); // Done on an empty name backs out
     const p = newList(name, event); // made with this event in it
     if (p) return fail(p);
     setNaming(false);
@@ -47,6 +53,7 @@ export default function ListModal() {
     setProblem(null);
   };
   const remove = () => {
+    setLeaving(true);
     router.back();
     removeSaves([event]); // its Undo note shows once the modal has gone
   };
@@ -68,7 +75,12 @@ export default function ListModal() {
       </View>
 
       {e && (
-        <ScrollView style={styles.grow} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={styles.grow}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          automaticallyAdjustKeyboardInsets
+          showsVerticalScrollIndicator={false}>
           {naming && (
             <View style={styles.naming}>
               <View style={styles.inset}>
@@ -100,6 +112,7 @@ export default function ListModal() {
                   tone={TONES[i % TONES.length]}
                   label={l.name}
                   right={on ? <Icon name="check" size={20} color={color.accent} /> : undefined}
+                  checked={on}
                   onPress={() => fail(tickList(l.id, event, !on))}
                 />
               );

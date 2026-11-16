@@ -157,16 +157,19 @@ const saveEvent = (eventId: string) => apply((s) => saves.save(s, eventId, Date.
 // sheet is still leaving and one opened over it goes astray. The heart turning red says it's saved.
 // ponytail: at the cap the heart doesn't fill first and roll back (doc); it stays empty and an alert says why. The
 // API's answer makes it a real roll-back. The push ask on an event not on sale yet waits for notifications.
-export function tapHeart(eventId: string, on: boolean) {
+export function tapHeart(eventId: string, on: boolean, fromMenu = false) {
   const signingIn = !current;
+  const openLists = () => router.push(`/lists/${eventId}`);
   needsAccount(() => {
     const problem = on ? saveEvent(eventId) : null;
-    if (problem) Alert.alert(problem);
-    else if (!signingIn) router.push(`/lists/${eventId}`);
+    if (!signingIn) return problem ? Alert.alert(problem) : openLists();
+    // Just signed in, the sheet still leaving: a note, drawn over it, says what happened instead.
+    if (problem) showNote({ text: problem });
+    else if (fromMenu) showNote({ text: 'Saved', action: { label: 'Add to a list', run: openLists } });
   });
 }
 // Add to a list, from an event's menu or a saved row's: the heart's modal, saving first if it isn't.
-export const addToList = (eventId: string) => tapHeart(eventId, true);
+export const addToList = (eventId: string) => tapHeart(eventId, true, true);
 
 // Unsave, from the list modal or a saved row's menu: gone from All saved and every list at once, with Undo for 5
 // seconds (until dismissed with assistive tech on, src/note.tsx). Remove all past passes every past save.
