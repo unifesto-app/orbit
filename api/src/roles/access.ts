@@ -1,11 +1,16 @@
-import { and, eq, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import { createMiddleware } from "hono/factory";
 import { type Roles, STAFF_FEATURES, type StaffFeature } from "@orbit/contract";
 import type { Db } from "../db/index.ts";
 import { auditLog, hosts, staffGrants, teamRoles, users } from "../db/schema.ts";
 import type { User } from "../auth/sessions.ts";
-import { type Env, fail } from "../http.ts";
-import { type Actor, holds } from "./rules.ts";
+import { type Env, fail, isUuid, type Notify } from "../http.ts";
+import { ownerOnly } from "../hosts/rules.ts";
+import { type Actor, holds, INVITE_DAYS } from "./rules.ts";
+
+// `ownerOnly` for queries: an archived host, or one archived and then suspended. `is not distinct from` keeps it
+// true or false when lift_to is null.
+export const ownerOnlySql = sql`(${hosts.status} = 'archived' or (${hosts.status} = 'suspended' and ${hosts.liftTo} is not distinct from 'archived'))`;
 
 // A person's roles, read from the tables on every request, never from a token, so taking one away is immediate.
 
@@ -28,8 +33,15 @@ export async function rolesOf(db: Db, u: User, now: number): Promise<Roles> {
     .select({ hostId: hosts.id, ownerId: hosts.ownerId, role: teamRoles.role })
     .from(teamRoles)
     .innerJoin(hosts, eq(hosts.id, teamRoles.hostId))
-    // An archived host is closed to all but its owner.
-    .where(and(eq(teamRoles.userId, u.id), isNotNull(teamRoles.startedAt), isNull(teamRoles.endedAt), or(ne(hosts.status, "archived"), eq(hosts.ownerId, u.id))));
+    // An archived host is closed to all but its owner, also while staff suspend it.
+    .where(
+      and(
+        eq(teamRoles.userId, u.id),
+        isNotNull(teamRoles.startedAt),
+        isNull(teamRoles.endedAt),
+        or(sql`not ${ownerOnlySql}`, eq(hosts.ownerId, u.id)),
+      ),
+    );
   return {
     teams: seats.map((s) => ({ hostId: s.hostId, owner: s.ownerId === u.id, admin: s.role === "admin", events: {} })),
     staff: a.owner || a.features.length ? { owner: a.owner, features: [...a.features], confirmed: true } : null,
@@ -49,6 +61,86 @@ export const requireFeature = (db: Db, now: () => number, ...fs: StaffFeature[])
   });
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
+// The person's open seat on a host, if it has started.
+const seatOf = async (db: Db, hostId: string, userId: string) =>
+  (
+    await db
+      .select()
+      .from(teamRoles)
+      .where(and(eq(teamRoles.hostId, hostId), eq(teamRoles.userId, userId), isNotNull(teamRoles.startedAt), isNull(teamRoles.endedAt)))
+  )[0] ?? null;
+
+// The host in the path and the person's started seat on it.
+export const teamOf = async (db: Db, hostId: string, userId: string) => {
+  if (!isUuid(hostId)) return null;
+  const [host] = await db.select().from(hosts).where(eq(hosts.id, hostId));
+  if (!host || (ownerOnly(host) && host.ownerId !== userId)) return null;
+  const mine = await seatOf(db, host.id, userId);
+  return mine ? { host, mine } : null;
+};
+
+// Team changes need a live or paused host; a suspended one's team can still read (Hosts flow).
+export const changeable = (h: typeof hosts.$inferSelect) => h.status === "live" || h.status === "paused";
+
+// Staff never act on a host whose team they're on, or have just left (Roles flow). Matches by account or by a verified
+// phone or email an invite went to. Only places they took count: one they started, one they accepted while it's still
+// waiting (14 days), or one that had started and ended in the last 30 days. An invite they never accepted doesn't, or an
+// Admin could shield a host from staff by inviting one of them, then withdrawing it or letting it lapse; and one they
+// accepted that was never confirmed stops counting when it lapses, since they can't leave a place that never started.
+export const onHost = async (db: Db, hostId: string, u: User, now: number) => {
+  const mine = [u.phoneVerifiedAt && u.phone, u.emailVerifiedAt && u.email].filter((x): x is string => !!x);
+  const [seat] = await db
+    .select({ id: teamRoles.id })
+    .from(teamRoles)
+    .where(
+      and(
+        eq(teamRoles.hostId, hostId),
+        mine.length ? or(eq(teamRoles.userId, u.id), inArray(teamRoles.contact, mine)) : eq(teamRoles.userId, u.id),
+        or(
+          and(
+            isNull(teamRoles.endedAt),
+            or(isNotNull(teamRoles.startedAt), and(isNotNull(teamRoles.acceptedAt), gt(teamRoles.addedAt, new Date(now - INVITE_DAYS * 24 * 3600 * 1000)))),
+          ),
+          and(isNotNull(teamRoles.startedAt), gt(teamRoles.endedAt, new Date(now - 30 * 24 * 3600 * 1000))),
+        ),
+      ),
+    )
+    .limit(1);
+  return !!seat;
+};
+
+// Everyone who holds a feature: the platform owner, and active grants.
+export const holdersOf = async (db: Db, f: StaffFeature, at: Date) => {
+  const owners = await db.select({ id: users.id }).from(users).where(eq(users.platformOwner, true));
+  const granted = await db
+    .select({ id: staffGrants.userId })
+    .from(staffGrants)
+    .where(and(eq(staffGrants.feature, f), isNull(staffGrants.endedAt), isNotNull(staffGrants.startsAt), lte(staffGrants.startsAt, at)));
+  return [...new Set([...owners, ...granted].map((r) => r.id))];
+};
+export const tell = async (notify: Notify, ids: string[], kind: string, data: Record<string, unknown>) => {
+  for (const userId of ids) await notify({ to: { userId }, kind, data });
+};
+
+// A person as Galaxy shows them: contacts stay masked until a reveal (a later slice).
+export const masked = (u: typeof users.$inferSelect) => ({
+  id: u.id,
+  name: u.name,
+  phone: u.phone ? `+91 ••••••${u.phone.slice(-4)}` : null,
+  email: u.email ? `${u.email[0]}•••@${u.email.split("@")[1]}` : null,
+  suspended: !!u.suspendedAt,
+  since: u.createdAt.toISOString(),
+});
+
+// The host's started Admins.
+export const adminsOf = async (db: Db, hostId: string) =>
+  (
+    await db
+      .select({ id: teamRoles.userId })
+      .from(teamRoles)
+      .where(and(eq(teamRoles.hostId, hostId), eq(teamRoles.role, "admin"), isNotNull(teamRoles.startedAt), isNull(teamRoles.endedAt)))
+  ).map((a) => a.id!);
 
 // The person is back: every host suspended for want of an Admin goes live again where they're a started Admin, whoever's
 // suspension took it down (Staff's own suspensions of a host aren't tied to an account and stay).

@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { boolean, date, index, integer, jsonb, pgTable, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { type AnyPgColumn, boolean, date, index, integer, jsonb, pgTable, primaryKey, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 // The User flow's tables (Orbit flows: User). Migrated people keep their Unifesto ids, so `id` takes any UUID.
 // Phone and email are the ways in by code; Google, Apple and passkeys get their own tables in their own slices.
@@ -52,9 +52,40 @@ export const hosts = pgTable("hosts", {
   createdBy: uuid("created_by")
     .notNull()
     .references(() => users.id),
+  about: text("about"), // plain text
+  website: text("website"), // https only
+  // ponytail: logo and banner aren't editable yet; uploads are their own slice, and the Unifesto migration fills them.
+  logo: text("logo"),
+  banner: text("banner"),
+  // Private: no public page, and its events are link-only (Hosts flow).
+  visibility: text("visibility", { enum: ["public", "private"] }).notNull().default("public"),
+  verifiedAt: at("verified_at"),
+  verifiedBy: uuid("verified_by").references(() => users.id),
+  // A club under a host, one level deep (Hosts decision 3). Nothing is inherited.
+  parentId: uuid("parent_id").references((): AnyPgColumn => hosts.id),
+  suspendReason: text("suspend_reason"), // what staff said, shown to the host's Admins
+  liftTo: text("lift_to", { enum: ["live", "paused", "archived"] }), // where a staff lift returns a staff-suspended host
   createdAt: at("created_at").notNull().defaultNow(),
   updatedAt: at("updated_at").notNull().defaultNow(),
+}, (t) => [index().on(t.parentId)]);
+
+// Every slug a host has had, the current one included: old links keep working and nobody can take a host's old link.
+export const hostSlugs = pgTable("host_slugs", {
+  slug: text("slug").primaryKey(),
+  hostId: uuid("host_id").notNull().references(() => hosts.id),
+  createdAt: at("created_at").notNull().defaultNow(),
 });
+
+// Follow keeps a host and gives no role (Discover flow). Hosts that go private or off the air are hidden, never deleted.
+export const follows = pgTable(
+  "follows",
+  {
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    hostId: uuid("host_id").notNull().references(() => hosts.id),
+    createdAt: at("created_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.hostId] }), index().on(t.hostId)],
+);
 
 // A place on a host's team, from invite to end. Only Admin for now; event roles come with events.
 // An invite is keyed by the phone or email it was sent to; no account is made for it. Rows end, never go, so who was
@@ -120,11 +151,12 @@ export const auditLog = pgTable(
       .references(() => users.id),
     action: text("action").notNull(), // "people.suspend", "staff.grant", "people.search"
     targetUser: uuid("target_user").references(() => users.id),
+    targetHost: uuid("target_host").references(() => hosts.id), // each host shows its own history (Galaxy flow)
     reason: text("reason"),
     data: jsonb("data"),
     at: at("at").notNull(),
   },
-  (t) => [index().on(t.targetUser), index().on(t.actorId)],
+  (t) => [index().on(t.targetUser), index().on(t.targetHost), index().on(t.actorId)],
 );
 
 // One row per device an account signs in on (plan section 6). A sign-out ends the row but keeps it, so the device

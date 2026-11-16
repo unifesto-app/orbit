@@ -35,10 +35,11 @@ export const HOST_KINDS = {
 export const HostKind = z.enum(Object.keys(HOST_KINDS) as [keyof typeof HOST_KINDS, ...(keyof typeof HOST_KINDS)[]]);
 
 // POST /hosts
+export const CityName = z.string().refine((c) => allCities.some((x) => x.name === c), "Pick a city from the list");
 export const StartHost = z.object({
   name: z.string().trim().min(1).max(100),
   kind: HostKind,
-  city: z.string().refine((c) => allCities.some((x) => x.name === c), "Pick a city from the list"),
+  city: CityName,
 });
 
 // POST /hosts/:id/team: a phone number or email, the same field as sign-in.

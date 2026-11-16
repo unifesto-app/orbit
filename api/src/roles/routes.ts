@@ -3,9 +3,9 @@ import { and, count, desc, eq, gt, ilike, inArray, isNotNull, isNull, lte, or, s
 import { Hono, type Context } from "hono";
 import { GrantFeatures, InviteAdmin, Lift, readPhone, type StaffFeature, StaffReason, StartHost, Suspend } from "@orbit/contract";
 import type { Db } from "../db/index.ts";
-import { auditLog, hosts, sessions, staffGrants, teamRoles, users } from "../db/schema.ts";
+import { auditLog, hosts, hostSlugs, sessions, staffGrants, teamRoles, users } from "../db/schema.ts";
 import { contactOf, type Env, fail, invalid, isUuid, type Notify, parse, signedIn, taken } from "../http.ts";
-import { holdIfUnanswered, liftHostsOf, type StaffEnv, requireFeature } from "./access.ts";
+import { adminsOf, changeable, holdersOf, masked, holdIfUnanswered, liftHostsOf, type StaffEnv, requireFeature, teamOf as teamOf_, tell } from "./access.ts";
 import { acceptRule, addRule, confirmRule, confirmSeatRule, endRule, endSeatRule, expired, holds, INVITE_DAYS, suspendRule, waiting } from "./rules.ts";
 
 // Hosts and their teams, and Galaxy's staff and People tools (Orbit flows: Roles, Hosts and Galaxy).
@@ -42,41 +42,14 @@ export function rolesRoutes({ db, notify, secret, now = Date.now }: Deps) {
   const at = () => new Date(now());
   const audit = (tx: Tx, row: Omit<typeof auditLog.$inferInsert, "at">) => tx.insert(auditLog).values({ ...row, at: at() });
 
-  // Everyone who holds a feature: the platform owner, and active grants.
-  const holdersOf = async (f: StaffFeature) => {
-    const owners = await db.select({ id: users.id }).from(users).where(eq(users.platformOwner, true));
-    const granted = await db
-      .select({ id: staffGrants.userId })
-      .from(staffGrants)
-      .where(and(eq(staffGrants.feature, f), isNull(staffGrants.endedAt), isNotNull(staffGrants.startsAt), lte(staffGrants.startsAt, at())));
-    return [...new Set([...owners, ...granted].map((r) => r.id))];
-  };
-  const tell = async (ids: string[], kind: string, data: Record<string, unknown>) => {
-    for (const userId of ids) await notify({ to: { userId }, kind, data });
-  };
+  const holders = (f: StaffFeature) => holdersOf(db, f, at());
+  const say = (ids: string[], kind: string, data: Record<string, unknown>) => tell(notify, ids, kind, data);
 
   // ---------- Hosts and teams ----------
 
-  // The person's open seat on a host, if it has started.
-  const seatOf = async (hostId: string, userId: string) =>
-    (
-      await db
-        .select()
-        .from(teamRoles)
-        .where(and(eq(teamRoles.hostId, hostId), eq(teamRoles.userId, userId), isNotNull(teamRoles.startedAt), isNull(teamRoles.endedAt)))
-    )[0] ?? null;
-  // The host in the path and the person's started seat on it. An archived host is closed to all but its owner.
-  const teamOf = async (hostId: string, userId: string) => {
-    if (!isUuid(hostId)) return null;
-    const [host] = await db.select().from(hosts).where(eq(hosts.id, hostId));
-    if (!host || (host.status === "archived" && host.ownerId !== userId)) return null;
-    const mine = await seatOf(host.id, userId);
-    return mine ? { host, mine } : null;
-  };
+  const teamOf = (hostId: string, userId: string) => teamOf_(db, hostId, userId);
   const seatById = async (hostId: string, seatId: string) =>
     isUuid(seatId) ? ((await db.select().from(teamRoles).where(and(eq(teamRoles.id, seatId), eq(teamRoles.hostId, hostId))))[0] ?? null) : null;
-  // Team changes need a live or paused host; a suspended one's team can still read (Hosts flow).
-  const changeable = (h: typeof hosts.$inferSelect) => h.status === "live" || h.status === "paused";
   const nothing = (c: Context) => fail(c, 404, "notFound", "There's nothing here.");
 
   // POST /hosts: Start a host. Live at once, unverified, with the starter as its owner and Admin.
@@ -90,6 +63,7 @@ export function rolesRoutes({ db, notify, secret, now = Date.now }: Deps) {
       const [made] = await tx.select({ n: count() }).from(hosts).where(and(eq(hosts.createdBy, u.id), gt(hosts.createdAt, new Date(now() - DAY))));
       if (made!.n >= HOSTS_PER_DAY) return null;
       const [h] = await tx.insert(hosts).values({ ...b, slug: slugFor(b.name), ownerId: u.id, createdBy: u.id, createdAt: at(), updatedAt: at() }).returning();
+      await tx.insert(hostSlugs).values({ slug: h!.slug, hostId: h!.id, createdAt: at() });
       await tx.insert(teamRoles).values({ hostId: h!.id, role: "admin", contact: u.phone ?? u.email!, userId: u.id, addedBy: u.id, addedAt: at(), acceptedAt: at(), startedAt: at() });
       return h!;
     });
@@ -257,11 +231,7 @@ export function rolesRoutes({ db, notify, secret, now = Date.now }: Deps) {
     if (t.host.ownerId === c.var.user.id) return fail(c, 403, "owner", "The owner can't leave. Ask Orbit to change the owner first.");
     await db.update(teamRoles).set({ endedAt: at(), endedBy: c.var.user.id, endReason: "left" }).where(and(eq(teamRoles.id, t.mine.id), isNull(teamRoles.endedAt)));
     await holdIfUnanswered(db, t.host.id, at());
-    const admins = await db
-      .select({ id: teamRoles.userId })
-      .from(teamRoles)
-      .where(and(eq(teamRoles.hostId, t.host.id), eq(teamRoles.role, "admin"), isNotNull(teamRoles.startedAt), isNull(teamRoles.endedAt)));
-    await tell(admins.map((a) => a.id!), "teamLeft", { hostId: t.host.id, hostName: t.host.name, name: c.var.user.name });
+    await say(await adminsOf(db, t.host.id), "teamLeft", { hostId: t.host.id, hostName: t.host.name, name: c.var.user.name });
     return c.body(null, 204);
   });
 
@@ -308,7 +278,7 @@ export function rolesRoutes({ db, notify, secret, now = Date.now }: Deps) {
         await audit(tx, { actorId: c.var.actor.id, action: "staff.grant", targetUser: target.id, reason: b.reason, data: { features: b.features, startsAt: ok.startsAt } });
         return rows;
       });
-      await tell(await holdersOf("staff"), "staffGrantAdded", { userId: target.id, features: b.features, reason: b.reason, by: c.var.actor.id, startsAt: ok.startsAt?.toISOString() ?? null, grants: made.map((g) => g.id) });
+      await say(await holders("staff"), "staffGrantAdded", { userId: target.id, features: b.features, reason: b.reason, by: c.var.actor.id, startsAt: ok.startsAt?.toISOString() ?? null, grants: made.map((g) => g.id) });
       return c.json(made.map((g) => ({ id: g.id, feature: g.feature, status: g.startsAt ? "startsLater" : "waitingConfirm" })), 201);
     } catch (e) {
       if (taken(e)) return fail(c, 409, "hasFeature", "They already have, or are waiting for, one of those features.");
@@ -334,7 +304,7 @@ export function rolesRoutes({ db, notify, secret, now = Date.now }: Deps) {
       return row;
     });
     if (!done) return refuse(c, "notWaiting");
-    await tell(await holdersOf("staff"), "staffGrantStarted", { userId: g.userId, feature: g.feature, reason: b.reason, by: c.var.actor.id });
+    await say(await holders("staff"), "staffGrantStarted", { userId: g.userId, feature: g.feature, reason: b.reason, by: c.var.actor.id });
     return c.json({ id: g.id, status: "active" });
   });
 
@@ -366,7 +336,7 @@ export function rolesRoutes({ db, notify, secret, now = Date.now }: Deps) {
       return row;
     });
     if (!ended) return refuse(c, "notOpen");
-    await tell([...new Set([...(await holdersOf("staff")), g.userId])], "staffGrantEnded", { userId: g.userId, feature: g.feature, reason: b.reason, by: c.var.actor.id });
+    await say([...new Set([...(await holders("staff")), g.userId])], "staffGrantEnded", { userId: g.userId, feature: g.feature, reason: b.reason, by: c.var.actor.id });
     return c.body(null, 204);
   });
 
@@ -374,15 +344,6 @@ export function rolesRoutes({ db, notify, secret, now = Date.now }: Deps) {
   const peopleOnly = requireFeature(db, now, "people");
   // Holders of Staff search too, to find who to give access to.
   const peopleOrStaff = requireFeature(db, now, "people", "staff");
-  const masked = (u: typeof users.$inferSelect) => ({
-    id: u.id,
-    name: u.name,
-    phone: u.phone ? `+91 ••••••${u.phone.slice(-4)}` : null,
-    email: u.email ? `${u.email[0]}•••@${u.email.split("@")[1]}` : null,
-    suspended: !!u.suspendedAt,
-    since: u.createdAt.toISOString(),
-  });
-
   // GET /galaxy/people?q=: by exact phone or email, or by name. Contacts stay masked; every search is logged.
   app.get("/galaxy/people", auth, peopleOrStaff, async (c) => {
     const q = (c.req.query("q") ?? "").trim();
@@ -429,13 +390,16 @@ export function rolesRoutes({ db, notify, secret, now = Date.now }: Deps) {
                           where o.host_id = h.id and o.role = 'admin' and o.started_at is not null and o.ended_at is null
                             and o.user_id <> ${target.id}
                             and not (ou.suspended_at is not null and (ou.suspended_until is null or ou.suspended_until > ${at().toISOString()}::timestamptz)))`);
-      const ids = [...alone].map((r) => r.id);
-      if (ids.length) await tx.update(hosts).set({ status: "suspended", suspendedWith: target.id, updatedAt: at() }).where(inArray(hosts.id, ids));
+      const found = [...alone].map((r) => r.id);
+      // Still live when the update lands: a host staff suspended meanwhile keeps its own suspension.
+      const ids = found.length
+        ? (await tx.update(hosts).set({ status: "suspended", suspendedWith: target.id, updatedAt: at() }).where(and(inArray(hosts.id, found), eq(hosts.status, "live"))).returning({ id: hosts.id })).map((r) => r.id)
+        : [];
       await audit(tx, { actorId: c.var.actor.id, action: "people.suspend", targetUser: target.id, reason: b.reason, data: { until: b.until, hosts: ids } });
       return ids;
     });
     await notify({ to: { userId: target.id }, kind: "accountSuspended", data: { until: b.until, reason: b.reason } });
-    await tell(await holdersOf("people"), "staffRiskyAction", { action: "people.suspend", userId: target.id, reason: b.reason, by: c.var.actor.id });
+    await say(await holders("people"), "staffRiskyAction", { action: "people.suspend", userId: target.id, reason: b.reason, by: c.var.actor.id });
     return c.json({ id: target.id, suspended: true, hosts: held });
   });
 
@@ -455,7 +419,7 @@ export function rolesRoutes({ db, notify, secret, now = Date.now }: Deps) {
       await audit(tx, { actorId: c.var.actor.id, action: "people.lift", targetUser: target.id, reason: b.reason });
     });
     await notify({ to: { userId: target.id }, kind: "accountLifted", data: {} });
-    await tell(await holdersOf("people"), "staffRiskyAction", { action: "people.lift", userId: target.id, reason: b.reason, by: c.var.actor.id });
+    await say(await holders("people"), "staffRiskyAction", { action: "people.lift", userId: target.id, reason: b.reason, by: c.var.actor.id });
     return c.json({ id: target.id, suspended: false });
   });
 

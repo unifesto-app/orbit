@@ -1,9 +1,9 @@
 import { and, eq, gt, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import type { Db } from "../db/index.ts";
-import { hosts, sessions, staffGrants, teamRoles, users } from "../db/schema.ts";
+import { follows, hosts, sessions, staffGrants, teamRoles, users } from "../db/schema.ts";
 import { type Env, fail, type Notify, signedIn } from "../http.ts";
-import { holdIfUnanswered } from "../roles/access.ts";
+import { holdIfUnanswered, ownerOnlySql } from "../roles/access.ts";
 import { fresh, heldUntil } from "./security.ts";
 import type { User } from "./sessions.ts";
 import type { Store } from "./store.ts";
@@ -24,7 +24,8 @@ export async function blockersOf(db: Db | Tx, u: User, now: number): Promise<Blo
   const owned = await db
     .select({ id: hosts.id, name: hosts.name })
     .from(hosts)
-    .where(and(eq(hosts.ownerId, u.id), ne(hosts.status, "archived")));
+    // An archived host has ended, also while staff suspend it, and doesn't hold its owner back.
+    .where(and(eq(hosts.ownerId, u.id), sql`not ${ownerOnlySql}`));
   const out: Blocker[] = owned.map((h) => ({ kind: "ownsHost", hostId: h.id, name: h.name }));
   if (u.platformOwner) {
     // The platform owner stays while nobody else holds Staff (Roles doc).
@@ -40,7 +41,7 @@ export async function blockersOf(db: Db | Tx, u: User, now: number): Promise<Blo
 
 // What the one screen lists (User flow): what goes, what is scrubbed, what stays.
 const WHAT = {
-  deleted: ["Sign-in methods", "Sessions", "Roles on hosts and staff access", "Photo"],
+  deleted: ["Sign-in methods", "Sessions", "Roles on hosts and staff access", "Hosts you follow", "Photo"],
   scrubbed: ["Name", "Phone", "Email", "Date of birth", "Gender"],
   kept: ["Bookings, payments, refunds and payouts, with your details scrubbed, kept 8 years as books of account"],
 };
@@ -123,6 +124,7 @@ export async function runDeletions(db: Db, notify: Notify, now: number) {
           return { blocked: blockers };
         }
         await tx.delete(sessions).where(eq(sessions.userId, u.id));
+        await tx.delete(follows).where(eq(follows.userId, u.id)); // the row stays, so the cascade never fires
         const seats = await tx
           .update(teamRoles)
           .set({ endedAt: at, endReason: "deleted" })
