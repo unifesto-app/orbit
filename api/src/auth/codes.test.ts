@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Contact } from "@orbit/contract";
 import { checkCode, sendCode } from "./codes.ts";
+import { NotSent } from "./senders.ts";
 import { memoryStore } from "./store.ts";
 
 const secret = "test-secret-that-is-at-least-32-characters";
@@ -38,4 +39,81 @@ test("wrong codes from one IP stop at 50 across numbers", async () => {
     errors.push(r.ok ? "ok" : r.error);
   }
   assert.deepEqual(errors, [...Array(50).fill("wrongCode"), ...Array(10).fill("tooMany")]);
+});
+
+// ---------- gate, daily cap and real senders' outcomes ----------
+
+const policy = (openTo: string[] | null, dailyCap = Infinity) => ({ openTo: openTo && new Set(openTo), dailyCap });
+const nobody = async () => {};
+
+test("the gate refuses outside openTo before counting anything", async () => {
+  const store = memoryStore();
+  const ok = phone(1), out = phone(2);
+  const p = policy([(ok as any).e164]);
+  assert.deepEqual(await sendCode(store, nobody, secret, out, "ip", p), { ok: false, error: "notOpen" });
+  assert.deepEqual(await sendCode(store, nobody, secret, out, "ip", p), { ok: false, error: "notOpen" }); // not tooSoon
+  assert.deepEqual(await sendCode(store, nobody, secret, ok, "ip", p), { ok: true }); // nothing was used up
+});
+
+test("past the daily cap, the send goes on and one line is logged", async () => {
+  const store = memoryStore();
+  const p = policy(null, 2);
+  const logged: string[] = [];
+  const orig = console.error;
+  console.error = (m: string) => void logged.push(String(m));
+  try {
+    for (let i = 1; i <= 4; i++) assert.deepEqual(await sendCode(store, nobody, secret, phone(i), "ip", p), { ok: true });
+  } finally {
+    console.error = orig;
+  }
+  assert.equal(logged.length, 1);
+});
+
+test("a throttled send keeps no code, like a refused one", async () => {
+  const store = memoryStore();
+  const throttled = async () => Promise.reject(new NotSent("phone", "throttled", "429"));
+  assert.deepEqual(await sendCode(store, throttled, secret, phone(1), "ip"), { ok: false, error: "notSent", reason: "throttled" });
+  assert.deepEqual(await checkCode(store, secret, phone(1), "123456", "ip"), { ok: false, error: "expired" });
+  assert.deepEqual(await sendCode(store, throttled, secret, phone(1), "ip"), { ok: false, error: "notSent", reason: "throttled" }); // no wait
+});
+
+test("the logged line never holds the code", async () => {
+  const logged: string[] = [];
+  const orig = console.error;
+  console.error = (m: string) => void logged.push(String(m));
+  try {
+    const echo = async (_: Contact, code: string) => Promise.reject(new NotSent("phone", "refused", `bad request for code ${code}`));
+    await sendCode(memoryStore(), echo, secret, phone(1), "ip");
+    let seen = "";
+    await sendCode(memoryStore(), async (_, c) => ((seen = c), Promise.reject(new NotSent("phone", "refused", `echo ${c}`))), secret, phone(2), "ip");
+    assert.ok(logged.length >= 2);
+    assert.ok(logged.every((l) => l.includes("••••••")));
+    assert.ok(!logged[1]!.includes(seen));
+  } finally {
+    console.error = orig;
+  }
+});
+
+test("a refused send keeps no code and no wait", async () => {
+  const store = memoryStore();
+  const refused = async () => Promise.reject(new NotSent("phone", "refused", "not on WhatsApp"));
+  assert.deepEqual(await sendCode(store, refused, secret, phone(1), "ip"), { ok: false, error: "notSent", reason: "refused" });
+  assert.deepEqual(await checkCode(store, secret, phone(1), "123456", "ip"), { ok: false, error: "expired" });
+  assert.deepEqual(await sendCode(store, refused, secret, phone(1), "ip"), { ok: false, error: "notSent", reason: "refused" }); // not tooSoon
+});
+
+test("an unsure send keeps the code and the wait", async () => {
+  const store = memoryStore();
+  let last = "";
+  const unsure = async (_: Contact, code: string) => {
+    last = code;
+    throw new NotSent("phone", "unknown", "timed out");
+  };
+  assert.deepEqual(await sendCode(store, unsure, secret, phone(1), "ip"), { ok: true, unsure: true });
+  assert.deepEqual(await sendCode(store, unsure, secret, phone(1), "ip"), { ok: false, error: "tooSoon" });
+  assert.deepEqual(await checkCode(store, secret, phone(1), last, "ip"), { ok: true });
+});
+
+test("a plain Error from the sender still throws", async () => {
+  await assert.rejects(sendCode(memoryStore(), async () => Promise.reject(new Error("bug")), secret, phone(1), "ip"), /bug/);
 });

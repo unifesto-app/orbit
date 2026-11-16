@@ -20,7 +20,7 @@ import type { Db } from "../db/index.ts";
 import { legalAcceptances, users } from "../db/schema.ts";
 import { clientIp, contactOf, type Env, fail, invalid, type Notify, parse, signedIn, suspended, taken } from "../http.ts";
 import { clearLapsedSuspension, rolesOf } from "../roles/access.ts";
-import { checkCode, RESEND_AFTER, sendCode, type Sender } from "./codes.ts";
+import { checkCode, OPEN, RESEND_AFTER, sendCode, type Sender, type SendPolicy } from "./codes.ts";
 import { nextFor, resolve, type Pending, type Pick } from "./resolve.ts";
 import { deviceKnown, endSession, isSuspended, refresh, startSession, type User } from "./sessions.ts";
 import type { Store } from "./store.ts";
@@ -28,7 +28,7 @@ import { ACCESS_SECONDS, issue, read, TOKEN_MAX_MS } from "./tokens.ts";
 
 // Sign-in, sign-up and the profile (Orbit flows: User). Every error says what to do next.
 
-export type Deps = { db: Db; store: Store; send: Sender; notify: Notify; secret: string; now?: () => number };
+export type Deps = { db: Db; store: Store; send: Sender; notify: Notify; secret: string; now?: () => number; codes?: SendPolicy };
 
 // ponytail: the terms version is a constant until Galaxy's Legal documents keeps them in the database. The migration
 // must leave every copied Unifesto acceptance below it, so each migrated person accepts Orbit's terms at About you.
@@ -37,7 +37,7 @@ const TERMS_VERSION = 1;
 const TOO_LONG = "That took too long. Start signing in again.";
 const PHONE_TAKEN = "That number signs in to another Orbit account. Use a different number.";
 
-export function authRoutes({ db, store, send, notify, secret, now = Date.now }: Deps) {
+export function authRoutes({ db, store, send, notify, secret, now = Date.now, codes = OPEN }: Deps) {
   const app = new Hono<Env>();
   const me = async (u: User): Promise<Me> => ({ ...profile(u), ...(await rolesOf(db, u, now())) });
   const userById = async (id: string) => (await db.select().from(users).where(and(eq(users.id, id), isNull(users.deletedAt))))[0] ?? null;
@@ -83,11 +83,30 @@ export function authRoutes({ db, store, send, notify, secret, now = Date.now }: 
     if (!b) return invalid(c);
     const to = contactOf(c, b.to);
     if (to instanceof Response) return to;
-    const r = await sendCode(store, send, secret, to, clientIp(c));
-    if (r.ok) return c.json({ retryIn: RESEND_AFTER });
-    return r.error === "tooSoon"
-      ? fail(c, 429, "tooSoon", `Wait ${RESEND_AFTER} seconds, then send a new code.`, { retryIn: RESEND_AFTER })
-      : fail(c, 429, "tooMany", "Too many codes sent. Try again tomorrow, or sign in another way.");
+    const r = await sendCode(store, send, secret, to, clientIp(c), codes);
+    if (r.ok) return c.json({ retryIn: RESEND_AFTER }); // also when the outcome is unsure: the code is kept, and they can ask again
+    const byPhone = to.kind === "phone";
+    switch (r.error) {
+      case "notOpen":
+        return fail(c, 403, "notOpen", "Orbit isn't open yet. We'll let you know as soon as it is.");
+      case "tooSoon":
+        return fail(c, 429, "tooSoon", `Wait ${RESEND_AFTER} seconds, then send a new code.`, { retryIn: RESEND_AFTER });
+      case "tooMany":
+        return fail(c, 429, "tooMany", "Too many codes sent. Try again tomorrow, or sign in another way.");
+      case "notSent":
+        if (r.reason === "throttled")
+          return fail(c, 503, "tryLater", "A lot of codes are going out right now. Try again in a minute.", { retryIn: 60 });
+        if (r.reason === "notSetUp")
+          return fail(c, 503, "notSent", byPhone ? "Codes by WhatsApp aren't working right now. Use your email instead." : "Codes by email aren't working right now. Use your phone number instead.");
+        return fail(
+          c,
+          400,
+          "notSent",
+          byPhone
+            ? "We couldn't send a WhatsApp message to that number. Check it's on WhatsApp, or use your email instead."
+            : "We couldn't send an email to that address. Check it, or use your phone number instead.",
+        );
+    }
   });
 
   // POST /auth/code/verify: the code proves the phone or email, then the account decides the next step.
