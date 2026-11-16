@@ -28,8 +28,9 @@ import { checkCode, OPEN, RESEND_AFTER, sendCode, type Sender, type SendPolicy }
 import { nextFor, resolve, type Pending, type Pick } from "./resolve.ts";
 import { deviceKnown, endSession, isSuspended, refresh, startSession, type User } from "./sessions.ts";
 import type { Store } from "./store.ts";
+import { HOLD_MS } from "./security.ts";
 import { ACCESS_SECONDS, issue, read, TOKEN_MAX_MS } from "./tokens.ts";
-import { defaultWays, type Identity, ways, type WaysConfig } from "./ways.ts";
+import { defaultWays, type Identity, relay, ways, type WaysConfig } from "./ways.ts";
 
 // Sign-in, sign-up and the profile (Orbit flows: User). Every error says what to do next.
 
@@ -211,7 +212,13 @@ export function authRoutes({ db, store, send, notify, secret, now = Date.now, co
     if (isSuspended(user, now())) return suspended(c, user);
     if (b.me) {
       // Marked on the account, not the device, so signing in elsewhere doesn't shed it (Sign-in and security's 7-day hold).
-      const [marked] = await db.update(users).set({ newDevicePhoneAt: new Date(now()) }).where(eq(users.id, user.id)).returning();
+      // A hold already running keeps its start: a second yes must not move the mark past a way in added after the first.
+      const running = user.newDevicePhoneAt && now() - user.newDevicePhoneAt.getTime() < HOLD_MS;
+      const [marked] = await db
+        .update(users)
+        .set({ newDevicePhoneAt: running ? user.newDevicePhoneAt : new Date(now()) })
+        .where(eq(users.id, user.id))
+        .returning();
       return finish(c, await markProven(marked!, { kind: "phone", e164: t.phone }), b.device, "phone", { email: t.email, identity: t.identity });
     }
     const fresh: Pending = { phone: t.phone, email: t.email, displace: user.id, identity: t.identity, name: t.name };
@@ -280,16 +287,22 @@ export function authRoutes({ db, store, send, notify, secret, now = Date.now, co
   // email, proven by Google or Apple, finds an account as an email code would, and the provider is added to it; with no
   // account, the WhatsApp number comes next, then About you with their name. Apple's private relay address is kept on
   // the link only, never as the account's email: it matches nothing else, and mail to it needs Apple's sender setup.
-  const signInWith = async (c: Context, id: Identity, device: Device, name?: string | null) => {
+  // `proves`: whether the provider's email proves the address today, so it may find an account and become its email.
+  const signInWith = async (c: Context, id: Identity, device: Device, name: string | null | undefined, proves: boolean) => {
     const [row] = await db.select().from(identities).where(and(eq(identities.provider, id.provider), eq(identities.subject, id.subject)));
     if (row) {
       const user = await userById(row.userId);
       if (!user) return fail(c, 400, "expired", TOO_LONG); // a deleted account's link is gone with it
       if (isSuspended(user, now())) return suspended(c, user);
-      await db.update(identities).set({ lastUsedAt: new Date(now()) }).where(eq(identities.id, row.id));
+      // A link made before Apple's key was set up gets its revoke token now.
+      const appleRefresh = id.provider === "apple" && !row.appleRefresh ? await w.appleRefresh(id.subject) : null;
+      await db
+        .update(identities)
+        .set({ lastUsedAt: new Date(now()), ...(appleRefresh && { appleRefresh }) })
+        .where(eq(identities.id, row.id));
       return finish(c, user, device, id.provider, {}, row.createdAt);
     }
-    const email = id.email && !id.email.endsWith("@privaterelay.appleid.com") ? id.email : null;
+    const email = proves && id.email && !relay(id.email) ? id.email : null;
     const [found] = email ? await db.select().from(users).where(and(eq(users.email, email), isNull(users.deletedAt))) : [];
     if (found) {
       if (isSuspended(found, now())) return suspended(c, found);
@@ -302,12 +315,13 @@ export function authRoutes({ db, store, send, notify, secret, now = Date.now, co
     return c.json({ step: "phone", signup: await issue(secret, "phoneStep", carry) });
   };
 
-  // A few nonces and passkey challenges a minute from one address is plenty; each lives in the store for minutes.
-  const tooManyAsks = async (c: Context) => (await store.incr(`asks:${clientIp(c)}`, 60 * 1000)) > 30;
+  // Nonces, Google pages and passkey challenges each live in the store for minutes, so one address gets 60 a minute of
+  // each: room for a venue's Wi-Fi or a carrier's shared address, not for filling the store.
+  const tooManyAsks = async (c: Context, what: string) => (await store.incr(`asks:${what}:${clientIp(c)}`, 60 * 1000)) > 60;
   const slowDown = (c: Context) => fail(c, 429, "tooSoon", "Too many tries. Wait a minute and try again.", { retryIn: 60 });
 
   // POST /auth/nonce: for Apple's sheet, spent by the token Apple makes with it.
-  app.post("/auth/nonce", async (c) => ((await tooManyAsks(c)) ? slowDown(c) : c.json({ nonce: await w.nonce() })));
+  app.post("/auth/nonce", async (c) => ((await tooManyAsks(c, "nonce")) ? slowDown(c) : c.json({ nonce: await w.nonce() })));
 
   // POST /auth/apple: Continue with Apple (iOS).
   app.post("/auth/apple", async (c) => {
@@ -315,12 +329,12 @@ export function authRoutes({ db, store, send, notify, secret, now = Date.now, co
     if (!b) return invalid(c);
     const id = await w.apple(b);
     if (!id) return fail(c, 400, "notProven", "Apple couldn't confirm it's you. Try again, or use your phone number.");
-    return signInWith(c, id, b.device, b.name);
+    return signInWith(c, id, b.device, b.name, true);
   });
 
   // POST /auth/google/start: the Google page to open, for signing in, linking or a fresh check alike.
   app.post("/auth/google/start", async (c) => {
-    if (await tooManyAsks(c)) return slowDown(c);
+    if (await tooManyAsks(c, "google")) return slowDown(c);
     const started = await w.googleStart();
     return started ? c.json(started) : fail(c, 503, "notSetUp", "Google sign-in isn't set up yet. Use your phone number or email.");
   });
@@ -333,12 +347,12 @@ export function authRoutes({ db, store, send, notify, secret, now = Date.now, co
     if (!b) return invalid(c);
     const id = await w.google(b);
     if (!id) return fail(c, 400, "expired", "That took too long. Try Continue with Google again.");
-    return signInWith(c, { provider: id.provider, subject: id.subject, email: id.email }, b.device, id.name);
+    return signInWith(c, { provider: id.provider, subject: id.subject, email: id.email }, b.device, id.name, id.proves);
   });
 
   // POST /auth/passkey/options, then POST /auth/passkey: Use a passkey. A passkey is only ever added while signed in,
   // so it always opens an account; no "Is this you?", as it proves more than a number does.
-  app.post("/auth/passkey/options", async (c) => ((await tooManyAsks(c)) ? slowDown(c) : c.json(await w.passkeyRequest())));
+  app.post("/auth/passkey/options", async (c) => ((await tooManyAsks(c, "passkey")) ? slowDown(c) : c.json(await w.passkeyRequest())));
   app.post("/auth/passkey", async (c) => {
     const b = await parse(c, PasskeySignIn);
     if (!b) return invalid(c);

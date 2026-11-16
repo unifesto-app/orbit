@@ -7,8 +7,8 @@ import { clientIp, contactOf, type Env, fail, invalid, isUuid, type Notify, pars
 import { checkCode } from "./codes.ts";
 import type { User } from "./sessions.ts";
 import type { Store } from "./store.ts";
-import { read } from "./tokens.ts";
-import { defaultWays, type Identity, ways, type WaysConfig } from "./ways.ts";
+import { read, TOKEN_MAX_MS } from "./tokens.ts";
+import { defaultWays, type Identity, relay, ways, type WaysConfig } from "./ways.ts";
 
 // Sign-in and security (Orbit flows: User, "Managing sign-in methods" and "Account security"): the devices signed in,
 // and every way in: the phone and email, Google and Apple, and passkeys. Every change needs a fresh check by any way
@@ -54,8 +54,8 @@ export async function waysIn(db: Db | Tx, u: Pick<User, "id" | "phone" | "email"
 // Google or Apple address. Null for an account with only its phone and passkeys.
 export async function otherAddress(db: Db, u: Pick<User, "id" | "email">) {
   if (u.email) return u.email;
-  const [row] = await db.select({ email: identities.email }).from(identities).where(eq(identities.userId, u.id)).orderBy(asc(identities.createdAt)).limit(1);
-  return row?.email ?? null;
+  const rows = await db.select({ email: identities.email }).from(identities).where(eq(identities.userId, u.id)).orderBy(asc(identities.createdAt));
+  return rows.find((r) => r.email && !relay(r.email))?.email ?? null;
 }
 
 type Deps = { db: Db; store: Store; notify: Notify; secret: string; now?: () => number; ways?: WaysConfig };
@@ -323,9 +323,11 @@ export function securityRoutes({ db, store, notify, secret, now = Date.now, ways
 
   // Google and Apple. POST /me/google, POST /me/apple: Link, refused when it signs in to another account (no merging
   // in v1). The app gets the proof as it does to sign in.
-  const linkTo = async (c: Context, u: User, id: Identity | null, p: Provider) => {
-    if (!id) return fail(c, 400, "notProven", `${NAMES[p]} couldn't confirm it's you. Try again.`);
+  // Fresh first, so a refused link doesn't spend the Google grant or Apple nonce.
+  const linkTo = async (c: Context, u: User, prove: () => Promise<Identity | null>, p: Provider) => {
     if (!fresh(await sessionOf(c.var.sid), now())) return needFresh(c);
+    const id = await prove();
+    if (!id) return fail(c, 400, "notProven", `${NAMES[p]} couldn't confirm it's you. Try again.`);
     const appleRefresh = id.provider === "apple" ? await w.appleRefresh(id.subject) : null;
     try {
       const [row] = await db
@@ -346,12 +348,12 @@ export function securityRoutes({ db, store, notify, secret, now = Date.now, ways
   app.post("/me/google", auth, async (c) => {
     const b = await parse(c, GoogleProof);
     if (!b) return invalid(c);
-    return linkTo(c, c.var.user, await w.google(b), "google");
+    return linkTo(c, c.var.user, () => w.google(b), "google");
   });
   app.post("/me/apple", auth, async (c) => {
     const b = await parse(c, AppleProof);
     if (!b) return invalid(c);
-    return linkTo(c, c.var.user, await w.apple(b), "apple");
+    return linkTo(c, c.var.user, () => w.apple(b), "apple");
   });
   // DELETE /me/google, DELETE /me/apple. Apple's token is revoked with it.
   app.delete("/me/:provider{google|apple}", auth, async (c) => {
@@ -369,11 +371,14 @@ export function securityRoutes({ db, store, notify, secret, now = Date.now, ways
     return c.body(null, 204);
   });
 
-  // POST /me/ways: "Add Google to your account?", answered yes. The sign-in that offered it proved the Google or Apple.
+  // POST /me/ways: "Add Google to your account?", answered yes. The sign-in that offered it proved the Google or Apple
+  // and made this device fresh; the offer works once.
   app.post("/me/ways", auth, async (c) => {
     const b = await parse(c, AddWay);
-    const t = b && (await read<Identity & { sub: string }>(secret, "addWay", b.token));
+    const t = b && (await read<Identity & { sub: string; jti: string }>(secret, "addWay", b.token));
     if (!t || t.sub !== c.var.user.id) return fail(c, 400, "expired", "That took too long. Link it from Sign-in and security.");
+    if (!fresh(await sessionOf(c.var.sid), now())) return needFresh(c);
+    if ((await store.incr(`spent:${t.jti}`, TOKEN_MAX_MS)) !== 1) return fail(c, 400, "expired", "That took too long. Link it from Sign-in and security.");
     const id: Identity = { provider: t.provider, subject: t.subject, email: t.email };
     const appleRefresh = id.provider === "apple" ? await w.appleRefresh(id.subject) : null;
     try {

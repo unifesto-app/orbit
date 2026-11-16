@@ -17,7 +17,10 @@ import type { Store } from "./store.ts";
 // - Google: a browser sign-in the API runs itself (authorization code with PKCE, Google's "Web application" client),
 //   so no client id is built into the app and the web can use the same page later. Starting it hands the app the page
 //   and a secret; the callback hands the app a short grant through the heyorbit:// link, which only that secret
-//   redeems, so another app that registers the same scheme and catches the link gets nothing.
+//   redeems, so another app that registers the same scheme and catches a link from Orbit's own sign-in gets nothing.
+//   ponytail: an app that starts the flow itself holds its own secret, and a person who picks their Google account in
+//   it signs that app in. Every native sign-in shares this; App Attest and Play Integrity on start close it (plan:
+//   needed before OPEN_TO=*), or a return through an https app link instead of the scheme.
 // - Apple: the identity token from Apple's native sheet (iOS), checked against Apple's keys, made with a nonce from
 //   this API and spent once. With Apple's key set up, its authorization code becomes a refresh token, revoked when
 //   Apple is removed or the account deleted (Apple's rule for apps that offer deletion).
@@ -25,6 +28,8 @@ import type { Store } from "./store.ts";
 //   passkey for good: changing it later strands them all.
 
 export type Identity = { provider: Provider; subject: string; email: string | null };
+// Apple's private relay: a real address only to Apple, kept on the link and never matched or written to elsewhere.
+export const relay = (email: string) => email.endsWith("@privaterelay.appleid.com");
 
 export type WaysConfig = {
   passkey: { rpId: string; origins: string[] }; // iOS apps answer "https://<rpId>"; Android "android:apk-key-hash:…"
@@ -59,12 +64,16 @@ async function keysFor(uri: string, f: typeof fetch, now: number, fresh: boolean
   return keys;
 }
 async function idToken(token: string, opts: { jwks: string; iss: string | RegExp; aud: string[] }, f: typeof fetch) {
-  const check = async (fresh: boolean) =>
-    verifyWithJwks(token, {
+  // `iat` is checked here with a minute's leeway, as a clock a second behind Google's or Apple's would refuse fresh tokens.
+  const check = async (fresh: boolean) => {
+    const t = await verifyWithJwks(token, {
       keys: await keysFor(opts.jwks, f, Date.now(), fresh),
       allowedAlgorithms: ["RS256"],
-      verification: { iss: opts.iss, aud: opts.aud },
+      verification: { iss: opts.iss, aud: opts.aud, iat: false },
     });
+    if (typeof t.iat === "number" && t.iat > Date.now() / 1000 + 60) throw new Error("issued in the future");
+    return t;
+  };
   try {
     return await check(false);
   } catch {
@@ -180,12 +189,15 @@ export function ways(cfg: WaysConfig, store: Store) {
         const token = res.ok ? ((await res.json()) as { id_token?: string }).id_token : undefined;
         const t = token && (await idToken(token, { jwks: "https://www.googleapis.com/oauth2/v3/certs", iss: /^(https:\/\/)?accounts\.google\.com$/, aud: [g.clientId] }, f));
         if (!t || typeof t.sub !== "string") return back({ error: "failed" });
-        // Google says whether it checked the address; one it didn't is no proof of anything.
+        // Google says whether it checked the address; one it didn't is no proof of anything. A checked one proves the
+        // address today only where Google runs it, Gmail or a Workspace domain (`hd`); any other address was checked
+        // once, when that Google account was made, and may have changed hands since (Google's own advice).
         const email = verified(t.email_verified) ? lower(t.email) : null;
         if (!email) return back({ error: "unverified" });
+        const proves = email.endsWith("@gmail.com") || typeof t.hd === "string";
         const grant = random();
         const id: Identity = { provider: "google", subject: t.sub, email };
-        await store.set(`googleGrant:${grant}`, JSON.stringify({ id, name: typeof t.name === "string" ? t.name : null, bind }), 5 * MIN);
+        await store.set(`googleGrant:${grant}`, JSON.stringify({ id, name: typeof t.name === "string" ? t.name : null, proves, bind }), 5 * MIN);
         return back({ grant });
       } catch (e) {
         console.warn("[google] callback", e);
@@ -194,11 +206,11 @@ export function ways(cfg: WaysConfig, store: Store) {
     },
 
     // A grant from the callback, redeemed by the app that opened the page.
-    async google(p: { grant: string; verifier: string }): Promise<(Identity & { name: string | null }) | null> {
+    async google(p: { grant: string; verifier: string }): Promise<(Identity & { name: string | null; proves: boolean }) | null> {
       const raw = await take(store, `googleGrant:${p.grant}`);
       if (!raw) return null;
-      const { id, name, bind } = JSON.parse(raw) as { id: Identity; name: string | null; bind: string };
-      return hashOf(p.verifier) === bind ? { ...id, name } : null;
+      const { id, name, proves, bind } = JSON.parse(raw) as { id: Identity; name: string | null; proves: boolean; bind: string };
+      return hashOf(p.verifier) === bind ? { ...id, name, proves } : null;
     },
 
     // Signing in with a passkey: any passkey for heyorbit.in, picked on the phone.
