@@ -61,12 +61,14 @@ export const taken = (e: unknown) => {
   return (err.code ?? err.cause?.code) === "23505";
 };
 
-// ponytail: trusts Cloudflare's header, since the API sits behind Cloudflare and Caddy; Caddy must only take traffic
-// from Cloudflare, or the per-IP limits can be dodged. The web's server calls the API for browsers, so it must forward
-// the browser's address before the web signs anyone in, or every web user shares one IP's limits.
+// The visitor's address as Caddy sets it: Caddy trusts Cf-Connecting-Ip only from Cloudflare's ranges and always
+// overwrites X-Forwarded-For with the result (Unifesto's Caddyfile, orbitapi block). Cf-Connecting-Ip itself is passed
+// through untouched, so a request that skips Cloudflare could forge it; it's never read here.
+// ponytail: the web's server calls the API for browsers, so it must forward the browser's address before the web
+// signs anyone in, or every web user shares one IP's limits.
 export function clientIp(c: Context) {
-  const cf = c.req.header("cf-connecting-ip");
-  if (cf) return cf;
+  const xff = c.req.header("x-forwarded-for")?.split(",")[0]?.trim();
+  if (xff) return xff;
   try {
     return getConnInfo(c).remote.address ?? "unknown";
   } catch {

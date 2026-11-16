@@ -15,6 +15,7 @@
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
+    "@aws-sdk/client-ses": "^3.1169.0",
     "@hono/node-server": "^1.19.0",
     "@orbit/contract": "workspace:*",
     "drizzle-orm": "^0.45.4",
