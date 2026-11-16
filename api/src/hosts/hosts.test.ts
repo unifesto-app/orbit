@@ -1,6 +1,7 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { eq } from "drizzle-orm";
+import { sign } from "hono/jwt";
 import { testApp } from "../testkit.ts";
 import { runDeletions } from "../auth/deletion.ts";
 import { auditLog, follows, hosts, staffGrants, users } from "../db/schema.ts";
@@ -348,4 +349,105 @@ test("slugs of hosts started now are recorded", async () => {
   const h = await start(await join());
   const r = await t.call("GET", `/hosts/by-slug/${h.slug}`);
   assert.equal(r.body.id, h.id);
+});
+
+test("an archived host is closed to a non-owner Admin on read and edit; the owner restores it", async () => {
+  const a = await join(), b = await join();
+  const h = await start(a);
+  await addAdmin(a, h.id, b);
+  await as(a)("POST", `/hosts/${h.id}/archive`);
+  assert.equal((await as(b)("GET", `/hosts/${h.id}`)).status, 404);
+  assert.equal((await as(b)("PATCH", `/hosts/${h.id}`, { about: "x" })).status, 404);
+  assert.equal((await as(a)("POST", `/hosts/${h.id}/restore`)).status, 200);
+  assert.equal((await as(b)("PATCH", `/hosts/${h.id}`, { about: "x" })).status, 200);
+});
+
+test("the public read with an expired or garbage token is 401, never 500", async () => {
+  const a = await join();
+  const h = await start(a);
+  // Expiry runs on the real clock, so forge a token the server signed for itself, already expired.
+  const claims = JSON.parse(Buffer.from(a.access.split(".")[1]!, "base64url").toString());
+  const expired = await sign({ ...claims, use: "access", iat: 1, exp: 2 }, "test-secret-that-is-at-least-32-characters", "HS256");
+  assert.equal((await t.call("GET", `/hosts/by-slug/${h.slug}`, undefined, expired)).status, 401);
+  for (const bad of ["", "a.b.c", "Bearer", "x".repeat(500)]) assert.equal((await t.call("GET", `/hosts/by-slug/${h.slug}`, undefined, bad)).status < 500, true, bad);
+});
+
+test("a link that differs by case or has a hyphen at either end is refused", async () => {
+  const a = await join(), b = await join();
+  const h = await start(a);
+  await as(a)("PATCH", `/hosts/${h.id}`, { slug: "punchline-x" });
+  for (const slug of ["Punchline-Y", "-punchline-y", "punchline-y-", "punchline--y"]) assert.equal((await as(a)("PATCH", `/hosts/${h.id}`, { slug })).status, 400, slug);
+  assert.equal((await as(a)("PATCH", `/hosts/${h.id}`, { slug: "PUNCHLINE-X" })).status, 400);
+});
+
+test("a rename that only changes whitespace keeps the verification", async () => {
+  const a = await join(), st = await staff("hosts");
+  const h = await start(a, "Plain Name");
+  await as(st)("POST", `/galaxy/hosts/${h.id}/verify`, R);
+  const r = await as(a)("PATCH", `/hosts/${h.id}`, { name: "  Plain Name " });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.verified, true);
+  assert.notEqual((await row(h.id)).verifiedAt, null);
+});
+
+test("unfollowing an archived host still works", async () => {
+  const a = await join(), f = await join();
+  const h = await start(a);
+  await as(f)("POST", `/hosts/${h.id}/follow`);
+  await as(a)("POST", `/hosts/${h.id}/archive`);
+  assert.equal((await as(f)("DELETE", `/hosts/${h.id}/follow`)).status, 204);
+  assert.equal((await t.db.select().from(follows).where(eq(follows.userId, f.me.id))).length, 0);
+});
+
+test("staff with only People get 404 on every Galaxy host route", async () => {
+  const a = await join(), people = await staff("people");
+  const h = await start(a), o = await start(a, "Other");
+  const id = `/galaxy/hosts/${h.id}`;
+  const calls: [string, string, unknown?][] = [
+    ["GET", "/galaxy/hosts?q=punchline"], ["GET", id], ["POST", `${id}/verify`, R], ["DELETE", `${id}/verify`, R],
+    ["POST", `${id}/suspend`, R], ["POST", `${id}/lift`, R], ["PUT", `${id}/parent`, { parentId: o.id, ...R }],
+  ];
+  for (const [m, p, b] of calls) assert.equal((await as(people)(m, p, b)).status, 404, `${m} ${p}`);
+  assert.equal((await row(h.id)).status, "live");
+  assert.equal((await row(o.id)).parentId, null);
+});
+
+test("two parents set at once leave at most one link", async () => {
+  const a = await join(), st = await staff("hosts");
+  const x = await start(a, "Xray"), y = await start(a, "Yankee");
+  const put = (id: string, parentId: string) => as(st)("PUT", `/galaxy/hosts/${id}/parent`, { parentId, ...R });
+  const rs = await Promise.all([put(x.id, y.id), put(y.id, x.id)]);
+  assert.deepEqual(rs.map((r) => r.status).sort(), [200, 409]);
+  const links = [(await row(x.id)).parentId, (await row(y.id)).parentId].filter(Boolean);
+  assert.equal(links.length, 1);
+});
+
+test("a refused staff action writes no audit row", async () => {
+  const a = await join(), st = await staff("hosts");
+  const o = await join();
+  const h = await start(a), other = await start(o, "Away");
+  assert.equal((await as(st)("POST", `/galaxy/hosts/${h.id}/lift`, R)).status, 409);
+  assert.equal((await as(st)("DELETE", `/galaxy/hosts/${h.id}/verify`, R)).status, 409);
+  await as(st)("POST", `/galaxy/hosts/${h.id}/verify`, R);
+  assert.equal((await as(st)("POST", `/galaxy/hosts/${h.id}/verify`, R)).status, 409);
+  await as(st)("POST", `/galaxy/hosts/${h.id}/suspend`, R);
+  assert.equal((await as(st)("POST", `/galaxy/hosts/${h.id}/suspend`, R)).status, 409);
+  assert.equal((await as(st)("PUT", `/galaxy/hosts/${h.id}/parent`, { parentId: h.id, ...R })).status, 400);
+  for (const [action, n] of [["hosts.verify", 1], ["hosts.unverify", 0], ["hosts.suspend", 1], ["hosts.lift", 0], ["hosts.parent", 0]] as const)
+    assert.equal((await audits(action, h.id)).length, n, action);
+  // staff who sit on the host: refused, nothing written
+  await as(o)("POST", `/hosts/${other.id}/team`, { to: st.p });
+  assert.equal((await as(st)("POST", `/galaxy/hosts/${other.id}/suspend`, R)).status, 403);
+  assert.equal((await as(st)("PUT", `/galaxy/hosts/${other.id}/parent`, { parentId: null, ...R })).status, 403);
+  for (const action of ["hosts.suspend", "hosts.parent"]) assert.equal((await audits(action, other.id)).length, 0, action);
+});
+
+test("day-30 deletion drops the host's follower count", async () => {
+  const a = await join(), f = await join();
+  const h = await start(a);
+  await as(f)("POST", `/hosts/${h.id}/follow`);
+  assert.equal((await as(a)("GET", `/hosts/${h.id}`)).body.followers, 1);
+  await t.db.update(users).set({ deletionRequestedAt: new Date(t.now()), deletionDueAt: new Date(t.now() - 1000) }).where(eq(users.id, f.me.id));
+  await runDeletions(t.db, async () => {}, t.now());
+  assert.equal((await as(a)("GET", `/hosts/${h.id}`)).body.followers, 0);
 });
