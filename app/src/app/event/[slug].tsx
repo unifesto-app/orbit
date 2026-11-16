@@ -18,8 +18,8 @@ import { Glass } from '../../glass';
 import { Carousel } from '../../home/Carousel';
 import { Icon } from '../../icons';
 import { events, hosts, now, people, type Person } from '../../mock';
-import { BackBar, CircleButton, FaceWash, MenuButton, Monogram, NotFound, SaveIcon, Section, shareLink, Verified } from '../../rows';
-import { needsAccount, setFollowing, setSaved, useSaved, useViewer } from '../../session';
+import { BackBar, FaceWash, MenuButton, Monogram, NotFound, SaveButton, Section, shareLink, Verified } from '../../rows';
+import { addToList, needsAccount, setFollowing, useViewer } from '../../session';
 import { around, color, font, radius, rim, space } from '../../theme';
 
 // This page's cards have more room than the app's usual 8 (owner, 15 Nov 2026: "add padding for card in event"), and
@@ -49,7 +49,6 @@ export default function EventPage() {
   const e = events.find((x) => x.id === slug);
   const host = e && hosts.find((h) => h.id === e.hostId);
   const viewer = useViewer(); // signed out, no tickets and no follows (src/session.ts)
-  const saved = useSaved(slug);
   if (!e || !host) return <NotFound what="event" />;
 
   const past = Date.parse(e.startsAt) < now;
@@ -185,13 +184,13 @@ export default function EventPage() {
         />
       )}
       {/* Save and the menu (owner, 15 Nov 2026: "add top right, love and menu"); the menu holds the rest of the doc's list.
-          Signed out, Save asks to sign in first, then saves. Copy link, Add to calendar and Report aren't built yet. */}
+          Signed out, Save asks to sign in first, then saves; so does Add to a list, which saves first if it isn't
+          (Saved events and lists doc). Copy link, Add to calendar and Report aren't built yet. */}
       <BackBar scrollY={scrollY}>
-        <CircleButton label={saved ? `Saved: ${e.title}` : `Save ${e.title}`} onPress={() => needsAccount(() => setSaved(e.id, !saved))}>
-          <SaveIcon eventId={e.id} />
-        </CircleButton>
+        <SaveButton event={e} bar />
         <MenuButton
           actions={[
+            { label: 'Add to a list', icon: 'listPlus', onPress: () => addToList(e.id) },
             {
               label: 'Share',
               icon: 'share',

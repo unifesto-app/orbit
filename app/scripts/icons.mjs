@@ -55,6 +55,11 @@ const icons = {
   help: "question-duotone",
   terms: "file-text-duotone",
   privacy: "lock-duotone",
+  // Saved lists (Saved doc, 16 Nov 2026): the ⋯ menus’ Add to a list, Rename list and Take out of a list.
+  list: "list-heart-duotone", // a list in Account › Saved
+  listPlus: "list-plus-duotone",
+  rename: "pencil-simple-duotone",
+  takeOut: "minus-circle-duotone",
 };
 
 // The tab bar's icons, Phosphor duotone too (owner, 15 Nov 2026: "Phosphor duotone even in tab bar").

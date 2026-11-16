@@ -6,6 +6,7 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 
+import { NoteHost } from '../note';
 import { refreshAccount } from '../session';
 import { Splash } from '../splash/Splash';
 import { color } from '../theme';
@@ -75,6 +76,10 @@ export default function RootLayout() {
           <Stack.Screen name="terms/[slug]" options={MODAL} />
           {/* The sign-in sheet (User flow), over whatever needed an account, so closing it lands back there. */}
           <Stack.Screen name="login" options={MODAL} />
+          {/* Saved lists (Saved events and lists doc): the list picker is a short sheet like the venue's, over the event
+              or the note that opened it; naming a list a full modal, the field at its top clear of the keyboard. */}
+          <Stack.Screen name="lists/[event]" options={SHEET} />
+          <Stack.Screen name="list-name" options={MODAL} />
           {/* Your profile fades in over Account, whose panel has grown into the profile's top as you pulled (src/app/
               account/index.tsx), so the two read as one motion. The swipe back still slides. */}
           <Stack.Screen name="account/profile" options={{ animation: 'fade' }} />
@@ -87,6 +92,8 @@ export default function RootLayout() {
           <Stack.Screen name="galaxy" options={{ animation: 'fade', gestureEnabled: false }} />
         </Stack>
       )}
+      {/* The note after a save or an unsave, over every screen (src/note.tsx). */}
+      <NoteHost />
       {!splashDone && <Splash ready={ready} onLeave={() => setSplashLeaving(true)} onDone={() => setSplashDone(true)} />}
     </>
   );

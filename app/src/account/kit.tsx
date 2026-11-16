@@ -28,6 +28,21 @@ export const PULL = 80; // how far past the top a pull goes before letting go fi
 export const REVEAL = PULL * 1.5; // the pull at which Account's panel has grown into the profile's head
 export const TINT = 0.5; // the accent's glow at the panel's bottom centre; Explore's boxes are 0.75
 
+// Each row's icon in its own colour (owner, 15 Nov 2026: "should have various acents"): Search's Explore colours, Open
+// Color shades plus the brand blue, no two alike within a card. The icon only: labels stay white.
+export const TONE = {
+  orange: '#E8590C',
+  pink: '#D6336C',
+  violet: '#7048E8',
+  cyan: '#1098AD',
+  green: '#2F9E44',
+  yellow: '#FCC419',
+  mint: '#099268',
+  red: '#E03131',
+  blue: color.accent,
+  grape: '#AE3EC9',
+} as const;
+
 // A screen pushed over the tabs: its title, then the content; the frosted back circle pinned on top. `onPull` fires when
 // the page is pulled down past its top and let go, as pull to refresh does.
 // ponytail: it reads iOS's bounce; Android's scroll view doesn't go past the top, so give Android a tap as well.
@@ -36,11 +51,13 @@ export function Page({
   title,
   onPull,
   scrollY: given,
+  bar,
   children,
 }: {
   title?: string;
   onPull?: () => void;
   scrollY?: Animated.Value;
+  bar?: ReactNode; // at the back bar's right, as a saved list's ⋯ menu
   children: ReactNode;
 }) {
   const insets = useSafeAreaInsets();
@@ -63,7 +80,7 @@ export function Page({
         )}
         {children}
       </Animated.ScrollView>
-      <BackBar scrollY={scrollY} />
+      <BackBar scrollY={scrollY}>{bar}</BackBar>
     </View>
   );
 }

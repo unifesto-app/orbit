@@ -1,39 +1,68 @@
-// Saved, the owner's Favorites: events kept with the heart (Discover doc, Save and follow: "Profile › Saved: upcoming,
-// then past"). One push when registrations open is all a save sends. Signed out, a line and Sign in.
+// Account › Saved, the one home of saved events (Saved events and lists doc, settled 16 Nov 2026): the lists first,
+// each with how many upcoming events it holds and the next one's date, and New list; then All saved, the next five
+// upcoming with See all, then Past, folded. The switcher's Saved card opens it too. Signed out, a line and Sign in.
+import { router } from 'expo-router';
 import { View } from 'react-native';
 
-import { Note, Page, SignInNote } from '../../account/kit';
-import { events, hosts, now } from '../../mock';
-import { EventRow, Section } from '../../rows';
-import { useSession } from '../../session';
+import { Group, Note, Page, Pill, Row, SignInNote, TONE } from '../../account/kit';
+import { PastFold, SavedRows } from '../../account/saved';
+import { MAX_LISTS, MAX_SAVED, TOO_MANY, byTouched, split } from '../../account/saves';
+import { events, now } from '../../mock';
+import { showNote } from '../../note';
+import { Section } from '../../rows';
+import { canOpen, useSession } from '../../session';
 import { space } from '../../theme';
+
+const FIRST = 5; // All saved shows the next five upcoming, then See all
+const count = new Intl.NumberFormat('en-IN');
+// The lists' icons, a colour each in turn (Account's rule: no two alike within a card, as far as ten go).
+const TONES = Object.values(TONE);
 
 export default function Saved() {
   const session = useSession();
-  const list = events.filter((e) => session?.saved.includes(e.id));
-  const at = (e: { startsAt: string }) => Date.parse(e.startsAt);
-  const upcoming = list.filter((e) => at(e) >= now).sort((a, b) => at(a) - at(b));
-  const past = list.filter((e) => at(e) < now).sort((a, b) => at(b) - at(a));
-  const hostOf = (id: string) => hosts.find((h) => h.id === id)!;
+  if (!session) {
+    return (
+      <Page title="Saved">
+        <SignInNote>Sign in to see the events you save.</SignInNote>
+      </Page>
+    );
+  }
+  const { upcoming, past } = split(session.saved.map((x) => x.id), events, now);
+  const counted = session.saved.filter((x) => canOpen(x.id)).length; // hidden saves don't count
+  const lists = byTouched(session.lists);
+  const newList = () => (lists.length >= MAX_LISTS ? showNote({ text: TOO_MANY }) : router.push('/list-name'));
+
   return (
     <Page title="Saved">
-      {!session && <SignInNote>Sign in to see the events you save.</SignInNote>}
-      {session && list.length === 0 && <Note>Nothing saved yet.</Note>}
-      {upcoming.length > 0 && (
-        <View style={{ marginTop: space.big }}>
-          {upcoming.map((e) => (
-            <EventRow key={e.id} event={e} host={hostOf(e.hostId)} />
-          ))}
+      {counted >= MAX_SAVED && <Note>{`${count.format(counted)} of ${count.format(MAX_SAVED)}`}</Note>}
+
+      <Group title="Lists">
+        {lists.map((l, i) => {
+          const next = split(l.events, events, now).upcoming;
+          return (
+            <Row
+              key={l.id}
+              icon="list"
+              tone={TONES[i % TONES.length]}
+              label={l.name}
+              note={next[0]?.when.split(' · ')[0]} // the next one's date, "Sat 21 Nov"
+              value={`${next.length} upcoming`}
+              onPress={() => router.push(`/account/list/${l.id}`)}
+            />
+          );
+        })}
+        <Row icon="listPlus" label="New list" onPress={newList} />
+      </Group>
+
+      <Section title="All saved" />
+      {session.saved.length === 0 && <Note>Nothing saved yet.</Note>}
+      <SavedRows events={upcoming.slice(0, FIRST)} />
+      {upcoming.length > FIRST && (
+        <View style={{ marginTop: space.small }}>
+          <Pill label="See all" size="wide" onPress={() => router.push('/account/list/all')} />
         </View>
       )}
-      {past.length > 0 && (
-        <>
-          <Section title="Past" />
-          {past.map((e) => (
-            <EventRow key={e.id} event={e} host={hostOf(e.hostId)} past />
-          ))}
-        </>
-      )}
+      <PastFold events={past} />
     </Page>
   );
 }
