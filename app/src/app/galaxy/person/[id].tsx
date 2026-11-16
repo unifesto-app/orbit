@@ -34,7 +34,7 @@ export default gated('people', function PersonPage() {
   const tags = [a.id === me.id && 'You', a.suspended && `Suspended until ${a.suspended}`].filter((t): t is string => !!t);
   return (
     <Page>
-      <Head mark={a} name={a.name} note={[`Since ${a.since}`, a.city].filter(Boolean).join(' · ')} tags={tags} />
+      <Head mark={a} name={a.name} note={[`Since ${a.since}`, a.city].filter(Boolean).join(' · ')} tags={tags} round />
 
       <Group title="Contact">
         <Row label="Phone" note={shown.phone ? spaced(a.phone) : maskPhone(a.phone)} right={show('phone')} />

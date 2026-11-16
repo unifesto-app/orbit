@@ -1,7 +1,7 @@
 // Edit profile (User doc, Profile): name, photo, date of birth, gender, phone, email and the city for new events nearby.
 // No username, bio or links (decision 6 dropped them). The date of birth is shown, never edited: only support changes
 // it. Phone and email change with a code sent to the new one (Sign-in and security), so here
-// they only show. The photo is a 1:1 rounded square, not a circle.
+// they only show. The photo is a circle, as on Account (owner, 17 Nov 2026: "instead of squared profile use rounded one").
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
@@ -10,8 +10,9 @@ import { Chips, EDGE, Field, Group, Page, Pill, Row } from '../../account/kit';
 import { maskEmail, maskPhone } from '../../account/rules';
 import { Glass } from '../../glass';
 import { Monogram, Section } from '../../rows';
-import { around, color, radius, space } from '../../theme';
+import { around, color, space } from '../../theme';
 
+const PHOTO = 72;
 // Optional; a host's form that asks for it fills it in here next time.
 const GENDERS = ['Woman', 'Man', 'Non-binary', 'Rather not say'] as const;
 const birthday = new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
@@ -24,7 +25,7 @@ export default function EditProfile() {
     <Page title="Edit profile">
       <View style={styles.photo}>
         <Glass style={styles.photoRim}>
-          <Monogram mark={{ initials: profile.initials, bg: color.raised, fg: color.text }} size={72} />
+          <Monogram mark={{ initials: profile.initials, bg: color.raised, fg: color.text }} size={PHOTO} round />
         </Glass>
         <Pill label="Add photo" size="small" />
       </View>
@@ -56,7 +57,7 @@ export default function EditProfile() {
 
 const styles = StyleSheet.create({
   photo: { marginTop: space.big, marginHorizontal: 20, flexDirection: 'row', alignItems: 'center', gap: 16 },
-  photoRim: { padding: EDGE, borderRadius: around(radius.md, EDGE) },
+  photoRim: { padding: EDGE, borderRadius: around(PHOTO / 2, EDGE) }, // a circle
   fields: { marginTop: space.big, marginHorizontal: 20 },
   chips: { marginHorizontal: 20 },
   save: { marginTop: space.big },

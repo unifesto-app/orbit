@@ -94,9 +94,11 @@ export function Poster({ media, width, label, corner = radius.sm }: { media: Med
 // A host's 1:1 logo (the monogram stands in until real logos exist). Rounded squares, not circles, for every 1:1
 // image in the app: logos and people photos (owner, 15 Nov 2026: "use squares for 1:1 instead of circles").
 // `mark` is a host, or anything with initials and colours (a category on Search).
-export function Monogram({ mark, size }: { mark: Pick<Host, 'initials' | 'bg' | 'fg'>; size: number }) {
+// `round` is a person's photo, yours or anyone's, a circle (owner, 17 Nov 2026: "instead of squared profile use rounded
+// one", then "round them too"); hosts' logos stay rounded squares.
+export function Monogram({ mark, size, round = false }: { mark: Pick<Host, 'initials' | 'bg' | 'fg'>; size: number; round?: boolean }) {
   return (
-    <View style={[styles.monogram, { width: size, height: size, borderRadius: radius.md, backgroundColor: mark.bg }]}>
+    <View style={[styles.monogram, { width: size, height: size, borderRadius: round ? size / 2 : radius.md, backgroundColor: mark.bg }]}>
       <Text style={[styles.monogramText, { color: mark.fg, fontSize: Math.round(size * 0.34) }]}>{mark.initials}</Text>
     </View>
   );

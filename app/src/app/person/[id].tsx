@@ -1,6 +1,7 @@
 // A person on an event: a speaker, a guest, a judge, anyone. One sheet for all of them, over whatever opened it, as
-// the location sheet is (registered in src/app/_layout.tsx). Their 1:1 photo (a rounded square; the monogram until
-// photos exist), name and line, their roles, a short bio and links, then every event they're at with their role there.
+// the location sheet is (registered in src/app/_layout.tsx). Their 1:1 photo (a circle, as your own; the monogram
+// until photos exist), name and line, their roles, a short bio and links, then every event they're at with their role
+// there.
 import { router, useLocalSearchParams } from 'expo-router';
 import { Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,7 +10,7 @@ import { appearances } from '../../detail';
 import { Glass } from '../../glass';
 import { events, type Host, hosts, now, people } from '../../mock';
 import { CloseButton, EventRow, GlassFill, Monogram, NotFound, Section, Tag } from '../../rows';
-import { around, color, font, radius, rim, space } from '../../theme';
+import { around, color, font, rim, space } from '../../theme';
 
 const PHOTO = 96;
 
@@ -34,7 +35,7 @@ export default function PersonSheet() {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + space.big }}>
         <View style={styles.top}>
           <Glass style={styles.photoRim}>
-            <Monogram mark={p} size={PHOTO} />
+            <Monogram mark={p} size={PHOTO} round />
           </Glass>
           <Text style={styles.name} accessibilityRole="header">
             {p.name}
@@ -88,9 +89,9 @@ const styles = StyleSheet.create({
   screen: { flex: 1 }, // on the glass (GlassFill), owner: "Glass for all"
   head: { marginHorizontal: 20, flexDirection: 'row', justifyContent: 'flex-end' },
   top: { marginHorizontal: 20, alignItems: 'center' },
-  // A rounded square, never a circle (owner, 15 Nov 2026: "use squares for 1:1 instead of circles"), in a thin
-  // frosted rim (photo 6 + rim 2).
-  photoRim: { padding: rim, borderRadius: around(radius.md, rim) },
+  // A circle in a thin frosted rim (owner, 17 Nov 2026: "instead of squared profile use rounded one", then people's
+  // photos too; it was a rounded square from 15 Nov's "use squares for 1:1 instead of circles"). Host logos stay square.
+  photoRim: { padding: rim, borderRadius: around(PHOTO / 2, rim) },
   name: { marginTop: space.small, fontFamily: font.headline, fontSize: 24, lineHeight: 30, color: color.text, textAlign: 'center' },
   headline: { fontFamily: font.text, fontSize: 14, lineHeight: 20, color: color.secondary, textAlign: 'center' },
   row: { marginTop: space.small, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: space.small },

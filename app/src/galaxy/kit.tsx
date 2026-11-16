@@ -43,12 +43,25 @@ export function StaffNote({ children, flush = false }: { children: string; flush
 
 export const emailed = (feature: StaffFeature) => `Logged, and everyone with ${FEATURE_NAMES[feature]} is emailed.`;
 
-// A staff page's head: the 1:1 logo or photo (a monogram until real ones), the name, a grey line and any marks.
-export function Head({ mark, name, note, tags = [] }: { mark: { initials: string; bg: string; fg?: string }; name: string; note: string; tags?: string[] }) {
+// A staff page's head: the 1:1 logo or photo (a monogram until real ones), the name, a grey line and any marks. `round`
+// is a person's photo, a circle as everywhere (owner, 17 Nov 2026: "round galaxy person head too"); a logo stays square.
+export function Head({
+  mark,
+  name,
+  note,
+  tags = [],
+  round = false,
+}: {
+  mark: { initials: string; bg: string; fg?: string };
+  name: string;
+  note: string;
+  tags?: string[];
+  round?: boolean;
+}) {
   return (
     <View style={styles.head}>
       <View style={styles.who}>
-        <Monogram mark={{ initials: mark.initials, bg: mark.bg, fg: mark.fg ?? color.text }} size={64} />
+        <Monogram mark={{ initials: mark.initials, bg: mark.bg, fg: mark.fg ?? color.text }} size={64} round={round} />
         <View style={styles.names}>
           <Text style={styles.name} accessibilityRole="header">
             {name}

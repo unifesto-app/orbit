@@ -20,7 +20,7 @@ export default function Profile() {
   const [grown] = useState(() => new Animated.Value(1).interpolate({ inputRange: [0, 1], outputRange: [0, 1] }));
   return (
     <Page>
-      <Panel extra={REVEAL}>
+      <Panel extra={REVEAL} settled>
         <ProfileHead p={grown} />
       </Panel>
       {/* Moved here from Account's head (owner, 15 Nov 2026: "move edit to profile screen"). */}

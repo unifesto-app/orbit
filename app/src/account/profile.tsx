@@ -13,7 +13,7 @@ import { Glass, useAccessibility } from '../glass';
 import { Icon } from '../icons';
 import { Monogram } from '../rows';
 import { useViewer } from '../session';
-import { around, color, font, radius, space } from '../theme';
+import { around, color, font, space } from '../theme';
 
 const PHOTO = 72; // the photo at rest on Account
 const GROWN = 96; // the photo grown
@@ -46,7 +46,7 @@ export function ProfileHead({ p, onChevrons }: { p: Animated.AnimatedInterpolati
       {/* Grows from its bottom edge, up into the room the stretch makes, so it never covers the name. */}
       <Animated.View style={[styles.grows, { transform: [{ scale: a.grow }] }]}>
         <Glass style={styles.photoRim}>
-          <Monogram mark={{ initials: profile.initials, bg: color.raised, fg: color.text }} size={PHOTO} />
+          <Monogram mark={{ initials: profile.initials, bg: color.raised, fg: color.text }} size={PHOTO} round />
         </Glass>
       </Animated.View>
       <Text style={styles.name} accessibilityRole="header">
@@ -94,7 +94,7 @@ function Count({ n, label }: { n: number; label: string }) {
 const styles = StyleSheet.create({
   head: { marginHorizontal: 20, alignItems: 'center' },
   grows: { transformOrigin: 'bottom' },
-  photoRim: { padding: EDGE, borderRadius: around(radius.md, EDGE) },
+  photoRim: { padding: EDGE, borderRadius: around(PHOTO / 2, EDGE) }, // a circle
   name: { marginTop: space.small + 4, fontFamily: font.headline, fontSize: 22, lineHeight: 28, color: color.text },
   meta: { marginTop: 2, fontFamily: font.text, fontSize: 13, lineHeight: 18, color: color.secondary, textAlign: 'center' },
   slot: { marginTop: 16, height: SLOT, alignSelf: 'stretch' },
