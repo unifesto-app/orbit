@@ -4,7 +4,11 @@
 // Broadcasts are Later and traffic/OTA screens are dropped, so they're absent.
 // Pages that aren't built yet land on not-found.tsx.
 
-export type NavItem = { label: string; href: string };
+import type { DuotoneName } from "./duotone";
+
+// `icon` and `tone`: a duotone icon in its own colour, from the app's Account palette (app/src/account/kit.tsx, TONE).
+// `also`: more paths that count as this item, for the current link and the breadcrumb.
+export type NavItem = { label: string; href: string; also?: string[]; icon?: DuotoneName; tone?: string };
 
 export const home: NavItem = { label: "Dashboard", href: "/" };
 export const tokens: NavItem = { label: "Design tokens", href: "/tokens" };
@@ -12,10 +16,11 @@ export const tokens: NavItem = { label: "Design tokens", href: "/tokens" };
 export const sections: { title: string; items: NavItem[] }[] = [
   {
     title: "Community",
+    // Every kind of person on one People screen, a tab each (owner, 17 Nov 2026: "One People screen"; the tabs are in
+    // (console)/people.tsx), then their events.
     items: [
-      { label: "Users", href: "/users" },
-      { label: "Hosts", href: "/hosts" },
-      { label: "Events", href: "/events" },
+      { label: "People", href: "/users", also: ["/hosts", "/teams", "/staff"], icon: "people", tone: "#295EFF" },
+      { label: "Events", href: "/events", icon: "events", tone: "#FCC419" },
     ],
   },
   {
@@ -43,8 +48,7 @@ export const sections: { title: string; items: NavItem[] }[] = [
       { label: "Custom domains", href: "/domains" },
       { label: "Legal documents", href: "/legal" },
       { label: "App settings", href: "/settings" },
-      // Galaxy flow (15 Nov): staff and their passkeys, and the audit log of every staff action.
-      { label: "Staff", href: "/staff" },
+      // Galaxy flow (15 Nov): the audit log of every staff action. Staff moved to Community (17 Nov).
       { label: "Audit log", href: "/audit" },
     ],
   },
@@ -62,10 +66,10 @@ export const sections: { title: string; items: NavItem[] }[] = [
   },
 ];
 
-export const isActive = (href: string, path: string) =>
-  href === "/" ? path === "/" : path === href || path.startsWith(`${href}/`);
+export const isActive = (item: NavItem, path: string) =>
+  [item.href, ...(item.also ?? [])].some((href) => (href === "/" ? path === "/" : path === href || path.startsWith(`${href}/`)));
 
 const all = [home, ...sections.flatMap((s) => s.items), tokens];
 
 /** The nav item a path belongs to, for the breadcrumb. */
-export const crumbFor = (path: string) => all.find((item) => isActive(item.href, path));
+export const crumbFor = (path: string) => all.find((item) => isActive(item, path));

@@ -204,10 +204,91 @@ test("people: search", async () => {
   assert.equal(r.status, 200);
   assert.equal(r.body.length, 1);
   assert.equal(r.body[0].id, other.me.id);
-  assert.equal(r.body[0].phone, `+91 ••••••${other.p.slice(-4)}`);
+  assert.equal(r.body[0].phone, e164(other.p));
   assert.equal((await audits("people.search")).length, 1);
+  const lite = await join();
+  await give(lite, "staff");
+  const m = await as(lite)("GET", `/galaxy/people?q=${encodeURIComponent(e164(other.p))}`);
+  assert.equal(m.body[0].phone, `+91 ••••••${other.p.slice(-4)}`);
   assert.equal((await as(staff)("GET", "/galaxy/people?q=ab")).status, 400);
   assert.equal((await as(nobody)("GET", "/galaxy/people?q=abcdef")).status, 404);
+});
+
+test("people: list and detail", async () => {
+  const staff = await join(), lite = await join(), nobody = await join(), a = await join(), gone = await join();
+  await give(staff, "people");
+  await give(lite, "staff");
+  await t.db.update(users).set({ deletedAt: new Date() }).where(eq(users.id, gone.me.id));
+  const l = await as(staff)("GET", "/galaxy/people");
+  assert.equal(l.status, 200);
+  assert.equal(l.body.page, 1);
+  assert.ok(l.body.people.some((x: any) => x.id === a.me.id && x.phone === e164(a.p)));
+  assert.ok(!l.body.people.some((x: any) => x.id === gone.me.id));
+  assert.equal((await audits("people.list")).length, 1);
+  for (const u of [lite, nobody]) {
+    assert.equal((await as(u)("GET", "/galaxy/people")).status, 404);
+    assert.equal((await as(u)("GET", `/galaxy/people/${a.me.id}`)).status, 404);
+  }
+  const d = await as(staff)("GET", `/galaxy/people/${a.me.id}`);
+  assert.equal(d.status, 200);
+  assert.equal(d.body.phone, e164(a.p));
+  assert.equal((await audits("people.view")).filter((x) => x.targetUser === a.me.id).length, 1);
+  assert.equal((await audits("people.view")).length, 1);
+  for (const id of [gone.me.id, "nope"]) {
+    const r = await as(staff)("GET", `/galaxy/people/${id}`);
+    assert.equal(r.status, 404);
+    assert.equal(r.body.error, "notFound");
+  }
+});
+
+test("people: detail hides views, and staff access unless the viewer holds Staff", async () => {
+  const owner = await join(), po = await join(), both = await join(), target = await join(), gone = await join();
+  await makeOwner(owner);
+  await give(po, "people");
+  await give(both, "people", "staff");
+  const first = await as(po)("GET", `/galaxy/people/${target.me.id}`);
+  const second = await as(po)("GET", `/galaxy/people/${target.me.id}`);
+  assert.equal(first.status, 200);
+  assert.ok(!second.body.history.some((h: any) => h.action === "people.view"));
+  assert.equal(second.body.staff, null);
+  assert.equal(second.body.owner, null);
+
+  const g = await as(owner)("POST", "/galaxy/staff/grants", { userId: target.me.id, features: ["hosts"], reason: "for the team" });
+  assert.equal(g.status, 201);
+  t.tick(DAY + 1);
+  const full = await as(both)("GET", `/galaxy/people/${target.me.id}`);
+  assert.ok(Array.isArray(full.body.staff));
+  assert.ok(full.body.staff.includes("hosts"));
+  assert.equal(full.body.owner, false);
+  assert.ok(full.body.history.some((h: any) => h.action === "staff.grant"));
+  assert.ok(!full.body.history.some((h: any) => h.action === "people.view"));
+  const lite = await as(po)("GET", `/galaxy/people/${target.me.id}`);
+  assert.ok(!lite.body.history.some((h: any) => h.action.startsWith("staff.")));
+  assert.equal(lite.body.staff, null);
+
+  await t.db.update(users).set({ deletedAt: new Date() }).where(eq(users.id, gone.me.id));
+  const found = await as(po)("GET", `/galaxy/people?q=${encodeURIComponent("Riya")}`);
+  assert.equal(found.status, 200);
+  assert.ok(!found.body.some((x: any) => x.id === gone.me.id));
+  const byPhone = await as(both)("GET", `/galaxy/people?q=${encodeURIComponent(e164(gone.p))}`);
+  assert.equal(byPhone.body.length, 0);
+});
+
+test("people: every 20th list read in a day tells each People holder, counted per reader", async () => {
+  const a = await join(), b = await join();
+  await give(a, "people");
+  await give(b, "people");
+  const heavy = () => t.notices.filter((n) => n.kind === "staffHeavyPaging" && (n.data as any).by === a.me.id);
+  for (let i = 0; i < 19; i++) assert.equal((await as(a)("GET", "/galaxy/people")).status, 200);
+  for (let i = 0; i < 5; i++) await as(b)("GET", "/galaxy/people"); // b's reads are b's own count
+  assert.equal(heavy().length, 0);
+  await as(a)("GET", "/galaxy/people");
+  const sent = heavy();
+  // Every People holder hears, the reader included; other tests' holders may be here too.
+  assert.ok([a, b].every((p) => sent.some((n) => (n.to as any).userId === p.me.id)));
+  assert.ok(sent.every((n) => (n.data as any).pages === 20));
+  await as(a)("GET", "/galaxy/people");
+  assert.equal(heavy().length, sent.length); // the 21st is quiet
 });
 
 // ---------- after review ----------

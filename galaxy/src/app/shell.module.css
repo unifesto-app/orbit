@@ -236,10 +236,17 @@
 .navLink {
   display: flex;
   align-items: center;
+  gap: var(--space-xs);
   min-height: var(--size-side-navigation-item-height);
   padding: 0 var(--space-s) 0 var(--space-panel-nav-left);
   color: var(--color-text-side-navigation-item-default);
   text-decoration: none;
+}
+
+/* The side nav's duotone icon keeps its own colour on hover and when current. */
+.navIcon {
+  display: inline-flex;
+  flex: none;
 }
 
 .navLink:hover {

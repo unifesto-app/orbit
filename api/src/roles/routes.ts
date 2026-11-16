@@ -1,11 +1,11 @@
 import { randomBytes } from "node:crypto";
-import { and, count, desc, eq, gt, ilike, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, gt, gte, ilike, inArray, isNotNull, isNull, lte, ne, notLike, or, sql } from "drizzle-orm";
 import { Hono, type Context } from "hono";
-import { GrantFeatures, InviteAdmin, Lift, readPhone, type StaffFeature, StaffReason, StartHost, Suspend } from "@orbit/contract";
+import { GrantFeatures, InviteAdmin, Lift, readPhone, STAFF_FEATURES, type StaffFeature, StaffReason, StartHost, Suspend } from "@orbit/contract";
 import type { Db } from "../db/index.ts";
 import { auditLog, hosts, hostSlugs, sessions, staffGrants, teamRoles, users } from "../db/schema.ts";
-import { contactOf, type Env, fail, invalid, isUuid, type Notify, parse, signedIn, taken } from "../http.ts";
-import { adminsOf, changeable, holdersOf, masked, holdIfUnanswered, liftHostsOf, type StaffEnv, requireFeature, teamOf as teamOf_, tell } from "./access.ts";
+import { contactOf, type Env, fail, invalid, isUuid, type Notify, listPage, parse, signedIn, taken } from "../http.ts";
+import { activeFeatures, adminsOf, changeable, holdersOf, masked, holdIfUnanswered, liftHostsOf, person, type StaffEnv, requireFeature, teamOf as teamOf_, tell } from "./access.ts";
 import { acceptRule, addRule, confirmRule, confirmSeatRule, endRule, endSeatRule, expired, holds, INVITE_DAYS, suspendRule, waiting } from "./rules.ts";
 
 // Hosts and their teams, and Galaxy's staff and People tools (Orbit flows: Roles, Hosts and Galaxy).
@@ -15,6 +15,8 @@ type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 const HOSTS_PER_DAY = 5;
 const DAY = 24 * 3600 * 1000;
+const IST = 5.5 * 3600 * 1000; // India is UTC+5:30, with no daylight saving
+const HEAVY_PAGES = 20; // 1,000 accounts: a day of honest support work rarely pages this far
 
 // "Punchline Collective" → "punchline-collective-k3f9". The ending drops at the first published event (Hosts flow).
 // ponytail: a name with no Latin letters (Hindi, Telugu) gets the base "host"; transliterating waits for a need.
@@ -344,8 +346,28 @@ export function rolesRoutes({ db, notify, secret, now = Date.now }: Deps) {
   const peopleOnly = requireFeature(db, now, "people");
   // Holders of Staff search too, to find who to give access to.
   const peopleOrStaff = requireFeature(db, now, "people", "staff");
-  // GET /galaxy/people?q=: by exact phone or email, or by name. Contacts stay masked; every search is logged.
+  // GET /galaxy/people?q=: by exact phone or email, or by name; without q, every account, newest first (People only).
+  // Contacts show in full to holders of People, masked to holders of Staff alone. Every read is logged, by ids only.
   app.get("/galaxy/people", auth, peopleOrStaff, async (c) => {
+    const shown = holds(c.var.actor, "people") ? person : masked;
+    if (c.req.query("q") === undefined) {
+      if (!holds(c.var.actor, "people")) return refuse(c, "forbidden");
+      const { page, limit, offset } = listPage(c);
+      const live = isNull(users.deletedAt); // a deleted account's row stays, scrubbed, for bookings and payments
+      const rows = await db.select().from(users).where(live).orderBy(desc(users.createdAt), desc(users.id)).limit(limit).offset(offset);
+      const [total] = await db.select({ n: count() }).from(users).where(live);
+      await db.transaction((tx) => audit(tx, { actorId: c.var.actor.id, action: "people.list", data: { page, results: rows.map((r) => r.id) } }));
+      // Paging is how every contact could be taken, so each HEAVY_PAGES pages one person reads in a day (India's)
+      // tell everyone with People; nobody is stopped (owner, 17 Nov 2026: "Alert on heavy paging"). Every 20th, not
+      // only the first, so two pages read at once across the line can't skip it for the rest of the day.
+      const dayStart = new Date(Math.floor((now() + IST) / DAY) * DAY - IST);
+      const [today] = await db
+        .select({ n: count() })
+        .from(auditLog)
+        .where(and(eq(auditLog.actorId, c.var.actor.id), eq(auditLog.action, "people.list"), gte(auditLog.at, dayStart)));
+      if (today!.n % HEAVY_PAGES === 0) await say(await holders("people"), "staffHeavyPaging", { by: c.var.actor.id, pages: today!.n });
+      return c.json({ people: rows.map(person), total: total!.n, page, pageSize: limit });
+    }
     const q = (c.req.query("q") ?? "").trim();
     if (q.length < 3) return fail(c, 400, "invalid", "Type at least 3 characters.");
     const phone = readPhone(q);
@@ -353,11 +375,57 @@ export function rolesRoutes({ db, notify, secret, now = Date.now }: Deps) {
     // Holders of Staff alone find someone to give access to by their exact number or email; browsing by name is People's.
     if (!exact && !holds(c.var.actor, "people")) return fail(c, 400, "invalid", "Search by their exact phone number or email.");
     const where = exact ?? ilike(users.name, `%${q.replace(/[%_\\]/g, (m) => `\\${m}`)}%`);
-    const rows = await db.select().from(users).where(where).limit(20);
+    const rows = await db.select().from(users).where(and(where, isNull(users.deletedAt))).limit(20);
     // Only ids are kept, never the phone or email typed, so a deleted person leaves no contact in the log.
     const by = exact ? (q.includes("@") ? "email" : "phone") : "name";
     await db.transaction((tx) => audit(tx, { actorId: c.var.actor.id, action: "people.search", data: { by, results: rows.map((r) => r.id) } }));
-    return c.json(rows.map(masked));
+    return c.json(rows.map(shown));
+  });
+
+  // GET /galaxy/people/:id: a person's page (Galaxy flow, People): contacts and the ways in, staff access, the hosts
+  // they're an Admin of, signed-in devices and what staff did to the account. Opening it is logged.
+  app.get("/galaxy/people/:id", auth, peopleOnly, async (c) => {
+    const id = c.req.param("id");
+    const [u] = isUuid(id) ? await db.select().from(users).where(and(eq(users.id, id), isNull(users.deletedAt))) : [];
+    if (!u) return fail(c, 404, "notFound", "No account with that id.");
+    // Staff access, and the staff.* rows in the history, are for holders of Staff, as the Staff page is.
+    const seesStaff = holds(c.var.actor, "staff");
+    const staff = !seesStaff ? null : u.platformOwner ? [...STAFF_FEATURES] : await activeFeatures(db, u.id, now());
+    const onHosts = await db
+      .select({ id: hosts.id, slug: hosts.slug, name: hosts.name, status: hosts.status, ownerId: hosts.ownerId })
+      .from(teamRoles)
+      .innerJoin(hosts, eq(hosts.id, teamRoles.hostId))
+      .where(and(eq(teamRoles.userId, u.id), isNotNull(teamRoles.startedAt), isNull(teamRoles.endedAt)))
+      .orderBy(hosts.name);
+    const devices = await db
+      .select({ name: sessions.name, client: sessions.client, since: sessions.createdAt, lastActive: sessions.lastActiveAt })
+      .from(sessions)
+      .where(and(eq(sessions.userId, u.id), isNull(sessions.endedAt), gt(sessions.expiresAt, at())))
+      .orderBy(desc(sessions.lastActiveAt));
+    // What was done to the account, never who opened this page: views would push the suspensions out of the last 50.
+    const history = await db
+      .select({ action: auditLog.action, by: users.name, reason: auditLog.reason, at: auditLog.at })
+      .from(auditLog)
+      .innerJoin(users, eq(users.id, auditLog.actorId))
+      .where(and(eq(auditLog.targetUser, u.id), ne(auditLog.action, "people.view"), seesStaff ? undefined : notLike(auditLog.action, "staff.%")))
+      .orderBy(desc(auditLog.at))
+      .limit(50);
+    await db.transaction((tx) => audit(tx, { actorId: c.var.actor.id, action: "people.view", targetUser: u.id }));
+    return c.json({
+      ...person(u),
+      phoneVerified: !!u.phoneVerifiedAt,
+      emailVerified: !!u.emailVerifiedAt,
+      dob: u.dob,
+      gender: u.gender,
+      suspendedUntil: u.suspendedUntil?.toISOString() ?? null,
+      suspensionReason: u.suspensionReason,
+      deletionDue: u.deletionDueAt?.toISOString() ?? null,
+      owner: seesStaff ? u.platformOwner : null,
+      staff,
+      hosts: onHosts.map(({ ownerId, ...h }) => ({ ...h, owner: ownerId === u.id })),
+      devices: devices.map((d) => ({ ...d, since: d.since.toISOString(), lastActive: d.lastActive.toISOString() })),
+      history: history.map((h) => ({ ...h, at: h.at.toISOString() })),
+    });
   });
 
   const isStaffAccount = async (userId: string) =>

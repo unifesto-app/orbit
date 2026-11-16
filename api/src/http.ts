@@ -26,6 +26,15 @@ export const invalid = (c: Context) => fail(c, 400, "invalid", "Check what you t
 // Ids in paths are checked before they reach a uuid column, which would otherwise throw.
 export const isUuid = (s: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(s);
 
+// Galaxy's lists, 50 a page: `?page=` from 1, and 1 for anything that isn't a sane page number, so a huge one can't
+// overflow the offset. ponytail: offset paging; keyset on (created, id) when a list is long enough for the offset to drag.
+export const PAGE_SIZE = 50;
+export const listPage = (c: Context) => {
+  const raw = c.req.query("page") ?? "";
+  const page = /^\d{1,6}$/.test(raw) && Number(raw) > 0 ? Number(raw) : 1;
+  return { page, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE };
+};
+
 // One field takes a phone number or an email, as on the sign-in screen.
 export const contactOf = (c: Context, text: string): Contact | Response => {
   const to = readContact(text);

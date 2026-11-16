@@ -4,10 +4,12 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
+import { Duotone } from "./duotone";
 import { Icon } from "./icons";
 import { crumbFor, home, isActive, sections, tokens, type NavItem } from "./nav";
 import wordmark from "./orbit-wordmark.svg";
 import styles from "./shell.module.css";
+import ui from "./ui.module.css";
 
 // Same breakpoint as the AWS console: below it the side nav is a drawer.
 const DESKTOP = "(min-width: 689px)";
@@ -49,7 +51,7 @@ export function Shell({ children, account }: { children: ReactNode; account: Rea
       <header className={styles.top} inert={drawer}>
         <Link href="/" className={styles.logo}>
           <Image src={wordmark} alt="Orbit" priority />
-          Galaxy
+          <span className={ui.script}>Galaxy</span>
         </Link>
         <form action="/search" role="search" className={styles.search}>
           <Icon name="search" />
@@ -81,7 +83,7 @@ export function Shell({ children, account }: { children: ReactNode; account: Rea
       <nav id="side-nav" ref={nav} className={styles.side} aria-label="Galaxy">
         <div className={styles.sideHeader}>
           <Link href="/" className={styles.sideTitle} onClick={closeDrawer}>
-            Galaxy
+            <span className={ui.script}>Galaxy</span>
           </Link>
           <button type="button" className={styles.iconButton} aria-label="Close navigation" onClick={closeDrawer}>
             <Icon name="angle-left" />
@@ -117,9 +119,14 @@ function NavLinks({ path, onNavigate }: { path: string | null; onNavigate: () =>
       <Link
         href={item.href}
         className={styles.navLink}
-        aria-current={path !== null && isActive(item.href, path) ? "page" : undefined}
+        aria-current={path !== null && isActive(item, path) ? "page" : undefined}
         onClick={onNavigate}
       >
+        {item.icon && (
+          <span className={styles.navIcon} style={{ color: item.tone }}>
+            <Duotone name={item.icon} />
+          </span>
+        )}
         {item.label}
       </Link>
     </li>

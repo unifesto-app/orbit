@@ -27,6 +27,7 @@ export type Found = { q: string; people?: Person[]; error?: string };
 // API directly, past Caddy's log, and the API logs who searched, never what was typed.
 export async function searchPeople(_: Found, f: FormData): Promise<Found> {
   const q = text(f, "q");
+  if (!q) return { q }; // Clear: back to the list
   const r = await galaxy<Person[]>("GET", `/galaxy/people?q=${encodeURIComponent(q)}`);
   return r.ok ? { q, people: r.data } : { q, error: r.error.message };
 }
