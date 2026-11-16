@@ -3,6 +3,7 @@ import { HealthResponse } from "@orbit/contract";
 import { authRoutes, type Deps } from "./auth/routes.ts";
 import { deletionRoutes } from "./auth/deletion.ts";
 import { securityRoutes } from "./auth/security.ts";
+import { hostsRoutes } from "./hosts/routes.ts";
 import { rolesRoutes } from "./roles/routes.ts";
 
 export const VERSION = "0.0.0";
@@ -19,6 +20,7 @@ export function createApp(deps?: Deps) {
     app.route("/", securityRoutes(deps));
     app.route("/", deletionRoutes(deps));
     app.route("/", rolesRoutes(deps));
+    app.route("/", hostsRoutes(deps));
   }
 
   // An unknown path looks the same as a Galaxy route someone can't use.
