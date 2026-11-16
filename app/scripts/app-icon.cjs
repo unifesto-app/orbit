@@ -1,7 +1,6 @@
 // The app icon (owner, 16 Nov 2026: "add app logo"), from the "App icon" board in docs/context/artifacts/orbit-logo-concepts:
-// the ORBIT + by unifesto lockup on #121215, with by unifesto sized up for the icon. Drawn from the same files as the
-// logo everywhere else: the splash letters (via web/public/orbit-wordmark.svg) and assets/splash/by-unifesto.svg.
-// Also the alternate icons picked in Account > Appearance (ALT below). Writes the files app.json already names.
+// the ORBIT wordmark on #121215 ("by unifesto" dropped, owner 17 Nov 2026). Drawn from the same file as the logo
+// everywhere else: the splash letters, via web/public/orbit-wordmark.svg. Also the alternate icons picked in Account > Appearance (ALT below). Writes the files app.json already names.
 // Run: node app/scripts/app-icon.cjs (from the repo root), then prebuild and rebuild.
 /* global __dirname, Buffer */
 const sharp = require('sharp');
@@ -16,22 +15,16 @@ const CLEAR = { r: 0, g: 0, b: 0, alpha: 0 };
 async function art(file, width, fill) {
   let svg = require('fs').readFileSync(path.join(root, file), 'utf8');
   if (fill) svg = svg.replace(/fill="#[0-9a-fA-F]{6}"/g, `fill="${fill}"`);
-  // At the default density the files' viewBox units are pixels: the wordmark is 5507 wide, by unifesto 1735, plenty.
+  // At the default density the files' viewBox units are pixels: the wordmark is 5507 wide, plenty.
   const big = await sharp(Buffer.from(svg)).trim({ threshold: 0 }).png().toBuffer();
   return sharp(big).resize({ width }).png().toBuffer({ resolveWithObject: true });
 }
 
-// The lockup, `width` wide, centred on a `size` square: by unifesto at 60% of ORBIT's width, half ORBIT's height below it.
+// The lockup: ORBIT, `width` wide, centred on a `size` square.
 async function lockup(size, width, background, fill) {
   const mark = await art('web/public/orbit-wordmark.svg', width, fill);
-  const by = await art('app/assets/splash/by-unifesto.svg', Math.round(width * 0.6), fill);
-  const gap = Math.round(mark.info.height * 0.5);
-  const top = Math.round((size - (mark.info.height + gap + by.info.height)) / 2);
   return sharp({ create: { width: size, height: size, channels: 4, background } })
-    .composite([
-      { input: mark.data, left: Math.round((size - mark.info.width) / 2), top },
-      { input: by.data, left: Math.round((size - by.info.width) / 2), top: top + mark.info.height + gap },
-    ])
+    .composite([{ input: mark.data, left: Math.round((size - mark.info.width) / 2), top: Math.round((size - mark.info.height) / 2) }])
     .png();
 }
 

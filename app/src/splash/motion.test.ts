@@ -15,7 +15,6 @@ import {
   MARK_H,
   MARK_W,
   SWAP_LEN,
-  footerOpacity,
   groundOpacity,
   introPropFrame,
   letterFrame,
@@ -34,10 +33,9 @@ const near = (a: number, b: number, d: number, what: string) => assert.ok(Math.a
 const rest = (v: number[], what: string) => v.forEach((x, k) => near(x, REST[k], 0.01, `${what}[${k}]`));
 const shows = (v: number[]) => v[2] * v[5]; // scale × opacity
 
-test('frame one is the bare ground: no letter, prop or footer shows', () => {
+test('frame one is the bare ground: no letter or prop shows', () => {
   LETTERS.forEach((_, i) => assert.equal(letterFrame(i, 0, IDLE, 0)[5], 0));
   INTRO_PROPS.forEach((_, k) => assert.equal(shows(introPropFrame(k, 0)), 0));
-  assert.equal(footerOpacity(0, 0), 0);
 });
 
 test('every letter is at rest and every prop gone when the intro ends', () => {
@@ -48,7 +46,6 @@ test('every letter is at rest and every prop gone when the intro ends', () => {
 test('letters match GSAP at sampled moments (same tracks as Unifesto)', () => {
   near(letterFrame(0, 0.95, IDLE, 0)[1], 1.968, 0.01, 'O (u), power3.out'); // Unifesto's spec value
   near(letterFrame(1, 0.95, IDLE, 0)[3], 1.138, 0.01, 'R (n), back.out(2.2)');
-  near(footerOpacity(1.7, 0), 0.609, 0.01, 'footer');
 });
 
 test('physics follows GSAP: exact without friction, stepped and settling with it', () => {
@@ -141,7 +138,7 @@ test('splash SVGs use only elements react-native-svg draws', () => {
   const dir = new URL('../../assets/splash/', import.meta.url);
   const allowed = new Set(['svg', 'g', 'path', 'circle', 'ellipse', 'rect', 'polygon', 'polyline', 'line', 'defs', 'clipPath', 'linearGradient', 'radialGradient', 'stop', 'use', 'symbol']);
   const files = readdirSync(dir).filter((f) => f.endsWith('.svg'));
-  assert.ok(files.length >= 12, 'letters, props and footer are all there');
+  assert.ok(files.length >= 11, 'letters and props are all there');
   for (const f of files) {
     const tags = [...readFileSync(new URL(f, dir), 'utf8').matchAll(/<([a-zA-Z][\w:-]*)/g)].map((m) => m[1]);
     const bad = tags.filter((t) => !allowed.has(t));
@@ -149,21 +146,19 @@ test('splash SVGs use only elements react-native-svg draws', () => {
   }
 });
 
-test('the wallpaper covers the screen and the footer stays clear of the artist credit', () => {
-  // [width, height, bottom inset] in pt
-  const screens: Record<string, [number, number, number]> = {
-    'iPhone SE': [375, 667, 0],
-    'iPhone 15': [393, 852, 34],
-    'iPad mini': [744, 1133, 20],
-    'iPad 10.2': [810, 1080, 0],
-    'iPad 13': [1032, 1376, 20],
-    'iPad 13 landscape': [1376, 1032, 20],
+test('the wallpaper covers the screen', () => {
+  // [width, height] in pt
+  const screens: Record<string, [number, number]> = {
+    'iPhone SE': [375, 667],
+    'iPhone 15': [393, 852],
+    'iPad mini': [744, 1133],
+    'iPad 10.2': [810, 1080],
+    'iPad 13': [1032, 1376],
+    'iPad 13 landscape': [1376, 1032],
   };
-  for (const [name, [w, h, inset]] of Object.entries(screens)) {
-    const { wallpaper, creditTop, footerBottom } = splashLayout(w, h, inset);
+  for (const [name, [w, h]] of Object.entries(screens)) {
+    const { wallpaper } = splashLayout(w, h);
     assert.ok(wallpaper.width >= w - 0.01 && wallpaper.height >= h - 0.01, `${name}: wallpaper covers the screen`);
     near(wallpaper.left + wallpaper.width / 2, w / 2, 0.01, `${name}: wallpaper centred`);
-    assert.ok(footerBottom > creditTop, `${name}: footer (${footerBottom}) above the credit (${creditTop})`);
-    assert.ok(footerBottom >= inset + 30, `${name}: footer above the home indicator`);
   }
 });

@@ -281,31 +281,22 @@ const LETTER_EXIT: Track[] = LETTERS.map((_, i) => {
   return { i: REST, s: [[X, 0, O_CX - cx(i), at, 0.36, P3I, 0], [S, 1, 0.2, at, 0.36, P3I, 0], [A, 1, 0, at, 0.36, P3I, 0]] as Seg[] };
 });
 
-const FOOTER: Track = { i: [0, 0, 1, 1, 0, 0], s: [[A, 0, 1, 1.4, 0.8, P1O, 0]] };
-const FOOTER_EXIT: Track = { i: REST, s: [[A, 1, 0, 0.05, 0.25, P1O, 0]] };
 const GROUND_EXIT: Track = { i: REST, s: [[A, 1, 0, 0.95, 0.35, P1I, 0]] };
 // The Horizon walker wallpaper takes Unifesto's glass sheet's part: it settles in, then rushes past
 // with the O's zoom. It tops out at WALLPAPER_DIM over the dark ground, so it sits back (owner, 15 Nov).
 export const WALLPAPER_DIM = 0.7;
 
-/** The wallpaper (assets/splash/wallpaper.jpg) in px, and how high its artist credit reaches above its foot. */
+/** The wallpaper (assets/splash/wallpaper.jpg) in px. */
 export const WALLPAPER_W = 860;
 export const WALLPAPER_H = 1720;
-const CREDIT_TOP = 64;
 
 /**
- * Where the wallpaper and the "by unifesto" footer go on a width × height screen (pt): the wallpaper
- * covers it, anchored to the bottom, so a shorter screen loses sky from the top and never the credit;
- * the footer sits above the home indicator and always clear of the credit (on iPad the credit rises
- * into where the footer would otherwise go).
+ * Where the wallpaper goes on a width × height screen (pt): it covers it, anchored to the bottom, so a
+ * shorter screen loses sky from the top and never the artist's credit at its foot.
  */
-export function splashLayout(width: number, height: number, insetBottom: number) {
+export function splashLayout(width: number, height: number) {
   const fit = Math.max(width / WALLPAPER_W, height / WALLPAPER_H);
-  return {
-    wallpaper: { width: WALLPAPER_W * fit, height: WALLPAPER_H * fit, left: (width - WALLPAPER_W * fit) / 2, bottom: 0 },
-    creditTop: CREDIT_TOP * fit,
-    footerBottom: Math.max(insetBottom + 30, CREDIT_TOP * fit + 8),
-  };
+  return { wallpaper: { width: WALLPAPER_W * fit, height: WALLPAPER_H * fit, left: (width - WALLPAPER_W * fit) / 2, bottom: 0 } };
 }
 const PANE: Track = { i: [0, 0, 1.04, 1, 0, 0], s: [[A, 0, WALLPAPER_DIM, 0.1, 1.4, P2O, 0], [S, 1.04, 1, 0.1, 1.4, P2O, 0]] };
 const PANE_EXIT: Track = { i: REST, s: [[S, 1, 1.6, O_ZOOM, EXIT_END - O_ZOOM, P3I, 0]] };
@@ -376,12 +367,6 @@ export function letterFrame(i: number, t: number, swap: number, out: number): nu
     v[A] *= e[A];
   }
   return v;
-}
-
-/** The footer's opacity. */
-export function footerOpacity(t: number, out: number): number {
-  'worklet';
-  return evalTrack(FOOTER, t)[A] * evalTrack(FOOTER_EXIT, out)[A];
 }
 
 /** The ground's opacity: it lifts off Home as the O zooms out. */

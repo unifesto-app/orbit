@@ -8,7 +8,6 @@ import Animated, {
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SvgXml } from 'react-native-svg';
 import { loadLocalRawResource } from 'react-native-svg/css';
 import { scheduleOnRN } from 'react-native-worklets';
@@ -27,7 +26,6 @@ import {
   ORIGIN,
   SWAP_LEN,
   SWAP_PROPS,
-  footerOpacity,
   groundOpacity,
   introPropFrame,
   letterFrame,
@@ -54,11 +52,8 @@ const PROP_SVG: Record<PropArt, ImageSourcePropType> = {
   arch: require('../../assets/splash/prop-arch.svg'),
   squiggle: require('../../assets/splash/prop-squiggle.svg'),
 };
-const FOOTER_SVG: ImageSourcePropType = require('../../assets/splash/by-unifesto.svg');
 // "Horizon walker" (the Splash board's wallpaper). The artist's credit is part of the image: keep it visible.
 const WALLPAPER: ImageSourcePropType = require('../../assets/splash/wallpaper.jpg');
-const FOOTER_W = 108; // the Splash board's size
-const FOOTER_H = (FOOTER_W * 238) / 1735;
 
 /** On screen at least this long from mount, even if the app is ready at once. */
 const HOLD_MS = 2600;
@@ -79,19 +74,14 @@ const O_RES = 2;
 type Xml = {
   letters: (string | null)[];
   props: Partial<Record<PropArt, string | null>>;
-  footer: string | null;
 };
 
 /** Reads every SVG file once, before the intro starts. A file that fails stays null and is skipped. */
 async function loadXml(): Promise<Xml> {
   const read = (s: ImageSourcePropType) => loadLocalRawResource(s).catch(() => null);
   const arts = Object.keys(PROP_SVG) as PropArt[];
-  const [letters, props, footer] = await Promise.all([
-    Promise.all(LETTER_SVG.map(read)),
-    Promise.all(arts.map((a) => read(PROP_SVG[a]))),
-    read(FOOTER_SVG),
-  ]);
-  return { letters, props: Object.fromEntries(arts.map((a, k) => [a, props[k]])), footer };
+  const [letters, props] = await Promise.all([Promise.all(LETTER_SVG.map(read)), Promise.all(arts.map((a) => read(PROP_SVG[a])))]);
+  return { letters, props: Object.fromEntries(arts.map((a, k) => [a, props[k]])) };
 }
 
 /** A frame vector ([x, y, scale, scaleY, rotate, opacity]) as a style. Transform and opacity only. */
@@ -119,11 +109,10 @@ function frameStyle(v: number[]) {
  * `ready`: the app can show Home (fonts today; auth later). `onDone`: the splash has left.
  */
 export function Splash({ ready, onLeave, onDone }: { ready: boolean; onLeave: () => void; onDone: () => void }) {
-  const insets = useSafeAreaInsets();
   // Cover the screen, anchored to the bottom: a shorter screen (iPhone SE, iPad) loses sky from the
   // top, never the artist's credit at the foot.
   const screen = useWindowDimensions();
-  const layout = splashLayout(screen.width, screen.height, insets.bottom);
+  const layout = splashLayout(screen.width, screen.height);
   // With reduced motion the intro and exit jump to their ends (Reanimated follows the system
   // setting) and the loader stays off.
   const reduced = useReducedMotion();
@@ -275,34 +264,26 @@ export function Splash({ ready, onLeave, onDone }: { ready: boolean; onLeave: ()
     const w = wallpaperFrame(t.value, out.value);
     return { opacity: w[0], transform: [{ scale: w[1] }] };
   });
-  const footerStyle = useAnimatedStyle(() => ({ opacity: footerOpacity(t.value, out.value) }));
 
   return (
-    <View style={styles.root} accessible accessibilityRole="image" accessibilityLabel="Orbit by Unifesto">
+    <View style={styles.root} accessible accessibilityRole="image" accessibilityLabel="Orbit">
       <Animated.View style={[StyleSheet.absoluteFill, styles.ground, groundStyle]}>
         <Animated.View style={[StyleSheet.absoluteFill, wallpaperStyle]}>
           <Image source={WALLPAPER} style={[styles.abs, layout.wallpaper]} />
         </Animated.View>
       </Animated.View>
       {xml && (
-        <>
-          <View style={styles.centre} pointerEvents="none">
-            <View style={styles.mark}>
-              {LETTERS.map((name, i) => (
-                <Letter key={name} i={i} t={t} swap={swaps[i]} exit={i === 0 ? out : collapse} xml={xml.letters[i]} />
-              ))}
-              {INTRO_PROPS.map((p, k) => (
-                <IntroProp key={k} k={k} t={t} xml={xml.props[p.art] ?? null} />
-              ))}
-              {LETTERS.map((_, i) => (i === I ? null : <SwapProp key={`s${i}`} i={i} swap={swaps[i]} xml={xml.props[SWAP_PROPS[i]!.art] ?? null} />))}
-            </View>
+        <View style={styles.centre} pointerEvents="none">
+          <View style={styles.mark}>
+            {LETTERS.map((name, i) => (
+              <Letter key={name} i={i} t={t} swap={swaps[i]} exit={i === 0 ? out : collapse} xml={xml.letters[i]} />
+            ))}
+            {INTRO_PROPS.map((p, k) => (
+              <IntroProp key={k} k={k} t={t} xml={xml.props[p.art] ?? null} />
+            ))}
+            {LETTERS.map((_, i) => (i === I ? null : <SwapProp key={`s${i}`} i={i} swap={swaps[i]} xml={xml.props[SWAP_PROPS[i]!.art] ?? null} />))}
           </View>
-          {xml.footer && (
-            <Animated.View style={[styles.footer, { bottom: layout.footerBottom }, footerStyle]} pointerEvents="none">
-              <Art xml={xml.footer} w={FOOTER_W} h={FOOTER_H} />
-            </Animated.View>
-          )}
-        </>
+        </View>
       )}
     </View>
   );
@@ -365,5 +346,4 @@ const styles = StyleSheet.create({
   abs: { position: 'absolute' },
   centre: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' },
   mark: { width: MARK_W, height: MARK_H },
-  footer: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
 });
