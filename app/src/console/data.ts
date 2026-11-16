@@ -1,11 +1,13 @@
-// Mock Console data until the host endpoints exist, following the Hosts, Money and Event day flow docs: amounts in
-// whole paise, times in India time. The events themselves are src/mock.ts's; who the viewer is on each host's team is
-// src/modes.ts's `me`.
-// ponytail: static, like src/mock.ts; it goes when the console endpoints land in @orbit/contract.
+// Console's data. The hosts and the viewer's places on them are real: the teams from GET /me and the host from
+// GET /hosts/:id (src/app/console/_layout.tsx). Sales, drafts, the event roles on the team list and bank accounts are
+// still mock, following the Hosts, Money and Event day flow docs: amounts in whole paise, times in India time. The events
+// themselves are src/mock.ts's, so a real host has none until the API's events land.
+// ponytail: the mock parts are static, like src/mock.ts; they go as their endpoints land in @orbit/contract.
 import { createContext, useContext } from 'react';
 
-import { events, hosts } from '../mock';
-import { me } from '../modes';
+import type { DrawHost } from '../hosts';
+import { events } from '../mock';
+import { useMe } from '../session';
 import type { Sales } from './money';
 
 export const sales: Sales[] = [
@@ -43,15 +45,16 @@ export const banks: Record<string, { last4: string; status: 'Checking' | 'Verifi
 };
 
 // The host the Console is showing, picked in its host switcher (Hosts doc: "one site for every host a person is on,
-// with a host switcher at the top"). Provided by src/app/console/_layout.tsx, and kept here so it outlasts a visit.
+// with a host switcher at the top"). Provided by src/app/console/_layout.tsx, which loads it, and kept here so the pick
+// outlasts a visit. `reload` reads it again after a change.
 // ponytail: in memory, so a fresh launch shows the first host again.
-let picked = me.teams[0]?.hostId ?? '';
+let picked = '';
 export const lastHost = () => picked;
 export const keepHost = (hostId: string) => (picked = hostId);
-export const HostPick = createContext<{ hostId: string; pick: (hostId: string) => void }>({ hostId: '', pick: () => {} });
+export const HostPick = createContext<{ hostId: string; pick: (hostId: string) => void; host: DrawHost; reload: () => void } | null>(null);
 export function useHost() {
-  const { hostId, pick } = useContext(HostPick);
-  const team = me.teams.find((t) => t.hostId === hostId) ?? me.teams[0];
-  const host = hosts.find((h) => h.id === team.hostId)!;
-  return { team, host, pick, events: events.filter((e) => e.hostId === team.hostId) };
+  const me = useMe();
+  const { hostId, pick, host, reload } = useContext(HostPick)!; // inside Console's layout, which has a team and its host
+  const team = me.teams.find((t) => t.hostId === hostId) ?? me.teams[0]!;
+  return { team, host, pick, reload, events: events.filter((e) => e.hostId === team.hostId) };
 }
