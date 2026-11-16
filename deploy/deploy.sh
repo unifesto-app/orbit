@@ -38,18 +38,19 @@ scp "${SSH_OPTS[@]}" "$ROOT/deploy/Caddyfile" "$SERVER:$REMOTE_DIR/Caddyfile.new
 echo "==> building and starting on the box"
 # Caddy mounts the Caddyfile as one file, which keeps the old copy after a replace, so a changed
 # Caddyfile is validated first and then picked up by restarting Caddy (a second's blip). Unchanged: no restart.
+# The swap happens only after the build, so a failed deploy leaves Caddyfile.new to be swapped next time.
 ssh "${SSH_OPTS[@]}" "$SERVER" bash -s -- "$REMOTE_DIR" <<'REMOTE'
 set -euo pipefail
 cd "$1"
 changed=0
 if ! cmp -s Caddyfile.new Caddyfile 2>/dev/null; then
+  [ -f certs/origin.pem ] && [ -f certs/origin.key ] || { echo "certs/origin.pem and origin.key are missing" >&2; exit 1; }
   docker run --rm -v "$PWD/Caddyfile.new:/etc/caddy/Caddyfile:ro" -v "$PWD/certs:/etc/caddy/certs:ro" \
     caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
-  mv Caddyfile.new Caddyfile; changed=1
-else
-  rm Caddyfile.new
+  [ -f Caddyfile ] || cp Caddyfile.new Caddyfile   # first deploy: a real file, not a directory, at the mount path
+  changed=1
 fi
 docker compose up -d --build
-[ "$changed" = 1 ] && docker compose restart caddy
+if [ "$changed" = 1 ]; then mv Caddyfile.new Caddyfile; docker compose restart caddy; else rm Caddyfile.new; fi
 docker compose ps
 REMOTE

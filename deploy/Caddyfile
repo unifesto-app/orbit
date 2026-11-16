@@ -41,9 +41,12 @@
 	}
 }
 
+# Every app gets X-Forwarded-For as exactly the visitor's address, so a forged header never reaches one.
 heyorbit.in {
 	import cf_tls
-	reverse_proxy orbit-web:3000
+	reverse_proxy orbit-web:3000 {
+		header_up X-Forwarded-For {client_ip}
+	}
 }
 
 www.heyorbit.in {
@@ -60,5 +63,14 @@ api.heyorbit.in {
 
 galaxy.heyorbit.in {
 	import cf_tls
-	reverse_proxy orbit-galaxy:3000
+	reverse_proxy orbit-galaxy:3000 {
+		header_up X-Forwarded-For {client_ip}
+	}
+}
+
+# Any other name under the wildcard cert: the same client-cert check, then nothing. Without this block such a
+# name would complete TLS without Cloudflare's client cert (client_auth applies per configured site).
+*.heyorbit.in {
+	import cf_tls
+	abort
 }
