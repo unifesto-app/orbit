@@ -59,6 +59,13 @@ test('signed out, the public read never touches the session; signed in, it goes 
   await h.find('jam & co');
   await h.verify(ID, 'checked the site', 'Jam Circle');
   await h.move(ID, 'pause');
+  await h.unverify(ID, 'name changed');
+  await h.suspend(ID, 'fake events');
+  await h.lift(ID, 'checked again');
+  await h.team(ID);
+  await h.follows();
+  await h.staffPage(ID);
+  await h.page(ID);
   assert.deepEqual(calls, [
     'call GET /public/hosts/punchline-x',
     'authed GET /public/hosts/a%20b',
@@ -67,5 +74,12 @@ test('signed out, the public read never touches the session; signed in, it goes 
     'authed GET /galaxy/hosts?q=jam%20%26%20co',
     `authed POST /galaxy/hosts/${ID}/verify {"reason":"checked the site","name":"Jam Circle"}`,
     `authed POST /hosts/${ID}/pause`,
+    `authed DELETE /galaxy/hosts/${ID}/verify {"reason":"name changed"}`,
+    `authed POST /galaxy/hosts/${ID}/suspend {"reason":"fake events"}`,
+    `authed POST /galaxy/hosts/${ID}/lift {"reason":"checked again"}`,
+    `authed GET /hosts/${ID}/team`,
+    'authed GET /me/follows',
+    `authed GET /galaxy/hosts/${ID}`,
+    `authed GET /hosts/${ID}`,
   ]);
 });

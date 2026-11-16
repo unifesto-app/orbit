@@ -5,12 +5,12 @@ import type { ReactNode } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { Pill } from '../account/kit';
-import type { Result } from '../api';
 import { type Me, type StaffFeature, hasFeature } from '../modes';
 import { Monogram, Tag } from '../rows';
 import { useMe } from '../session';
 import { color, font, space } from '../theme';
 import { FEATURE_NAMES } from './data';
+import { type Held, hold, release } from './held';
 
 // A pushed Galaxy screen shows only with one of its features, as the tabs do (Roles doc); anyone else goes back to the
 // dashboard, and anyone with no feature at all on to Home (src/app/galaxy/_layout.tsx). The API is the real gate.
@@ -84,17 +84,15 @@ export function Choices({ choices }: { choices: { label: string; onPress?: () =>
 // to everyone holding the feature. It opens the reason sheet, src/app/galaxy/reason.tsx. No passcode again: Galaxy asks
 // for it on entering (Roles decision 11).
 export type Risky = { title: string; line: string; action: string; who: string; feature: StaffFeature };
-// What the sheet open now does with the reason: an API call, kept here and never in the link, so a link can open the
-// sheet but only a screen in this app can give it something to do. Without `run` (actions the API doesn't have yet) the
-// sheet only closes.
-type Run = (reason: string) => Promise<Result<unknown>>;
-let pending: { ticket: string; run: Run } | null = null;
-export function askReason(r: Risky, run?: Run) {
-  const ticket = run ? `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}` : '';
-  pending = run ? { ticket, run } : null;
-  router.push({ pathname: '/galaxy/reason', params: { ...r, ticket } });
+// With `run` (an action the API has), the sheet runs it with the reason; its words and the call are held in memory
+// (src/galaxy/held.ts), never in the link. Without one, the sheet only closes.
+export function askReason(r: Risky, run?: Held['run']) {
+  if (!run) {
+    release();
+    return router.push({ pathname: '/galaxy/reason', params: r });
+  }
+  router.push({ pathname: '/galaxy/reason', params: { ticket: hold({ ...r, run }) } });
 }
-export const runFor = (ticket: string | undefined) => (ticket && pending?.ticket === ticket ? pending.run : null);
 
 const styles = StyleSheet.create({
   staffNote: { marginHorizontal: 20, marginTop: space.small, fontFamily: font.text, fontSize: 13, lineHeight: 18, color: color.secondary },

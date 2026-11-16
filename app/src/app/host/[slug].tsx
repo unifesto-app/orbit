@@ -26,6 +26,7 @@ const LOGO = 80;
 
 export default function HostPage() {
   const { slug } = useLocalSearchParams<{ slug: string }>();
+  // ponytail: a real host whose link is set to a mock host's id would open the mock page; it goes when the mock does.
   const host = hosts.find((h) => h.id === slug);
   return host ? <MockHost host={host} /> : <LiveHost slug={slug} />;
 }

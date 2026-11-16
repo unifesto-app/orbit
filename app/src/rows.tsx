@@ -418,16 +418,22 @@ export function NotFound({ what }: { what: string }) {
 }
 
 // A page whose request failed: the API's own message, which says what to do, and Try again. A link to something that
-// isn't there (404) is NotFound instead.
-export function Failed({ message, retry }: { message: string; retry: () => void }) {
+// isn't there (404) is NotFound instead. A whole mode that failed (Console) also offers Back to Home, since its own tabs,
+// and the re-tap on Home, aren't drawn.
+export function Failed({ message, retry, home = false }: { message: string; retry: () => void; home?: boolean }) {
   return (
     <View style={styles.missing}>
       <Text style={styles.missingText}>{message}</Text>
-      <Pressable onPress={retry} accessibilityRole="button">
-        <Glass style={styles.wideButton}>
-          <Text style={styles.buttonText}>Try again</Text>
-        </Glass>
-      </Pressable>
+      {[
+        { label: 'Try again', onPress: retry },
+        ...(home ? [{ label: 'Back to Home', onPress: () => router.dismissAll() }] : []),
+      ].map((b) => (
+        <Pressable key={b.label} onPress={b.onPress} accessibilityRole="button">
+          <Glass style={styles.wideButton}>
+            <Text style={styles.buttonText}>{b.label}</Text>
+          </Glass>
+        </Pressable>
+      ))}
     </View>
   );
 }

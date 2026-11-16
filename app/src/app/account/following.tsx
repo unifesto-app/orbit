@@ -2,9 +2,10 @@
 // event page's people: the 1:1 logo, name and kind, opening the host; Following turns back to Follow on a tap, and the
 // row stays until you leave, so it can be followed again. Signed out, a line and Sign in.
 // Hosts on the API come from GET /me/follows, newest first (any that went private or stopped are hidden there, never
-// dropped); the mock's hosts follow on this phone until events reach the API (src/session.ts).
-import { router } from 'expo-router';
-import { useState } from 'react';
+// dropped), read again each time the screen comes back into view, so a follow changed on a host page shows here; the
+// mock's hosts follow on this phone until events reach the API (src/session.ts).
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useRef, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Note, Page, Pill, SignInNote } from '../../account/kit';
@@ -23,6 +24,14 @@ export default function Following() {
   const real = useLoad(viewer.signedIn ? `follows|${me.id}` : null, () => hostsApi(api).follows());
   const [dropped, setDropped] = useState<ReadonlySet<string>>(new Set()); // unfollowed here, kept on screen
   const [off, setOff] = useState<ReadonlySet<string>>(new Set()); // API hosts unfollowed here
+  const first = useRef(true);
+  const { reload } = real;
+  useFocusEffect(
+    useCallback(() => {
+      if (first.current) first.current = false; // the first view's read is already under way
+      else reload();
+    }, [reload]),
+  );
 
   const mock = hosts.filter((h) => viewer.follows.includes(h.id) || dropped.has(h.id));
   const lines: (Line & { following: boolean; toggle: () => void })[] = [
@@ -63,8 +72,15 @@ export default function Following() {
   return (
     <Page title="Following">
       {!viewer.signedIn && <SignInNote>Sign in to see the hosts you follow.</SignInNote>}
-      {viewer.signedIn && !real.loading && lines.length === 0 && <Note>Not following any hosts yet.</Note>}
-      {real.error && <Note>{real.error.message}</Note>}
+      {viewer.signedIn && !real.loading && !real.error && lines.length === 0 && <Note>Not following any hosts yet.</Note>}
+      {real.error && (
+        <View style={styles.failed}>
+          <Note>{real.error.message}</Note>
+          <View style={styles.retry}>
+            <Pill label="Try again" size="small" onPress={reload} />
+          </View>
+        </View>
+      )}
       <View style={styles.list}>
         {lines.map((h) => (
           <View key={h.id} style={styles.row}>
@@ -93,6 +109,8 @@ export default function Following() {
 
 const styles = StyleSheet.create({
   list: { marginTop: space.big, marginHorizontal: 20, gap: 16 },
+  failed: { gap: space.small },
+  retry: { marginHorizontal: 20, flexDirection: 'row' },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   link: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 14 },
   grow: { flex: 1, minWidth: 0 },

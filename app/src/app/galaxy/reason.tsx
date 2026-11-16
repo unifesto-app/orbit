@@ -2,42 +2,58 @@
 // reason the other side sees, and the action, which stays off until there's a reason. The change, its audit row and the
 // email to everyone holding the feature are written together by the API. No passcode again: Galaxy asked for it on the
 // way in (Roles decision 11).
-// An action the API has runs from here (askReason in src/galaxy/kit.tsx) and closes the sheet once it's done; a refusal
-// shows the API's own message, which says why (staff on that host's team, a rename since the page opened). Actions the
-// API doesn't have yet only close it.
+// An action the API has comes held in memory under the link's ticket (src/galaxy/held.ts), taken once as the sheet
+// opens: its words are drawn from there, not the link, and it runs on Confirm. A refusal shows the API's own message
+// (staff on that host's team, a rename since the page opened). Closed before the answer came, the sheet leaves the
+// screen under it alone and says a refusal in an alert. Actions the API doesn't have yet take their words from the link
+// and only close.
 import { router, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Alert, StyleSheet, Text, View } from 'react-native';
 
 import { Field, Pill } from '../../account/kit';
-import { NeedsFeature, type Risky, StaffNote, emailed, runFor } from '../../galaxy/kit';
+import { NeedsFeature, type Risky, StaffNote, emailed } from '../../galaxy/kit';
+import { take } from '../../galaxy/held';
 import { STAFF_FEATURES, type StaffFeature } from '../../modes';
 import { NotFound, Sheet } from '../../rows';
 import { color, font } from '../../theme';
 
 export default function ReasonSheet() {
   const p = useLocalSearchParams<Risky & { ticket?: string }>();
+  const [job] = useState(() => take(p.ticket));
+  const words = job ?? p;
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [refused, setRefused] = useState<string | null>(null);
+  const open = useRef(true);
+  useEffect(
+    () => () => {
+      open.current = false;
+    },
+    [],
+  );
   // Only for someone holding the action's feature; a link naming no feature names no action.
-  if (!STAFF_FEATURES.includes(p.feature)) return <NotFound what="action" />;
-  const feature: StaffFeature = p.feature;
+  if (!STAFF_FEATURES.includes(words.feature as StaffFeature)) return <NotFound what="action" />;
+  const feature = words.feature as StaffFeature;
   const confirm = async () => {
-    const run = runFor(p.ticket);
-    if (!run) return router.back();
+    if (!job) return router.back();
     setBusy(true);
     setRefused(null);
-    const r = await run(reason.trim());
+    const r = await job.run(reason.trim());
+    if (!open.current) {
+      if (!r.ok) Alert.alert('Not done', r.error.message);
+      return;
+    }
+    if (r.ok) return router.back(); // still busy while it closes, so a second tap can't send it again
     setBusy(false);
-    if (r.ok) router.back();
-    else setRefused(r.error.message);
+    setRefused(r.error.message);
   };
   return (
     <NeedsFeature feature={feature}>
-      <Sheet title={p.title ?? 'Are you sure?'} full>
-        {p.line && <Text style={styles.line}>{p.line}</Text>}
-        <Field label="Reason" placeholder={p.who} multiline value={reason} onChangeText={setReason} autoFocus />
+      <Sheet title={words.title ?? 'Are you sure?'} full>
+        {words.line && <Text style={styles.line}>{words.line}</Text>}
+        {/* The API takes 3 to 500 characters. */}
+        <Field label="Reason" placeholder={words.who} multiline value={reason} onChangeText={setReason} maxLength={500} autoFocus />
         <StaffNote flush>{emailed(feature)}</StaffNote>
         {refused && (
           <Text style={styles.line} accessibilityLiveRegion="polite">
@@ -45,8 +61,7 @@ export default function ReasonSheet() {
           </Text>
         )}
         <View>
-          {/* The API wants at least 3 characters of reason. */}
-          <Pill label={p.action ?? 'Confirm'} disabled={reason.trim().length < 3 || busy} onPress={confirm} />
+          <Pill label={words.action ?? 'Confirm'} disabled={reason.trim().length < 3 || busy} onPress={confirm} />
         </View>
       </Sheet>
     </NeedsFeature>
