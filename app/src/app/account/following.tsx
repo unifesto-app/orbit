@@ -4,37 +4,29 @@
 // Hosts on the API come from GET /me/follows, newest first (any that went private or stopped are hidden there, never
 // dropped), read again each time the screen comes back into view, so a follow changed on a host page shows here; the
 // mock's hosts follow on this phone until events reach the API (src/session.ts).
-import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useRef, useState } from 'react';
+import { router } from 'expo-router';
+import { useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Note, Page, Pill, SignInNote } from '../../account/kit';
+import { useFollows } from '../../account/profile';
 import { hostsApi, markOf } from '../../hosts';
-import { useLoad } from '../../load';
 import { hosts } from '../../mock';
 import { Monogram, Verified } from '../../rows';
-import { api, setFollowing, useMe, useViewer } from '../../session';
+import { api, setFollowing, useViewer } from '../../session';
 import { color, font, space } from '../../theme';
 
 type Line = { id: string; to: string; mark: { initials: string; bg: string; fg: string }; name: string; verified: boolean; meta: string };
 
 export default function Following() {
   const viewer = useViewer();
-  const me = useMe();
-  const real = useLoad(viewer.signedIn ? `follows|${me.id}` : null, () => hostsApi(api).follows());
+  const { real } = useFollows();
   const [dropped, setDropped] = useState<ReadonlySet<string>>(new Set()); // unfollowed here, kept on screen
   // API hosts unfollowed here, on the answer they were tapped on; a fresh read (back from a host page) starts over.
   const [unfollowed, setUnfollowed] = useState<{ on: unknown; ids: ReadonlySet<string> }>({ on: null, ids: new Set() });
   const off = unfollowed.on === real.data ? unfollowed.ids : new Set<string>();
   const setOff = (next: (ids: ReadonlySet<string>) => ReadonlySet<string>) => setUnfollowed({ on: real.data, ids: next(off) });
-  const first = useRef(true);
   const { reload } = real;
-  useFocusEffect(
-    useCallback(() => {
-      if (first.current) first.current = false; // the first view's read is already under way
-      else reload();
-    }, [reload]),
-  );
 
   const mock = hosts.filter((h) => viewer.follows.includes(h.id) || dropped.has(h.id));
   const lines: (Line & { following: boolean; toggle: () => void })[] = [

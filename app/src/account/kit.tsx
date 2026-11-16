@@ -11,6 +11,7 @@ import { Glass } from '../glass';
 import { Icon, type IconName } from '../icons';
 import { BackBar, FaceWash, Glow, Section, TOP } from '../rows';
 import { needsAccount } from '../session';
+import type { Contact } from '../signin';
 import { StarLayer } from '../stars';
 import { OPEN_END, starLayers } from '../switchMotion';
 import { around, color, font, radius, space } from '../theme';
@@ -295,6 +296,73 @@ export function Field({ label, ...input }: TextInputProps & { label: string }) {
   );
 }
 
+// The 6-digit code (the sign-in sheet, and changing your number or email): it goes on by itself once the sixth digit is
+// in; iOS offers an emailed or texted code above the keyboard (not a WhatsApp one). A wrong one clears for another try.
+// Resend waits as long as the API says (30 seconds, User doc). `onChange` shows Change number or Change email.
+// A code that didn't go (refused, or typed while a resend was out) clears for another try.
+const CODE = 6;
+export function Code({
+  to,
+  wait,
+  onCode,
+  onResend,
+  onChange,
+}: {
+  to: Contact;
+  wait: number;
+  onCode: (code: string) => Promise<boolean | null>;
+  onResend: () => Promise<number | null>;
+  onChange?: () => void;
+}) {
+  const [code, setCode] = useState('');
+  // Counted against the clock, not ticks: timers stop while they're in WhatsApp reading the code.
+  const [until, setUntil] = useState(() => Date.now() + wait * 1000);
+  const [now, setNow] = useState(Date.now);
+  const left = Math.max(0, Math.ceil((until - now) / 1000));
+  useEffect(() => {
+    if (!left) return;
+    const t = setTimeout(() => setNow(Date.now()), 1000);
+    return () => clearTimeout(t);
+  }, [left, now]);
+  const waitFor = (s: number) => {
+    setUntil(Date.now() + s * 1000);
+    setNow(Date.now());
+  };
+  return (
+    <View style={styles.code}>
+      <Glass style={styles.codeBox}>
+        <TextInput
+          value={code}
+          onChangeText={(t) => {
+            const digits = t.replace(/\D/g, '').slice(0, CODE);
+            setCode(digits);
+            if (digits.length === CODE) void onCode(digits).then((ok) => ok !== true && setCode('')); // refused, or another request was out
+          }}
+          style={styles.codeText}
+          keyboardType="number-pad"
+          textContentType="oneTimeCode"
+          autoComplete="one-time-code"
+          keyboardAppearance="dark"
+          maxLength={CODE}
+          autoFocus
+          placeholder="••••••"
+          placeholderTextColor={color.secondary}
+          accessibilityLabel={`${CODE}-digit code`}
+        />
+      </Glass>
+      <View style={styles.codePair}>
+        <Pill
+          label={left ? `Resend in ${left}s` : 'Resend code'}
+          size="small"
+          disabled={left > 0}
+          onPress={() => void onResend().then((s) => s !== null && waitFor(s))}
+        />
+        {onChange && <Pill label={to.kind === 'phone' ? 'Change number' : 'Change email'} size="small" onPress={onChange} />}
+      </View>
+    </View>
+  );
+}
+
 // Grey text under a page's title when the page has nothing to list yet. The only text that isn't a title or a value:
 // descriptions are gone from Account (owner, 15 Nov 2026: "keep only titles remove all descriptions").
 export function Note({ children }: { children: ReactNode }) {
@@ -358,6 +426,11 @@ export const styles = StyleSheet.create({
   // A few lines (a note, a reason): the card's corner, since a pill can't grow taller.
   area: { height: undefined, minHeight: 96, paddingVertical: 12, borderRadius: RIM, justifyContent: 'flex-start' },
   areaText: { height: undefined, lineHeight: 21, textAlignVertical: 'top' },
+
+  code: { gap: space.small + 4 },
+  codeBox: { marginHorizontal: 20, height: 56, borderRadius: 28, justifyContent: 'center' },
+  codeText: { height: '100%', fontFamily: font.price, fontSize: 24, letterSpacing: 12, color: color.text, textAlign: 'center' },
+  codePair: { marginHorizontal: 20, flexDirection: 'row', justifyContent: 'center', gap: space.small },
 
   pageNote: { marginHorizontal: 20, marginTop: space.small, fontFamily: font.text, fontSize: 13, lineHeight: 18, color: color.secondary },
   signIn: { gap: space.big },
