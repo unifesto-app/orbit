@@ -22,7 +22,7 @@ import { EventRow, NotFound } from '../../rows';
 import { useSignedIn } from '../../session';
 import { around, color, font, radius, space } from '../../theme';
 
-const WEB = 'https://orbit.unifesto.app'; // the event's page on the web, for sharing
+const WEB = 'https://heyorbit.in'; // the event's page on the web, for sharing
 const mapsUrl = (q: string) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`;
 
 export default function Ticket() {

@@ -31,7 +31,7 @@ const phone =
       ? undefined
       : logCode;
 const email = env.SES_REGION
-  ? emailSender({ from: env.EMAIL_FROM ?? "Orbit <no-reply@updates.unifesto.app>", send: sesClient(env.SES_REGION) })
+  ? emailSender({ from: env.EMAIL_FROM ?? "Orbit <no-reply@updates.heyorbit.in>", send: sesClient(env.SES_REGION) })
   : production
     ? undefined
     : logCode;

@@ -9,7 +9,7 @@ export const metadata: Metadata = {
   description: "How to delete your Orbit account, the 30 days before it goes, and what is deleted and what is kept.",
 };
 
-const PRIVACY = "privacy@unifesto.app";
+const PRIVACY = "privacy@heyorbit.in";
 const mailto = `mailto:${PRIVACY}?subject=${encodeURIComponent("Delete my account")}`;
 
 export default function DeleteAccountPage() {

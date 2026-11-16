@@ -288,7 +288,7 @@ export function CircleButton({ icon, label, onPress, children }: { icon?: IconNa
 
 // The phone's share sheet with a line about the thing and its link on the website (Discover doc, Links and sharing:
 // "Open Mic Night · Fri 21 Nov, 8 pm · Jubilee Hills · ₹299" and the link). `path` is "/event/<slug>" or "/host/<slug>".
-export const shareLink = (line: string, path: string) => Share.share({ message: `${line}\nhttps://orbit.unifesto.app${path}` });
+export const shareLink = (line: string, path: string) => Share.share({ message: `${line}\nhttps://heyorbit.in${path}` });
 
 // A page's ⋯ button and its dropdown (owner, 15 Nov 2026: "instead of alert menu use dropdown menu"): a frosted panel
 // opening just under the button at the bar's right end, darkened like the bars so its white labels read over a poster.

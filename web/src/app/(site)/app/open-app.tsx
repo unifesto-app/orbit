@@ -1,11 +1,11 @@
 "use client";
 
-// orbit.unifesto.app/app opens the Orbit app through its scheme, orbitbyunifesto:// (app/app.json).
+// heyorbit.in/app opens the Orbit app through its scheme, heyorbit:// (app/app.json).
 // No store fallback, by the owner's call. The desktop QR card points here.
 import { useEffect, useSyncExternalStore } from "react";
 import styles from "./page.module.css";
 
-const SCHEME = "orbitbyunifesto://";
+const SCHEME = "heyorbit://";
 
 const isPhone = () => /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
