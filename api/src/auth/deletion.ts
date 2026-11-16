@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import type { Db } from "../db/index.ts";
 import { follows, hosts, sessions, staffGrants, teamRoles, users } from "../db/schema.ts";
 import { type Env, fail, type Notify, signedIn } from "../http.ts";
+import { drop, type Media } from "../media.ts";
 import { holdIfUnanswered, ownerOnlySql } from "../roles/access.ts";
 import { fresh, heldUntil } from "./security.ts";
 import type { User } from "./sessions.ts";
@@ -104,7 +105,8 @@ export function deletionRoutes({ db, store, notify, secret, now = Date.now }: De
 // again once it's sorted. One account failing never stops the rest.
 // ponytail: the server runs this hourly until the job runner arrives to run it nightly at 03:30 IST. Apple tokens are
 // revoked here once Google and Apple sign-in exist.
-export async function runDeletions(db: Db, notify: Notify, now: number) {
+// Their photo's file goes once the account is scrubbed (`media`, where the server has a bucket).
+export async function runDeletions(db: Db, notify: Notify, now: number, media?: Media) {
   const at = new Date(now);
   const due = await db.select({ id: users.id }).from(users).where(and(lte(users.deletionDueAt, at), isNull(users.deletedAt)));
   let done = 0;
@@ -163,13 +165,14 @@ export async function runDeletions(db: Db, notify: Notify, now: number) {
             updatedAt: at,
           })
           .where(eq(users.id, u.id));
-        return { deleted: true, lastWord: u.email ?? u.phone }; // the last message goes to the contact read before the scrub
+        return { deleted: true, lastWord: u.email ?? u.phone, photo: u.photo }; // the last message goes to the contact read before the scrub
       });
       if (!outcome) continue;
       if ("blocked" in outcome) {
         await notify({ to: { userId: id }, kind: "deletionBlocked", data: { blockers: outcome.blocked } });
         continue;
       }
+      if (media) await drop(media, outcome.photo);
       if (outcome.lastWord) await notify({ to: { contact: outcome.lastWord }, kind: "accountDeleted", data: {} });
       done++;
     } catch (e) {

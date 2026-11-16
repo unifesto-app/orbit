@@ -1,5 +1,6 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { Hono, type Context } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import {
   ADULT,
   AboutYou,
@@ -11,6 +12,7 @@ import {
   type Device,
   maskName,
   type Me,
+  PHOTO_MAX_BYTES,
   Refresh,
   SendCode,
   UpdateMe,
@@ -19,6 +21,7 @@ import {
 import type { Db } from "../db/index.ts";
 import { legalAcceptances, users } from "../db/schema.ts";
 import { clientIp, contactOf, type Env, fail, invalid, type Notify, parse, signedIn, suspended, taken } from "../http.ts";
+import { drop, linkOf, type Media, newKey, squareImage } from "../media.ts";
 import { clearLapsedSuspension, rolesOf } from "../roles/access.ts";
 import { checkCode, OPEN, RESEND_AFTER, sendCode, type Sender, type SendPolicy } from "./codes.ts";
 import { nextFor, resolve, type Pending, type Pick } from "./resolve.ts";
@@ -28,7 +31,8 @@ import { ACCESS_SECONDS, issue, read, TOKEN_MAX_MS } from "./tokens.ts";
 
 // Sign-in, sign-up and the profile (Orbit flows: User). Every error says what to do next.
 
-export type Deps = { db: Db; store: Store; send: Sender; notify: Notify; secret: string; now?: () => number; codes?: SendPolicy };
+// `media` is where uploads go; without it (no bucket set) photo uploads say they aren't set up.
+export type Deps = { db: Db; store: Store; send: Sender; notify: Notify; secret: string; now?: () => number; codes?: SendPolicy; media?: Media };
 
 // ponytail: the terms version is a constant until Galaxy's Legal documents keeps them in the database. The migration
 // must leave every copied Unifesto acceptance below it, so each migrated person accepts Orbit's terms at About you.
@@ -37,7 +41,7 @@ const TERMS_VERSION = 1;
 const TOO_LONG = "That took too long. Start signing in again.";
 const PHONE_TAKEN = "That number signs in to another Orbit account. Use a different number.";
 
-export function authRoutes({ db, store, send, notify, secret, now = Date.now, codes = OPEN }: Deps) {
+export function authRoutes({ db, store, send, notify, secret, now = Date.now, codes = OPEN, media }: Deps) {
   const app = new Hono<Env>();
   const me = async (u: User): Promise<Me> => ({ ...profile(u), ...(await rolesOf(db, u, now())) });
   const userById = async (id: string) => (await db.select().from(users).where(and(eq(users.id, id), isNull(users.deletedAt))))[0] ?? null;
@@ -271,6 +275,45 @@ export function authRoutes({ db, store, send, notify, secret, now = Date.now, co
     const [user] = await db.update(users).set({ ...b, updatedAt: new Date(now()) }).where(eq(users.id, c.var.user.id)).returning();
     return c.json(await me(user!));
   });
+
+  // Your photo (User doc, Profile): optional, square (decision 7), and Remove works. The photo it replaces is deleted
+  // once the account points at the new one: new file in, account changed, old file out.
+  const TOO_BIG = "That photo is over 5 MB. Choose a smaller one.";
+  const setPhoto = async (c: Context<Env>, link: string | null) => {
+    const [user, was] = await db.transaction(async (tx) => {
+      // Locked, so two changes at once each delete the one they replaced.
+      const [row] = await tx.select({ photo: users.photo }).from(users).where(eq(users.id, c.var.user.id)).for("update");
+      const [done] = await tx.update(users).set({ photo: link, updatedAt: new Date(now()) }).where(eq(users.id, c.var.user.id)).returning();
+      return [done!, row?.photo ?? null] as const;
+    });
+    if (was !== link) await drop(media!, was);
+    return c.json(await me(user));
+  };
+  const noPhotos = (c: Context) => fail(c, 503, "notSetUp", "Photos aren't working right now. Try again later.");
+
+  // PUT /me/photo: multipart, the file in `photo`. Capped before it's read; a little over 5 MB for the form around it.
+  app.put("/me/photo", auth, bodyLimit({ maxSize: PHOTO_MAX_BYTES + 16 * 1024, onError: (c) => fail(c, 413, "tooBig", TOO_BIG) }), async (c) => {
+    if (!media) return noPhotos(c);
+    const file = (await c.req.parseBody().catch(() => null))?.photo;
+    if (!(file instanceof File)) return invalid(c);
+    if (file.size > PHOTO_MAX_BYTES) return fail(c, 413, "tooBig", TOO_BIG);
+    const image = await squareImage(new Uint8Array(await file.arrayBuffer()));
+    if ("error" in image)
+      return image.error === "notSquare"
+        ? fail(c, 400, "notSquare", "Your photo needs to be square. Crop it square and try again.")
+        : fail(c, 400, "notImage", "That file isn't a photo we can use. Choose a JPG, PNG or WebP.");
+    const key = newKey("users", c.var.user.id);
+    await media.files.put(key, image.bytes, "image/webp");
+    try {
+      return await setPhoto(c, linkOf(media, key));
+    } catch (e) {
+      await media.files.remove(key).catch(() => {}); // the account never pointed at it
+      throw e;
+    }
+  });
+
+  // DELETE /me/photo: Remove. Already none is fine.
+  app.delete("/me/photo", auth, async (c) => (media ? setPhoto(c, null) : noPhotos(c)));
 
   // POST /me/email: "Add this email to your account?", answered yes.
   app.post("/me/email", auth, async (c) => {

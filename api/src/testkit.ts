@@ -5,11 +5,12 @@ import type { Sender, SendPolicy } from "./auth/codes.ts";
 import { memoryStore } from "./auth/store.ts";
 import { connect, migrateDb } from "./db/index.ts";
 import type { Notice } from "./http.ts";
+import { memoryFiles } from "./media.ts";
 
 // A real Postgres for tests: TEST_DATABASE_URL, or the local orbit_test database (createdb orbit_test). Each call
 // empties it and runs every migration, so a test file starts clean. Test files run one at a time (package.json).
 // `send` replaces the sender that records codes, and `codes` sets the opening gate and daily cap (default: open).
-export async function testApp(opts: { send?: Sender; codes?: SendPolicy } = {}) {
+export async function testApp(opts: { send?: Sender; codes?: SendPolicy; media?: false } = {}) {
   const url = process.env.TEST_DATABASE_URL ?? "postgres://localhost:5432/orbit_test";
   if (!/_test(\?|$)/.test(url)) throw new Error("Tests empty their database, so its name must end in _test");
   const { db, close } = connect(url);
@@ -20,6 +21,7 @@ export async function testApp(opts: { send?: Sender; codes?: SendPolicy } = {}) 
   const sent: { to: Contact; code: string }[] = [];
   const notices: Notice[] = [];
   const store = memoryStore(() => clock);
+  const media = { files: memoryFiles(), url: "https://api.test/media" };
   const app = createApp({
     db,
     store,
@@ -28,6 +30,7 @@ export async function testApp(opts: { send?: Sender; codes?: SendPolicy } = {}) 
     send: opts.send ?? (async (to, code) => void sent.push({ to, code })),
     codes: opts.codes,
     notify: async (n) => void notices.push(n),
+    media: opts.media === false ? undefined : media,
   });
 
   const call = async (method: string, path: string, body?: unknown, access?: string) => {
@@ -41,5 +44,5 @@ export async function testApp(opts: { send?: Sender; codes?: SendPolicy } = {}) 
   // The code last sent to a phone or email.
   const lastCode = (to: string) => sent.filter((s) => (s.to.kind === "phone" ? s.to.e164 : s.to.email) === to).at(-1)?.code;
 
-  return { db, app, call, sent, notices, lastCode, close, tick: (ms: number) => void (clock += ms), now: () => clock };
+  return { db, app, call, sent, notices, lastCode, media, close, tick: (ms: number) => void (clock += ms), now: () => clock };
 }

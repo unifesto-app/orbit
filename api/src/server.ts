@@ -6,6 +6,7 @@ import { readContact } from "@orbit/contract";
 import { memoryStore, redisStore } from "./auth/store.ts";
 import { connect, migrateDb } from "./db/index.ts";
 import type { Notify } from "./http.ts";
+import { type Media, memoryFiles, s3Files } from "./media.ts";
 
 const need = (name: string) => {
   const v = process.env[name];
@@ -65,10 +66,18 @@ const store = production || process.env.REDIS_URL ? redisStore(need("REDIS_URL")
 // ponytail: messages to people come with the Notifications flow; until then they're only logged.
 const notify: Notify = async (n) => console.log(`[notify] ${n.kind} → ${JSON.stringify(n.to)}`);
 
-// Day-30 account deletions. ponytail: an hourly sweep until the job runner runs it nightly at 03:30 IST.
-setInterval(() => runDeletions(db, notify, Date.now()).catch((e) => console.error("[deletions]", e)), 60 * 60 * 1000).unref();
-
+// Uploads (photos, then host logos): the private S3 bucket MEDIA_BUCKET, with the server's AWS credentials, served at
+// MEDIA_URL. Off production without a bucket they're kept in memory; in production without one, uploads say they
+// aren't set up.
 const port = Number(process.env.PORT ?? 3000);
-serve({ fetch: createApp({ db, store, send, notify, secret, codes }).fetch, port }, (info) => {
+const mediaUrl = env.MEDIA_URL ?? (production ? "https://api.heyorbit.in/media" : `http://localhost:${port}/media`);
+const files = env.MEDIA_BUCKET ? s3Files(env.MEDIA_BUCKET, "ap-south-1") : production ? undefined : memoryFiles();
+const media: Media | undefined = files && { files, url: mediaUrl };
+console.log(`[media] ${env.MEDIA_BUCKET ? `bucket ${env.MEDIA_BUCKET}` : files ? "in memory" : "off"}, at ${mediaUrl}`);
+
+// Day-30 account deletions. ponytail: an hourly sweep until the job runner runs it nightly at 03:30 IST.
+setInterval(() => runDeletions(db, notify, Date.now(), media).catch((e) => console.error("[deletions]", e)), 60 * 60 * 1000).unref();
+
+serve({ fetch: createApp({ db, store, send, notify, secret, codes, media }).fetch, port }, (info) => {
   console.log(`orbit-api listening on :${info.port}`);
 });

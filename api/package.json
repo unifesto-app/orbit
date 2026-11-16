@@ -15,6 +15,7 @@
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1170.0",
     "@aws-sdk/client-ses": "^3.1169.0",
     "@hono/node-server": "^1.19.0",
     "@orbit/contract": "workspace:*",
@@ -22,6 +23,7 @@
     "hono": "^4.9.0",
     "ioredis": "^6.0.0",
     "postgres": "^4.1.1",
+    "sharp": "0.35.5",
     "zod": "^4.1.0"
   },
   "devDependencies": {
