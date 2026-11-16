@@ -1,7 +1,7 @@
-# Orbit's app containers on the AWS box. Caddy is the Unifesto stack's: its Caddyfile
-# routes heyorbit.in and its subdomains to these containers.
+# Orbit's stack on its own server, orbit-server (no tie to Unifesto's box, network or Caddy).
+# Caddy (deploy/Caddyfile) serves heyorbit.in, www., api. and galaxy. with the Cloudflare origin cert in ./certs.
 # Built on the box from the source that deploy/deploy.sh copies to ~/orbit/src.
-# Runtime secrets live in env files on the server only (api.env, web.env, galaxy.env).
+# Runtime secrets live in env files on the server only (api.env, web.env, galaxy.env) and so does ./certs.
 # Never commit them.
 
 name: orbit
@@ -17,9 +17,24 @@ x-build-context: &repo
   context: ./src
 
 services:
-  # Container names match the Caddy upstreams in the Unifesto repo's Caddyfile
-  # (orbit-api, orbit-web, orbit-galaxy). They join the Unifesto network so Caddy
-  # can reach them; that network is created by the Unifesto stack.
+  # The only published port. The security group admits 443 from Cloudflare's ranges only, and Caddy
+  # refuses any TLS client without Cloudflare's origin-pull certificate.
+  caddy:
+    image: caddy:2-alpine
+    container_name: orbit-caddy
+    restart: unless-stopped
+    logging: *logging
+    ports:
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./certs:/etc/caddy/certs:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [edge]
+    depends_on: [orbit-api, orbit-web, orbit-galaxy]
+
+  # Container names are Caddy's upstreams (orbit-api, orbit-web, orbit-galaxy).
   orbit-api:
     build:
       <<: *repo
@@ -32,7 +47,7 @@ services:
       PORT: "3000"
     expose:
       - "3000"
-    networks: [unifesto, orbit]
+    networks: [edge, orbit]
     depends_on: [orbit-redis]
 
   # Orbit's own Redis (Valkey): sign-in codes, rate limits and spent step tokens, every key with a TTL. Only the API
@@ -56,7 +71,7 @@ services:
     env_file: ./web.env
     expose:
       - "3000"
-    networks: [unifesto]
+    networks: [edge]
 
   orbit-galaxy:
     build:
@@ -68,12 +83,15 @@ services:
     env_file: ./galaxy.env
     expose:
       - "3000"
-    networks: [unifesto]
+    networks: [edge]
 
 networks:
-  unifesto:
-    external: true
-    name: unifesto_default
+  # Caddy and the apps. A plain bridge: the apps reach out through it (Postgres on RDS, SES, WhatsApp).
+  edge:
   # Orbit's own, for the API and its Redis. Internal: nothing on it reaches out, and no other stack reaches in.
   orbit:
     internal: true
+
+volumes:
+  caddy_data:
+  caddy_config:

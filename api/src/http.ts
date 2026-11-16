@@ -64,7 +64,7 @@ export const taken = (e: unknown) => {
 };
 
 // The visitor's address as Caddy sets it: Caddy trusts Cf-Connecting-Ip only from Cloudflare's ranges and always
-// overwrites X-Forwarded-For with the result (Unifesto's Caddyfile, orbitapi block). Cf-Connecting-Ip itself is passed
+// overwrites X-Forwarded-For with the result (deploy/Caddyfile, api block). Cf-Connecting-Ip itself is passed
 // through untouched, so a request that skips Cloudflare could forge it; it's never read here.
 // ponytail: the web's server calls the API for browsers, so it must forward the browser's address before the web
 // signs anyone in, or every web user shares one IP's limits.

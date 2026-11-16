@@ -102,8 +102,8 @@ export function deletionRoutes({ db, store, notify, secret, now = Date.now }: De
 // own step, so one that was kept meanwhile, or taken by another run, is left alone.
 // A blocker found now (say, a host started after the request) cancels the request with one notice; the person asks
 // again once it's sorted. One account failing never stops the rest.
-// ponytail: the server runs this hourly until the job runner arrives to run it nightly at 03:30 IST. Apple tokens and
-// Cognito users are removed here once Google and Apple sign-in exist.
+// ponytail: the server runs this hourly until the job runner arrives to run it nightly at 03:30 IST. Apple tokens are
+// revoked here once Google and Apple sign-in exist.
 export async function runDeletions(db: Db, notify: Notify, now: number) {
   const at = new Date(now);
   const due = await db.select({ id: users.id }).from(users).where(and(lte(users.deletionDueAt, at), isNull(users.deletedAt)));
