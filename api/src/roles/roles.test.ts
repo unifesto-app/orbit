@@ -274,6 +274,23 @@ test("people: detail hides views, and staff access unless the viewer holds Staff
   assert.equal(byPhone.body.length, 0);
 });
 
+test("people: every 20th list read in a day tells each People holder, counted per reader", async () => {
+  const a = await join(), b = await join();
+  await give(a, "people");
+  await give(b, "people");
+  const heavy = () => t.notices.filter((n) => n.kind === "staffHeavyPaging" && (n.data as any).by === a.me.id);
+  for (let i = 0; i < 19; i++) assert.equal((await as(a)("GET", "/galaxy/people")).status, 200);
+  for (let i = 0; i < 5; i++) await as(b)("GET", "/galaxy/people"); // b's reads are b's own count
+  assert.equal(heavy().length, 0);
+  await as(a)("GET", "/galaxy/people");
+  const sent = heavy();
+  // Every People holder hears, the reader included; other tests' holders may be here too.
+  assert.ok([a, b].every((p) => sent.some((n) => (n.to as any).userId === p.me.id)));
+  assert.ok(sent.every((n) => (n.data as any).pages === 20));
+  await as(a)("GET", "/galaxy/people");
+  assert.equal(heavy().length, sent.length); // the 21st is quiet
+});
+
 // ---------- after review ----------
 
 const setStatus = (id: string, status: string) => t.db.update(hosts).set({ status: status as any }).where(eq(hosts.id, id));

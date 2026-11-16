@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { and, count, desc, eq, gt, ilike, inArray, isNotNull, isNull, lte, ne, notLike, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, gt, gte, ilike, inArray, isNotNull, isNull, lte, ne, notLike, or, sql } from "drizzle-orm";
 import { Hono, type Context } from "hono";
 import { GrantFeatures, InviteAdmin, Lift, readPhone, STAFF_FEATURES, type StaffFeature, StaffReason, StartHost, Suspend } from "@orbit/contract";
 import type { Db } from "../db/index.ts";
@@ -15,6 +15,8 @@ type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 const HOSTS_PER_DAY = 5;
 const DAY = 24 * 3600 * 1000;
+const IST = 5.5 * 3600 * 1000; // India is UTC+5:30, with no daylight saving
+const HEAVY_PAGES = 20; // 1,000 accounts: a day of honest support work rarely pages this far
 
 // "Punchline Collective" → "punchline-collective-k3f9". The ending drops at the first published event (Hosts flow).
 // ponytail: a name with no Latin letters (Hindi, Telugu) gets the base "host"; transliterating waits for a need.
@@ -355,6 +357,15 @@ export function rolesRoutes({ db, notify, secret, now = Date.now }: Deps) {
       const rows = await db.select().from(users).where(live).orderBy(desc(users.createdAt), desc(users.id)).limit(limit).offset(offset);
       const [total] = await db.select({ n: count() }).from(users).where(live);
       await db.transaction((tx) => audit(tx, { actorId: c.var.actor.id, action: "people.list", data: { page, results: rows.map((r) => r.id) } }));
+      // Paging is how every contact could be taken, so each HEAVY_PAGES pages one person reads in a day (India's)
+      // tell everyone with People; nobody is stopped (owner, 17 Nov 2026: "Alert on heavy paging"). Every 20th, not
+      // only the first, so two pages read at once across the line can't skip it for the rest of the day.
+      const dayStart = new Date(Math.floor((now() + IST) / DAY) * DAY - IST);
+      const [today] = await db
+        .select({ n: count() })
+        .from(auditLog)
+        .where(and(eq(auditLog.actorId, c.var.actor.id), eq(auditLog.action, "people.list"), gte(auditLog.at, dayStart)));
+      if (today!.n % HEAVY_PAGES === 0) await say(await holders("people"), "staffHeavyPaging", { by: c.var.actor.id, pages: today!.n });
       return c.json({ people: rows.map(person), total: total!.n, page, pageSize: limit });
     }
     const q = (c.req.query("q") ?? "").trim();

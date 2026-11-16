@@ -3,7 +3,8 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 import { me, read } from "../../../api";
 import { Alert, ui } from "../../ui";
-import { People } from "../people";
+import { redirect } from "next/navigation";
+import { firstTab, People } from "../people";
 import { type Listing, PeopleSearch } from "./search";
 
 // Users (Galaxy flow, People; API: GET /galaxy/people, suspend, lift). Holders of People see every account and search
@@ -25,6 +26,8 @@ async function Body({ searchParams }: Pick<PageProps<"/users">, "searchParams">)
   await connection(); // the list is written to the audit log: never for a prefetch
   const r = await me();
   const features = r.ok ? [...(r.data.staff?.features ?? [])] : [];
+  // People in the side nav opens here; staff with neither People nor Staff go to the first tab they can open.
+  if (!features.includes("people") && !features.includes("staff")) redirect(firstTab(features)?.href ?? "/");
   const raw = (await searchParams).page;
   const page = Array.isArray(raw) ? raw[0] : raw; // the API answers page 1 for anything it can't read
   const list = features.includes("people") ? await read<Listing>(`/galaxy/people?page=${encodeURIComponent(page ?? "1")}`) : null;
