@@ -8,7 +8,7 @@
 // - Settings: the Notifications doc's switches, the location, Appearance (dark only, as app.json) and Permissions.
 // - Account: the User doc's one Sign-in and security screen (ways in, passkeys, devices), and Delete account.
 // - Added from the docs: Help and support, Terms, Privacy, the version. Host on Orbit was here too, until the owner
-//   took the Hosting group out; the mode sheet's "Become a host" opens it now.
+//   took the Hosting group out; it's the Event Request screen now, opened from the switcher's Host an event card.
 // Cards hold text only. Log out confirms first; Delete account opens its own screen with what goes and what blocks it.
 import Constants from 'expo-constants';
 import { type Href, router } from 'expo-router';
@@ -119,7 +119,7 @@ export default function Account() {
       </Group>
 
       {/* No Hosting group (owner, 16 Nov 2026: "even remove the hosting"): starting a host is the mode sheet's
-          "Become a host", which opens Host on Orbit (src/app/account/host.tsx); a host's team uses the Console. */}
+          Host an event card, which opens the Event Request (src/app/account/host.tsx); a host's team uses the Console. */}
       {viewer.signedIn && (
         <Group title="Account">
           <Row icon="key" tone={TONE.yellow} label="Sign-in and security" value={`${methods.length + passkeys.length} ways in`} onPress={go('/account/security')} />
