@@ -1,7 +1,8 @@
 // The mode switcher (owner, 16 Nov 2026: "when home is clicked in tab nav open a modal with Home Console Galaxy", then
 // "need animated screen instead of just switching in modal"): a whole screen fading in over the app from re-tapping the
 // first tab of any mode (retap in src/modeKit.tsx): frosted glass, darkened. Home is the attendee app;
-// Console is host management, or "Host an event" for someone on no team, which opens Host on Orbit; Galaxy is for staff
+// Console is host management, or "Host an event" for someone on no team, which opens the Event Request that Orbit staff
+// approve first (account/host, src/requests.ts); Galaxy is for staff
 // with at least one feature (src/modes.ts; Roles doc).
 // Cards made as Search's Explore cards ("make them small and replace the icons same as explore, even card should be
 // same as explore cards"): a drawing seated on the top rim, the face in its colour glowing up from the bottom, the name

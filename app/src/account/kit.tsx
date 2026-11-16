@@ -244,7 +244,7 @@ export function Note({ children }: { children: ReactNode }) {
   return <Text style={styles.pageNote}>{children}</Text>;
 }
 
-// Signed out, where your own things would be (Tickets, Saved, Following, Host on Orbit): one line, and Sign in, which
+// Signed out, where your own things would be (Tickets, Saved, Following, Event Request): one line, and Sign in, which
 // opens the sign-in sheet over the page; once signed in, the page fills in under it (src/session.ts).
 export function SignInNote({ children }: { children: string }) {
   return (
