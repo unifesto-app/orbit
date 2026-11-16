@@ -9,6 +9,7 @@ const TTL = {
   aboutYou: 15 * 60, // a proven phone (and maybe email), or an account to finish, on its way to About you
   ticket: 10 * 60, // "Is this you?"
   addEmail: 10 * 60, // "Add this email to your account?"
+  addWay: 10 * 60, // "Add Google to your account?"
 } as const;
 export type Use = keyof typeof TTL;
 export const ACCESS_SECONDS = TTL.access;

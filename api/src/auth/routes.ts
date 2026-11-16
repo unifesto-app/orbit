@@ -5,19 +5,24 @@ import {
   AboutYou,
   AddEmail,
   adultOn,
+  AppleSignIn,
   ageOn,
   Confirm,
   type Contact,
   type Device,
+  GoogleSignIn,
   maskName,
   type Me,
+  PasskeySignIn,
   Refresh,
   SendCode,
+  StartGoogle,
   UpdateMe,
   VerifyCode,
+  type Way,
 } from "@orbit/contract";
 import type { Db } from "../db/index.ts";
-import { legalAcceptances, users } from "../db/schema.ts";
+import { identities, legalAcceptances, users } from "../db/schema.ts";
 import { clientIp, contactOf, type Env, fail, invalid, type Notify, parse, signedIn, suspended, taken } from "../http.ts";
 import { clearLapsedSuspension, rolesOf } from "../roles/access.ts";
 import { checkCode, OPEN, RESEND_AFTER, sendCode, type Sender, type SendPolicy } from "./codes.ts";
@@ -25,10 +30,11 @@ import { nextFor, resolve, type Pending, type Pick } from "./resolve.ts";
 import { deviceKnown, endSession, isSuspended, refresh, startSession, type User } from "./sessions.ts";
 import type { Store } from "./store.ts";
 import { ACCESS_SECONDS, issue, read, TOKEN_MAX_MS } from "./tokens.ts";
+import { defaultWays, type Identity, ways, type WaysConfig } from "./ways.ts";
 
 // Sign-in, sign-up and the profile (Orbit flows: User). Every error says what to do next.
 
-export type Deps = { db: Db; store: Store; send: Sender; notify: Notify; secret: string; now?: () => number; codes?: SendPolicy };
+export type Deps = { db: Db; store: Store; send: Sender; notify: Notify; secret: string; now?: () => number; codes?: SendPolicy; ways?: WaysConfig };
 
 // ponytail: the terms version is a constant until Galaxy's Legal documents keeps them in the database. The migration
 // must leave every copied Unifesto acceptance below it, so each migrated person accepts Orbit's terms at About you.
@@ -37,8 +43,9 @@ const TERMS_VERSION = 1;
 const TOO_LONG = "That took too long. Start signing in again.";
 const PHONE_TAKEN = "That number signs in to another Orbit account. Use a different number.";
 
-export function authRoutes({ db, store, send, notify, secret, now = Date.now, codes = OPEN }: Deps) {
+export function authRoutes({ db, store, send, notify, secret, now = Date.now, codes = OPEN, ways: waysConfig = defaultWays }: Deps) {
   const app = new Hono<Env>();
+  const w = ways(waysConfig, store);
   const me = async (u: User): Promise<Me> => ({ ...profile(u), ...(await rolesOf(db, u, now())) });
   const userById = async (id: string) => (await db.select().from(users).where(and(eq(users.id, id), isNull(users.deletedAt))))[0] ?? null;
   // A code just proved this account's phone or email. A host-added or migrated row may not have it marked yet.
@@ -62,19 +69,37 @@ export function authRoutes({ db, store, send, notify, secret, now = Date.now, co
   const under18 = (c: Context, opensOn?: string) =>
     fail(c, 403, "under18", "Orbit is for people 18 and over. A host can still add you to their event as a guest.", opensOn ? { opensOn } : {});
 
-  // Signs in, or sends the account to the step it still needs.
-  const finish = async (c: Context, user: User, device: Device, via: "phone" | "email", addEmail?: string) => {
+  // Google or Apple onto this account, told to the account. Null when the account already has one of that provider
+  // (one each), or this one is on another account meanwhile.
+  const link = async (userId: string, id: Identity) => {
+    const appleRefresh = id.provider === "apple" ? await w.appleRefresh(id.subject) : null;
+    const [row] = await db
+      .insert(identities)
+      .values({ userId, provider: id.provider, subject: id.subject, email: id.email, appleRefresh, createdAt: new Date(now()) })
+      .onConflictDoNothing()
+      .returning();
+    if (row) await notify({ to: { userId }, kind: "signInMethodChanged", data: { method: id.provider, change: "added" } });
+    return row ?? null;
+  };
+
+  // Signs in, or sends the account to the step it still needs. `since`: when the Google, Apple or passkey it signed in
+  // with was added. `offer`: a way in to offer adding, the email or Google or Apple they started with.
+  const finish = async (c: Context, user: User, device: Device, via: Way, offer: { email?: string; identity?: Identity } = {}, since: Date | null = null) => {
+    const addEmail = offer.email;
     // A migrated or host-added person under 18 stays a guest whatever else is on file: their tickets still work, and
     // the account opens on their 18th birthday.
     if (user.dob && ageOn(user.dob, now()) < ADULT) return under18(c, adultOn(user.dob));
     const next = nextFor({ phone: user.phone, dob: user.dob, termsAccepted: await termsAccepted(user.id) });
-    const carry: Pending = { userId: user.id, email: addEmail, via };
+    const carry: Pending = { userId: user.id, email: addEmail, via, identity: offer.identity };
     if (next === "phone") return c.json({ step: "phone", signup: await issue(secret, "phoneStep", carry) });
     if (next === "aboutYou") return c.json({ step: "aboutYou", signup: await issue(secret, "aboutYou", carry), name: user.name });
     user = await clearLapsedSuspension(db, user, now());
-    const tokens = await startSession(db, secret, user.id, device, now(), via);
-    const offer = addEmail && !user.email ? { email: addEmail, token: await issue(secret, "addEmail", { sub: user.id, email: addEmail }) } : undefined;
-    return c.json({ step: "signedIn", ...tokens, me: await me(user), addEmail: offer });
+    const tokens = await startSession(db, secret, user.id, device, now(), via, since);
+    const emailOffer = addEmail && !user.email ? { email: addEmail, token: await issue(secret, "addEmail", { sub: user.id, email: addEmail }) } : undefined;
+    const id = offer.identity;
+    const hasOne = id && (await db.select({ id: identities.id }).from(identities).where(and(eq(identities.userId, user.id), eq(identities.provider, id.provider)))).length > 0;
+    const wayOffer = id && !hasOne ? { provider: id.provider, email: id.email, token: await issue(secret, "addWay", { sub: user.id, ...id }) } : undefined;
+    return c.json({ step: "signedIn", ...tokens, me: await me(user), addEmail: emailOffer, addWay: wayOffer });
   };
 
   // POST /auth/code: the same answer whether or not an account exists.
@@ -137,7 +162,7 @@ export function authRoutes({ db, store, send, notify, secret, now = Date.now, co
     if ("refuse" in pick) return fail(c, 409, "phoneTaken", PHONE_TAKEN);
     if ("fresh" in pick) {
       return pick.fresh.phone
-        ? c.json({ step: "aboutYou", signup: await issue(secret, "aboutYou", pick.fresh), name: null })
+        ? c.json({ step: "aboutYou", signup: await issue(secret, "aboutYou", pick.fresh), name: pick.fresh.name ?? null })
         : c.json({ step: "phone", signup: await issue(secret, "phoneStep", pick.fresh) });
     }
 
@@ -147,7 +172,7 @@ export function authRoutes({ db, store, send, notify, secret, now = Date.now, co
     if (isSuspended(user, now())) return suspended(c, user);
 
     if ("confirm" in pick) {
-      const ticket = await issue(secret, "ticket", { sub: user.id, phone: user.phone, email: pending?.email });
+      const ticket = await issue(secret, "ticket", { sub: user.id, phone: user.phone, email: pending?.email, identity: pending?.identity, name: pending?.name });
       return c.json({ step: "confirm", ticket, name: user.name?.trim() ? maskName(user.name) : "An account", since: user.createdAt.getFullYear() });
     }
 
@@ -171,7 +196,7 @@ export function authRoutes({ db, store, send, notify, secret, now = Date.now, co
       user ??= await userById(pick.account);
       if (user?.phone !== pick.setPhone) return fail(c, 400, "expired", TOO_LONG);
     }
-    return finish(c, user!, device, proof.kind, pick.addEmail);
+    return finish(c, user!, device, proof.kind, { email: pick.addEmail, identity: pick.addIdentity });
   };
 
   // POST /auth/confirm: "Is this you?" Yes signs in; "Not me, start fresh" moves the number to a new account, made at
@@ -181,17 +206,17 @@ export function authRoutes({ db, store, send, notify, secret, now = Date.now, co
   app.post("/auth/confirm", async (c) => {
     const b = await parse(c, Confirm);
     if (!b) return invalid(c);
-    const t = await read<{ sub: string; phone: string; email?: string }>(secret, "ticket", b.ticket);
+    const t = await read<{ sub: string; phone: string; email?: string; identity?: Identity; name?: string }>(secret, "ticket", b.ticket);
     const user = t && (await spend(t.jti)) && (await userById(t.sub));
     if (!t || !user || user.phone !== t.phone) return fail(c, 400, "expired", TOO_LONG);
     if (isSuspended(user, now())) return suspended(c, user);
     if (b.me) {
       // Marked on the account, not the device, so signing in elsewhere doesn't shed it (Sign-in and security's 7-day hold).
       const [marked] = await db.update(users).set({ newDevicePhoneAt: new Date(now()) }).where(eq(users.id, user.id)).returning();
-      return finish(c, await markProven(marked!, { kind: "phone", e164: t.phone }), b.device, "phone", t.email);
+      return finish(c, await markProven(marked!, { kind: "phone", e164: t.phone }), b.device, "phone", { email: t.email, identity: t.identity });
     }
-    const fresh: Pending = { phone: t.phone, email: t.email, displace: user.id };
-    return c.json({ step: "aboutYou", signup: await issue(secret, "aboutYou", fresh), name: null });
+    const fresh: Pending = { phone: t.phone, email: t.email, displace: user.id, identity: t.identity, name: t.name };
+    return c.json({ step: "aboutYou", signup: await issue(secret, "aboutYou", fresh), name: t.name ?? null });
   });
 
   // POST /auth/signup: About you. Continue makes the account, or finishes an existing one, with the terms accepted.
@@ -217,7 +242,7 @@ export function authRoutes({ db, store, send, notify, secret, now = Date.now, co
         await tx.insert(legalAcceptances).values({ userId: user.id, document: "terms", version: TERMS_VERSION, client: b.device.client, acceptedAt: at }).onConflictDoNothing();
         return tx.update(users).set({ name: b.name, dob, updatedAt: at }).where(eq(users.id, user.id)).returning();
       });
-      return finish(c, done!, b.device, p.via ?? "phone", p.email);
+      return finish(c, done!, b.device, p.via ?? "phone", { email: p.email, identity: p.identity });
     }
 
     if (!p.phone) return fail(c, 400, "expired", TOO_LONG);
@@ -236,6 +261,11 @@ export function authRoutes({ db, store, send, notify, secret, now = Date.now, co
           .values({ name: b.name, dob: b.dob, phone: p.phone, phoneVerifiedAt: at, email: p.email, emailVerifiedAt: p.email ? at : null, createdAt: at, updatedAt: at })
           .returning();
         await tx.insert(legalAcceptances).values({ userId: made[0]!.id, document: "terms", version: TERMS_VERSION, client: b.device.client, acceptedAt: at });
+        // The Google or Apple they started with is a way in from the start.
+        if (p.identity) {
+          const appleRefresh = p.identity.provider === "apple" ? await w.appleRefresh(p.identity.subject) : null;
+          await tx.insert(identities).values({ userId: made[0]!.id, ...p.identity, appleRefresh, createdAt: at });
+        }
         return made;
       });
       // The account the number left hears of it at its email, its other way in (a recycled SIM's old owner).
@@ -245,6 +275,81 @@ export function authRoutes({ db, store, send, notify, secret, now = Date.now, co
       if (taken(e)) return fail(c, 409, "taken", "That number or email was just used for another account. Start signing in again.");
       throw e;
     }
+  });
+
+  // Google and Apple (User flow, "How a sign-in finds its account"): a linked one signs in to its account; otherwise its
+  // email, proven by Google or Apple, finds an account as an email code would, and the provider is added to it; with no
+  // account, the WhatsApp number comes next, then About you with their name. Apple's private relay address is kept on
+  // the link only, never as the account's email: it matches nothing else, and mail to it needs Apple's sender setup.
+  const signInWith = async (c: Context, id: Identity, device: Device, name?: string | null) => {
+    const [row] = await db.select().from(identities).where(and(eq(identities.provider, id.provider), eq(identities.subject, id.subject)));
+    if (row) {
+      const user = await userById(row.userId);
+      if (!user) return fail(c, 400, "expired", TOO_LONG); // a deleted account's link is gone with it
+      if (isSuspended(user, now())) return suspended(c, user);
+      await db.update(identities).set({ lastUsedAt: new Date(now()) }).where(eq(identities.id, row.id));
+      return finish(c, user, device, id.provider, {}, row.createdAt);
+    }
+    const email = id.email && !id.email.endsWith("@privaterelay.appleid.com") ? id.email : null;
+    const [found] = email ? await db.select().from(users).where(and(eq(users.email, email), isNull(users.deletedAt))) : [];
+    if (found) {
+      if (isSuspended(found, now())) return suspended(c, found);
+      const user = await markProven(found, { kind: "email", email: email! });
+      const linked = await link(user.id, id);
+      // Already has another Google (one each): the email still proved the account, as a code to it would.
+      return linked ? finish(c, user, device, id.provider, {}, linked.createdAt) : finish(c, user, device, "email");
+    }
+    const carry: Pending = { email: email ?? undefined, identity: id, name: name?.trim() || undefined, via: id.provider };
+    return c.json({ step: "phone", signup: await issue(secret, "phoneStep", carry) });
+  };
+
+  // A few nonces and passkey challenges a minute from one address is plenty; each lives in the store for minutes.
+  const tooManyAsks = async (c: Context) => (await store.incr(`asks:${clientIp(c)}`, 60 * 1000)) > 30;
+  const slowDown = (c: Context) => fail(c, 429, "tooSoon", "Too many tries. Wait a minute and try again.", { retryIn: 60 });
+
+  // POST /auth/nonce: for Apple's sheet, spent by the token Apple makes with it.
+  app.post("/auth/nonce", async (c) => ((await tooManyAsks(c)) ? slowDown(c) : c.json({ nonce: await w.nonce() })));
+
+  // POST /auth/apple: Continue with Apple (iOS).
+  app.post("/auth/apple", async (c) => {
+    const b = await parse(c, AppleSignIn);
+    if (!b) return invalid(c);
+    const id = await w.apple(b);
+    if (!id) return fail(c, 400, "notProven", "Apple couldn't confirm it's you. Try again, or use your phone number.");
+    return signInWith(c, id, b.device, b.name);
+  });
+
+  // POST /auth/google/start: the Google page to open, for signing in, linking or a fresh check alike.
+  app.post("/auth/google/start", async (c) => {
+    const b = await parse(c, StartGoogle);
+    if (!b) return invalid(c);
+    if (await tooManyAsks(c)) return slowDown(c);
+    const url = await w.googleStart(b.bind);
+    return url ? c.json({ url }) : fail(c, 503, "notSetUp", "Google sign-in isn't set up yet. Use your phone number or email.");
+  });
+  // GET /auth/google/callback: Google sends the browser here; it goes back to the app.
+  app.get("/auth/google/callback", async (c) => c.redirect(await w.googleCallback(c.req.query()), 302));
+
+  // POST /auth/google: Continue with Google, with the grant the page handed back.
+  app.post("/auth/google", async (c) => {
+    const b = await parse(c, GoogleSignIn);
+    if (!b) return invalid(c);
+    const id = await w.google(b);
+    if (!id) return fail(c, 400, "expired", "That took too long. Try Continue with Google again.");
+    return signInWith(c, { provider: id.provider, subject: id.subject, email: id.email }, b.device, id.name);
+  });
+
+  // POST /auth/passkey/options, then POST /auth/passkey: Use a passkey. A passkey is only ever added while signed in,
+  // so it always opens an account; no "Is this you?", as it proves more than a number does.
+  app.post("/auth/passkey/options", async (c) => ((await tooManyAsks(c)) ? slowDown(c) : c.json(await w.passkeyRequest())));
+  app.post("/auth/passkey", async (c) => {
+    const b = await parse(c, PasskeySignIn);
+    if (!b) return invalid(c);
+    const key = await w.passkey(db, b, now());
+    const user = key && (await userById(key.userId));
+    if (!key || !user) return fail(c, 400, "notProven", "That passkey isn't on Orbit. Use your phone number or email.");
+    if (isSuspended(user, now())) return suspended(c, user);
+    return finish(c, user, b.device, "passkey", {}, key.createdAt);
   });
 
   // POST /auth/refresh

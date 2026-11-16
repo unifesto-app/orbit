@@ -1,6 +1,6 @@
 import { createHmac, randomUUID } from "node:crypto";
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
-import type { Device } from "@orbit/contract";
+import type { Device, Way } from "@orbit/contract";
 import type { Db } from "../db/index.ts";
 import { sessions, users } from "../db/schema.ts";
 import { ACCESS_SECONDS, issue, randomToken, sha256 } from "./tokens.ts";
@@ -53,7 +53,8 @@ export async function deviceKnown(db: Db, userId: string, deviceId: string | und
 // Signs the account in on this device, replacing the device's earlier session. The device id is the API's: one the
 // device sends is kept only if some account has signed in with it (two accounts can share a phone), otherwise the
 // device gets a new one.
-export async function startSession(db: Db, secret: string, userId: string, device: Device, now: number, via: "phone" | "email") {
+// `since`: when the Google, Apple or passkey it signed in with was added to the account (for the 7-day hold).
+export async function startSession(db: Db, secret: string, userId: string, device: Device, now: number, via: Way, since: Date | null = null) {
   const issued =
     device.id && (await db.select({ id: sessions.id }).from(sessions).where(eq(sessions.deviceHash, sha256(device.id))).limit(1)).length > 0;
   const deviceId = issued ? device.id! : randomToken();
@@ -72,8 +73,9 @@ export async function startSession(db: Db, secret: string, userId: string, devic
     lastActiveAt: at,
     expiresAt: new Date(now + 180 * DAY),
     endedAt: null,
-    freshAt: at, // every sign-in here is by a code, so the device starts fresh
+    freshAt: at, // every sign-in proves a way in, so the device starts fresh
     freshVia: via,
+    freshSince: since,
   };
   await db
     .insert(sessions)
