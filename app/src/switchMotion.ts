@@ -147,9 +147,10 @@ export function starLayerTurn(layer: number, open: number): number {
 export type Star = { x: number; y: number; r: number; o: number };
 /**
  * The dots, as the splash photo's: fine dots of a few sizes and brightnesses scattered over a `width` × `height` page,
- * the same every time (a seeded random), in STAR_LAYERS layers.
+ * the same every time (a seeded random), in STAR_LAYERS layers of `each` (a field taller than the screen passes more, to
+ * keep the switcher's density: Account's panel).
  */
-export function starLayers(width: number, height: number, seed = 7): Star[][] {
+export function starLayers(width: number, height: number, seed = 7, each = STAR_EACH): Star[][] {
   let s = seed >>> 0;
   const rand = () => {
     // mulberry32
@@ -160,7 +161,7 @@ export function starLayers(width: number, height: number, seed = 7): Star[][] {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
   return Array.from({ length: STAR_LAYERS }, () =>
-    Array.from({ length: STAR_EACH }, () => {
+    Array.from({ length: each }, () => {
       const big = rand() < 0.12; // a few brighter ones, as in the photo
       return { x: rand() * width, y: rand() * height, r: big ? 1 + rand() * 0.6 : 0.4 + rand() * 0.5, o: big ? 0.8 + rand() * 0.2 : 0.25 + rand() * 0.45 };
     }),

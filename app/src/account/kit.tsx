@@ -12,7 +12,7 @@ import { Icon, type IconName } from '../icons';
 import { BackBar, FaceWash, Glow, Section, TOP } from '../rows';
 import { needsAccount } from '../session';
 import { StarLayer } from '../stars';
-import { OPEN_END, starLayers } from '../switchMotion';
+import { OPEN_END, STAR_EACH, starLayers } from '../switchMotion';
 import { around, color, font, radius, space } from '../theme';
 
 // Room in every card (owner, 15 Nov 2026: "add proper spacing and padding to cards"): 16 inside and 16 between rows,
@@ -97,9 +97,11 @@ export function Page({
 // glass rounds every corner alike, so the glass runs STRETCH above the screen, where its top corners can't be seen even
 // while the page is pulled down; its bottom corners are the cards'. Put it first in a Page.
 // The switch screen's space dots sit on the glass (owner, 17 Nov 2026: "apply space dots to glass card in account
-// section"): the switcher's own field, a screen tall and centred on the 4:3 panel, clipped to the glass. It hangs from
-// the panel's bottom, so Account pulled down by REVEAL and the profile's grown panel show the same dots. They gather
-// once as Account opens, as on Galaxy's lock; `settled` (the profile, fading in over Account) shows them already there.
+// section"): the switcher's dots at its density, clipped to the glass, in a field centred on the 4:3 panel and reaching
+// the glass's top even on the profile's grown panel (rest/2 + REVEAL + STRETCH each way), so no pull shows bare glass.
+// It hangs from the panel's bottom, so Account pulled down by REVEAL and the profile's grown panel show the same dots.
+// They gather once as Account opens, as on Galaxy's lock; `settled` (the profile, fading in over Account) shows them
+// already there.
 const STRETCH = 400;
 const FLAT = 0.45; // the dots' orbits, height over width, as on Galaxy's lock
 export function Panel({ extra = 0, settled = false, children }: { extra?: number; settled?: boolean; children: ReactNode }) {
@@ -107,7 +109,8 @@ export function Panel({ extra = 0, settled = false, children }: { extra?: number
   const { width, height } = useWindowDimensions();
   const rest = (width * 3) / 4;
   const lift = insets.top + TOP; // how far down Page starts its content; the panel starts above that, at the top
-  const [stars] = useState(() => starLayers(width, height));
+  const field = rest + 2 * (REVEAL + STRETCH);
+  const [stars] = useState(() => starLayers(width, field, 7, Math.round((STAR_EACH * field) / height)));
   const still = useReducedMotion() || settled;
   const open = useSharedValue(still ? OPEN_END : 0);
   useEffect(() => {
@@ -120,7 +123,7 @@ export function Panel({ extra = 0, settled = false, children }: { extra?: number
         <FaceWash tint={color.accent} opacity={TINT} corner={RIM} />
       </View>
       <View style={styles.panelDots} pointerEvents="none">
-        <View style={[styles.panelField, { height, bottom: (rest - height) / 2 }]}>
+        <View style={[styles.panelField, { height: field, bottom: (rest - field) / 2 }]}>
           {stars.map((dots, k) => (
             <StarLayer key={k} layer={k} dots={dots} open={open} flat={FLAT} />
           ))}

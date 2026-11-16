@@ -77,6 +77,8 @@ test('the dots gather layer by layer across the page, sweeping in round their or
   assert.equal(a[0].length, STAR_EACH);
   assert.deepEqual(a, starLayers(390, 844));
   for (const d of a.flat()) assert.ok(d.x >= 0 && d.x <= 390 && d.y >= 0 && d.y <= 844);
+  // A taller field (Account's panel) asks for more dots per layer, to keep the density.
+  for (const layer of starLayers(390, 1300, 7, 40)) assert.equal(layer.length, 40);
 });
 
 test('every constant comes before the worklets, which copy constants to the UI thread where they are defined', () => {
