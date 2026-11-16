@@ -15,7 +15,7 @@
 // next; its messages show as they come.
 // ponytail: Google, Apple and passkeys aren't in the API yet, so their buttons only say so, and a new phone account
 // isn't offered a passkey. Each needs the API side and a native module (expo-web-browser, expo-apple-authentication,
-// a passkey module with the unifesto.app associated domain): a rebuild each.
+// a passkey module with the heyorbit.in associated domain): a rebuild each.
 import { router } from 'expo-router';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { Linking, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';

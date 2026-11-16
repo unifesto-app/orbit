@@ -55,8 +55,8 @@ export function Shell({ children }: { children: ReactNode }) {
           <Icon name="search" />
           <input type="search" name="q" placeholder="Search" aria-label="Search Galaxy" />
         </form>
-        <a className={styles.topLink} href="https://orbit.unifesto.app" target="_blank" rel="noreferrer">
-          orbit.unifesto.app <Icon name="external" />
+        <a className={styles.topLink} href="https://heyorbit.in" target="_blank" rel="noreferrer">
+          heyorbit.in <Icon name="external" />
         </a>
       </header>
 

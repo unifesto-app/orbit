@@ -1,4 +1,4 @@
-// The Orbit API (api/, at orbitapi.unifesto.app). Pure: the session (src/session.ts) gives it the fetch and where the
+// The Orbit API (api/, at api.heyorbit.in). Pure: the session (src/session.ts) gives it the fetch and where the
 // refresh token is kept, so it runs on Node in api.test.ts.
 // - `call`: any request. Every failure comes back as the API's own { error, message }, ready to show, never a throw.
 // - `authed`: a signed-in request. The access token lives in memory only; a missing or refused one is renewed with the
@@ -7,7 +7,7 @@
 // so one refresh runs at a time and the new token is kept the moment it arrives.
 import type { ApiError } from '@orbit/contract';
 
-export const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://orbitapi.unifesto.app';
+export const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://api.heyorbit.in';
 
 const TIMEOUT_MS = 15_000;
 const EARLY_S = 30; // renew this long before the access token runs out

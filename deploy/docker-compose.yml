@@ -1,5 +1,5 @@
 # Orbit's app containers on the AWS box. Caddy is the Unifesto stack's: its Caddyfile
-# routes orbit.unifesto.app and its subdomains to these containers.
+# routes heyorbit.in and its subdomains to these containers.
 # Built on the box from the source that deploy/deploy.sh copies to ~/orbit/src.
 # Runtime secrets live in env files on the server only (api.env, web.env, galaxy.env).
 # Never commit them.

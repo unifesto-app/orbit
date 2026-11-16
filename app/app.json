@@ -11,7 +11,7 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#121215",
-    "scheme": "orbitbyunifesto",
+    "scheme": "heyorbit",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.unifesto.orbit",

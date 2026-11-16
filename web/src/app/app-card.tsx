@@ -1,7 +1,7 @@
 "use client";
 
 // A small card at the bottom left on desktop with a QR code for the app (public/app-qr.svg,
-// which encodes orbit.unifesto.app/app: iPhone to the App Store, Android to Google Play).
+// which encodes heyorbit.in/app: iPhone to the App Store, Android to Google Play).
 // Waits until the cookie banner is answered so the two never stack; closing it is remembered.
 import Image from "next/image";
 import { useEffect, useState, useSyncExternalStore } from "react";

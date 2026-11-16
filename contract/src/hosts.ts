@@ -3,7 +3,7 @@ import { CityName, HostKind } from "./roles.ts";
 
 // Hosts without events (Orbit flows: Hosts, Galaxy and Discover): the profile, its edits, and what the app and web read.
 
-// The host's link: orbit.unifesto.app/h/<slug>.
+// The host's link: heyorbit.in/h/<slug>.
 export const HostSlug = z
   .string()
   .min(3)
