@@ -7,7 +7,7 @@
 // (staff on that host's team, a rename since the page opened). Closed before the answer came, the sheet leaves the
 // screen under it alone and says a refusal in an alert. Actions the API doesn't have yet take their words from the link
 // and only close.
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams, useNavigation } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
 
@@ -24,29 +24,36 @@ export default function ReasonSheet() {
   const words = job ?? p;
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
-  const [refused, setRefused] = useState<string | null>(null);
+  const [said, setSaid] = useState<string | null>(null); // the API's refusal, or that it's done
+  const navigation = useNavigation();
   const open = useRef(true);
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    open.current = true;
+    return () => {
       open.current = false;
-    },
-    [],
-  );
+    };
+  }, []);
   // Only for someone holding the action's feature; a link naming no feature names no action.
   if (!STAFF_FEATURES.includes(words.feature as StaffFeature)) return <NotFound what="action" />;
   const feature = words.feature as StaffFeature;
   const confirm = async () => {
     if (!job) return router.back();
     setBusy(true);
-    setRefused(null);
+    setSaid(null);
     const r = await job.run(reason.trim());
     if (!open.current) {
       if (!r.ok) Alert.alert('Not done', r.error.message);
       return;
     }
-    if (r.ok) return router.back(); // still busy while it closes, so a second tap can't send it again
+    if (r.ok) {
+      // Still busy, so a second tap can't send it again. Under another screen (a link opened over it), it stays put
+      // rather than close that screen, and says it's done.
+      if (navigation.isFocused()) router.back();
+      else setSaid('Done.');
+      return;
+    }
     setBusy(false);
-    setRefused(r.error.message);
+    setSaid(r.error.message);
   };
   return (
     <NeedsFeature feature={feature}>
@@ -55,9 +62,9 @@ export default function ReasonSheet() {
         {/* The API takes 3 to 500 characters. */}
         <Field label="Reason" placeholder={words.who} multiline value={reason} onChangeText={setReason} maxLength={500} autoFocus />
         <StaffNote flush>{emailed(feature)}</StaffNote>
-        {refused && (
+        {said && (
           <Text style={styles.line} accessibilityLiveRegion="polite">
-            {refused}
+            {said}
           </Text>
         )}
         <View>

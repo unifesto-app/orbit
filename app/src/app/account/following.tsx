@@ -23,7 +23,10 @@ export default function Following() {
   const me = useMe();
   const real = useLoad(viewer.signedIn ? `follows|${me.id}` : null, () => hostsApi(api).follows());
   const [dropped, setDropped] = useState<ReadonlySet<string>>(new Set()); // unfollowed here, kept on screen
-  const [off, setOff] = useState<ReadonlySet<string>>(new Set()); // API hosts unfollowed here
+  // API hosts unfollowed here, on the answer they were tapped on; a fresh read (back from a host page) starts over.
+  const [unfollowed, setUnfollowed] = useState<{ on: unknown; ids: ReadonlySet<string> }>({ on: null, ids: new Set() });
+  const off = unfollowed.on === real.data ? unfollowed.ids : new Set<string>();
+  const setOff = (next: (ids: ReadonlySet<string>) => ReadonlySet<string>) => setUnfollowed({ on: real.data, ids: next(off) });
   const first = useRef(true);
   const { reload } = real;
   useFocusEffect(

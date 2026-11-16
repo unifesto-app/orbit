@@ -16,6 +16,10 @@ export const nothing: Got<never> = { good: null, last: null };
 export const settle = <T>(g: Got<T>, key: string, r: Result<T>): Got<T> =>
   r.ok ? { good: { key, data: r.data }, last: { key, error: null, status: 200 } } : { good: g.good, last: { key, error: r.error, status: r.status } };
 
+// A new key starts a new visit: the latest answer belonged to the key before, and an old failure must not read as this
+// visit's answer when the screen comes back to that key.
+export const forget = <T>(g: Got<T>): Got<T> => ({ good: g.good, last: null });
+
 export const view = <T>(g: Got<T>, key: string | null, keep: boolean) => ({
   data: g.good && (g.good.key === key || keep) ? g.good.data : null,
   error: g.last?.key === key ? g.last.error : null,
@@ -26,6 +30,12 @@ export const view = <T>(g: Got<T>, key: string | null, keep: boolean) => ({
 export function useLoad<T>(key: string | null, run: () => Promise<Result<T>>, { keep = false } = {}) {
   const [got, setGot] = useState<Got<T>>(nothing);
   const [round, setRound] = useState(0);
+  // Set while rendering, as React suggests for state that follows a prop, so the old answer is gone before this frame.
+  const [visit, setVisit] = useState(key);
+  if (visit !== key) {
+    setVisit(key);
+    setGot(forget);
+  }
   useEffect(() => {
     if (key === null) return;
     let live = true;
