@@ -16,7 +16,6 @@ import {
   PasskeySignIn,
   Refresh,
   SendCode,
-  StartGoogle,
   UpdateMe,
   VerifyCode,
   type Way,
@@ -321,11 +320,9 @@ export function authRoutes({ db, store, send, notify, secret, now = Date.now, co
 
   // POST /auth/google/start: the Google page to open, for signing in, linking or a fresh check alike.
   app.post("/auth/google/start", async (c) => {
-    const b = await parse(c, StartGoogle);
-    if (!b) return invalid(c);
     if (await tooManyAsks(c)) return slowDown(c);
-    const url = await w.googleStart(b.bind);
-    return url ? c.json({ url }) : fail(c, 503, "notSetUp", "Google sign-in isn't set up yet. Use your phone number or email.");
+    const started = await w.googleStart();
+    return started ? c.json(started) : fail(c, 503, "notSetUp", "Google sign-in isn't set up yet. Use your phone number or email.");
   });
   // GET /auth/google/callback: Google sends the browser here; it goes back to the app.
   app.get("/auth/google/callback", async (c) => c.redirect(await w.googleCallback(c.req.query()), 302));

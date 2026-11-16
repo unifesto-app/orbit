@@ -15,8 +15,9 @@ import type { Store } from "./store.ts";
 // Proving Google, Apple and passkeys (User flow, Sign-in methods). Each answers the identity it proved, or null; the
 // routes decide which account that opens. Everything single-use lives in `store` with a short life.
 // - Google: a browser sign-in the API runs itself (authorization code with PKCE, Google's "Web application" client),
-//   so no client id is built into the app and the web can use the same page later. The app opens the page with the
-//   hash of a secret it keeps; the callback hands the app a short grant, which only that secret redeems.
+//   so no client id is built into the app and the web can use the same page later. Starting it hands the app the page
+//   and a secret; the callback hands the app a short grant through the heyorbit:// link, which only that secret
+//   redeems, so another app that registers the same scheme and catches the link gets nothing.
 // - Apple: the identity token from Apple's native sheet (iOS), checked against Apple's keys, made with a nonce from
 //   this API and spent once. With Apple's key set up, its authorization code becomes a refresh token, revoked when
 //   Apple is removed or the account deleted (Apple's rule for apps that offer deletion).
@@ -133,13 +134,14 @@ export function ways(cfg: WaysConfig, store: Store) {
       if (!res.ok) throw new Error(`apple revoke: ${res.status}`);
     },
 
-    // POST /auth/google/start: the page to open, or null when Google isn't set up.
-    async googleStart(bind: string) {
+    // POST /auth/google/start: the page to open and the secret for its grant, or null when Google isn't set up.
+    async googleStart() {
       const g = cfg.google;
       if (!g) return null;
       const state = random();
       const pkce = random();
-      await store.set(`googleState:${state}`, JSON.stringify({ pkce, bind }), 10 * MIN);
+      const verifier = random();
+      await store.set(`googleState:${state}`, JSON.stringify({ pkce, bind: hashOf(verifier) }), 10 * MIN);
       const q = new URLSearchParams({
         client_id: g.clientId,
         redirect_uri: g.callback,
@@ -150,7 +152,7 @@ export function ways(cfg: WaysConfig, store: Store) {
         code_challenge_method: "S256",
         prompt: "select_account",
       });
-      return `https://accounts.google.com/o/oauth2/v2/auth?${q}`;
+      return { url: `https://accounts.google.com/o/oauth2/v2/auth?${q}`, verifier };
     },
 
     // GET /auth/google/callback: back to the app with a grant, or with what went wrong.

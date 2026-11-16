@@ -121,8 +121,8 @@ export type Provider = z.infer<typeof Provider>;
 export type Way = "phone" | "email" | Provider | "passkey";
 
 // What proves Google, Apple or a passkey. The API checks each:
-// - Google: the grant the API's own Google page sent back to the app (POST /auth/google/start), and the secret whose
-//   hash the app gave when it opened that page, so another app that catches the link can't use it.
+// - Google: the grant the API's own Google page sent back to the app, and the secret POST /auth/google/start gave the
+//   app with that page, so another app that catches the link back can't use it.
 export const GoogleProof = z.object({ grant: z.string().min(1).max(100), verifier: z.string().min(43).max(128) });
 // - Apple: the identity token from Apple's sheet, made with a nonce from POST /auth/nonce, and Apple's authorization
 //   code, which lets the API revoke Apple when the account goes.
@@ -135,8 +135,7 @@ export const PasskeyProof = z.object({ challenge: z.string().min(1).max(200), cr
 export const GoogleSignIn = GoogleProof.extend({ device: Device });
 export const AppleSignIn = AppleProof.extend({ device: Device, name: z.string().trim().max(100).optional() });
 export const PasskeySignIn = PasskeyProof.extend({ device: Device });
-// POST /auth/google/start: the hash (base64url SHA-256) of a secret the app keeps; answers { url } to open.
-export const StartGoogle = z.object({ bind: z.string().regex(/^[A-Za-z0-9_-]{43}$/) });
+// POST /auth/google/start: no body; answers { url, verifier }: the page to open, and the secret that redeems its grant.
 
 // Sign-in and security. Every change needs a fresh check first.
 // POST /me/fresh: any way in the account has. Codes come from POST /auth/code to the account's own phone or email.
