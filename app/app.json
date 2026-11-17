@@ -14,14 +14,14 @@
     "scheme": "heyorbit",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.unifesto.orbit",
+      "bundleIdentifier": "in.heyorbit.app",
       "appleTeamId": "9AH3Z5C5DH",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
-      "package": "com.unifesto.orbit",
+      "package": "in.heyorbit.app",
       "adaptiveIcon": {
         "backgroundColor": "#121215",
         "foregroundImage": "./assets/android-icon-foreground.png",
