@@ -57,6 +57,13 @@
       "when": 1794867444717,
       "tag": "0007_users_city",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794902496564,
+      "tag": "0008_ways_in",
+      "breakpoints": true
     }
   ]
 }
