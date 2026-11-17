@@ -76,6 +76,12 @@ export default function RootLayout() {
           <Stack.Screen name="terms/[slug]" options={MODAL} />
           {/* The sign-in sheet (User flow), over whatever needed an account, so closing it lands back there. */}
           <Stack.Screen name="login" options={MODAL} />
+          {/* Sign-in and security's sheets: Confirm it's you before a change (and Change number or email), and Rename
+              passkey. Google's return link, which Android hands to the router too, lands on an empty screen that leaves
+              at once (src/app/google.tsx). */}
+          <Stack.Screen name="account/verify" options={MODAL} />
+          <Stack.Screen name="account/passkey-name" options={MODAL} />
+          <Stack.Screen name="google" options={{ presentation: 'transparentModal', animation: 'none', contentStyle: { backgroundColor: 'transparent' } }} />
           {/* Saved lists (Saved events and lists doc): the heart's list modal, a full modal like the location's (owner,
               16 Nov 2026: "instead of toast use modal, when clicked on love", "fix that modal"; the short sheet cut its
               lists off); naming a list from Account › Saved or renaming one, a full modal too. */}
@@ -84,6 +90,8 @@ export default function RootLayout() {
           {/* Your profile fades in over Account, whose panel has grown into the profile's top as you pulled (src/app/
               account/index.tsx), so the two read as one motion. The swipe back still slides. */}
           <Stack.Screen name="account/profile" options={{ animation: 'fade' }} />
+          {/* Edit profile's city for new events, the same city sheet as the location's. */}
+          <Stack.Screen name="account/city" options={MODAL} />
           {/* The app's three modes (owner, 16 Nov 2026): re-tapping a mode's first tab fades in the mode switcher, a whole
               screen of frosted glass over the app ("need animated screen instead of just switching in modal"), and Console
               (host management) and Galaxy (staff) fade in over Home, which stays under them; back from either is Home.

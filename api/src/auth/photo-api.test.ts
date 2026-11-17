@@ -161,7 +161,7 @@ test("account deletion removes the photo file", async () => {
   assert.ok(t.media.files.keys().some((k) => k.includes(a.me.id)));
   assert.equal((await as(a.access)("POST", "/me/deletion")).status, 200);
   t.tick(30 * DAY + 60_000);
-  await runDeletions(t.db, async () => {}, t.now(), t.media);
+  await runDeletions(t.db, async () => {}, t.now(), undefined, t.media);
   assert.equal(t.media.files.keys().filter((k) => k.includes(a.me.id)).length, 0); // other tests' files stay
 });
 

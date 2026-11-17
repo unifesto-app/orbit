@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { allCities } from "./cities.ts";
 import { Roles } from "./roles.ts";
 
 // Sign-in, sign-up and profile (Orbit flows: User, settled 15 Nov 2026).
@@ -97,6 +98,7 @@ export const Me = z
     dob: z.string().nullable(),
     gender: z.string().nullable(),
     photo: z.string().nullable(),
+    city: z.string().nullable(), // for new events nearby; only the account sees it
     since: z.string(), // ISO time the account was made
     // Set while a deletion waits: the app shows "Keep my account" in front of Home until then.
     deletionDue: z.string().nullable(),
@@ -109,17 +111,68 @@ export const UpdateMe = z
   .object({
     name: z.string().trim().min(1).max(100),
     gender: z.string().trim().min(1).max(30).nullable(),
+    // A city's name from the pickers' list (names are unique across states), so no Google place name is ever kept.
+    city: z
+      .string()
+      .refine((name) => allCities.some((c) => c.name === name), "Not a city on Orbit's list")
+      .nullable(),
   })
   .partial();
 
 // POST /me/email: adds the email proven before the WhatsApp step matched this account.
 export const AddEmail = z.object({ token: z.string() });
 
-// Sign-in and security. A code sent with POST /auth/code proves each one.
-// POST /me/fresh: a code to the account's own phone or email, before a change.
-export const FreshCheck = z.object({ via: z.enum(["phone", "email"]), code: z.string().regex(/^\d{6}$/) });
+// Google and Apple, and every way in (User flow, Sign-in methods).
+export const Provider = z.enum(["google", "apple"]);
+export type Provider = z.infer<typeof Provider>;
+export type Way = "phone" | "email" | Provider | "passkey";
+
+// What proves Google, Apple or a passkey. The API checks each:
+// - Google: the grant the API's own Google page sent back to the app, and the secret POST /auth/google/start gave the
+//   app with that page, so another app that catches the link back can't use it.
+export const GoogleProof = z.object({ grant: z.string().min(1).max(100), verifier: z.string().min(43).max(128) });
+// - Apple: the identity token from Apple's sheet, made with a nonce from POST /auth/nonce, and Apple's authorization
+//   code, which lets the API revoke Apple when the account goes.
+export const AppleProof = z.object({ idToken: z.string().min(1).max(8000), nonce: z.string().min(1).max(100), code: z.string().max(1000).optional() });
+// - A passkey: the challenge from the options call and the authenticator's answer, as JSON.
+export const PasskeyProof = z.object({ challenge: z.string().min(1).max(200), credential: z.record(z.string(), z.unknown()) });
+
+// POST /auth/google, /auth/apple, /auth/passkey: sign in or sign up. Apple sends the name only the first time, so the
+// app passes it on for About you.
+export const GoogleSignIn = GoogleProof.extend({ device: Device });
+export const AppleSignIn = AppleProof.extend({ device: Device, name: z.string().trim().max(100).optional() });
+export const PasskeySignIn = PasskeyProof.extend({ device: Device });
+// POST /auth/google/start: no body; answers { url, verifier }: the page to open, and the secret that redeems its grant.
+
+// Sign-in and security. Every change needs a fresh check first.
+// POST /me/fresh: any way in the account has. Codes come from POST /auth/code to the account's own phone or email.
+export const FreshCheck = z.union([
+  z.object({ via: z.literal("phone"), code: z.string().regex(/^\d{6}$/) }),
+  z.object({ via: z.literal("email"), code: z.string().regex(/^\d{6}$/) }),
+  GoogleProof.extend({ via: z.literal("google") }),
+  AppleProof.extend({ via: z.literal("apple") }),
+  PasskeyProof.extend({ via: z.literal("passkey") }),
+]);
 // PUT /me/phone, PUT /me/email: the new number or address and the code sent to it.
 export const ChangeContact = z.object({ to: z.string().min(1).max(254), code: z.string().regex(/^\d{6}$/) });
+// POST /me/passkeys: the new passkey, after POST /me/passkeys/options. PATCH /me/passkeys/:id renames one.
+export const AddPasskey = PasskeyProof;
+export const RenamePasskey = z.object({ name: z.string().trim().min(1).max(50) });
+// POST /me/ways: "Add Google to your account?", answered yes after signing in with a number already on Orbit.
+export const AddWay = z.object({ token: z.string() });
+
+// GET /me/security: every way in and every device signed in.
+export const Security = z.object({
+  phone: z.string().nullable(),
+  email: z.string().nullable(),
+  google: z.object({ email: z.string().nullable() }).nullable(),
+  apple: z.object({ email: z.string().nullable() }).nullable(),
+  passkeys: z.array(z.object({ id: z.string(), name: z.string(), added: z.string(), lastUsed: z.string().nullable() })),
+  fresh: z.boolean(), // a fresh check in the last 10 minutes on this device
+  heldUntil: z.string().nullable(), // the 7-day hold after "Is this you?": other ways in can't be removed until then
+  devices: z.array(z.object({ id: z.string(), name: z.string(), client: z.enum(["app", "web"]), lastActive: z.string(), current: z.boolean() })),
+});
+export type Security = z.infer<typeof Security>;
 
 // Where a sign-in goes next.
 export const AuthStep = z.discriminatedUnion("step", [
@@ -132,6 +185,8 @@ export const AuthStep = z.discriminatedUnion("step", [
     me: Me,
     // "Add this email to your account?", after a WhatsApp number matched an existing account.
     addEmail: z.object({ email: z.string(), token: z.string() }).optional(),
+    // "Add Google to your account?", the same for Google or Apple.
+    addWay: z.object({ provider: Provider, email: z.string().nullable(), token: z.string() }).optional(),
   }),
   // "R••• K•••, on Orbit since 2025. Is this you?": a phone code on a device the account hasn't used.
   z.object({ step: z.literal("confirm"), ticket: z.string(), name: z.string(), since: z.number() }),

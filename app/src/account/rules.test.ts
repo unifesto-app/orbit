@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { calendarLink, canRemove, changeStart, deletesOn, deletionBlockers, isOpen, maskEmail, maskPhone, profileChanges, spacedCode, ticketActions } from './rules.ts';
+import { calendarLink, canRemove, changeStart, deletesOn, isOpen, maskEmail, maskPhone, profileChanges, spacedCode, ticketActions } from './rules.ts';
 
 test('masks the phone and email', () => {
   assert.equal(maskPhone('+919876543210'), '+91 98••• ••210');
@@ -20,22 +20,6 @@ test('only Refunded and Declined are closed', () => {
   assert.equal(isOpen('Refund failed, retrying'), true);
   assert.equal(isOpen('Refunded'), false);
   assert.equal(isOpen('Declined'), false);
-});
-
-test('upcoming tickets and started hosts block deletion, unless a refund is open', () => {
-  const blockers = deletionBlockers({
-    tickets: [
-      { eventId: 'a', title: 'Open Mic Night' },
-      { eventId: 'b', title: 'Pottery for Beginners' },
-    ],
-    openRefunds: ['b'],
-    hostsStarted: [{ name: 'Clay Days' }],
-  });
-  assert.deepEqual(blockers, [
-    'Archive Clay Days, the host you started',
-    'Cancel your ticket for Open Mic Night, or wait until it’s over',
-  ]);
-  assert.deepEqual(deletionBlockers({ tickets: [], openRefunds: [], hostsStarted: [] }), []);
 });
 
 test('deletion runs 30 days later, in India time', () => {
@@ -80,4 +64,6 @@ test('a number or email change confirms it’s you first, by email while the hol
   assert.deepEqual(changeStart('email', { ...held, fresh: true }, true), { next: 'wait', until: '2026-11-24T10:00:00.000Z' });
   assert.deepEqual(changeStart('email', { ...s, phone: null }, false), { next: 'prove', via: 'email', to: 'k@example.com' });
   assert.equal(changeStart('email', { ...s, phone: null, email: null }, false), null);
+  // Adding an email is never held, though a hold stands for the account's Google, Apple or passkeys.
+  assert.deepEqual(changeStart('email', { ...held, email: null, fresh: true }, false), { next: 'new' });
 });

@@ -219,11 +219,13 @@ test("people: list and detail", async () => {
   await give(staff, "people");
   await give(lite, "staff");
   await t.db.update(users).set({ deletedAt: new Date() }).where(eq(users.id, gone.me.id));
+  await t.db.update(users).set({ city: "Hyderabad" }).where(eq(users.id, a.me.id)); // seen by nobody else, staff included
   const l = await as(staff)("GET", "/galaxy/people");
   assert.equal(l.status, 200);
   assert.equal(l.body.page, 1);
   assert.ok(l.body.people.some((x: any) => x.id === a.me.id && x.phone === e164(a.p)));
   assert.ok(!l.body.people.some((x: any) => x.id === gone.me.id));
+  assert.ok(l.body.people.every((x: any) => !("city" in x)));
   assert.equal((await audits("people.list")).length, 1);
   for (const u of [lite, nobody]) {
     assert.equal((await as(u)("GET", "/galaxy/people")).status, 404);
@@ -232,6 +234,7 @@ test("people: list and detail", async () => {
   const d = await as(staff)("GET", `/galaxy/people/${a.me.id}`);
   assert.equal(d.status, 200);
   assert.equal(d.body.phone, e164(a.p));
+  assert.ok(!("city" in d.body));
   assert.equal((await audits("people.view")).filter((x) => x.targetUser === a.me.id).length, 1);
   assert.equal((await audits("people.view")).length, 1);
   for (const id of [gone.me.id, "nope"]) {

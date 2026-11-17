@@ -97,13 +97,14 @@ test("keep my account", async () => {
 
 test("day 30: scrubbed, sessions gone, legal rows stay, number free again", async () => {
   const a = await join(true);
+  await t.db.update(users).set({ gender: "Woman", photo: "https://example.com/riya.jpg", city: "Hyderabad" }).where(eq(users.id, a.me.id));
   const legal = (await t.db.select().from(legalAcceptances).where(eq(legalAcceptances.userId, a.me.id))).length;
   await request(a);
   t.tick(30 * DAY + MIN);
   assert.ok((await run()) >= 1); // earlier tests' pending accounts fall due too
   const u = await row(a.me.id);
   assert.ok(u.deletedAt);
-  for (const k of ["name", "phone", "email", "dob"] as const) assert.equal(u[k], null, k);
+  for (const k of ["name", "phone", "email", "dob", "gender", "photo", "city"] as const) assert.equal(u[k], null, k);
   assert.equal((await t.db.select().from(sessions).where(eq(sessions.userId, a.me.id))).length, 0);
   assert.equal((await t.db.select().from(legalAcceptances).where(eq(legalAcceptances.userId, a.me.id))).length, legal);
   assert.ok(legal > 0);

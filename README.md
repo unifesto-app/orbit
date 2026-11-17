@@ -35,3 +35,21 @@ The API's tests need a Postgres: `createdb orbit_test` locally, or set `TEST_DAT
   - `OPEN_TO`: the opening gate. `*` for everyone (only once Turnstile and App Attest check sends), or a comma-separated list of numbers and emails. Unset, nobody gets a code wherever codes really go out.
   - `CODE_DAILY_CAP` (default 500): past this many codes a day on a channel, the API logs an alert; sends go on.
   - Off production, a channel without its settings prints codes to the API's log instead.
+
+## PM board and Claude Code
+
+Galaxy's PM board (`/pm-board`, for staff with the Platform feature) and Claude Code share one board through the API (`api/src/pm`). Claude Code reaches it as the MCP server `orbit-pm` at `https://api.heyorbit.in/pm/mcp`, with the same tools as Unifesto's old `unifesto-pm`.
+
+- To connect a computer, the platform owner makes a token in Galaxy, PM board, Connect Claude, and runs the command shown there once:
+
+  ```bash
+  claude mcp add --scope user --transport http orbit-pm https://api.heyorbit.in/pm/mcp --header "Authorization: Bearer <token>"
+  ```
+
+- A token works only while the account that made it is the platform owner. When ownership is handed over (by SQL; no route sets `platform_owner`), revoke every token in the same step:
+
+  ```sql
+  update pm_tokens set revoked_at = now() where revoked_at is null;
+  ```
+
+- After the first deploy, check that Caddy's access log doesn't keep the `Authorization` header (`grep opm_` in it finds nothing), and that Cloudflare lets Claude Code's POSTs to `/pm/mcp` through without a challenge.
