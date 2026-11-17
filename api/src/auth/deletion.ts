@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import type { Db } from "../db/index.ts";
 import { follows, hosts, identities, passkeys, pmActivity, sessions, staffGrants, teamRoles, users } from "../db/schema.ts";
 import { type Env, fail, type Notify, signedIn } from "../http.ts";
+import { drop, type Media } from "../media.ts";
 import { holdIfUnanswered, ownerOnlySql } from "../roles/access.ts";
 import { fresh, heldUntil, otherAddress, waysIn } from "./security.ts";
 import type { User } from "./sessions.ts";
@@ -106,9 +107,9 @@ export function deletionRoutes({ db, store, notify, secret, now = Date.now }: De
 // A blocker found now (say, a host started after the request) cancels the request with one notice; the person asks
 // again once it's sorted. One account failing never stops the rest.
 // Apple's tokens are revoked once the account is gone (Apple's rule for apps that offer deletion); a failed revoke is
-// logged and never undoes the deletion.
+// logged and never undoes the deletion. Their photo's file goes too (`media`, where the server has a bucket).
 // ponytail: the server runs this hourly until the job runner arrives to run it nightly at 03:30 IST.
-export async function runDeletions(db: Db, notify: Notify, now: number, revokeApple?: (token: string) => Promise<void>) {
+export async function runDeletions(db: Db, notify: Notify, now: number, revokeApple?: (token: string) => Promise<void>, media?: Media) {
   const at = new Date(now);
   const due = await db.select({ id: users.id }).from(users).where(and(lte(users.deletionDueAt, at), isNull(users.deletedAt)));
   let done = 0;
@@ -178,7 +179,7 @@ export async function runDeletions(db: Db, notify: Notify, now: number, revokeAp
           })
           .where(eq(users.id, u.id));
         const apple = links.flatMap((l) => (l.appleRefresh ? [l.appleRefresh] : []));
-        return { deleted: true, lastWord: u.email ?? u.phone, apple }; // the last message goes to the contact read before the scrub
+        return { deleted: true, lastWord: u.email ?? u.phone, apple, photo: u.photo }; // the last message goes to the contact read before the scrub
       });
       if (!outcome) continue;
       if ("blocked" in outcome) {
@@ -186,6 +187,7 @@ export async function runDeletions(db: Db, notify: Notify, now: number, revokeAp
         continue;
       }
       for (const token of outcome.apple) await revokeApple?.(token).catch((e) => console.error(`[deletions] ${id} apple revoke`, e));
+      if (media) await drop(media, outcome.photo, "users", id);
       if (outcome.lastWord) await notify({ to: { contact: outcome.lastWord }, kind: "accountDeleted", data: {} });
       done++;
     } catch (e) {

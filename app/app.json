@@ -55,6 +55,14 @@
       "./plugins/withAlwaysRunScripts",
       "expo-sqlite",
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "Orbit uses your photos so you can choose your profile photo.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ],
+      [
         "expo-local-authentication",
         {
           "faceIDPermission": "Orbit uses Face ID to unlock Galaxy, the staff tools, instead of your passcode."

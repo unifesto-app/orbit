@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { MediaRatio, mediaRatio } from "./media.ts";
+import { isSquare, MediaRatio, mediaRatio } from "./media.ts";
 
 test("mediaRatio accepts 3:4 and 4:3, including resize rounding", () => {
   assert.equal(mediaRatio(1080, 1440), "3:4");
@@ -32,4 +32,13 @@ test("MediaRatio schema only allows the three shapes", () => {
   assert.equal(MediaRatio.safeParse("3:4").success, true);
   assert.equal(MediaRatio.safeParse("1:1.414").success, true);
   assert.equal(MediaRatio.safeParse("16:9").success, false);
+});
+
+test("isSquare takes square photos and logos only, with the same slack", () => {
+  assert.equal(isSquare(1080, 1080), true);
+  assert.equal(isSquare(1000, 1009), true); // a crop a few pixels off
+  assert.equal(isSquare(1000, 1020), false);
+  assert.equal(isSquare(1080, 1440), false);
+  assert.equal(isSquare(0, 0), false);
+  assert.equal(mediaRatio(1080, 1080), null); // and square is still no poster
 });

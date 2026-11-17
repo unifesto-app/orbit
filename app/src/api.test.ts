@@ -24,7 +24,7 @@ function setup(script: (req: Req, n: number) => Answer, stored: string | null = 
       method: init.method!,
       path: url.replace('https://x', ''),
       headers: (init.headers ?? {}) as Record<string, string>,
-      body: init.body ? JSON.parse(init.body as string) : undefined,
+      body: init.body instanceof FormData ? init.body : init.body ? JSON.parse(init.body as string) : undefined,
     };
     reqs.push(req);
     const a = script(req, reqs.length);
@@ -65,6 +65,15 @@ test('call: content-type only with a body, authorization only with a token', asy
   await api.call('GET', '/b', undefined, 'tok');
   assert.deepEqual(reqs[0]!.headers, { 'content-type': 'application/json' });
   assert.deepEqual(reqs[1]!.headers, { authorization: 'Bearer tok' });
+});
+
+test('call: a FormData upload goes as it is, with no content-type of ours', async () => {
+  const { api, reqs } = setup(() => json(200, {}));
+  const form = new FormData();
+  form.append('photo', 'bytes');
+  await api.call('PUT', '/me/photo', form, 'tok');
+  assert.equal(reqs[0]!.body, form);
+  assert.deepEqual(reqs[0]!.headers, { authorization: 'Bearer tok' });
 });
 
 test('authed with no access token refreshes, saves the new refresh token, then sends the request', async () => {

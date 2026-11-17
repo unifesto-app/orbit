@@ -49,6 +49,9 @@ services:
       - "3000"
     networks: [edge, orbit]
     depends_on: [orbit-redis]
+    # Photo uploads decode one at a time (api/src/media.ts), each up to about 160 MB, over the API's own couple of
+    # hundred. The cap keeps an out-of-memory kill to the API alone, never Caddy, web or Galaxy on the 4 GB box.
+    mem_limit: 1g
 
   # Orbit's own Redis (Valkey): sign-in codes, rate limits and spent step tokens, every key with a TTL. Only the API
   # reaches it, on Orbit's private network; api.env has REDIS_URL=redis://orbit-redis:6379. Nothing in it outlives a

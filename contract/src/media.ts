@@ -25,3 +25,12 @@ export function mediaRatio(width: number, height: number): MediaRatio | null {
   }
   return null;
 }
+
+// People's photos and host logos are square, the one shape outside the three (User doc, decision 7: "square, shown
+// round"; owner, 15 Nov 2026: "1:1 for Host Logos, Guests/Speakers/People Photos"). Its own rule, so a square poster
+// still fails `mediaRatio`. The same 1% slack.
+export const isSquare = (width: number, height: number) => width > 0 && height > 0 && Math.abs(width / height - 1) <= 0.01;
+
+// PUT /me/photo (multipart, field `photo`): JPG, PNG or WebP up to 5 MB (User doc, Profile). The API decides the type
+// from the bytes, not from what the upload says it is.
+export const PHOTO_MAX_BYTES = 5 * 1024 * 1024;

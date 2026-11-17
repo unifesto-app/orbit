@@ -7,6 +7,7 @@ import { memoryStore, redisStore } from "./auth/store.ts";
 import { ways, type WaysConfig } from "./auth/ways.ts";
 import { connect, migrateDb } from "./db/index.ts";
 import type { Notify } from "./http.ts";
+import { type Media, memoryFiles, s3Files } from "./media.ts";
 
 const need = (name: string) => {
   const v = process.env[name];
@@ -66,6 +67,16 @@ const store = production || process.env.REDIS_URL ? redisStore(need("REDIS_URL")
 // ponytail: messages to people come with the Notifications flow; until then they're only logged.
 const notify: Notify = async (n) => console.log(`[notify] ${n.kind} → ${JSON.stringify(n.to)}`);
 
+// Uploads (photos, then host logos): the private S3 bucket MEDIA_BUCKET, with the server's AWS credentials, served at
+// MEDIA_URL. Off production without a bucket they're kept in memory; in production without one, uploads say they
+// aren't set up.
+const port = Number(process.env.PORT ?? 3000);
+// Accounts keep whole links, and only links under this base are deleted, so changing it later leaves the old files.
+const mediaUrl = (env.MEDIA_URL?.trim() || (production ? "https://api.heyorbit.in/media" : `http://localhost:${port}/media`)).replace(/\/+$/, "");
+const files = env.MEDIA_BUCKET ? s3Files(env.MEDIA_BUCKET, "ap-south-1") : production ? undefined : memoryFiles();
+const media: Media | undefined = files && { files, url: mediaUrl };
+console.log(`[media] ${env.MEDIA_BUCKET ? `bucket ${env.MEDIA_BUCKET}` : files ? "in memory" : "off"}, at ${mediaUrl}`);
+
 // Ways in beyond codes (auth/ways.ts):
 // - Passkeys: RP ID heyorbit.in, fixed for good once anyone adds one. iOS apps answer with the site's origin; Android
 //   apps with "android:apk-key-hash:<their signing key's SHA-256, base64url>", so PASSKEY_ORIGINS lists those too.
@@ -97,9 +108,8 @@ console.log(
 const revokeApple = ways(waysConfig, store).revokeApple;
 
 // Day-30 account deletions. ponytail: an hourly sweep until the job runner runs it nightly at 03:30 IST.
-setInterval(() => runDeletions(db, notify, Date.now(), revokeApple).catch((e) => console.error("[deletions]", e)), 60 * 60 * 1000).unref();
+setInterval(() => runDeletions(db, notify, Date.now(), revokeApple, media).catch((e) => console.error("[deletions]", e)), 60 * 60 * 1000).unref();
 
-const port = Number(process.env.PORT ?? 3000);
-serve({ fetch: createApp({ db, store, send, notify, secret, codes, ways: waysConfig }).fetch, port }, (info) => {
+serve({ fetch: createApp({ db, store, send, notify, secret, codes, ways: waysConfig, media }).fetch, port }, (info) => {
   console.log(`orbit-api listening on :${info.port}`);
 });
