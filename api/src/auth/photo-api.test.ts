@@ -185,6 +185,21 @@ test("two uploads at once leave one file, the one the account points at", async 
   assert.equal(await photoOf(a.me.id), `https://api.test/media/${mine[0]}`);
 });
 
+// The day-30 sweep scrubbed the row while this request was on its way: nothing goes onto the deleted account, and the
+// new file doesn't stay behind.
+test("an upload or remove landing after the account was deleted changes nothing", async () => {
+  const a = await join();
+  const first = await send(a.access, await img(300).jpeg().toBuffer());
+  assert.equal(first.status, 200);
+  await t.db.update(users).set({ deletedAt: new Date(t.now()) }).where(eq(users.id, a.me.id));
+  const late = await send(a.access, await img(400).jpeg().toBuffer());
+  assert.equal(late.status, 401);
+  assert.equal(late.body.error, "signedOut");
+  assert.equal((await as(a.access)("DELETE", "/me/photo")).status, 401);
+  assert.deepEqual(t.media.files.keys().filter((k) => k.includes(a.me.id)), [first.body.photo.slice("https://api.test/media/".length)]);
+  assert.equal(await photoOf(a.me.id), first.body.photo);
+});
+
 test("without media: 503 notSetUp", async () => {
   const t2 = await testApp({ media: false });
   try {

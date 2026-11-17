@@ -172,7 +172,7 @@ export async function runDeletions(db: Db, notify: Notify, now: number, media?: 
         await notify({ to: { userId: id }, kind: "deletionBlocked", data: { blockers: outcome.blocked } });
         continue;
       }
-      if (media) await drop(media, outcome.photo);
+      if (media) await drop(media, outcome.photo, "users", id);
       if (outcome.lastWord) await notify({ to: { contact: outcome.lastWord }, kind: "accountDeleted", data: {} });
       done++;
     } catch (e) {

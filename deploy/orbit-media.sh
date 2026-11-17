@@ -9,6 +9,9 @@ set -euo pipefail
 B=heyorbit-media
 R=ap-south-1
 
+# Only in Orbit's account (2383-0955-9354), never another one this shell can reach.
+[ "$(aws sts get-caller-identity --query Account --output text)" = 238309559354 ] || { echo "Not the Orbit AWS account. Stopping."; exit 1; }
+
 # Private: all four public-access blocks on. New buckets also default to SSE-S3 encryption and owner-only objects.
 # No versioning, so a deleted photo is gone (User doc: "A new photo replaces the old file in storage").
 aws s3api head-bucket --bucket "$B" 2>/dev/null || aws s3api create-bucket --bucket "$B" --region "$R" --create-bucket-configuration "LocationConstraint=$R"

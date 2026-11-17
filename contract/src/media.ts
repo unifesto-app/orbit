@@ -33,5 +33,4 @@ export const isSquare = (width: number, height: number) => width > 0 && height >
 
 // PUT /me/photo (multipart, field `photo`): JPG, PNG or WebP up to 5 MB (User doc, Profile). The API decides the type
 // from the bytes, not from what the upload says it is.
-export const PHOTO_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 export const PHOTO_MAX_BYTES = 5 * 1024 * 1024;

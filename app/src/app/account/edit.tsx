@@ -45,6 +45,7 @@ function Form({ me }: { me: Account }) {
   // What's being sent. One at a time, so a save's answer can't put back the photo an upload just changed.
   const [busy, setBusy] = useState<'save' | 'photo' | null>(null);
   const working = useRef(false); // the same, read at once: a double tap sends once
+  const picking = useRef(false); // the library is open: a second tap doesn't open it again
   const open = useRef(true); // left (back) while saving: the save still counts, but there's nothing to go back from
   useEffect(() => {
     open.current = true;
@@ -75,12 +76,15 @@ function Form({ me }: { me: Account }) {
 
   // iOS always crops square; `aspect` is Android's, and its crop shows the circle the photo is drawn in.
   async function choose() {
-    if (working.current) return;
+    if (working.current || picking.current) return;
+    picking.current = true;
     let picked: ImagePicker.ImagePickerResult;
     try {
       picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], shape: 'oval', quality: 0.8 });
     } catch {
       return setPhotoError('Couldn’t open your photos. Try again.');
+    } finally {
+      picking.current = false;
     }
     const a = picked.canceled ? null : picked.assets[0];
     if (!a) return;

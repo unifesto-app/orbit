@@ -70,7 +70,8 @@ const notify: Notify = async (n) => console.log(`[notify] ${n.kind} → ${JSON.s
 // MEDIA_URL. Off production without a bucket they're kept in memory; in production without one, uploads say they
 // aren't set up.
 const port = Number(process.env.PORT ?? 3000);
-const mediaUrl = env.MEDIA_URL ?? (production ? "https://api.heyorbit.in/media" : `http://localhost:${port}/media`);
+// Accounts keep whole links, and only links under this base are deleted, so changing it later leaves the old files.
+const mediaUrl = (env.MEDIA_URL?.trim() || (production ? "https://api.heyorbit.in/media" : `http://localhost:${port}/media`)).replace(/\/+$/, "");
 const files = env.MEDIA_BUCKET ? s3Files(env.MEDIA_BUCKET, "ap-south-1") : production ? undefined : memoryFiles();
 const media: Media | undefined = files && { files, url: mediaUrl };
 console.log(`[media] ${env.MEDIA_BUCKET ? `bucket ${env.MEDIA_BUCKET}` : files ? "in memory" : "off"}, at ${mediaUrl}`);

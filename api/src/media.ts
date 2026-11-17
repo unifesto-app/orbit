@@ -20,12 +20,15 @@ export type Media = { files: Files; url: string };
 export type Kind = "users" | "hosts";
 export const newKey = (kind: Kind, ownerId: string) => `${kind}/${ownerId}/${randomBytes(16).toString("base64url")}.webp`;
 export const linkOf = (m: Media, key: string) => `${m.url}/${key}`;
-// Only a link this API made is a file it may delete.
-export const keyOf = (m: Media, link: string | null) => (link?.startsWith(`${m.url}/`) ? link.slice(m.url.length + 1) : null);
+// Only a link this API made for this owner is a file it may delete: never another's, nor one from elsewhere.
+const keyOf = (m: Media, link: string | null, kind: Kind, ownerId: string) => {
+  const key = link?.startsWith(`${m.url}/`) ? link.slice(m.url.length + 1) : null;
+  return key && new RegExp(`^${kind}/${ownerId}/[\\w-]{22}\\.webp$`).test(key) ? key : null;
+};
 
 // The file a link points at is gone. A failure leaves one file behind, logged; it never fails the change it follows.
-export const drop = async (m: Media, link: string | null) => {
-  const key = keyOf(m, link);
+export const drop = async (m: Media, link: string | null, kind: Kind, ownerId: string) => {
+  const key = keyOf(m, link, kind, ownerId);
   if (key) await m.files.remove(key).catch((e) => console.error(`[media] couldn't delete ${key}`, e));
 };
 

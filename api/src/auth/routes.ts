@@ -279,15 +279,31 @@ export function authRoutes({ db, store, send, notify, secret, now = Date.now, co
   // Your photo (User doc, Profile): optional, square (decision 7), and Remove works. The photo it replaces is deleted
   // once the account points at the new one: new file in, account changed, old file out.
   const TOO_BIG = "That photo is over 5 MB. Choose a smaller one.";
-  const setPhoto = async (c: Context<Env>, link: string | null) => {
-    const [user, was] = await db.transaction(async (tx) => {
-      // Locked, so two changes at once each delete the one they replaced.
-      const [row] = await tx.select({ photo: users.photo }).from(users).where(eq(users.id, c.var.user.id)).for("update");
-      const [done] = await tx.update(users).set({ photo: link, updatedAt: new Date(now()) }).where(eq(users.id, c.var.user.id)).returning();
-      return [done!, row?.photo ?? null] as const;
-    });
-    if (was !== link) await drop(media!, was);
-    return c.json(await me(user));
+  // `key` is the new file, removed again if the account never points at it.
+  const setPhoto = async (c: Context<Env>, link: string | null, key?: string) => {
+    const id = c.var.user.id;
+    const unused = async () => void (key && (await media!.files.remove(key).catch(() => {})));
+    const swapped = await db
+      .transaction(async (tx) => {
+        // Locked, so two changes at once each delete the one they replaced. Not a row the day-30 sweep has just
+        // scrubbed: its photo would never be deleted.
+        const live = and(eq(users.id, id), isNull(users.deletedAt));
+        const [row] = await tx.select({ photo: users.photo }).from(users).where(live).for("update");
+        if (!row) return null;
+        const [user] = await tx.update(users).set({ photo: link, updatedAt: new Date(now()) }).where(live).returning();
+        return { user: user!, was: row.photo };
+      })
+      .catch(async (e) => {
+        await unused();
+        throw e;
+      });
+    if (!swapped) {
+      await unused();
+      return fail(c, 401, "signedOut", "You're signed out. Sign in again.");
+    }
+    // Committed: from here a failure must not touch the new file, which the account now points at.
+    if (swapped.was !== link) await drop(media!, swapped.was, "users", id);
+    return c.json(await me(swapped.user));
   };
   const noPhotos = (c: Context) => fail(c, 503, "notSetUp", "Photos aren't working right now. Try again later.");
 
@@ -304,12 +320,7 @@ export function authRoutes({ db, store, send, notify, secret, now = Date.now, co
         : fail(c, 400, "notImage", "That file isn't a photo we can use. Choose a JPG, PNG or WebP.");
     const key = newKey("users", c.var.user.id);
     await media.files.put(key, image.bytes, "image/webp");
-    try {
-      return await setPhoto(c, linkOf(media, key));
-    } catch (e) {
-      await media.files.remove(key).catch(() => {}); // the account never pointed at it
-      throw e;
-    }
+    return setPhoto(c, linkOf(media, key), key);
   });
 
   // DELETE /me/photo: Remove. Already none is fine.
