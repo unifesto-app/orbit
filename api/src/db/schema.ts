@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
-import { type AnyPgColumn, bigint, boolean, date, index, integer, jsonb, pgTable, primaryKey, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { type AnyPgColumn, bigint, boolean, check, date, doublePrecision, index, integer, jsonb, pgTable, primaryKey, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import type { AgendaItem, FaqItem } from "@orbit/contract";
 
 // The User flow's tables (Orbit flows: User). Migrated people keep their Unifesto ids, so `id` takes any UUID.
 // Phone and email are the ways in by code; Google and Apple live in `identities`, passkeys in `passkeys`.
@@ -117,6 +118,104 @@ export const teamRoles = pgTable(
     uniqueIndex("team_roles_one_open_per_person").on(t.hostId, t.userId).where(sql`${t.endedAt} is null and ${t.userId} is not null`),
     index().on(t.userId),
     index().on(t.contact),
+  ],
+);
+
+// ---------- Events (Orbit flows: Hosts, Discover): a host's event from draft to cancelled, and its ticket types ----------
+
+// An event. Saved as a draft from its name on, so everything but the title is empty until the host fills it in; what
+// publishing needs is checked at publish, not here. There's no unpublish: a published event is edited or cancelled. A
+// draft, or a cancelled event with no money on it, can be deleted.
+export const events = pgTable(
+  "events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    hostId: uuid("host_id")
+      .notNull()
+      .references(() => hosts.id),
+    slug: text("slug").notNull().unique(), // global: heyorbit.in/event/<slug>; the title plus 6 random characters, made at creation
+    status: text("status", { enum: ["draft", "published", "cancelled"] }).notNull().default("draft"),
+    // Public in discover, or reachable only by its link (Discover decision 10). A private host's events are all link-only.
+    visibility: text("visibility", { enum: ["public", "link"] }).notNull().default("public"),
+    title: text("title").notNull(),
+    // A slug from @orbit/contract's categories. Null on a draft; checked in the contract like `hosts.kind`, with no
+    // database list because the category list changes.
+    category: text("category"),
+    startsAt: at("starts_at"),
+    endsAt: at("ends_at"),
+    timezone: text("timezone").notNull().default("Asia/Kolkata"), // India time unless the host changes it (Hosts flow)
+    // The place. The contract needs all of it; the database is looser on purpose, since an event stored without
+    // coordinates still matches by city name (Discover flow). Coordinates are for nearby search and the event-day window.
+    venue: text("venue"),
+    address: text("address"),
+    area: text("area"), // the locality cards show: "Jubilee Hills"
+    city: text("city"), // a name from @orbit/contract's allCities
+    lat: doublePrecision("lat"),
+    lng: doublePrecision("lng"),
+    placeId: text("place_id"), // the place search's id: "At [venue]" is offered when it matches a Venue host's place
+    online: boolean("online").notNull().default(false), // alone it shows "Online"; with a venue, "Also online"
+    onlineLink: text("online_link"), // private: comes with the ticket, never on the page; may be added after `online` is set
+    about: text("about"), // plain text
+    agenda: jsonb("agenda").$type<AgendaItem[]>().notNull().default([]),
+    faq: jsonb("faq").$type<FaqItem[]>().notNull().default([]),
+    terms: jsonb("terms").$type<string[]>().notNull().default([]), // the host's own, shown above Orbit's defaults
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.id),
+    publishedAt: at("published_at"), // when it first went live; later edits don't move it
+    cancelledAt: at("cancelled_at"),
+    cancelledBy: uuid("cancelled_by").references(() => users.id),
+    cancelReason: text("cancel_reason"), // the host's reason, which every ticket holder gets
+    createdAt: at("created_at").notNull().defaultNow(),
+    updatedAt: at("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    check("events_ends_after_starts", sql`${t.endsAt} is null or ${t.startsAt} is null or ${t.endsAt} > ${t.startsAt}`),
+    // The place is all or nothing; the point comes with a venue and sits inside India, as the contract's Place does.
+    check("events_place_all_or_nothing", sql`(${t.venue} is null) = (${t.address} is null) and (${t.venue} is null) = (${t.area} is null) and (${t.venue} is null) = (${t.city} is null)`),
+    check("events_point_both_or_neither", sql`(${t.lat} is null) = (${t.lng} is null)`),
+    check("events_point_needs_venue", sql`${t.lat} is null or ${t.venue} is not null`),
+    check("events_point_in_india", sql`${t.lat} is null or (${t.lat} between 6 and 37.5 and ${t.lng} between 68 and 97.5)`),
+    index().on(t.hostId, t.startsAt), // a host's events
+    index().on(t.status, t.startsAt), // discover lists
+  ],
+);
+
+// Every slug an event has had, the current one included: old links redirect to the current one (307) and are never
+// given to another event.
+export const eventSlugs = pgTable("event_slugs", {
+  slug: text("slug").primaryKey(),
+  eventId: uuid("event_id")
+    .notNull()
+    .references(() => events.id, { onDelete: "cascade" }),
+  createdAt: at("created_at").notNull().defaultNow(),
+});
+
+// A kind of ticket on an event ("General", "Early bird"). Price is whole paise, 0 for free.
+export const ticketTypes = pgTable(
+  "ticket_types",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    eventId: uuid("event_id")
+      .notNull()
+      .references(() => events.id, { onDelete: "cascade" }), // deleting a draft takes its tiers; one with money on it is held by the bookings FK
+    name: text("name").notNull(),
+    pricePaise: integer("price_paise").notNull().default(0),
+    quantity: integer("quantity"), // null: no limit
+    salesStartAt: at("sales_start_at"),
+    salesEndAt: at("sales_end_at"),
+    note: text("note"), // "One ticket covers four people"
+    perPersonLimit: integer("per_person_limit").notNull().default(10), // most one person can book in a go (Booking flow)
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: at("created_at").notNull().defaultNow(),
+    updatedAt: at("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    check("ticket_types_per_person_limit", sql`${t.perPersonLimit} between 1 and 10`),
+    check("ticket_types_price_not_negative", sql`${t.pricePaise} >= 0`),
+    check("ticket_types_quantity_positive", sql`${t.quantity} is null or ${t.quantity} > 0`),
+    check("ticket_types_sales_end_after_start", sql`${t.salesEndAt} is null or ${t.salesStartAt} is null or ${t.salesEndAt} > ${t.salesStartAt}`),
+    index().on(t.eventId),
   ],
 );
 
