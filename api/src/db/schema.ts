@@ -410,3 +410,22 @@ export const passkeys = pgTable(
   },
   (t) => [index().on(t.userId)],
 );
+
+// Prelaunch interest from Coming Soon (contract/src/prelaunch.ts): an email each, with what the visit said about
+// itself. Seen in Galaxy's Prelaunch by holders of People.
+export const interest = pgTable("interest", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  email: text("email").notNull().unique(), // lowercased
+  ip: text("ip"), // the API's own read of the visitor's address (http.ts, clientIp)
+  country: text("country"),
+  region: text("region"),
+  city: text("city"),
+  userAgent: text("user_agent"),
+  acceptLanguage: text("accept_language"),
+  referrer: text("referrer"),
+  utm: jsonb("utm").$type<Record<string, string>>(),
+  timezone: text("timezone"),
+  language: text("language"),
+  screen: text("screen"),
+  createdAt: at("created_at").notNull().defaultNow(),
+});

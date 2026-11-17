@@ -1,0 +1,12 @@
+/* The waitlist has more columns than a screen is wide: the table scrolls sideways inside its container, reaching to
+   the container's edges as ui.table does on its own. */
+.scroll {
+  overflow-x: auto;
+  margin-inline: calc(-1 * var(--space-container-horizontal));
+}
+
+.scroll > table {
+  width: 100%;
+  margin-inline: 0;
+  white-space: nowrap;
+}

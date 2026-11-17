@@ -113,7 +113,7 @@ export function Footer() {
             </ul>
           </div>
           <div className={f.baseRow}>
-            <p>© 2027 Unifesto Private Limited</p>
+            <p>© 2027 Orbit</p>
             <a href="mailto:support@heyorbit.in">support@heyorbit.in</a>
           </div>
         </div>

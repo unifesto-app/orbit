@@ -63,7 +63,7 @@ export function SpaceDots() {
     let cx = 0;
     let cy = 0;
 
-    // Sized to the page, centred on the orbit (the stage marked data-orbit).
+    // Sized to the page, centred on the middle (the block marked data-orbit).
     const measure = () => {
       const box = canvas.getBoundingClientRect();
       const dpr = Math.min(devicePixelRatio || 1, 2);

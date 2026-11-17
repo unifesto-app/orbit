@@ -19,6 +19,8 @@ export const sections: { title: string; items: NavItem[] }[] = [
     items: [
       { label: "People", href: "/users", also: ["/hosts", "/teams", "/staff"] },
       { label: "Events", href: "/events" },
+      // Coming Soon's waitlist until launch (owner, 17 Nov 2026: "create a page in galaxy web - prelaunch").
+      { label: "Prelaunch", href: "/prelaunch" },
     ],
   },
   {
