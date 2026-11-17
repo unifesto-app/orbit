@@ -282,7 +282,7 @@ export function authRoutes({ db, store, send, notify, secret, now = Date.now, co
   // `key` is the new file, removed again if the account never points at it.
   const setPhoto = async (c: Context<Env>, link: string | null, key?: string) => {
     const id = c.var.user.id;
-    const unused = async () => void (key && (await media!.files.remove(key).catch(() => {})));
+    const unused = async () => void (key && (await media!.files.remove(key).catch((e) => console.error(`[media] couldn't delete ${key}`, e))));
     const swapped = await db
       .transaction(async (tx) => {
         // Locked, so two changes at once each delete the one they replaced. Not a row the day-30 sweep has just

@@ -40,7 +40,17 @@ const MAX_PIXELS = 40_000_000;
 // A JPG, PNG or WebP that is square, saved again as a WebP no bigger than 1024 × 1024. Saving it again drops the
 // location and camera details a phone writes into it, and anything else that isn't the picture. The type comes from the
 // bytes, never from what the upload says. Never cropped: a photo that isn't square is refused.
-export async function squareImage(input: Uint8Array): Promise<{ bytes: Uint8Array } | { error: "notImage" | "notSquare" }> {
+// One at a time across the whole API, so decodes never stack up on the box (orbit-api's memory limit counts on it).
+// ponytail: one queue; a pool of two or three if uploads ever wait on each other.
+type Square = { bytes: Uint8Array } | { error: "notImage" | "notSquare" };
+let turn: Promise<unknown> = Promise.resolve();
+export function squareImage(input: Uint8Array): Promise<Square> {
+  const mine = turn.then(() => resave(input));
+  turn = mine.catch(() => {}); // a failed one never holds up the next
+  return mine;
+}
+
+async function resave(input: Uint8Array): Promise<Square> {
   // Loaded here, not at the top: a sharp that can't load on the server takes uploads down, not the whole API.
   const { default: sharp } = await import("sharp");
   try {
@@ -89,12 +99,13 @@ export function s3Files(bucket: string, region: string): Files {
 }
 
 // GET /media/<kind>/<owner id>/<name>.webp, for anyone. Cloudflare keeps each for a day, so a removed photo is gone from
-// its cache by the next day. Anything else is the same 404 as a missing file.
+// its cache by the next day. Anything else, a query string included, is the same 404 as a missing file.
 export function mediaRoutes(media: Media | undefined) {
   const app = new Hono();
   app.get("/media/:kind/:owner/:name", async (c) => {
     const { kind, owner, name } = c.req.param();
-    const ok = (kind === "users" || kind === "hosts") && isUuid(owner) && /^[\w-]{22}\.webp$/.test(name);
+    // No query string: Cloudflare would keep a copy per string, each first one a bucket read and a transfer from the box.
+    const ok = !new URL(c.req.url).search && (kind === "users" || kind === "hosts") && isUuid(owner) && /^[\w-]{22}\.webp$/.test(name);
     const file = ok && media ? await media.files.get(`${kind}/${owner}/${name}`) : null;
     if (!file) return fail(c, 404, "notFound", "There's nothing here.");
     return c.body(file.bytes as Uint8Array<ArrayBuffer>, 200, {

@@ -44,7 +44,10 @@ const send = (access: string | null, bytes: Uint8Array, type = "image/jpeg") => 
   return upload(access, form);
 };
 const photoOf = async (id: string) => (await t.db.select().from(users).where(eq(users.id, id)))[0]!.photo;
-const get = (link: string) => t.app.request(new URL(link).pathname);
+const get = (link: string) => {
+  const u = new URL(link);
+  return t.app.request(u.pathname + u.search);
+};
 
 test("upload: square JPEG with EXIF is stored as a clean 1024 WebP and served", async () => {
   const a = await join();
@@ -198,6 +201,14 @@ test("an upload or remove landing after the account was deleted changes nothing"
   assert.equal((await as(a.access)("DELETE", "/me/photo")).status, 401);
   assert.deepEqual(t.media.files.keys().filter((k) => k.includes(a.me.id)), [first.body.photo.slice("https://api.test/media/".length)]);
   assert.equal(await photoOf(a.me.id), first.body.photo);
+});
+
+// Each query string would be its own Cloudflare cache entry, so its own bucket read: refused like a missing file.
+test("a photo link with a query string is a 404", async () => {
+  const a = await join();
+  const r = await send(a.access, await img(300).jpeg().toBuffer());
+  assert.equal((await get(r.body.photo)).status, 200);
+  for (const q of ["?1", "?v=2", "?a=b&c=d"]) assert.equal((await get(r.body.photo + q)).status, 404, q);
 });
 
 test("without media: 503 notSetUp", async () => {
