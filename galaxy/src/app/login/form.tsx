@@ -30,6 +30,7 @@ export function LoginForm() {
     return (
       <form
         key="confirm"
+        method="post"
         className={styles.form}
         onSubmit={(e) =>
           run(e, async () => {
@@ -68,6 +69,7 @@ export function LoginForm() {
     return (
       <form
         key="code"
+        method="post"
         className={styles.form}
         onSubmit={(e) =>
           run(e, async (form) => {
@@ -121,10 +123,13 @@ export function LoginForm() {
       </form>
     );
 
-  // Each step's form has its own key, so no typed value carries into the next step's field.
+  // Each step's form has its own key, so no typed value carries into the next step's field. Every step's form says
+  // method="post": sent before the page is ready, a form falls back to the browser's own submit, and a GET would put the
+  // typed phone or email in the address, Caddy's access log and the browser's history.
   return (
     <form
       key="contact"
+      method="post"
       className={styles.form}
       onSubmit={(e) =>
         run(e, async (form) => {
