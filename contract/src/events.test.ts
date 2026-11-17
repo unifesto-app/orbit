@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { categories } from "./categories.ts";
-import { EditEvent, EditTicketType, EventCategory, EventSlug, NewEvent, NewTicketType, Place, TicketTypeFields } from "./events.ts";
+import { EditEvent, EditTicketType, EventCategory, EventRow, EventSlug, HostEvents, NewEvent, NewTicketType, Place, TeamEvent, TicketTypeFields } from "./events.ts";
 
 type S = { safeParse: (v: unknown) => { success: boolean } };
 const ok = (s: S, v: unknown) => assert.equal(s.safeParse(v).success, true, JSON.stringify(v));
@@ -140,4 +140,23 @@ test("NewTicketType needs only a name and a price", () => {
   bad(NewTicketType, { pricePaise: 0 });
   // An edit never fills in what it didn't mention.
   assert.deepEqual(EditTicketType.parse({ note: "Hi" }), { note: "Hi" });
+});
+
+const id = "3f2b8c1e-5a4d-4e6f-9a7b-1c2d3e4f5a6b";
+const iso = "2026-12-01T12:00:00.000Z";
+const eventRow = { id, slug: "night-k3f9ab", status: "draft", visibility: "public", title: "Night", category: null, startsAt: null, endsAt: null, timezone: "Asia/Kolkata", area: null, city: null, online: false };
+const teamEvent = {
+  ...eventRow, hostId: id, place: null, onlineLink: null, about: null, agenda: [], faq: [], terms: [],
+  publishedAt: null, cancelledAt: null, cancelReason: null, createdAt: iso, updatedAt: iso,
+};
+
+test("TeamEvent, EventRow and HostEvents are what the API answers", () => {
+  ok(TeamEvent, teamEvent);
+  ok(TeamEvent, { ...teamEvent, place: { ...place, placeId: null }, agenda: [{ at: iso, item: "Doors" }], startsAt: iso });
+  bad(TeamEvent, { ...teamEvent, status: "live" });
+  bad(TeamEvent, { ...teamEvent, title: undefined });
+  ok(EventRow, eventRow);
+  bad(EventRow, { ...eventRow, visibility: "secret" });
+  ok(HostEvents, { drafts: [eventRow], upcoming: [], past: [] });
+  bad(HostEvents, { drafts: [], upcoming: [] });
 });

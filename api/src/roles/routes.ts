@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto";
 import { and, count, desc, eq, gt, gte, ilike, inArray, isNotNull, isNull, lte, ne, notLike, or, sql } from "drizzle-orm";
 import { Hono, type Context } from "hono";
 import { GrantFeatures, InviteAdmin, Lift, readPhone, STAFF_FEATURES, type StaffFeature, StaffReason, StartHost, Suspend } from "@orbit/contract";
@@ -6,6 +5,7 @@ import type { Db } from "../db/index.ts";
 import { auditLog, hosts, hostSlugs, sessions, staffGrants, teamRoles, users } from "../db/schema.ts";
 import { contactOf, type Env, fail, invalid, isUuid, type Notify, listPage, parse, signedIn, taken } from "../http.ts";
 import { activeFeatures, adminsOf, changeable, holdersOf, masked, holdIfUnanswered, liftHostsOf, person, type StaffEnv, requireFeature, teamOf as teamOf_, tell } from "./access.ts";
+import { slugFor } from "../slugs.ts";
 import { acceptRule, addRule, confirmRule, confirmSeatRule, endRule, endSeatRule, expired, holds, INVITE_DAYS, suspendRule, waiting } from "./rules.ts";
 
 // Hosts and their teams, and Galaxy's staff and People tools (Orbit flows: Roles, Hosts and Galaxy).
@@ -17,13 +17,6 @@ const HOSTS_PER_DAY = 5;
 const DAY = 24 * 3600 * 1000;
 const IST = 5.5 * 3600 * 1000; // India is UTC+5:30, with no daylight saving
 const HEAVY_PAGES = 20; // 1,000 accounts: a day of honest support work rarely pages this far
-
-// "Punchline Collective" → "punchline-collective-k3f9". The ending drops at the first published event (Hosts flow).
-// ponytail: a name with no Latin letters (Hindi, Telugu) gets the base "host"; transliterating waits for a need.
-export const slugFor = (name: string) => {
-  const base = name.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 90);
-  return `${base || "host"}-${randomBytes(3).toString("hex")}`;
-};
 
 const ERRORS: Record<string, [403 | 404 | 409, string]> = {
   forbidden: [404, "There's nothing here."],
