@@ -49,18 +49,20 @@ export type Deps = { db: Db; store: Store; send: Sender; notify: Notify; secret:
 // must leave every copied Unifesto acceptance below it, so each migrated person accepts Orbit's terms at About you.
 const TERMS_VERSION = 1;
 
-// Code sends and checks are open to anyone, so their bodies are capped before they're read. Room for the largest proof
-// SendCode allows (a 20,000-character attestation and a 2,000-character assertion) and nothing like it more.
-const CODE_BODY_MAX = 32 * 1024;
+// Every /auth route but sign-out is open to anyone, so their bodies are capped before they're read. Room for the
+// largest proof SendCode and Google's start allow (a 20,000-character attestation and a 2,000-character assertion);
+// every other /auth body is far smaller.
+const AUTH_BODY_MAX = 32 * 1024;
 
 const TOO_LONG = "That took too long. Start signing in again.";
 const PHONE_TAKEN = "That number signs in to another Orbit account. Use a different number.";
 
 export function authRoutes({ db, store, send, notify, secret, now = Date.now, codes = OPEN, ways: waysConfig = defaultWays, media, proof }: Deps) {
   const app = new Hono<Env>();
+  // First, so it runs before every /auth route below.
+  app.use("/auth/*", bodyLimit({ maxSize: AUTH_BODY_MAX, onError: (c) => fail(c, 413, "tooLarge", "That's too much at once.") }));
   const w = ways(waysConfig, store);
   const proven = proof ? proofs(proof, store) : null;
-  const sized = bodyLimit({ maxSize: CODE_BODY_MAX, onError: (c) => fail(c, 413, "tooLarge", "That's too much at once.") });
   // A response when the proof doesn't hold (auth/proof.ts), or null.
   const unproven = async (c: Context, p: Proof | undefined, what: string) => {
     const r = proven && (await proven.check(p, what));
@@ -124,7 +126,7 @@ export function authRoutes({ db, store, send, notify, secret, now = Date.now, co
   };
 
   // POST /auth/code: the same answer whether or not an account exists.
-  app.post("/auth/code", sized, async (c) => {
+  app.post("/auth/code", async (c) => {
     const b = await parse(c, SendCode);
     if (!b) return invalid(c);
     const to = contactOf(c, b.to);
@@ -161,7 +163,7 @@ export function authRoutes({ db, store, send, notify, secret, now = Date.now, co
   });
 
   // POST /auth/code/verify: the code proves the phone or email, then the account decides the next step.
-  app.post("/auth/code/verify", sized, async (c) => {
+  app.post("/auth/code/verify", async (c) => {
     const b = await parse(c, VerifyCode);
     if (!b) return invalid(c);
     const to = contactOf(c, b.to);

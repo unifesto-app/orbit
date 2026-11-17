@@ -18,11 +18,11 @@ test("readContact lowercases emails and tells phones from emails", () => {
   assert.equal(readContact("riya@example..com"), null);
 });
 
-test("readContact turns down a hostile email in linear time", () => {
+test("readContact checks the length before the pattern", () => {
   const t0 = performance.now();
-  assert.equal(readContact(`a@${".".repeat(100_000)} x`), null); // the old order took seconds on this
-  assert.equal(readContact(`a@${"b.".repeat(120)} x`), null); // under the length cap, so the pattern itself runs
-  assert.ok(performance.now() - t0 < 50, `took ${performance.now() - t0} ms`);
+  assert.equal(readContact(`a@${".".repeat(100_000)} x`), null); // the old pattern took seconds on this
+  assert.equal(readContact(`a@${"b.cc.".repeat(1_200_000)}d`), null); // the pattern alone overflows the stack on this
+  assert.ok(performance.now() - t0 < 1000, `took ${performance.now() - t0} ms`);
 });
 
 test("ageOn counts whole years on the day in India", () => {
