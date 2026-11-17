@@ -14,6 +14,15 @@ test("readContact lowercases emails and tells phones from emails", () => {
   assert.deepEqual(readContact("98765 43210"), { kind: "phone", e164: "+919876543210" });
   assert.equal(readContact("riya@example"), null);
   assert.equal(readContact("+447700900123"), "abroad");
+  assert.deepEqual(readContact("first.last+tag@mail.example.co.in"), { kind: "email", email: "first.last+tag@mail.example.co.in" });
+  assert.equal(readContact("riya@example..com"), null);
+});
+
+test("readContact turns down a hostile email in linear time", () => {
+  const t0 = performance.now();
+  assert.equal(readContact(`a@${".".repeat(100_000)} x`), null); // the old order took seconds on this
+  assert.equal(readContact(`a@${"b.".repeat(120)} x`), null); // under the length cap, so the pattern itself runs
+  assert.ok(performance.now() - t0 < 50, `took ${performance.now() - t0} ms`);
 });
 
 test("ageOn counts whole years on the day in India", () => {
