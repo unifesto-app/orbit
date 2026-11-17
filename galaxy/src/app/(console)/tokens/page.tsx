@@ -67,7 +67,7 @@ export default function Tokens() {
     <div className={`${ui.page} ${styles.specimen}`}>
       <PageHeader
         title="Design tokens"
-        description="Galaxy's dark theme, read from the AWS console. Colour, type and space names match Cloudscape's."
+        description="Galaxy's dark and light themes, read from the AWS console. Colour, type and space names match Cloudscape's."
       />
 
       <Container title="Controls">

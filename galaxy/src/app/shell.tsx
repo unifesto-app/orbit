@@ -4,7 +4,6 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
-import { Duotone } from "./duotone";
 import { Icon } from "./icons";
 import { crumbFor, home, isActive, sections, tokens, type NavItem } from "./nav";
 import wordmark from "./orbit-wordmark.svg";
@@ -48,7 +47,8 @@ export function Shell({ children, account }: { children: ReactNode; account: Rea
         Skip to main content
       </a>
 
-      <header className={styles.top} inert={drawer}>
+      {/* Dark in both themes, as the AWS console's top bar is (globals.css). */}
+      <header className={styles.top} data-scheme="dark" inert={drawer}>
         <Link href="/" className={styles.logo}>
           <Image src={wordmark} alt="Orbit" priority />
           <span className={ui.script}>Galaxy</span>
@@ -60,6 +60,7 @@ export function Shell({ children, account }: { children: ReactNode; account: Rea
         <a className={`${styles.topLink} ${styles.site}`} href="https://heyorbit.in" target="_blank" rel="noreferrer">
           heyorbit.in <Icon name="external" />
         </a>
+        <ThemeSwitch className={`${styles.topLink} ${styles.headerTheme}`} />
         {account}
       </header>
 
@@ -94,6 +95,8 @@ export function Shell({ children, account }: { children: ReactNode; account: Rea
         <Suspense fallback={<NavLinks path={null} onNavigate={closeDrawer} />}>
           <ActiveNavLinks onNavigate={closeDrawer} />
         </Suspense>
+        {/* Phones: no room in the top bar, so the switch sits at the drawer's foot. */}
+        <ThemeSwitch className={`${styles.topLink} ${styles.navTheme}`} />
       </nav>
       <div className={styles.backdrop} onClick={closeDrawer} />
 
@@ -106,6 +109,27 @@ export function Shell({ children, account }: { children: ReactNode; account: Rea
         <span>© 2027 Unifesto Private Limited</span>
       </footer>
     </div>
+  );
+}
+
+// Light or dark, kept in this browser (layout.tsx applies it before paint). Text, as AWS's controls are. Both labels
+// render and CSS shows the one for the other theme, so the server's HTML never disagrees with the browser's.
+function ThemeSwitch({ className }: { className: string }) {
+  const flip = () => {
+    const root = document.documentElement;
+    const theme = root.dataset.theme === "light" ? "dark" : "light";
+    root.dataset.theme = theme;
+    try {
+      localStorage.setItem("theme", theme);
+    } catch {
+      // Private mode: the switch still works until the tab closes.
+    }
+  };
+  return (
+    <button type="button" className={className} onClick={flip}>
+      <span className={styles.toLight}>Light mode</span>
+      <span className={styles.toDark}>Dark mode</span>
+    </button>
   );
 }
 
@@ -122,11 +146,6 @@ function NavLinks({ path, onNavigate }: { path: string | null; onNavigate: () =>
         aria-current={path !== null && isActive(item, path) ? "page" : undefined}
         onClick={onNavigate}
       >
-        {item.icon && (
-          <span className={styles.navIcon} style={{ color: item.tone }}>
-            <Duotone name={item.icon} />
-          </span>
-        )}
         {item.label}
       </Link>
     </li>
