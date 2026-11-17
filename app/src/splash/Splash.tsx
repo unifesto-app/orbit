@@ -13,6 +13,7 @@ import { loadLocalRawResource } from 'react-native-svg/css';
 import { scheduleOnRN } from 'react-native-worklets';
 
 import { color } from '../theme';
+import { loadWordmark } from '../wordmark';
 import {
   BOX,
   EXIT_END,
@@ -231,7 +232,10 @@ export function Splash({ ready, onLeave, onDone }: { ready: boolean; onLeave: ()
     loadXml()
       .then(setXml)
       .catch(() => {}) // no art: the ground and timing still run, and it still leaves
-      .finally(start);
+      .finally(() => {
+        start();
+        loadWordmark().catch(() => {}); // after the splash's own reads, so Account and the switcher open with it drawn
+      });
     later(SVG_WAIT_MS, start);
     later(HOLD_MS, () => {
       s.held = true;

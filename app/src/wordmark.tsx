@@ -15,16 +15,29 @@ const LETTERS = [
 ];
 const MARK_BOX = '36 -682 5371 682'; // x, y, width, height in the letters' space
 
+// Read once per launch, not on every mount: the files are async reads (over the network from Metro in a dev build), so
+// reading per mount made the mark pop in each time Account or the switcher opened. Splash warms it at launch.
+let cached: string | null = null;
+let pending: Promise<string> | null = null;
+export function loadWordmark(): Promise<string> {
+  pending ??= Promise.all(LETTERS.map((f) => loadLocalRawResource(f))).then(
+    (files) => {
+      const paths = files.map((f) => f.match(/<path[^>]*\/>/)?.[0] ?? '').join('');
+      return (cached = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${MARK_BOX}">${paths}</svg>`);
+    },
+    (e) => {
+      pending = null; // not cached, so the next mount tries again
+      throw e;
+    },
+  );
+  return pending;
+}
+
 export function Wordmark({ width }: { width: number }) {
-  const [xml, setXml] = useState<string | null>(null);
+  const [xml, setXml] = useState(cached);
   useEffect(() => {
-    Promise.all(LETTERS.map((f) => loadLocalRawResource(f)))
-      .then((files) => {
-        const paths = files.map((f) => f.match(/<path[^>]*\/>/)?.[0] ?? '').join('');
-        setXml(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="${MARK_BOX}">${paths}</svg>`);
-      })
-      .catch(() => {}); // a file that fails to load leaves the space empty, as on the splash
-  }, []);
+    if (!xml) loadWordmark().then(setXml, () => {}); // a file that fails to load leaves the space empty, as on the splash
+  }, [xml]);
   const height = (width * 682) / 5371;
   return (
     <View style={{ width, height }} accessible accessibilityRole="image" accessibilityLabel="Orbit">
