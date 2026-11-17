@@ -2,9 +2,10 @@
 // No username, bio or links (decision 6 dropped them). The date of birth is shown, never edited: only support changes
 // it. Phone and email change with codes, on their own screen (src/app/account/contact.tsx). The photo is a circle, as on
 // Account (owner, 17 Nov 2026: "instead of squared profile use rounded one").
-// Save sends the name and gender that changed to the API (PATCH /me) and goes back with the account it answers.
-// ponytail: no photo uploads or city on the API yet, so Add photo says so and the city shows Not set. Each needs its API
-// part first (uploads; a city on the account), and the photo picker a native module and a rebuild.
+// Save sends the name and gender that changed to the API (PATCH /me) and goes back with the account it answers. The city
+// is picked and saved on its own sheet (src/app/account/city.tsx), like phone and email.
+// ponytail: no photo uploads on the API yet, so Add photo says so. It needs its API part first, and the photo picker a
+// native module and a rebuild.
 import type { Me as Account } from '@orbit/contract';
 import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
@@ -82,7 +83,11 @@ function Form({ me }: { me: Account }) {
           note={me.email ? maskEmail(me.email) : 'Not added'}
           right={<Pill label={me.email ? 'Change' : 'Add'} size="small" onPress={() => change('email')} />}
         />
-        <Row label="City for new events" value="Not set" />
+        <Row
+          label="City for new events"
+          note={me.city ?? 'Not set'}
+          right={<Pill label={me.city ? 'Change' : 'Add'} size="small" onPress={() => router.push('/account/city')} />}
+        />
       </Group>
 
       <Section title="Gender" />

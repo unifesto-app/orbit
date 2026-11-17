@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { allCities } from "./cities.ts";
 import { Roles } from "./roles.ts";
 
 // Sign-in, sign-up and profile (Orbit flows: User, settled 15 Nov 2026).
@@ -97,6 +98,7 @@ export const Me = z
     dob: z.string().nullable(),
     gender: z.string().nullable(),
     photo: z.string().nullable(),
+    city: z.string().nullable(), // for new events nearby; only the account sees it
     since: z.string(), // ISO time the account was made
     // Set while a deletion waits: the app shows "Keep my account" in front of Home until then.
     deletionDue: z.string().nullable(),
@@ -109,6 +111,11 @@ export const UpdateMe = z
   .object({
     name: z.string().trim().min(1).max(100),
     gender: z.string().trim().min(1).max(30).nullable(),
+    // A city's name from the pickers' list (names are unique across states), so no Google place name is ever kept.
+    city: z
+      .string()
+      .refine((name) => allCities.some((c) => c.name === name), "Not a city on Orbit's list")
+      .nullable(),
   })
   .partial();
 

@@ -9,12 +9,11 @@ import { categories, popularCities } from '@orbit/contract';
 import { type ReactNode, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { profile } from '../../account/data';
 import { Chips, Field, Group, Page, Pill, Row, styles as kit } from '../../account/kit';
 import { day } from '../../account/rules';
 import { sendRequest, useMyRequest } from '../../requests';
 import { Section } from '../../rows';
-import { needsAccount, useSignedIn } from '../../session';
+import { needsAccount, useSession, useSignedIn } from '../../session';
 import { space } from '../../theme';
 
 // The Hosts doc's kinds of host.
@@ -30,7 +29,10 @@ export default function EventRequest() {
   const [host, setHost] = useState('');
   const [about, setAbout] = useState('');
   const [kind, setKind] = useState<string | null>(null);
-  const [city, setCity] = useState<string | null>(profile.city);
+  // The account's city for new events starts it off, as a chip of its own when it isn't one of the six.
+  const mine = useSession()?.me.city ?? null;
+  const cities = mine && !CITIES.includes(mine) ? [mine, ...CITIES] : CITIES;
+  const [city, setCity] = useState<string | null>(mine);
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState<string | null>(null);
   const [when, setWhen] = useState('');
@@ -69,7 +71,7 @@ export default function EventRequest() {
           <Chips options={KINDS} value={kind} onChange={setKind} />
         </Pick>
         <Pick label="City">
-          <Chips options={CITIES} value={city} onChange={setCity} />
+          <Chips options={cities} value={city} onChange={setCity} />
         </Pick>
       </View>
 

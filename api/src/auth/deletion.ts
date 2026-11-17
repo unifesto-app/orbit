@@ -42,7 +42,7 @@ export async function blockersOf(db: Db | Tx, u: User, now: number): Promise<Blo
 // What the one screen lists (User flow): what goes, what is scrubbed, what stays.
 const WHAT = {
   deleted: ["Sign-in methods and passkeys", "Sessions", "Roles on hosts and staff access", "Hosts you follow", "Photo"],
-  scrubbed: ["Name", "Phone", "Email", "Date of birth", "Gender"],
+  scrubbed: ["Name", "Phone", "Email", "Date of birth", "Gender", "City"],
   kept: ["Bookings, payments, refunds and payouts, with your details scrubbed, kept 8 years as books of account"],
 };
 
@@ -162,6 +162,7 @@ export async function runDeletions(db: Db, notify: Notify, now: number, revokeAp
             dob: null,
             gender: null,
             photo: null,
+            city: null,
             suspensionReason: null,
             newDevicePhoneAt: null,
             platformOwner: false,

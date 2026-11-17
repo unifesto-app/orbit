@@ -421,6 +421,7 @@ export const profile = (u: User): Omit<Me, "teams" | "staff"> => ({
   dob: u.dob,
   gender: u.gender,
   photo: u.photo,
+  city: u.city,
   since: u.createdAt.toISOString(),
   deletionDue: u.deletionDueAt?.toISOString() ?? null,
 });
