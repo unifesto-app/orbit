@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BarGlass } from './glass';
 import { Glow } from './rows';
 import type { Mode } from './modes';
-import { color, font, space } from './theme';
+import { color, font, space, stoneAt } from './theme';
 
 // Tapping the tab you're already on opens the mode sheet, /switch (owner, 16 Nov 2026: "when home is clicked in tab nav
 // open a modal with Home Console Galaxy"). A repeat tap reaches JS as `tabPress`, sent before the tab is selected, so the
@@ -27,7 +27,7 @@ export const TAB_BAR = {
   iconColor: { default: color.secondary, selected: color.text },
   labelStyle: { default: { color: color.secondary }, selected: { color: color.text } },
   backgroundColor: color.ground,
-  indicatorColor: 'rgba(255, 255, 255, 0.14)',
+  indicatorColor: stoneAt(0.14),
   minimizeBehavior: 'onScrollDown',
 } as const;
 

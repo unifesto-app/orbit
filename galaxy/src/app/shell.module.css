@@ -118,21 +118,6 @@
   color: var(--color-text-interactive-hover);
 }
 
-/* The switch names the theme it goes to. */
-.toDark,
-:global(:root[data-theme="light"]) .toLight {
-  display: none;
-}
-
-:global(:root[data-theme="light"]) .toDark {
-  display: inline;
-}
-
-/* In the top bar on desktop, at the nav drawer's foot on phones (the media query below). */
-.navTheme {
-  display: none;
-}
-
 .account {
   display: flex;
   align-items: center;
@@ -351,14 +336,8 @@
   }
 
   .site,
-  .accountName,
-  .headerTheme {
+  .accountName {
     display: none;
-  }
-
-  .navTheme {
-    display: flex;
-    margin: var(--space-l) 0 0 var(--space-panel-nav-left);
   }
 
   .toolbar {

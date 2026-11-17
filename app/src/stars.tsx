@@ -8,6 +8,7 @@ import { StyleSheet, View } from 'react-native';
 import Animated, { type SharedValue, useAnimatedStyle } from 'react-native-reanimated';
 
 import { type Star, starLayerOpacity, starLayerTurn } from './switchMotion';
+import { stoneAt } from './theme';
 
 const DOT = 8; // whole pixels at every common screen scale (1.5x to 3.5x), so its edges snap together and it stays round
 
@@ -22,7 +23,7 @@ export function StarLayer({ layer, dots, open, flat }: { layer: number; dots: St
       {dots.map((s, i) => (
         <View
           key={i}
-          style={[styles.dot, { left: s.x - DOT / 2, top: s.y - DOT / 2, backgroundColor: `rgba(255, 255, 255, ${s.o})`, transform: [{ scale: (2 * s.r) / DOT }] }]}
+          style={[styles.dot, { left: s.x - DOT / 2, top: s.y - DOT / 2, backgroundColor: stoneAt(s.o), transform: [{ scale: (2 * s.r) / DOT }] }]}
         />
       ))}
     </Animated.View>

@@ -1,5 +1,6 @@
 packages:
   - contract
+  - tokens
   - api
   - web
   - app

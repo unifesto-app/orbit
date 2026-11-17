@@ -7,15 +7,15 @@
  * Cloudscape's minus the hash suffix, so they map 1:1 to
  * cloudscape.design/foundation/visual-foundation/design-tokens.
  *
- * Theme: `data-theme` on <html>, set before paint from this browser's choice
- * (layout.tsx) and flipped by the switch in the top bar (shell.tsx). As on the
- * AWS console, the top bar stays dark in light mode: `data-scheme="dark"`
- * re-applies the dark colours inside it.
+ * Dark only, on Orbit's brand tokens (@orbit/tokens, loaded in layout.tsx):
+ * the page is Charcoal (owner, 18 Nov 2026: "the bg should be always #121215
+ * only"), so the light theme and its switch are gone. Open: containers, the
+ * top bar and text still use AWS's warm neutral steps until the owner decides.
  *
- * Blue: #295eff (Orbit accent) on elements: fills, focus, selection, badge
- * tints. In dark, blue text (status info, Info links, active nav) uses lighter
- * tints of the same hue (300, 400): #295eff is ~3.8:1 there and reads as harsh.
- * In light, AWS sets #295eff itself as text (~4.8:1 on #f9f9f9).
+ * Sage (Orbit's accent, from the tokens) on elements: fills, focus, selection,
+ * badge tints. The primary scale is mixed from it: toward Stone for the light
+ * steps, toward Charcoal for the dark ones. Text in that colour (status info,
+ * Info links, active nav) uses the lighter 300 and 400, well over 4.5:1.
  *
  * Weights are AWS's: 500 for every heading and button, 600 for form labels,
  * tabs, column headers, the current nav link and top bar links, 400 for the
@@ -51,19 +51,19 @@
   --color-neutral-850: #201e1b;
   --color-neutral-900: #1b1a17;
   --color-neutral-950: #161512;
-  --color-neutral-1000: #100f0d;
+  --color-neutral-1000: var(--orbit-ground); /* Charcoal: every background */
 
-  --color-primary-50: #f5f7ff;
-  --color-primary-100: #dbe4ff;
-  --color-primary-200: #c2d1ff;
-  --color-primary-300: #94afff;
-  --color-primary-400: #7598ff;
-  --color-primary-500: #5c7fff;
-  --color-primary-600: #295eff; /* Orbit accent (owner, 15 Nov); also AWS's own primary */
-  --color-primary-700: #003efa;
-  --color-primary-800: #0033cc;
-  --color-primary-900: #001a99;
-  --color-primary-1000: #000833;
+  --color-primary-50: color-mix(in srgb, var(--orbit-accent) 10%, var(--orbit-stone));
+  --color-primary-100: color-mix(in srgb, var(--orbit-accent) 20%, var(--orbit-stone));
+  --color-primary-200: color-mix(in srgb, var(--orbit-accent) 35%, var(--orbit-stone));
+  --color-primary-300: color-mix(in srgb, var(--orbit-accent) 70%, var(--orbit-stone));
+  --color-primary-400: color-mix(in srgb, var(--orbit-accent) 88%, var(--orbit-stone));
+  --color-primary-500: color-mix(in srgb, var(--orbit-accent) 85%, var(--orbit-stone));
+  --color-primary-600: var(--orbit-accent); /* Sage, Orbit's accent */
+  --color-primary-700: color-mix(in srgb, var(--orbit-accent) 80%, var(--orbit-charcoal));
+  --color-primary-800: color-mix(in srgb, var(--orbit-accent) 60%, var(--orbit-charcoal));
+  --color-primary-900: color-mix(in srgb, var(--orbit-accent) 40%, var(--orbit-charcoal));
+  --color-primary-1000: color-mix(in srgb, var(--orbit-accent) 20%, var(--orbit-charcoal));
 
   --color-error-400: #ff7a7a;
   --color-error-600: #db0000;
@@ -164,10 +164,9 @@
   --motion-easing-expressive: cubic-bezier(0.84, 0, 0.16, 1);
 }
 
-/* ── Dark: the default, and the top bar in both themes ─── */
+/* ── Colours ───────────────────────────────────────────── */
 
-:root,
-[data-scheme="dark"] {
+:root {
   color-scheme: dark;
 
   /* Backgrounds */
@@ -203,19 +202,19 @@
   --color-background-modal-overlay: #000000b3;
 
   --color-background-status-indicator-error: #ff7a7a20;
-  --color-background-status-indicator-info: #295eff20;
+  --color-background-status-indicator-info: color-mix(in srgb, var(--orbit-accent) 12.5%, transparent);
   --color-background-status-indicator-success: #2bb53420;
   --color-background-status-indicator-warning: #fbd33220;
   --color-background-status-indicator-neutral: var(--color-neutral-800);
 
-  --color-background-badge-blue: #295eff33;
+  --color-background-badge-blue: color-mix(in srgb, var(--orbit-accent) 20%, transparent);
   --color-background-badge-green: #2bb53433;
   --color-background-badge-red: #ff3d3d33;
   --color-background-badge-yellow: #fbd33233;
   --color-background-badge-grey: var(--color-neutral-700);
 
   --color-background-alert-error: #460303;
-  --color-background-alert-info: #08144f;
+  --color-background-alert-info: var(--color-primary-1000);
   --color-background-alert-success: #03220d;
   --color-background-alert-warning: #372603;
 
@@ -304,140 +303,6 @@
   --shadow-modal: 0 4px 20px 1px rgb(0 0 0 / 1);
   --shadow-popover: 0 4px 20px 1px rgb(0 0 0 / 1);
   --shadow-panel: 0 0 0 1px #4b4b4b;
-}
-
-/* ── Light ───────────────────────────────────────────── */
-
-:root[data-theme="light"] {
-  color-scheme: light;
-
-  /* Backgrounds */
-  --color-background-layout-main: var(--color-neutral-100);
-  --color-background-layout-panel-content: var(--color-neutral-100);
-  --color-background-layout-toolbar: var(--color-neutral-100);
-  --color-background-top-navigation: #ffffff; /* the footer's; the top bar itself stays dark */
-  --color-background-container-content: #ffffff;
-  --color-background-container-header: #ffffff;
-  --color-background-table-header: #ffffff;
-  --color-background-cell-shaded: var(--color-neutral-200);
-  --color-background-item-selected: var(--color-primary-50);
-
-  --color-background-input-default: #ffffff;
-  --color-background-input-disabled: var(--color-neutral-250);
-  --color-background-control-default: #ffffff;
-  --color-background-control-disabled: var(--color-neutral-300);
-
-  --color-background-button-normal-default: var(--color-neutral-100);
-  --color-background-button-normal-hover: var(--color-neutral-150);
-  --color-background-button-normal-active: var(--color-neutral-200);
-  --color-background-button-normal-disabled: #ffffff;
-  --color-background-button-primary-default: var(--color-neutral-800);
-  --color-background-button-primary-hover: var(--color-neutral-700);
-  --color-background-button-primary-active: var(--color-neutral-800);
-  --color-background-button-primary-disabled: var(--color-neutral-250);
-  --color-background-button-link-hover: var(--color-neutral-150);
-
-  --color-background-dropdown-item-default: #ffffff;
-  --color-background-dropdown-item-hover: var(--color-neutral-200);
-  --color-background-dropdown-item-selected: var(--color-primary-50);
-
-  --color-background-status-indicator-error: #fff5f5;
-  --color-background-status-indicator-info: var(--color-primary-50);
-  --color-background-status-indicator-success: #effff1;
-  --color-background-status-indicator-warning: #fffde5;
-  --color-background-status-indicator-neutral: var(--color-neutral-200);
-
-  --color-background-badge-blue: var(--color-primary-100);
-  --color-background-badge-green: #d9ffd6;
-  --color-background-badge-red: #ffe0e0;
-  --color-background-badge-yellow: #fffbbd;
-  --color-background-badge-grey: var(--color-neutral-250);
-
-  --color-background-alert-error: #fceded;
-  --color-background-alert-info: #eaeffc;
-  --color-background-alert-success: #e9fce7;
-  --color-background-alert-warning: #fcfadb;
-
-  /* Text */
-  --color-text-body-default: var(--color-neutral-850);
-  --color-text-body-secondary: var(--color-neutral-600);
-  --color-text-heading-default: var(--color-neutral-950);
-  --color-text-heading-secondary: var(--color-neutral-650);
-  --color-text-label: var(--color-neutral-600);
-  --color-text-small: var(--color-neutral-600);
-  --color-text-disabled: var(--color-neutral-400);
-  --color-text-empty: var(--color-neutral-600);
-  --color-text-accent: var(--color-primary-600);
-
-  --color-text-form-default: var(--color-neutral-950);
-  --color-text-form-label: var(--color-neutral-850);
-  --color-text-form-secondary: var(--color-neutral-600);
-  --color-text-input-placeholder: var(--color-neutral-600);
-  --color-text-input-disabled: var(--color-neutral-400);
-  --color-text-column-header: var(--color-neutral-650);
-
-  --color-text-interactive-default: var(--color-neutral-650);
-  --color-text-interactive-hover: var(--color-neutral-950);
-  --color-text-interactive-active: var(--color-neutral-950);
-  --color-text-interactive-disabled: var(--color-neutral-400);
-
-  --color-text-link-default: var(--color-neutral-850);
-  --color-text-link-hover: var(--color-primary-600);
-  --color-text-link-decoration-default: var(--color-neutral-500);
-  --color-text-link-info-default: var(--color-primary-600);
-  --color-text-link-info-hover: var(--color-primary-800);
-
-  --color-text-button-normal-default: var(--color-neutral-700);
-  --color-text-button-normal-hover: var(--color-neutral-850);
-  --color-text-button-normal-disabled: var(--color-neutral-500);
-  --color-text-button-primary-default: var(--color-neutral-100);
-  --color-text-button-primary-disabled: var(--color-neutral-500);
-
-  --color-text-breadcrumb-current: var(--color-neutral-950);
-  --color-text-side-navigation-item-default: var(--color-neutral-850);
-  --color-text-side-navigation-item-active: var(--color-primary-600);
-  --color-text-dropdown-item-default: var(--color-neutral-950);
-  --color-text-dropdown-item-secondary: var(--color-neutral-600);
-
-  --color-text-status-error: var(--color-error-600);
-  --color-text-status-info: var(--color-primary-600);
-  --color-text-status-success: var(--color-success-600);
-  --color-text-status-warning: var(--color-warning-800);
-  --color-text-status-inactive: var(--color-neutral-600);
-
-  --color-text-badge-blue: var(--color-primary-600);
-  --color-text-badge-green: var(--color-success-600);
-  --color-text-badge-red: var(--color-error-700);
-  --color-text-badge-yellow: var(--color-warning-800);
-  --color-text-badge-grey: var(--color-neutral-850);
-
-  /* Borders */
-  --color-border-divider-default: var(--color-neutral-300);
-  --color-border-divider-secondary: var(--color-neutral-250);
-  --color-border-divider-active: var(--color-neutral-950);
-  --color-border-layout: var(--color-neutral-300);
-  --color-border-card: var(--color-neutral-300);
-  --color-border-input-default: var(--color-neutral-500);
-  --color-border-input-disabled: var(--color-neutral-250);
-  --color-border-control-default: var(--color-neutral-500);
-  --color-border-button-normal-default: var(--color-neutral-500);
-  --color-border-button-normal-hover: var(--color-neutral-600);
-  --color-border-button-normal-disabled: var(--color-neutral-400);
-  --color-border-button-primary-default: var(--color-neutral-800);
-  --color-border-button-primary-hover: var(--color-neutral-700);
-  --color-border-button-primary-disabled: var(--color-neutral-250);
-  --color-border-dropdown-container: var(--color-neutral-400);
-  --color-border-popover: var(--color-neutral-400);
-  --color-border-status-error: var(--color-error-600);
-  --color-border-status-success: var(--color-success-600);
-  --color-border-status-warning: var(--color-warning-800);
-
-  /* Shadows */
-  --shadow-container: 0 0 1px 1px #ebebeb, 0 1px 8px 2px rgb(0 0 0 / 0.12);
-  --shadow-dropdown: 0 4px 20px 1px rgb(0 0 0 / 0.1);
-  --shadow-modal: 0 4px 20px 1px rgb(0 0 0 / 0.1);
-  --shadow-popover: 0 4px 20px 1px rgb(0 0 0 / 0.1);
-  --shadow-panel: 0 0 0 1px #bebebe;
 }
 
 @media (prefers-reduced-motion: reduce) {

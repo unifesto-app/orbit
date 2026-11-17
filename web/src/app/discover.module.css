@@ -44,7 +44,7 @@
   flex: none;
   height: 24px;
   padding: 0 8px;
-  border-radius: 12px;
+  border-radius: var(--r-card);
   background: var(--raised);
   display: inline-flex;
   align-items: center;

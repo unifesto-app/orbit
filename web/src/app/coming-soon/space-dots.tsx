@@ -4,6 +4,7 @@
 // dots of a few sizes and brightnesses, the same every visit (a seeded random), gathering in six waves that each sweep
 // in round the orbit's centre along ellipses shaped like it. The app's dots then stop; here they drift on slowly the
 // same way round as the cards, each wave at its own pace, so the page keeps turning. Still when reduced motion is set.
+import { palette } from "@orbit/tokens";
 import { useEffect, useRef } from "react";
 import styles from "./page.module.css";
 
@@ -80,7 +81,7 @@ export function SpaceDots() {
 
     const draw = (t: number) => {
       ctx.clearRect(0, 0, w, h);
-      ctx.fillStyle = "#fff";
+      ctx.fillStyle = palette.stone;
       dots.forEach((layer, k) => {
         const at = OPEN_AT + k * STEP;
         const fade = still ? 1 : cubicOut(phase(t, at, FADE));

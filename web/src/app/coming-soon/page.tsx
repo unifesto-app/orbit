@@ -14,7 +14,7 @@ import { SpaceDots } from "./space-dots";
 
 export const metadata: Metadata = {
   title: "Coming soon · Orbit",
-  description: "Everything around you, even the small stuff.",
+  description: "There’s more to live beyond the usual.",
 };
 
 export default function ComingSoon() {
@@ -22,8 +22,8 @@ export default function ComingSoon() {
     <main className={styles.page}>
       <SpaceDots />
 
-      {/* Top left after a bar (owner: "on left top | Keep your people in orbit."; the line since 17 Nov 2026). */}
-      <p className={styles.tagline}>Everything around you, even the small stuff.</p>
+      {/* Top left after a bar (owner: "on left top | Keep your people in orbit."; the owner's line since 18 Nov 2026). */}
+      <p className={styles.tagline}>There’s more to live beyond the usual.</p>
 
       {/* The middle of the screen; the dots turn round it (data-orbit). */}
       <div className={styles.center} data-orbit>

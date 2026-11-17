@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { DM_Sans, Plus_Jakarta_Sans, Sacramento } from "next/font/google";
+import "@orbit/tokens/tokens.css";
 import "./globals.css";
 
 // Same type as the web app: Plus Jakarta Sans for headings, titles and
@@ -15,21 +16,12 @@ export const metadata: Metadata = {
   description: "Platform admin for Orbit by Unifesto",
 };
 
-// Dark unless this browser chose light (the switch in shell.tsx). Read here, before paint, so a light page never flashes
-// dark. Not a cookie: reading cookies() in the root layout would make every page wait (cacheComponents).
-const THEME = `try{if(localStorage.getItem("theme")==="light")document.documentElement.dataset.theme="light"}catch(e){}`;
-
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      data-theme="dark"
       className={`${display.variable} ${text.variable} ${script.variable}`}
-      suppressHydrationWarning
     >
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: THEME }} />
-      </head>
       <body>
         {children}
       </body>

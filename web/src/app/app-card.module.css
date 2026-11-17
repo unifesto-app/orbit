@@ -44,7 +44,7 @@
 /* White tile behind the code: dark-on-light scans most reliably. */
 .qr {
   padding: 8px;
-  border-radius: 12px;
+  border-radius: var(--r-card);
   background: #ffffff;
   display: flex;
 }
@@ -69,24 +69,25 @@
 
 /* Sits on the card's corner, clear of the QR tile. */
 .close {
+  background: var(--orbit-glass-background);
+  border: 1px solid var(--orbit-glass-border);
+  box-shadow: var(--orbit-glass-highlight);
+  color: var(--orbit-glass-label);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  backdrop-filter: blur(16px) saturate(160%);
   position: absolute;
   top: -10px;
   right: -10px;
   width: 32px;
   height: 32px;
-  border: 0;
-  border-radius: 16px;
-  background: var(--raised);
-  box-shadow: inset 0 0 0 1px var(--hairline);
-  color: var(--text-2);
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: color 150ms ease, background-color 150ms ease;
+  transition: border-color 150ms ease;
 }
 
 .close:hover {
-  color: var(--text);
-  background: #36363b;
+  border-color: rgb(var(--orbit-stone-rgb) / 0.4);
 }

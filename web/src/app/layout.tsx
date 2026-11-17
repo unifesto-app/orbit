@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { DM_Sans, Plus_Jakarta_Sans } from "next/font/google";
+import { palette } from "@orbit/tokens";
+import "@orbit/tokens/tokens.css";
 import "./globals.css";
 
 // Approved type: Plus Jakarta Sans for headlines, titles and buttons; DM Sans for text and prices.
@@ -12,7 +14,7 @@ export const metadata: Metadata = {
   description: "Events near you, from the hosts you keep going back to.",
 };
 
-export const viewport: Viewport = { themeColor: "#121215" };
+export const viewport: Viewport = { themeColor: palette.charcoal };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (

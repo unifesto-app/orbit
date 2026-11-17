@@ -23,7 +23,7 @@ const tint: Record<CategorySlug, string> = {
   workshops: "#099268",
   fests: "#e03131",
   sports: "#2f9e44",
-  film: "var(--accent)",
+  film: "#295eff", // the drawing is baked blue (the app's film.png), so not the Sage accent
   startups: "#7048e8",
   gaming: "#ae3ec9",
 };
