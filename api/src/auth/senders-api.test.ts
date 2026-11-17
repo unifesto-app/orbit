@@ -25,19 +25,23 @@ test("403 notOpen outside the gate", () =>
     assert.equal((await t.call("POST", "/auth/code", { to: "9000000001" })).status, 200);
   }));
 
-test("past the daily cap the send still goes, with one logged line", () =>
+test("at the daily cap WhatsApp codes stop with 503 paused, and email still goes", () =>
   withApp({ codes: { openTo: null, dailyCap: 1 } }, async (t) => {
     const logged: string[] = [];
     const orig = console.error;
     console.error = (m: string) => void logged.push(String(m));
     try {
       assert.equal((await t.call("POST", "/auth/code", { to: "9000000001" })).status, 200);
-      assert.equal((await t.call("POST", "/auth/code", { to: "9000000002" })).status, 200);
-      assert.equal((await t.call("POST", "/auth/code", { to: "9000000003" })).status, 200);
+      const r = await t.call("POST", "/auth/code", { to: "9000000002" });
+      assert.equal(r.status, 503);
+      assert.equal(r.body.error, "paused");
+      assert.match(r.body.message, /email/);
+      assert.equal((await t.call("POST", "/auth/code", { to: "riya@example.com" })).status, 200);
+      assert.equal((await t.call("POST", "/auth/code", { to: "asha@example.com" })).status, 200);
     } finally {
       console.error = orig;
     }
-    assert.equal(logged.length, 1);
+    assert.equal(logged.length, 2); // once per channel
   }));
 
 test("503 tryLater when throttled", () =>

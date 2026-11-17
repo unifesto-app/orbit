@@ -67,8 +67,31 @@ export const Device = z.object({
 });
 export type Device = z.infer<typeof Device>;
 
+// That the request comes from Orbit itself (User flow, Account security), on code sends and Google's start. The app
+// signs `<challenge>:<what>` (POST /auth/challenge, then proofOf): an iPhone with App Attest, its first time with the
+// key's attestation and after that with an assertion, an Android phone with a Play Integrity token whose request hash
+// is that text (so it holds no number or email: Google sees it). The web (Galaxy, code sends only) sends a Cloudflare
+// Turnstile token.
+export const Proof = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("ios"),
+    challenge: z.string().min(1).max(100),
+    keyId: z.string().min(1).max(100),
+    attestation: z.string().max(20_000).optional(),
+    assertion: z.string().max(2_000).optional(),
+  }),
+  z.object({ kind: z.literal("android"), challenge: z.string().min(1).max(100), token: z.string().min(1).max(20_000) }),
+  z.object({ kind: z.literal("web"), token: z.string().min(1).max(4_000) }),
+]);
+export type Proof = z.infer<typeof Proof>;
+// What the proof signs after the challenge.
+export const proofOf = { code: "code", google: "google" } as const;
+
 // POST /auth/code: sends a 6-digit code on WhatsApp or by email. Same answer whether or not an account exists.
-export const SendCode = z.object({ to: z.string().min(1).max(254) });
+// A proof that isn't one of these shapes counts as none, so it's refused or let through like a missing one.
+export const SendCode = z.object({ to: z.string().min(1).max(254), proof: Proof.optional().catch(undefined) });
+// POST /auth/google/start, with a body only from builds that prove themselves.
+export const GoogleStart = z.object({ proof: Proof.optional().catch(undefined) });
 export const CodeSent = z.object({ retryIn: z.number() });
 
 // POST /auth/code/verify. `signup` is the token from an earlier step, when this is the WhatsApp number step.
