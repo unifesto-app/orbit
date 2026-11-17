@@ -29,6 +29,7 @@ import { day, type Way } from '../account/rules';
 import { BROKEN, type Result } from '../api';
 import { Glass } from '../glass';
 import { Icon } from '../icons';
+import { requestCode } from '../proof';
 import { api, keepAccount, runPending, setAccount, signIn, thisDevice } from '../session';
 import { Choice, Frame, GoogleMark, Phone, styles as sheet, With } from '../sheet';
 import { ADULT, ageOn, type Contact, readContact, readDob, sentTo, toOf, typeDob } from '../signin';
@@ -142,7 +143,7 @@ export default function Login() {
   const send = (to: Contact, signup?: string) =>
     run(
       async () => {
-        const r = await api.call<{ retryIn: number }>('POST', '/auth/code', { to: toOf(to) });
+        const r = await requestCode(toOf(to));
         // A code went there under 30 seconds ago (Change number, then the same one again): it still works, so go to it.
         return !r.ok && r.error.error === 'tooSoon' ? { ok: true as const, data: { retryIn: r.error.retryIn ?? 30 } } : r;
       },
@@ -156,7 +157,7 @@ export default function Login() {
     working.current = true;
     setBusy(true);
     setError(null);
-    const r = await api.call<{ retryIn: number }>('POST', '/auth/code', { to: toOf(to) });
+    const r = await requestCode(toOf(to));
     working.current = false;
     setBusy(false);
     if (!r.ok) setError(r.error.message);

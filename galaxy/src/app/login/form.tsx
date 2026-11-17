@@ -1,14 +1,25 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { type FormEvent, useState, useTransition } from "react";
+import Script from "next/script";
+import { type FormEvent, useEffect, useRef, useState, useTransition } from "react";
 import { ui } from "../ui";
 import { confirmMe, type Outcome, sendCode, verifyCode } from "./actions";
 import styles from "./login.module.css";
 
 type Stage = { at: "contact" } | { at: "code"; to: string } | { at: "confirm"; to: string; ticket: string; name: string; since: number };
 
-export function LoginForm() {
+export function LoginForm({ turnstile }: { turnstile?: string }) {
+  const check = useTurnstile(turnstile);
+  return (
+    <>
+      <Steps take={check.take} />
+      {check.widget}
+    </>
+  );
+}
+
+function Steps({ take }: { take: () => Promise<string | undefined> }) {
   const next = useSearchParams().get("next") ?? "/";
   const [stage, setStage] = useState<Stage>({ at: "contact" });
   const [error, setError] = useState<string | null>(null);
@@ -105,7 +116,7 @@ export function LoginForm() {
             type="button"
             className={ui.btnLink}
             disabled={pending}
-            onClick={() => start(async () => setError((await sendCode(stage.to)).error ?? null))}
+            onClick={() => start(async () => setError((await sendCode(stage.to, await take())).error ?? null))}
           >
             Send a new code
           </button>
@@ -134,7 +145,7 @@ export function LoginForm() {
       onSubmit={(e) =>
         run(e, async (form) => {
           const to = field(form, "to");
-          const r = await sendCode(to);
+          const r = await sendCode(to, await take());
           if (!r.error) setStage({ at: "code", to });
           return r;
         })
@@ -162,4 +173,77 @@ function Alert({ error }: { error: string | null }) {
       {error}
     </p>
   ) : null;
+}
+
+declare global {
+  interface Window {
+    turnstile?: {
+      render(
+        el: HTMLElement,
+        options: { sitekey: string; appearance: "interaction-only"; callback(token: string): void; "expired-callback"(): void; "error-callback"(): void },
+      ): string;
+      reset(id: string): void;
+      remove(id: string): void;
+    };
+  }
+}
+
+// Cloudflare Turnstile (User flow, Account security): every code send carries one of its tokens and the API checks it,
+// so a script can't pump Orbit's WhatsApp through this page. It shows only when Cloudflare wants a click. A send waits
+// for the token (up to 30 seconds, the button busy meanwhile; at once without one if the widget errs or its script can't
+// load), and a token works once, so the widget starts on the next after one is used. Without a site key (a laptop)
+// there's no widget, and sends go without one.
+function useTurnstile(siteKey?: string) {
+  const box = useRef<HTMLDivElement>(null);
+  const id = useRef<string | null>(null);
+  const token = useRef<string | null>(null);
+  const waiting = useRef<((t?: string) => void) | null>(null);
+  const failed = useRef(false); // the script didn't load
+  useEffect(
+    () => () => {
+      if (id.current) window.turnstile?.remove(id.current);
+      id.current = null;
+    },
+    [],
+  );
+  const draw = () => {
+    if (!siteKey || !box.current || !window.turnstile || id.current) return;
+    id.current = window.turnstile.render(box.current, {
+      sitekey: siteKey,
+      appearance: "interaction-only",
+      callback: (t) => {
+        token.current = t;
+        waiting.current?.(t);
+      },
+      "expired-callback": () => (token.current = null),
+      "error-callback": () => waiting.current?.(), // send without one now; the API decides
+    });
+  };
+  const take = async () => {
+    if (!siteKey || failed.current) return undefined;
+    const t =
+      token.current ??
+      (await new Promise<string | undefined>((done) => {
+        waiting.current = done;
+        setTimeout(() => done(undefined), 30_000);
+      }));
+    waiting.current = null;
+    token.current = null;
+    if (t && id.current) window.turnstile?.reset(id.current);
+    return t;
+  };
+  const widget = siteKey ? (
+    <>
+      <div ref={box} />
+      <Script
+        src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
+        onReady={draw}
+        onError={() => {
+          failed.current = true;
+          waiting.current?.();
+        }}
+      />
+    </>
+  ) : null;
+  return { take, widget };
 }

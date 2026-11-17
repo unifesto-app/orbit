@@ -11,6 +11,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { Code, Field, Note, Page, Pill, SignInNote } from '../../account/kit';
 import { changeStart, day, type Security } from '../../account/rules';
 import { BROKEN, type Result } from '../../api';
+import { requestCode } from '../../proof';
 import { api, patchAccount, useSession } from '../../session';
 import { type Contact, readContact, readPhone, sentTo, toOf } from '../../signin';
 import { color, font, space } from '../../theme';
@@ -35,7 +36,7 @@ export default function ChangeContact() {
 
 // A code to `to`. One sent there under 30 seconds ago still works, so it goes on to it (as the sign-in sheet does).
 async function sendCode(to: Contact): Promise<Result<{ retryIn: number }>> {
-  const r = await api.call<{ retryIn: number }>('POST', '/auth/code', { to: toOf(to) });
+  const r = await requestCode(toOf(to));
   return !r.ok && r.error.error === 'tooSoon' ? { ok: true, data: { retryIn: r.error.retryIn ?? 30 } } : r;
 }
 

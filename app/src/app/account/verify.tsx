@@ -13,6 +13,7 @@ import { maskEmail, maskPhone } from '../../account/rules';
 import type { Result } from '../../api';
 import { Icon } from '../../icons';
 import { useLoad } from '../../load';
+import { requestCode } from '../../proof';
 import { api, useMe } from '../../session';
 import { Frame, GoogleMark, styles, With } from '../../sheet';
 import { type Contact, sentTo, toOf } from '../../signin';
@@ -72,7 +73,7 @@ export default function Verify() {
   const send = (to: Contact) =>
     run(
       async () => {
-        const r = await api.call<{ retryIn: number }>('POST', '/auth/code', { to: toOf(to) });
+        const r = await requestCode(toOf(to));
         return !r.ok && r.error.error === 'tooSoon' ? { ok: true as const, data: { retryIn: r.error.retryIn ?? 30 } } : r;
       },
       (r) => setStep({ at: 'code', to, wait: r.retryIn }),
@@ -80,7 +81,7 @@ export default function Verify() {
   const resend = async (to: Contact) => {
     if (working.current) return null;
     working.current = true;
-    const r = await api.call<{ retryIn: number }>('POST', '/auth/code', { to: toOf(to) });
+    const r = await requestCode(toOf(to));
     working.current = false;
     if (!r.ok) setError(r.error.message);
     return r.ok ? r.data.retryIn : (r.error.retryIn ?? null);

@@ -20,8 +20,10 @@ async function device() {
   return { id: (await cookies()).get(DEVICE)?.value, name, client: "web" as const };
 }
 
-export async function sendCode(to: string): Promise<Outcome> {
-  const r = await apiFetch<{ retryIn: number }>("POST", "/auth/code", { body: { to }, xff: await xff() });
+// `turnstile`: the page's Turnstile token, which the API checks (form.tsx).
+export async function sendCode(to: string, turnstile?: string): Promise<Outcome> {
+  const proof = turnstile ? { kind: "web", token: turnstile } : undefined;
+  const r = await apiFetch<{ retryIn: number }>("POST", "/auth/code", { body: { to, proof }, xff: await xff() });
   return r.ok ? { retryIn: r.data.retryIn } : { error: r.error.message, retryIn: r.error.retryIn };
 }
 
