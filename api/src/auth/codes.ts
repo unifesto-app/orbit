@@ -18,8 +18,8 @@ export const idOf = (c: Contact) => (c.kind === "phone" ? c.e164 : c.email);
 
 // Who may get a code, and when the team hears that too many are going out.
 // `openTo` is the opening gate (User flow): while it's set, only those numbers and emails get codes; everyone else
-// hears Orbit isn't open yet. Null opens Orbit to everyone, which waits for the Turnstile and App Attest checks on
-// sends: the WhatsApp number and the SES sender are the live Unifesto app's too, and every WhatsApp send is billed.
+// hears Orbit isn't open yet. Null opens Orbit to everyone; what stops a script then is the proof each send carries
+// (auth/proof.ts, checked by the route before this), once PROOF=enforce.
 // `dailyCap` is the platform-wide daily count per channel past which the team is alerted (User flow, Account
 // security); sends go on.
 // ponytail: the alert is a log line, once a day per channel, until the Notifications flow sends messages.

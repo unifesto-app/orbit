@@ -40,7 +40,9 @@ oyFraWVIyd/dganmrduC1bmTBGwD
 
 const MIN = 60 * 1000;
 const DAY = 24 * 60 * MIN;
-const KEY_LIFE = 400 * DAY; // an attested key unused this long is attested again
+// An attested key is kept this long, in Redis, which keeps no snapshot: after a restart each iPhone attests again on its
+// next proof (the app does it by itself). ponytail: a table if that ever costs Apple's rate limits.
+const KEY_LIFE = 400 * DAY;
 export const PER_KEY_DAY = 20; // proofs a day from one iPhone's key: a person signs in a few times, a script far more
 const sha = (b: Buffer | Uint8Array | string) => createHash("sha256").update(b).digest();
 // Where App Attest's credential certificate holds sha256(authData ‖ clientDataHash): [1] { OCTET STRING (32) }.

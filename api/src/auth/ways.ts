@@ -19,8 +19,8 @@ import type { Store } from "./store.ts";
 //   and a secret; the callback hands the app a short grant through the heyorbit:// link, which only that secret
 //   redeems, so another app that registers the same scheme and catches a link from Orbit's own sign-in gets nothing.
 //   ponytail: an app that starts the flow itself holds its own secret, and a person who picks their Google account in
-//   it signs that app in. Every native sign-in shares this; App Attest and Play Integrity on start close it (plan:
-//   needed before OPEN_TO=*), or a return through an https app link instead of the scheme.
+//   it signs that app in. Every native sign-in shares this; the App Attest and Play Integrity proof on start
+//   (auth/proof.ts) closes it once PROOF=enforce, or a return through an https app link instead of the scheme.
 // - Apple: the identity token from Apple's native sheet (iOS), checked against Apple's keys, made with a nonce from
 //   this API and spent once. With Apple's key set up, its authorization code becomes a refresh token, revoked when
 //   Apple is removed or the account deleted (Apple's rule for apps that offer deletion).

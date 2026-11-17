@@ -53,9 +53,10 @@ services:
     # hundred. The cap keeps an out-of-memory kill to the API alone, never Caddy, web or Galaxy on the 4 GB box.
     mem_limit: 1g
 
-  # Orbit's own Redis (Valkey): sign-in codes, rate limits and spent step tokens, every key with a TTL. Only the API
-  # reaches it, on Orbit's private network; api.env has REDIS_URL=redis://orbit-redis:6379. Nothing in it outlives a
-  # restart that matters (pending codes and counters), so it keeps no snapshot.
+  # Orbit's own Redis (Valkey): sign-in codes, rate limits, spent step tokens and attested iPhone keys, every key with a
+  # TTL. Only the API reaches it, on Orbit's private network; api.env has REDIS_URL=redis://orbit-redis:6379. Nothing in
+  # it outlives a restart that matters (pending codes and counters; phones attest their keys again), so it keeps no
+  # snapshot.
   orbit-redis:
     image: valkey/valkey:8.1-alpine
     container_name: orbit-redis
