@@ -12,7 +12,8 @@ set -euo pipefail
 SERVER="${SERVER:-ubuntu@i-0ed25dbc7842ed78e}"
 KEY="${KEY:-$HOME/.ssh/orbit-key}"
 REMOTE_DIR="${REMOTE_DIR:-/home/ubuntu/orbit}"
-SSH_OPTS=(-i "$KEY" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=30
+# Keepalives so a deploy waiting for another one's lock (silent for up to 15 minutes) keeps its session.
+SSH_OPTS=(-i "$KEY" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=30 -o ServerAliveInterval=30
   -o "ProxyCommand=aws ssm start-session --profile ${AWS_PROFILE:-orbit} --region ap-south-1 --target %h --document-name AWS-StartSSHSession --parameters portNumber=%p")
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -22,12 +23,13 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # Everything on the box runs in one SSH session that holds a lock (flock on ~/orbit/.deploy.lock), so two
 # deploys at once can't wipe each other's source mid-build or swap the other's Caddyfile. A second deploy waits
 # for the first, up to 15 minutes, then runs with its own copy. The lock is held by the deploy's process on the
-# box, so it ends when that does; nothing stale is left behind. The compose file and Caddyfile come from the source's
-# deploy/ folder.
+# box, so it ends when that does; the .deploy.lock file stays but holds nothing. The compose file and Caddyfile
+# come from the source's deploy/ folder.
 # Caddy mounts the Caddyfile as one file, which keeps the old copy after a replace, so a changed Caddyfile is
 # validated first and then picked up by restarting Caddy (a second's blip). Unchanged: no restart. The swap
 # happens only after the build, so a failed build leaves the running Caddy as it was.
-REMOTE=$(cat <<'REMOTE'
+# Read with `read`, not $(cat <<…): macOS's bash 3.2 mangles heredocs inside $( ).
+IFS= read -r -d '' REMOTE <<'REMOTE' || true
 set -euo pipefail
 cd "$1"
 exec 9>.deploy.lock
@@ -52,17 +54,24 @@ docker compose up -d --build
 if [ "$changed" = 1 ]; then mv Caddyfile.new Caddyfile; docker compose restart caddy; else rm Caddyfile.new; fi
 docker compose ps
 REMOTE
-)
 
-echo "==> deploying to $SERVER:$REMOTE_DIR"
+echo "==> packing the source"
 # macOS tar packs Finder xattrs and file flags the box's GNU tar can't read; leave them out.
 # The box builds api, web and galaxy only, so the app's generated native projects (hundreds of MB
 # with Pods) and local tooling stay behind too. `^` anchors a pattern at the root; without it bsdtar
 # would also drop, say, a web/src/app/docs route.
-# The tar is the session's input; the script goes as an argument, so the two don't mix.
+# Packed to a file first: a tar that fails stops here (the box can't see its exit code through a pipe, and would
+# build what arrived), and a deploy that waits for the lock sends the source as it was when it started.
+PACK="$(mktemp -t orbit-deploy)"
+trap 'rm -f "$PACK"' EXIT
 COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata --no-fflags -C "$ROOT" \
   --exclude=node_modules --exclude=.git --exclude='^./docs' --exclude='*.log' --exclude='.env*' \
   --exclude=.next --exclude=.expo --exclude=dist \
   --exclude='^./app/ios' --exclude='^./app/android' --exclude='^./.claude' --exclude=.DS_Store \
-  -czf - . \
-  | ssh "${SSH_OPTS[@]}" "$SERVER" "bash -c $(printf '%q' "$REMOTE") deploy $(printf '%q' "$REMOTE_DIR")"
+  -czf "$PACK" .
+
+echo "==> deploying to $SERVER:$REMOTE_DIR"
+# The source is the session's input; the script goes base64 in the command, so the two don't mix and whatever
+# login shell the box has passes it on untouched.
+SCRIPT="$(printf '%s' "$REMOTE" | base64 | tr -d '\n')"
+ssh "${SSH_OPTS[@]}" "$SERVER" "bash -c \"\$(echo $SCRIPT | base64 -d)\" deploy '$REMOTE_DIR'" < "$PACK"
