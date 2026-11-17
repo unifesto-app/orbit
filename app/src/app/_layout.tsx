@@ -84,6 +84,8 @@ export default function RootLayout() {
           {/* Your profile fades in over Account, whose panel has grown into the profile's top as you pulled (src/app/
               account/index.tsx), so the two read as one motion. The swipe back still slides. */}
           <Stack.Screen name="account/profile" options={{ animation: 'fade' }} />
+          {/* Edit profile's city for new events, the same city sheet as the location's. */}
+          <Stack.Screen name="account/city" options={MODAL} />
           {/* The app's three modes (owner, 16 Nov 2026): re-tapping a mode's first tab fades in the mode switcher, a whole
               screen of frosted glass over the app ("need animated screen instead of just switching in modal"), and Console
               (host management) and Galaxy (staff) fade in over Home, which stays under them; back from either is Home.
