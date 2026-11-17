@@ -17,6 +17,7 @@ import {
   type Me,
   PasskeySignIn,
   PHOTO_MAX_BYTES,
+  type Proof,
   proofOf,
   Refresh,
   SendCode,
@@ -55,8 +56,12 @@ export function authRoutes({ db, store, send, notify, secret, now = Date.now, co
   const app = new Hono<Env>();
   const w = ways(waysConfig, store);
   const proven = proof ? proofs(proof, store) : null;
-  const unproven = (c: Context) =>
-    fail(c, 403, "unproven", "We couldn't check this came from Orbit. Update the app, or reload the page, and try again.");
+  // A response when the proof doesn't hold (auth/proof.ts), or null.
+  const unproven = async (c: Context, p: Proof | undefined, what: string) => {
+    const r = proven && (await proven.check(p, what));
+    if (r === "tooMany") return fail(c, 429, "tooMany", "Too many tries from this phone today. Try again tomorrow, or sign in another way.");
+    return r && fail(c, 403, "unproven", "We couldn't check this came from Orbit. Update the app, or reload the page, and try again.");
+  };
   const me = async (u: User): Promise<Me> => ({ ...profile(u), ...(await rolesOf(db, u, now())) });
   const userById = async (id: string) => (await db.select().from(users).where(and(eq(users.id, id), isNull(users.deletedAt))))[0] ?? null;
   // A code just proved this account's phone or email. A host-added or migrated row may not have it marked yet.
@@ -120,7 +125,8 @@ export function authRoutes({ db, store, send, notify, secret, now = Date.now, co
     const to = contactOf(c, b.to);
     if (to instanceof Response) return to;
     // Before the limits, so a script can't use up someone's sends without the app.
-    if (proven && !(await proven.check(b.proof, proofOf.code(b.to)))) return unproven(c);
+    const refused = await unproven(c, b.proof, proofOf.code);
+    if (refused) return refused;
     const r = await sendCode(store, send, secret, to, clientIp(c), codes, now());
     if (r.ok) return c.json({ retryIn: RESEND_AFTER }); // also when the outcome is unsure: the code is kept, and they can ask again
     const byPhone = to.kind === "phone";
@@ -356,7 +362,8 @@ export function authRoutes({ db, store, send, notify, secret, now = Date.now, co
   app.post("/auth/google/start", async (c) => {
     if (await tooManyAsks(c, "google")) return slowDown(c);
     const b = (await parse(c, GoogleStart)) ?? {}; // builds from before proofs send no body
-    if (proven && !(await proven.check(b.proof, proofOf.google))) return unproven(c);
+    const refused = await unproven(c, b.proof?.kind === "web" ? undefined : b.proof, proofOf.google); // the app's only
+    if (refused) return refused;
     const started = await w.googleStart();
     return started ? c.json(started) : fail(c, 503, "notSetUp", "Google sign-in isn't set up yet. Use your phone number or email.");
   });

@@ -113,13 +113,23 @@ const revokeApple = ways(waysConfig, store).revokeApple;
 // - iPhones: App Attest, for the app's bundle id under the Apple team. Nothing to set up here.
 // - Android: Play Integrity. PLAY_INTEGRITY_KEY is the JSON key of a service account in the Google Cloud project
 //   linked to the app in Play Console; PLAY_CERTS lists signing-certificate digests (as the log shows them) that pass
-//   without a Play install, for test builds.
+//   without a Play install, for test builds: only keys Orbit alone holds (EAS's), never a debug keystore's, which
+//   anyone can sign with.
+// - APP_BUNDLE_ID: the iOS bundle id and Android package, in.heyorbit.app unless set.
 // - Web: Turnstile, with TURNSTILE_SECRET.
-const playKey = env.PLAY_INTEGRITY_KEY ? (JSON.parse(env.PLAY_INTEGRITY_KEY) as { client_email: string; private_key: string }) : null;
+const playKey = (() => {
+  if (!env.PLAY_INTEGRITY_KEY) return null;
+  try {
+    const k = JSON.parse(env.PLAY_INTEGRITY_KEY) as { client_email?: string; private_key?: string };
+    if (k.client_email && k.private_key) return { email: k.client_email, key: k.private_key };
+  } catch {}
+  throw new Error("PLAY_INTEGRITY_KEY must be a service account's JSON key, on one line");
+})();
+const bundleId = env.APP_BUNDLE_ID?.trim() || "in.heyorbit.app";
 const proof: ProofConfig = {
   enforce: env.PROOF?.trim() === "enforce",
-  apple: { appId: `${env.APPLE_TEAM_ID?.trim() || "9AH3Z5C5DH"}.${audiences[0]}` },
-  play: playKey ? { packageName: env.ANDROID_PACKAGE?.trim() || "in.heyorbit.app", email: playKey.client_email, key: playKey.private_key, certs: list(env.PLAY_CERTS) } : undefined,
+  apple: { appId: `${env.APPLE_TEAM_ID?.trim() || "9AH3Z5C5DH"}.${bundleId}` },
+  play: playKey ? { packageName: bundleId, ...playKey, certs: list(env.PLAY_CERTS) } : undefined,
   turnstile: env.TURNSTILE_SECRET ? { secret: env.TURNSTILE_SECRET } : undefined,
 };
 console.log(

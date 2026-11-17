@@ -105,10 +105,12 @@ async function setup(enforce = true, extra: Partial<ProofConfig> = {}) {
     fetch: services.f,
     ...extra,
   };
-  const p = proofs(cfg, memoryStore());
-  return { p, apple, services };
+  const raw = proofs(cfg, memoryStore());
+  // `check` as a yes or no; `raw` for why not.
+  const p = { challenge: raw.challenge, check: async (proof: Proof | undefined, what: string) => (await raw.check(proof, what)) === null };
+  return { p, raw, apple, services };
 }
-const what = proofOf.code("9000000001");
+const what = proofOf.code;
 const quiet = async <T>(run: () => Promise<T>) => {
   const orig = console.warn;
   const warned: string[] = [];
@@ -132,10 +134,13 @@ test("an iPhone attests its key once, then asserts; each challenge works once", 
 
   c = await p.challenge();
   assert.equal(await p.check({ kind: "ios", challenge: c, keyId: phone.keyId, assertion: phone.assert(`${c}:${what}`) }, what), true);
-  // Signed for one number, sent for another.
+  // Signed for Google's start, sent with a code.
   c = await p.challenge();
-  const other = { kind: "ios" as const, challenge: c, keyId: phone.keyId, assertion: phone.assert(`${c}:${what}`) };
-  assert.equal((await quiet(() => p.check(other, proofOf.code("9000000002")))).result, false);
+  const other = { kind: "ios" as const, challenge: c, keyId: phone.keyId, assertion: phone.assert(`${c}:${proofOf.google}`) };
+  assert.equal((await quiet(() => p.check(other, what))).result, false);
+  // Neither an attestation nor an assertion.
+  c = await p.challenge();
+  assert.equal((await quiet(() => p.check({ kind: "ios", challenge: c, keyId: phone.keyId }, what))).result, false);
 });
 
 test("a production key attests too", async () => {
@@ -173,8 +178,8 @@ test("an assertion from a key never attested here fails, so the app attests agai
   assert.match(warned[0]!, /unknownKey/);
 });
 
-test(`one iPhone key proves at most ${PER_KEY_DAY} requests a day`, async () => {
-  const { p, apple } = await setup();
+test(`one iPhone key proves at most ${PER_KEY_DAY} requests a day, then says tooMany`, async () => {
+  const { p, raw, apple } = await setup();
   const phone = await apple.phone();
   let c = await p.challenge();
   assert.equal(await p.check({ kind: "ios", challenge: c, keyId: phone.keyId, attestation: await phone.attest(`${c}:${what}`) }, what), true);
@@ -184,6 +189,8 @@ test(`one iPhone key proves at most ${PER_KEY_DAY} requests a day`, async () => 
     results.push((await quiet(() => p.check({ kind: "ios", challenge: c, keyId: phone.keyId, assertion: phone.assert(`${c}:${what}`) }, what))).result);
   }
   assert.deepEqual(results, [...Array(PER_KEY_DAY - 1).fill(true), false]);
+  c = await p.challenge();
+  assert.equal((await quiet(() => raw.check({ kind: "ios", challenge: c, keyId: phone.keyId, assertion: phone.assert(`${c}:${what}`) }, what))).result, "tooMany");
 });
 
 // ---------- Android ----------
@@ -219,12 +226,21 @@ test("the web passes with a good Turnstile token", async () => {
   assert.equal((await quiet(() => p.check({ kind: "web", token: "bad" }, what))).result, false);
 });
 
+test("not enforced, an iPhone key the server doesn't know is still refused, so the app attests again", async () => {
+  const { p, apple } = await setup(false);
+  const phone = await apple.phone();
+  const c = await p.challenge();
+  const { result, warned } = await quiet(() => p.check({ kind: "ios", challenge: c, keyId: phone.keyId, assertion: phone.assert(`${c}:${what}`) }, what));
+  assert.equal(result, false);
+  assert.ok(!warned[0]!.includes("let through"));
+});
+
 test("not enforced, a missing or failed proof is logged and let through", async () => {
   const { p } = await setup(false);
   const { result, warned } = await quiet(async () => [await p.check(undefined, what), await p.check({ kind: "web", token: "bad" }, what)]);
   assert.deepEqual(result, [true, true]);
   assert.equal(warned.length, 2);
-  assert.ok(warned.every((w) => w.includes("let through") && !w.includes("9000000001"))); // no number in the log
+  assert.ok(warned.every((w) => w.includes("let through")));
 });
 
 // ---------- the routes ----------
@@ -241,7 +257,7 @@ test("enforced, POST /auth/code needs a proof and uses up nothing without one", 
     assert.equal(t.sent.length, 0);
     const phone = await apple.phone();
     const { challenge } = (await t.call("POST", "/auth/challenge")).body;
-    const attestation = await phone.attest(`${challenge}:${proofOf.code("9000000001")}`);
+    const attestation = await phone.attest(`${challenge}:${proofOf.code}`);
     const r = await t.call("POST", "/auth/code", { to: "9000000001", proof: { kind: "ios", challenge, keyId: phone.keyId, attestation } });
     assert.equal(r.status, 200); // the 12 refused never counted toward the 10 a day
     assert.equal(t.sent.length, 1);
@@ -274,5 +290,30 @@ test("not enforced, a send without a proof still goes", async () => {
     assert.equal(t.sent.length, 1);
   } finally {
     await t.close();
+  }
+});
+
+test("Google's start takes no Turnstile token: only the app starts it", async () => {
+  const services = fakeServices();
+  const t = await testApp({ proof: { enforce: true, apple: { appId: APP }, turnstile: { secret: "s" }, fetch: services.f } });
+  try {
+    const web = { kind: "web", token: "good" };
+    assert.equal((await quiet(() => t.call("POST", "/auth/google/start", { proof: web }))).result.status, 403);
+    assert.equal((await t.call("POST", "/auth/code", { to: "9000000001", proof: web })).status, 200); // Galaxy's send
+  } finally {
+    await t.close();
+  }
+});
+
+test("a malformed proof counts as none: let through when not enforced, refused when enforced", async () => {
+  const bad = { kind: "ios", challenge: "c", keyId: "k", assertion: "x".repeat(5000) };
+  for (const enforce of [false, true]) {
+    const t = await testApp({ proof: { enforce, apple: { appId: APP } } });
+    try {
+      const r = (await quiet(() => t.call("POST", "/auth/code", { to: "9000000001", proof: bad }))).result;
+      assert.equal(r.status, enforce ? 403 : 200);
+    } finally {
+      await t.close();
+    }
   }
 });

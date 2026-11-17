@@ -10,6 +10,10 @@ import type { Store } from "./store.ts";
 // The app and Play sign `<challenge>:<what>` (contract: Proof). A challenge works once, so a proof can't be replayed;
 // that is also why an assertion's counter isn't kept.
 // `enforce` off: a missing or failed proof is logged and the request goes on, until the app that proves itself is out.
+// One exception: an assertion from an iPhone key this server doesn't know is refused anyway, since the app then attests
+// a new key and asks again, and the log shows what enforcing would.
+// ponytail: a Turnstile token isn't bound to the challenge or the number, so on the web a code send is as safe as
+// Turnstile itself; Google's start takes none (Galaxy never starts it).
 
 export type ProofConfig = {
   enforce: boolean;
@@ -157,12 +161,14 @@ export function proofs(cfg: ProofConfig, store: Store) {
       await store.set(`proof:challenge:${c}`, "1", 5 * MIN);
       return c;
     },
-    // Whether the request may go on. `what`: contract's proofOf.
-    async check(p: Proof | undefined, what: string) {
+    // Null when the request may go on, else why not: "tooMany" (this iPhone's key has proved enough today; the app
+    // doesn't attest again for it) or "unproven". `what`: contract's proofOf.
+    async check(p: Proof | undefined, what: string): Promise<null | "tooMany" | "unproven"> {
       const why = await failure(p, what).catch((e: Error) => `error: ${e.message}`);
-      if (!why) return true;
-      console.warn(`[proof] ${p?.kind ?? "no proof"}: ${why}${cfg.enforce ? "" : " (let through)"}`);
-      return !cfg.enforce;
+      if (!why) return null;
+      const refuse = cfg.enforce || why === "unknownKey";
+      console.warn(`[proof] ${p?.kind ?? "no proof"}: ${why}${refuse ? "" : " (let through)"}`);
+      return !refuse ? null : why === "tooMany" ? "tooMany" : "unproven";
     },
   };
 }

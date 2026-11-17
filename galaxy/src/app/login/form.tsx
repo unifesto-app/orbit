@@ -19,7 +19,7 @@ export function LoginForm({ turnstile }: { turnstile?: string }) {
   );
 }
 
-function Steps({ take }: { take: () => string | undefined }) {
+function Steps({ take }: { take: () => Promise<string | undefined> }) {
   const next = useSearchParams().get("next") ?? "/";
   const [stage, setStage] = useState<Stage>({ at: "contact" });
   const [error, setError] = useState<string | null>(null);
@@ -116,7 +116,7 @@ function Steps({ take }: { take: () => string | undefined }) {
             type="button"
             className={ui.btnLink}
             disabled={pending}
-            onClick={() => start(async () => setError((await sendCode(stage.to, take())).error ?? null))}
+            onClick={() => start(async () => setError((await sendCode(stage.to, await take())).error ?? null))}
           >
             Send a new code
           </button>
@@ -145,7 +145,7 @@ function Steps({ take }: { take: () => string | undefined }) {
       onSubmit={(e) =>
         run(e, async (form) => {
           const to = field(form, "to");
-          const r = await sendCode(to, take());
+          const r = await sendCode(to, await take());
           if (!r.error) setStage({ at: "code", to });
           return r;
         })
@@ -186,13 +186,14 @@ declare global {
 }
 
 // Cloudflare Turnstile (User flow, Account security): every code send carries one of its tokens and the API checks it,
-// so a script can't pump Orbit's WhatsApp through this page. It shows only when Cloudflare wants a click. A token works
-// once, so the widget starts on the next as soon as one is taken. Without a site key (a laptop) there's no widget, and
-// sends go without one.
+// so a script can't pump Orbit's WhatsApp through this page. It shows only when Cloudflare wants a click. A send waits
+// for the token (up to 30 seconds, the button busy meanwhile), and a token works once, so the widget starts on the next
+// after one is used. Without a site key (a laptop) there's no widget, and sends go without one.
 function useTurnstile(siteKey?: string) {
   const box = useRef<HTMLDivElement>(null);
   const id = useRef<string | null>(null);
   const token = useRef<string | null>(null);
+  const waiting = useRef<((t: string) => void) | null>(null);
   useEffect(
     () => () => {
       if (id.current) window.turnstile?.remove(id.current);
@@ -205,14 +206,24 @@ function useTurnstile(siteKey?: string) {
     id.current = window.turnstile.render(box.current, {
       sitekey: siteKey,
       appearance: "interaction-only",
-      callback: (t) => (token.current = t),
+      callback: (t) => {
+        token.current = t;
+        waiting.current?.(t);
+      },
       "expired-callback": () => (token.current = null),
     });
   };
-  const take = () => {
-    const t = token.current ?? undefined;
+  const take = async () => {
+    if (!siteKey) return undefined;
+    const t =
+      token.current ??
+      (await new Promise<string | undefined>((done) => {
+        waiting.current = done;
+        setTimeout(() => done(undefined), 30_000);
+      }));
+    waiting.current = null;
     token.current = null;
-    if (id.current) window.turnstile?.reset(id.current);
+    if (t && id.current) window.turnstile?.reset(id.current);
     return t;
   };
   const widget = siteKey ? (

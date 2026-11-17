@@ -5,7 +5,9 @@
 // sends no proof, and the API decides: it lets the request through until PROOF=enforce, then says to update the app.
 // - iPhone: the first proof attests a new key with Apple; later ones are assertions with it. Its id is kept in kv-store,
 //   which a reinstall clears along with the key itself.
-// - Android: the Google Cloud project linked to Play, EXPO_PUBLIC_PLAY_PROJECT_NUMBER, set when the app is built.
+// - Android: the Google Cloud project linked to Play, EXPO_PUBLIC_PLAY_PROJECT_NUMBER, set when the app is built
+//   (without it no proof goes, and the API refuses once enforcing). Play's token provider is made at launch, and made
+//   again if it has expired.
 import { proofOf, type Proof } from '@orbit/contract';
 import { requireOptionalNativeModule } from 'expo';
 import Storage from 'expo-sqlite/kv-store';
@@ -25,7 +27,13 @@ if (requireOptionalNativeModule('ExpoAppIntegrity')) {
 }
 const KEY = 'orbit.attestKey';
 const PROJECT = process.env.EXPO_PUBLIC_PLAY_PROJECT_NUMBER;
-let preparing: Promise<void> | null = null; // Play's token provider, made again after any failure (it can expire)
+let preparing: Promise<void> | null = null;
+const prepare = (m: NonNullable<typeof integrity>) =>
+  (preparing ??= m.prepareIntegrityTokenProviderAsync(PROJECT!).catch((e: unknown) => {
+    preparing = null;
+    throw e;
+  }));
+if (integrity && Platform.OS === 'android' && PROJECT) prepare(integrity).catch(() => {});
 
 async function prove(what: string, fresh: boolean): Promise<Proof | undefined> {
   const m = integrity;
@@ -36,8 +44,15 @@ async function prove(what: string, fresh: boolean): Promise<Proof | undefined> {
   const signed = `${challenge}:${what}`;
   try {
     if (Platform.OS === 'android') {
-      await (preparing ??= m.prepareIntegrityTokenProviderAsync(PROJECT!));
-      return { kind: 'android', challenge, token: await m.requestIntegrityCheckAsync(signed) };
+      const token = async () => {
+        await prepare(m);
+        return m.requestIntegrityCheckAsync(signed);
+      };
+      // A provider that has expired fails the first try: make a new one and try once more.
+      const first = await token().catch(() => null);
+      if (first) return { kind: 'android', challenge, token: first };
+      preparing = null;
+      return { kind: 'android', challenge, token: await token() };
     }
     const kept = fresh ? null : Storage.getItemSync(KEY);
     if (kept) {
@@ -52,12 +67,11 @@ async function prove(what: string, fresh: boolean): Promise<Proof | undefined> {
     Storage.setItemSync(KEY, keyId);
     return { kind: 'ios', challenge, keyId, attestation };
   } catch {
-    preparing = null;
     return undefined; // Apple or Google didn't answer: the API decides
   }
 }
 
-// POST `path` with `body` and a proof. An iPhone key the API doesn't know (its copy expired) is attested anew, once.
+// POST `path` with `body` and a proof. An iPhone key the API doesn't know (Redis forgot it) is attested anew, once.
 async function proved<T>(path: string, what: string, body: Record<string, unknown> = {}): Promise<Result<T>> {
   const proof = await prove(what, false);
   const r = await api.call<T>('POST', path, { ...body, proof });
@@ -65,6 +79,6 @@ async function proved<T>(path: string, what: string, body: Record<string, unknow
   return api.call<T>('POST', path, { ...body, proof: await prove(what, true) });
 }
 
-// A sign-in code to `to` (as typed: the API checks the proof against the same text).
-export const requestCode = (to: string) => proved<{ retryIn: number }>('/auth/code', proofOf.code(to), { to });
+// A sign-in code to `to`.
+export const requestCode = (to: string) => proved<{ retryIn: number }>('/auth/code', proofOf.code, { to });
 export const startGoogle = () => proved<{ url: string; verifier: string }>('/auth/google/start', proofOf.google);

@@ -68,9 +68,10 @@ export const Device = z.object({
 export type Device = z.infer<typeof Device>;
 
 // That the request comes from Orbit itself (User flow, Account security), on code sends and Google's start. The app
-// signs `<challenge>:<what>` (POST /auth/challenge, then `code:<to>` or `google`): an iPhone with App Attest, its first
-// time with the key's attestation and after that with an assertion, an Android phone with a Play Integrity token whose
-// request hash is that text. The web sends a Cloudflare Turnstile token.
+// signs `<challenge>:<what>` (POST /auth/challenge, then proofOf): an iPhone with App Attest, its first time with the
+// key's attestation and after that with an assertion, an Android phone with a Play Integrity token whose request hash
+// is that text (so it holds no number or email: Google sees it). The web (Galaxy, code sends only) sends a Cloudflare
+// Turnstile token.
 export const Proof = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("ios"),
@@ -84,12 +85,13 @@ export const Proof = z.discriminatedUnion("kind", [
 ]);
 export type Proof = z.infer<typeof Proof>;
 // What the proof signs after the challenge.
-export const proofOf = { code: (to: string) => `code:${to}`, google: "google" } as const;
+export const proofOf = { code: "code", google: "google" } as const;
 
 // POST /auth/code: sends a 6-digit code on WhatsApp or by email. Same answer whether or not an account exists.
-export const SendCode = z.object({ to: z.string().min(1).max(254), proof: Proof.optional() });
+// A proof that isn't one of these shapes counts as none, so it's refused or let through like a missing one.
+export const SendCode = z.object({ to: z.string().min(1).max(254), proof: Proof.optional().catch(undefined) });
 // POST /auth/google/start, with a body only from builds that prove themselves.
-export const GoogleStart = z.object({ proof: Proof.optional() });
+export const GoogleStart = z.object({ proof: Proof.optional().catch(undefined) });
 export const CodeSent = z.object({ retryIn: z.number() });
 
 // POST /auth/code/verify. `signup` is the token from an earlier step, when this is the WhatsApp number step.
