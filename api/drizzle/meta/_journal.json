@@ -71,6 +71,13 @@
       "when": 1794904164767,
       "tag": "0009_pm_board",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794915116057,
+      "tag": "0010_events",
+      "breakpoints": true
     }
   ]
 }

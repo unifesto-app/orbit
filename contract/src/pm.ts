@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { Text } from "./text.ts";
 
 // Orbit's PM board (owner, 17 Nov 2026): tracks of tasks and an activity log, used in Galaxy and by Claude Code over
 // MCP as "orbit-pm", with the same tools and argument names as Unifesto's board. One schema per tool, shared by the MCP
@@ -16,14 +17,6 @@ const keyOf = (max: number) => z.string().trim().min(1).max(max).regex(KEY, "Use
 const TrackKey = keyOf(16); // "S", "P", "Z"
 const TaskKey = keyOf(32); // "P13"
 const Order = z.number().int().min(-1_000_000).max(1_000_000);
-// Text Postgres can store: a NUL character would fail the write as a server error, with the text in the log.
-const Text = (min: number, max: number) =>
-  z
-    .string()
-    .trim()
-    .min(min)
-    .max(max)
-    .refine((s) => !s.includes("\u0000"), "Remove the NUL character");
 // A real day, in years a plan could mean (Postgres refuses year 0).
 const Day = z.iso.date().refine((d) => d >= "2000-01-01" && d <= "2100-12-31", "Pick a date between 2000 and 2100");
 
