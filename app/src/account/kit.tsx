@@ -176,6 +176,7 @@ export function Row({
   value,
   right,
   checked,
+  disabled = false,
   onPress,
 }: {
   icon?: IconName;
@@ -186,6 +187,7 @@ export function Row({
   value?: string;
   right?: ReactNode;
   checked?: boolean; // a row that ticks, as a list in the heart's modal: a checkbox to screen readers
+  disabled?: boolean; // faded and not pressable while a request is out, as the sign-in sheet's ways in
   onPress?: () => void;
 }) {
   const body = (
@@ -212,9 +214,10 @@ export function Row({
     <Pressable
       onPress={onPress}
       accessibilityRole={checked === undefined ? 'button' : 'checkbox'}
-      accessibilityState={checked === undefined ? undefined : { checked }}
+      disabled={disabled}
+      accessibilityState={checked === undefined ? { disabled } : { checked, disabled }}
       hitSlop={SLOP}
-      style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
+      style={({ pressed }) => [styles.row, pressed && styles.pressed, disabled && styles.disabled]}>
       {body}
     </Pressable>
   ) : (

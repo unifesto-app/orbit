@@ -1,40 +1,79 @@
 // What the sign-in sheet (src/app/login.tsx) and the confirm-it's-you sheet (src/app/account/verify.tsx) share: the
-// glass frame with its title and X, the WhatsApp number, two-answer questions, and the Continue with Google or Apple
-// pills. The 6-digit code is Account's (Code in src/account/kit.tsx).
-import { type ReactNode, useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+// glass frame with its wordmark, title and X, the WhatsApp number, two-answer questions, and the Continue with Google or
+// Apple pills (confirm-it's-you only now: sign-in's ways in are rows in a card). The 6-digit code is Account's (Code in
+// src/account/kit.tsx).
+import { type ComponentRef, type ReactNode, useEffect, useRef, useState } from 'react';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Easing, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 
 import { Field, Pill, styles as kit } from './account/kit';
 import { Glass } from './glass';
-import { CloseButton, GlassFill } from './rows';
+import { CloseButton, GlassFill, Glow } from './rows';
 import { readPhone } from './signin';
+import { StarLayer } from './stars';
+import { OPEN_END, starLayers } from './switchMotion';
 import { color, font, space } from './theme';
+import { Wordmark } from './wordmark';
 
 
-// The sheet: a gap at its top on iOS, full screen on Android clear of the status bar (as Sheet in rows.tsx), the title
-// with an optional grey line and the X, then the API's message when it said no.
+// The sheet, made as Galaxy's lock and Account's panel are (owner, 17 Nov 2026: "feels generic. bring app screens kind
+// ui"): the accent glowing from the top under the glass, the switch screen's dots gathering across it once as it opens
+// (still with Reduce Motion), and the ORBIT wordmark over the title, centred, the X pinned at the wordmark's right. A gap
+// at its top on iOS, full screen on Android clear of the status bar (as Sheet in rows.tsx), then the API's message when
+// it said no. It scrolls, so the keyboard never covers a field or the Continue under it on a small phone.
+const FLAT = 0.45; // the dots' orbits, height over width, as on Galaxy's lock
 export function Frame({ title, note, error, children }: { title: string; note?: string; error?: string | null; children: ReactNode }) {
   const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
+  const [stars] = useState(() => starLayers(width, height));
+  const reduced = useReducedMotion();
+  const open = useSharedValue(reduced ? OPEN_END : 0);
+  useEffect(() => {
+    if (!reduced) open.value = withTiming(OPEN_END, { duration: OPEN_END * 1000, easing: Easing.linear });
+  }, [open, reduced]);
+  // The API's message shows under the title: scrolled down to a button (keyboard up on a small phone), go back up to it.
+  const scroller = useRef<ComponentRef<typeof ScrollView>>(null);
+  useEffect(() => {
+    if (error) scroller.current?.scrollTo({ y: 0 });
+  }, [error]);
+  const top = Platform.OS === 'ios' ? space.big : insets.top + space.small;
   return (
-    <View style={[styles.screen, { paddingTop: Platform.OS === 'ios' ? space.big : insets.top + space.small, paddingBottom: insets.bottom + space.big }]}>
+    <View style={styles.screen}>
+      <Glow />
       <GlassFill />
-      <View style={styles.head}>
-        <View style={kit.grow}>
+      <View style={StyleSheet.absoluteFill} pointerEvents="none">
+        {stars.map((dots, k) => (
+          <StarLayer key={k} layer={k} dots={dots} open={open} flat={FLAT} />
+        ))}
+      </View>
+      {/* Before the page, so a screen reader reaches Close first; zIndex keeps it over the scroll. */}
+      <View style={[styles.close, { top: top + (MARK - CLOSE) / 2 }]}>
+        <CloseButton />
+      </View>
+      <ScrollView
+        ref={scroller}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets
+        contentContainerStyle={[styles.content, { paddingTop: top, paddingBottom: insets.bottom + space.big }]}>
+        <View style={styles.head}>
+          <View style={styles.mark}>
+            <Wordmark width={112} />
+          </View>
           <Text style={styles.title} accessibilityRole="header">
             {title}
           </Text>
           {note && <Text style={styles.note}>{note}</Text>}
         </View>
-        <CloseButton />
-      </View>
-      {error && (
-        <Text style={[styles.line, styles.block]} accessibilityLiveRegion="polite">
-          {error}
-        </Text>
-      )}
-      {children}
+        {error && (
+          <Text style={[styles.line, styles.block]} accessibilityLiveRegion="polite">
+            {error}
+          </Text>
+        )}
+        {children}
+      </ScrollView>
     </View>
   );
 }
@@ -122,17 +161,21 @@ export function Choice({
 }
 
 const WAY = 50; // as tall as the wide pills
+const MARK = 44; // the wordmark's row, as tall as a back bar's circle
+const CLOSE = 32; // the X's circle (closeGlass in rows.tsx)
 
 export const styles = StyleSheet.create({
-  screen: { flex: 1, gap: space.big },
-  head: { marginHorizontal: 20, flexDirection: 'row', alignItems: 'center', gap: space.small },
-  title: { fontFamily: font.headline, fontSize: 22, lineHeight: 28, color: color.text },
-  note: { marginTop: 2, fontFamily: font.medium, fontSize: 14, color: color.secondary },
+  screen: { flex: 1 },
+  content: { gap: space.big },
+  head: { marginHorizontal: 20, alignItems: 'center' },
+  mark: { height: MARK, justifyContent: 'center', marginBottom: space.small },
+  close: { position: 'absolute', right: 20, zIndex: 1 },
+  title: { fontFamily: font.headline, fontSize: 22, lineHeight: 28, color: color.text, textAlign: 'center' },
+  note: { marginTop: 2, fontFamily: font.medium, fontSize: 14, color: color.secondary, textAlign: 'center' },
   body: { gap: space.small + 4 },
   block: { marginHorizontal: 20, gap: 6 },
   line: { fontFamily: font.text, fontSize: 13, lineHeight: 18, color: color.secondary },
   link: { color: color.text, textDecorationLine: 'underline' },
-  or: { alignSelf: 'center', fontFamily: font.medium, fontSize: 13, color: color.secondary },
   pair: { marginHorizontal: 20, flexDirection: 'row', justifyContent: 'center', gap: space.small },
   way: { height: WAY, borderRadius: WAY / 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: space.small },
   wayText: { fontFamily: font.title, fontSize: 14, color: color.text },

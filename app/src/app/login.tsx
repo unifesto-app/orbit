@@ -3,7 +3,8 @@
 // it, or finishing, lands back there with the tapped thing done. Frosted glass like every modal, an X to close.
 // The steps, as the doc orders them:
 // - One field, Phone number or email, and Continue, which always sends a 6-digit code (WhatsApp or email). Then Continue
-//   with Google and Continue with Apple side by side (Apple on iOS only, as today), then Use a passkey.
+//   with Google and Continue with Apple (Apple on iOS only, as today), then Use a passkey: rows in one card under Other
+//   ways in, as Account's are (owner, 17 Nov 2026; they were pills, Google and Apple side by side).
 // - Not in by phone: add a WhatsApp number and its code (decision 2). A number already on an account signs in to it
 //   and asks to add the way they started with.
 // - A phone code for an account this phone hasn't signed in to shows the masked account first: "Is this you?", with
@@ -24,14 +25,13 @@ import { Linking, StyleSheet, Text, View } from 'react-native';
 
 import type { AuthStep, Me } from '@orbit/contract';
 
-import { Code, Field, Pill, RIM } from '../account/kit';
+import { Code, Field, Group, Pill, RIM, Row, TONE } from '../account/kit';
 import { day, type Way } from '../account/rules';
 import { BROKEN, type Result } from '../api';
 import { Glass } from '../glass';
-import { Icon } from '../icons';
 import { requestCode } from '../proof';
 import { api, keepAccount, runPending, setAccount, signIn, thisDevice } from '../session';
-import { Choice, Frame, GoogleMark, Phone, styles as sheet, With } from '../sheet';
+import { Choice, Frame, GoogleMark, Phone, styles as sheet } from '../sheet';
 import { ADULT, ageOn, type Contact, readContact, readDob, sentTo, toOf, typeDob } from '../signin';
 import { color, font } from '../theme';
 import { addPasskey, appleHere, appleProof, type Got, googleProof, passkeyAnswer, passkeysHere } from '../ways';
@@ -310,15 +310,14 @@ function Start({
       </View>
       <Pill label="Continue" size="wide" disabled={!contact || busy} onPress={go} />
 
-      <Text style={styles.or}>or</Text>
-      {/* Side by side at the same size (User doc). Short labels, so both fit a phone's width; each still says the
-          whole "Continue with" to a screen reader. */}
-      <View style={styles.pair}>
-        <With label="Google" onPress={onGoogle} mark={<GoogleMark />} disabled={busy} />
-        {appleHere && <With label="Apple" onPress={onApple} mark={<Icon name="apple" size={20} color={color.text} />} disabled={busy} />}
-      </View>
-      {/* Only where the phone can use passkeys (User doc); a build without the module shows it and says to update. */}
-      {passkeysHere() !== 'no' && <Pill label="Use a passkey" size="wide" disabled={busy} onPress={onPasskey} />}
+      {/* The other ways in, one card of rows like Account's (owner, 17 Nov 2026: "bring app screens kind ui"), each the
+          same size, in the User doc's order. Google keeps its four-colour G, Apple its mark. */}
+      <Group title="Other ways in">
+        <Row lead={<View style={styles.googleBox}><GoogleMark /></View>} label="Continue with Google" disabled={busy} onPress={onGoogle} />
+        {appleHere && <Row icon="apple" label="Continue with Apple" disabled={busy} onPress={onApple} />}
+        {/* Only where the phone can use passkeys (User doc); a build without the module shows it and says to update. */}
+        {passkeysHere() !== 'no' && <Row icon="key" tone={TONE.yellow} label="Use a passkey" disabled={busy} onPress={onPasskey} />}
+      </Group>
     </View>
   );
 }
@@ -390,5 +389,7 @@ const styles = {
   accountRim: { marginHorizontal: 20, padding: 1, borderRadius: RIM },
   accountFace: { borderRadius: RIM - 1, backgroundColor: color.card, padding: 16, gap: 2, alignItems: 'center' },
   accountName: { fontFamily: font.headline, fontSize: 20, lineHeight: 26, color: color.text },
+  // Google's G, 18 wide, in a row icon's 22 box and its gap to the label, so every label starts in one line.
+  googleBox: { width: 22, marginRight: 4, alignItems: 'center' },
   }),
 };
