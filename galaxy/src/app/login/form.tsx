@@ -178,7 +178,10 @@ function Alert({ error }: { error: string | null }) {
 declare global {
   interface Window {
     turnstile?: {
-      render(el: HTMLElement, options: { sitekey: string; appearance: "interaction-only"; callback(token: string): void; "expired-callback"(): void }): string;
+      render(
+        el: HTMLElement,
+        options: { sitekey: string; appearance: "interaction-only"; callback(token: string): void; "expired-callback"(): void; "error-callback"(): void },
+      ): string;
       reset(id: string): void;
       remove(id: string): void;
     };
@@ -187,13 +190,15 @@ declare global {
 
 // Cloudflare Turnstile (User flow, Account security): every code send carries one of its tokens and the API checks it,
 // so a script can't pump Orbit's WhatsApp through this page. It shows only when Cloudflare wants a click. A send waits
-// for the token (up to 30 seconds, the button busy meanwhile), and a token works once, so the widget starts on the next
-// after one is used. Without a site key (a laptop) there's no widget, and sends go without one.
+// for the token (up to 30 seconds, the button busy meanwhile; at once without one if the widget errs or its script can't
+// load), and a token works once, so the widget starts on the next after one is used. Without a site key (a laptop)
+// there's no widget, and sends go without one.
 function useTurnstile(siteKey?: string) {
   const box = useRef<HTMLDivElement>(null);
   const id = useRef<string | null>(null);
   const token = useRef<string | null>(null);
-  const waiting = useRef<((t: string) => void) | null>(null);
+  const waiting = useRef<((t?: string) => void) | null>(null);
+  const failed = useRef(false); // the script didn't load
   useEffect(
     () => () => {
       if (id.current) window.turnstile?.remove(id.current);
@@ -211,10 +216,11 @@ function useTurnstile(siteKey?: string) {
         waiting.current?.(t);
       },
       "expired-callback": () => (token.current = null),
+      "error-callback": () => waiting.current?.(), // send without one now; the API decides
     });
   };
   const take = async () => {
-    if (!siteKey) return undefined;
+    if (!siteKey || failed.current) return undefined;
     const t =
       token.current ??
       (await new Promise<string | undefined>((done) => {
@@ -229,7 +235,14 @@ function useTurnstile(siteKey?: string) {
   const widget = siteKey ? (
     <>
       <div ref={box} />
-      <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" onReady={draw} />
+      <Script
+        src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
+        onReady={draw}
+        onError={() => {
+          failed.current = true;
+          waiting.current?.();
+        }}
+      />
     </>
   ) : null;
   return { take, widget };
