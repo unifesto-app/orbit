@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Image from "next/image";
+import { connection } from "next/server";
 import { Suspense } from "react";
 import wordmark from "../orbit-wordmark.svg";
 import { LoginForm } from "./form";
@@ -19,9 +20,15 @@ export default function Login() {
         </div>
         {/* The form reads ?next=, a request value, so it waits behind the boundary. */}
         <Suspense fallback={null}>
-          <LoginForm />
+          <Form />
         </Suspense>
       </div>
     </main>
   );
+}
+
+// TURNSTILE_SITE_KEY (galaxy.env) is read when the page is asked for, so one build serves any key.
+async function Form() {
+  await connection();
+  return <LoginForm turnstile={process.env.TURNSTILE_SITE_KEY} />;
 }

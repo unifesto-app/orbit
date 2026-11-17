@@ -1,14 +1,25 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { type FormEvent, useState, useTransition } from "react";
+import Script from "next/script";
+import { type FormEvent, useEffect, useRef, useState, useTransition } from "react";
 import { ui } from "../ui";
 import { confirmMe, type Outcome, sendCode, verifyCode } from "./actions";
 import styles from "./login.module.css";
 
 type Stage = { at: "contact" } | { at: "code"; to: string } | { at: "confirm"; to: string; ticket: string; name: string; since: number };
 
-export function LoginForm() {
+export function LoginForm({ turnstile }: { turnstile?: string }) {
+  const check = useTurnstile(turnstile);
+  return (
+    <>
+      <Steps take={check.take} />
+      {check.widget}
+    </>
+  );
+}
+
+function Steps({ take }: { take: () => string | undefined }) {
   const next = useSearchParams().get("next") ?? "/";
   const [stage, setStage] = useState<Stage>({ at: "contact" });
   const [error, setError] = useState<string | null>(null);
@@ -105,7 +116,7 @@ export function LoginForm() {
             type="button"
             className={ui.btnLink}
             disabled={pending}
-            onClick={() => start(async () => setError((await sendCode(stage.to)).error ?? null))}
+            onClick={() => start(async () => setError((await sendCode(stage.to, take())).error ?? null))}
           >
             Send a new code
           </button>
@@ -134,7 +145,7 @@ export function LoginForm() {
       onSubmit={(e) =>
         run(e, async (form) => {
           const to = field(form, "to");
-          const r = await sendCode(to);
+          const r = await sendCode(to, take());
           if (!r.error) setStage({ at: "code", to });
           return r;
         })
@@ -162,4 +173,53 @@ function Alert({ error }: { error: string | null }) {
       {error}
     </p>
   ) : null;
+}
+
+declare global {
+  interface Window {
+    turnstile?: {
+      render(el: HTMLElement, options: { sitekey: string; appearance: "interaction-only"; callback(token: string): void; "expired-callback"(): void }): string;
+      reset(id: string): void;
+      remove(id: string): void;
+    };
+  }
+}
+
+// Cloudflare Turnstile (User flow, Account security): every code send carries one of its tokens and the API checks it,
+// so a script can't pump Orbit's WhatsApp through this page. It shows only when Cloudflare wants a click. A token works
+// once, so the widget starts on the next as soon as one is taken. Without a site key (a laptop) there's no widget, and
+// sends go without one.
+function useTurnstile(siteKey?: string) {
+  const box = useRef<HTMLDivElement>(null);
+  const id = useRef<string | null>(null);
+  const token = useRef<string | null>(null);
+  useEffect(
+    () => () => {
+      if (id.current) window.turnstile?.remove(id.current);
+      id.current = null;
+    },
+    [],
+  );
+  const draw = () => {
+    if (!siteKey || !box.current || !window.turnstile || id.current) return;
+    id.current = window.turnstile.render(box.current, {
+      sitekey: siteKey,
+      appearance: "interaction-only",
+      callback: (t) => (token.current = t),
+      "expired-callback": () => (token.current = null),
+    });
+  };
+  const take = () => {
+    const t = token.current ?? undefined;
+    token.current = null;
+    if (id.current) window.turnstile?.reset(id.current);
+    return t;
+  };
+  const widget = siteKey ? (
+    <>
+      <div ref={box} />
+      <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" onReady={draw} />
+    </>
+  ) : null;
+  return { take, widget };
 }
