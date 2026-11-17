@@ -17,10 +17,12 @@ export function readPhone(text: string): string | "abroad" | null {
 
 export type Contact = { kind: "phone"; e164: string } | { kind: "email"; email: string };
 
-// One field takes a phone or an email. The email is lowercased: that is its identity.
+// One field takes a phone or an email. The email is lowercased: that is its identity. The length is checked first, and
+// no domain label may hold a dot, so the pattern can't backtrack: a hostile line is turned down in linear time.
+const EMAIL = /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)*\.[^\s@.]{2,}$/;
 export function readContact(text: string): Contact | "abroad" | null {
   const t = text.trim();
-  if (t.includes("@")) return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(t) && t.length <= 254 ? { kind: "email", email: t.toLowerCase() } : null;
+  if (t.includes("@")) return t.length <= 254 && EMAIL.test(t) ? { kind: "email", email: t.toLowerCase() } : null;
   const phone = readPhone(t);
   return phone === "abroad" || phone === null ? phone : { kind: "phone", e164: phone };
 }

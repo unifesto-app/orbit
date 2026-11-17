@@ -49,11 +49,18 @@ export type Deps = { db: Db; store: Store; send: Sender; notify: Notify; secret:
 // must leave every copied Unifesto acceptance below it, so each migrated person accepts Orbit's terms at About you.
 const TERMS_VERSION = 1;
 
+// Every /auth route but sign-out is open to anyone, so their bodies are capped before they're read. Room for the
+// largest proof SendCode and Google's start allow (a 20,000-character attestation and a 2,000-character assertion);
+// every other /auth body is far smaller.
+const AUTH_BODY_MAX = 32 * 1024;
+
 const TOO_LONG = "That took too long. Start signing in again.";
 const PHONE_TAKEN = "That number signs in to another Orbit account. Use a different number.";
 
 export function authRoutes({ db, store, send, notify, secret, now = Date.now, codes = OPEN, ways: waysConfig = defaultWays, media, proof }: Deps) {
   const app = new Hono<Env>();
+  // First, so it runs before every /auth route below.
+  app.use("/auth/*", bodyLimit({ maxSize: AUTH_BODY_MAX, onError: (c) => fail(c, 413, "tooLarge", "That's too much at once.") }));
   const w = ways(waysConfig, store);
   const proven = proof ? proofs(proof, store) : null;
   // A response when the proof doesn't hold (auth/proof.ts), or null.

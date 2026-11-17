@@ -461,3 +461,13 @@ test("PATCH /me keeps a city from the list, refuses any other, and null clears i
   assert.equal(cleared.body.city, null);
   assert.equal((await t.call("GET", "/me", undefined, a.access)).body.city, null);
 });
+
+test("a long email is refused, and an oversized body on any /auth route before it's read", async () => {
+  const hostile = (n: number) => ({ to: `a@${".".repeat(n)} x` });
+  assert.equal((await t.call("POST", "/auth/code", hostile(20_000))).status, 400);
+  for (const path of ["/auth/code", "/auth/code/verify", "/auth/signup", "/auth/passkey", "/auth/refresh"])
+    assert.equal((await t.call("POST", path, hostile(1_000_000))).status, 413, path);
+  // The largest proof SendCode allows still fits under the cap.
+  const proof = { kind: "ios", challenge: "c".repeat(100), keyId: "k".repeat(100), attestation: "a".repeat(20_000), assertion: "a".repeat(2_000) };
+  assert.equal((await t.call("POST", "/auth/code", { to: email(), proof })).status, 200);
+});
