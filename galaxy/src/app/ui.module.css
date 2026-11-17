@@ -264,7 +264,7 @@
 
 .pairs dt {
   color: var(--color-text-form-label);
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--font-weight-display-label);
 }
 
 .pairs dd {
@@ -327,12 +327,4 @@ a.tab:hover {
 .tab[aria-disabled="true"] {
   color: var(--color-text-interactive-disabled);
   cursor: default;
-}
-
-.tab[aria-disabled="true"] .tabIcon {
-  opacity: 0.5;
-}
-
-.tabIcon {
-  display: inline-flex;
 }

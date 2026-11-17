@@ -4,11 +4,9 @@
 // Broadcasts are Later and traffic/OTA screens are dropped, so they're absent.
 // Pages that aren't built yet land on not-found.tsx.
 
-import type { DuotoneName } from "./duotone";
-
-// `icon` and `tone`: a duotone icon in its own colour, from the app's Account palette (app/src/account/kit.tsx, TONE).
+// Text only, as the AWS console's side nav is (owner, 17 Nov 2026: "dont use icons always. same like aws").
 // `also`: more paths that count as this item, for the current link and the breadcrumb.
-export type NavItem = { label: string; href: string; also?: string[]; icon?: DuotoneName; tone?: string };
+export type NavItem = { label: string; href: string; also?: string[] };
 
 export const home: NavItem = { label: "Dashboard", href: "/" };
 export const tokens: NavItem = { label: "Design tokens", href: "/tokens" };
@@ -19,8 +17,8 @@ export const sections: { title: string; items: NavItem[] }[] = [
     // Every kind of person on one People screen, a tab each (owner, 17 Nov 2026: "One People screen"; the tabs are in
     // (console)/people.tsx), then their events.
     items: [
-      { label: "People", href: "/users", also: ["/hosts", "/teams", "/staff"], icon: "people", tone: "#295EFF" },
-      { label: "Events", href: "/events", icon: "events", tone: "#FCC419" },
+      { label: "People", href: "/users", also: ["/hosts", "/teams", "/staff"] },
+      { label: "Events", href: "/events" },
     ],
   },
   {

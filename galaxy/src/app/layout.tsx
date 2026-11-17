@@ -15,9 +15,21 @@ export const metadata: Metadata = {
   description: "Platform admin for Orbit by Unifesto",
 };
 
+// Dark unless this browser chose light (the switch in shell.tsx). Read here, before paint, so a light page never flashes
+// dark. Not a cookie: reading cookies() in the root layout would make every page wait (cacheComponents).
+const THEME = `try{if(localStorage.getItem("theme")==="light")document.documentElement.dataset.theme="light"}catch(e){}`;
+
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${display.variable} ${text.variable} ${script.variable}`}>
+    <html
+      lang="en"
+      data-theme="dark"
+      className={`${display.variable} ${text.variable} ${script.variable}`}
+      suppressHydrationWarning
+    >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME }} />
+      </head>
       <body>
         {children}
       </body>
