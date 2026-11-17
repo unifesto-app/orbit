@@ -1,7 +1,7 @@
 import { and, eq, gt, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import type { Db } from "../db/index.ts";
-import { follows, hosts, identities, passkeys, sessions, staffGrants, teamRoles, users } from "../db/schema.ts";
+import { follows, hosts, identities, passkeys, pmActivity, sessions, staffGrants, teamRoles, users } from "../db/schema.ts";
 import { type Env, fail, type Notify, signedIn } from "../http.ts";
 import { holdIfUnanswered, ownerOnlySql } from "../roles/access.ts";
 import { fresh, heldUntil, otherAddress, waysIn } from "./security.ts";
@@ -151,6 +151,12 @@ export async function runDeletions(db: Db, notify: Notify, now: number, revokeAp
           .update(staffGrants)
           .set({ endedAt: at })
           .where(and(eq(staffGrants.addedBy, u.id), isNull(staffGrants.endedAt), or(isNull(staffGrants.startsAt), gt(staffGrants.startsAt, at))));
+        // Their name leaves the PM board's activity too; the rows stay, tied to the account by id. Rows a Claude Code
+        // token wrote carry the token's name, not theirs.
+        await tx
+          .update(pmActivity)
+          .set({ actor: "Galaxy: Deleted account" })
+          .where(and(eq(pmActivity.userId, u.id), isNull(pmActivity.tokenId)));
         await tx
           .update(users)
           .set({

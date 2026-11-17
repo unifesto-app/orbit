@@ -208,6 +208,70 @@ export const legalAcceptances = pgTable(
   (t) => [unique().on(t.userId, t.document, t.version)],
 );
 
+// ---------- The PM board (owner, 17 Nov 2026): Galaxy's /pm-board and Claude Code's "orbit-pm" (api/src/pm) ----------
+
+// A workstream, keyed by a short code ("S", "P").
+export const pmTracks = pgTable("pm_tracks", {
+  key: text("key").primaryKey(),
+  name: text("name").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: at("created_at").notNull().defaultNow(),
+});
+
+// A task, keyed by its own code ("P13"). Never deleted: DROPPED says it won't happen.
+export const pmTasks = pgTable(
+  "pm_tasks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    key: text("key").notNull().unique(),
+    trackKey: text("track_key")
+      .notNull()
+      .references(() => pmTracks.key),
+    title: text("title").notNull(),
+    notes: text("notes"),
+    status: text("status", { enum: ["NEXT", "PLANNED", "IN_PROGRESS", "BLOCKED", "IN_REVIEW", "DONE", "PARKED", "DROPPED"] })
+      .notNull()
+      .default("PLANNED"),
+    owner: text("owner"), // free text: a person, or "Claude"
+    dueDate: date("due_date", { mode: "string" }),
+    sortOrder: integer("sort_order").notNull().default(0),
+    labels: text("labels").array().notNull().default(sql`'{}'::text[]`),
+    createdAt: at("created_at").notNull().defaultNow(),
+    updatedAt: at("updated_at").notNull().defaultNow(),
+  },
+  (t) => [index().on(t.trackKey, t.sortOrder), index().on(t.status)],
+);
+
+// A Claude Code token: "opm_" and 32 random bytes, kept only as its SHA-256. Made and revoked by the platform owner;
+// it works only while the account that made it is still the platform owner.
+export const pmTokens = pgTable("pm_tokens", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(), // "laptop"
+  tokenHash: text("token_hash").notNull().unique(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id),
+  lastUsedAt: at("last_used_at"),
+  revokedAt: at("revoked_at"),
+  revokedBy: uuid("revoked_by").references(() => users.id),
+  createdAt: at("created_at").notNull().defaultNow(),
+});
+
+// Every change to the board, and notes, append-only. `actor` is the shown name; the ids say who it really was.
+export const pmActivity = pgTable(
+  "pm_activity",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    taskId: uuid("task_id").references(() => pmTasks.id),
+    actor: text("actor").notNull(), // "Abhinavtej (Galaxy)", "Claude (laptop)"
+    userId: uuid("user_id").references(() => users.id),
+    tokenId: uuid("token_id").references(() => pmTokens.id),
+    message: text("message").notNull(),
+    createdAt: at("created_at").notNull().defaultNow(),
+  },
+  (t) => [index().on(t.createdAt), index().on(t.taskId, t.createdAt)],
+);
+
 // Google and Apple, one of each per account (User flow, Sign-in methods). `subject` is the provider's own user id; the
 // email is as the provider gave it, Apple's maybe a private relay address. Not matched to anything after linking.
 export const identities = pgTable(

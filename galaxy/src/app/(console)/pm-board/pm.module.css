@@ -1,0 +1,217 @@
+/* The PM board: AWS-console cards in status columns, from Galaxy's tokens (globals.css). */
+
+.columns {
+  display: flex;
+  gap: var(--space-s);
+  overflow-x: auto;
+  align-items: flex-start;
+  padding-bottom: var(--space-s);
+}
+
+.column {
+  flex: 0 0 272px;
+  background: var(--color-background-container-content);
+  border: var(--border-divider-section-width) solid var(--color-border-card);
+  border-radius: var(--border-radius-container);
+  padding: var(--space-s);
+}
+
+.column[data-over] {
+  border-color: var(--color-primary-600);
+}
+
+.columnHeader {
+  font-size: var(--font-size-heading-s);
+  font-weight: var(--font-weight-heading);
+  color: var(--color-text-heading-default);
+  margin-bottom: var(--space-s);
+}
+
+.cards {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  min-height: 48px;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xxs);
+  padding: var(--space-xs) var(--space-s);
+  border: var(--border-divider-section-width) solid var(--color-border-divider-default);
+  border-radius: var(--border-radius-container);
+  background: var(--color-background-container-content);
+  cursor: grab;
+}
+
+.cardTop,
+.cardFoot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.key {
+  font-family: var(--font-family-monospace);
+  font-size: var(--font-size-body-s);
+  color: var(--color-text-body-secondary);
+}
+
+.title {
+  all: unset;
+  cursor: pointer;
+  color: var(--color-text-body-default);
+  overflow-wrap: anywhere;
+}
+
+.title:hover {
+  color: var(--color-text-interactive-hover);
+}
+
+.title:focus-visible {
+  outline: 2px solid var(--color-primary-600);
+  outline-offset: 2px;
+}
+
+.labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xxs);
+}
+
+.status {
+  font: inherit;
+  font-size: var(--font-size-body-s);
+  background: transparent;
+  color: var(--color-text-body-secondary);
+  border: var(--border-divider-section-width) solid var(--color-border-divider-default);
+  border-radius: var(--border-radius-button);
+}
+
+.chip {
+  font: inherit;
+  padding: var(--space-xxs) var(--space-s);
+  border: var(--border-divider-section-width) solid var(--color-border-divider-default);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-text-body-default);
+  cursor: pointer;
+}
+
+.chip[aria-pressed="true"] {
+  border-color: var(--color-primary-600);
+  background: color-mix(in srgb, var(--color-primary-600) 18%, transparent);
+}
+
+.said {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.popover {
+  position: relative;
+}
+
+.popover > summary {
+  list-style: none;
+}
+
+.popoverForm,
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-s);
+}
+
+.popoverForm {
+  position: absolute;
+  z-index: 2;
+  top: calc(100% + var(--space-xxs));
+  width: 320px;
+  padding: var(--space-m);
+  background: var(--color-background-container-content);
+  border: var(--border-divider-section-width) solid var(--color-border-divider-default);
+  border-radius: var(--border-radius-container);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xxs);
+  color: var(--color-text-form-label);
+  font-weight: var(--font-weight-form-label);
+}
+
+/* Title and notes take the dialog's width; the grid's fields fill their cells. */
+.form > .field > input,
+.grid .field > input,
+.grid .field > select {
+  width: 100%;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--space-s);
+}
+
+.dialog {
+  width: min(760px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+  margin: auto;
+  padding: var(--space-l);
+  background: var(--color-background-container-content);
+  color: var(--color-text-body-default);
+  border: var(--border-divider-section-width) solid var(--color-border-card);
+  border-radius: var(--border-radius-container);
+}
+
+.dialog::backdrop {
+  background: rgb(0 0 0 / 0.6);
+}
+
+.dialogTitle {
+  font-size: var(--font-size-heading-m);
+  margin-bottom: var(--space-m);
+  overflow-wrap: anywhere;
+}
+
+.notes {
+  width: 100%;
+  min-height: 160px;
+  white-space: pre-wrap;
+}
+
+.history {
+  margin-top: var(--space-l);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-s);
+}
+
+.historyTitle {
+  font-size: var(--font-size-heading-s);
+}
+
+.log {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.log li {
+  display: flex;
+  flex-direction: column;
+}
+
+.message {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
