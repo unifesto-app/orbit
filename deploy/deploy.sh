@@ -19,29 +19,27 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # The tar flags below are macOS (bsdtar) ones; stop here rather than after wiping the box's copy.
 [[ "$(uname)" == Darwin ]] || { echo "deploy.sh runs from macOS (it uses bsdtar flags)" >&2; exit 1; }
 
-echo "==> syncing source to $SERVER:$REMOTE_DIR/src"
-# macOS tar packs Finder xattrs and file flags the box's GNU tar can't read; leave them out.
-# The box builds api, web and galaxy only, so the app's generated native projects (hundreds of MB
-# with Pods) and local tooling stay behind too. `^` anchors a pattern at the root; without it bsdtar
-# would also drop, say, a web/src/app/docs route.
-COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata --no-fflags -C "$ROOT" \
-  --exclude=node_modules --exclude=.git --exclude='^./docs' --exclude='*.log' --exclude='.env*' \
-  --exclude=.next --exclude=.expo --exclude=dist \
-  --exclude='^./app/ios' --exclude='^./app/android' --exclude='^./.claude' --exclude=.DS_Store \
-  -czf - . \
-  | ssh "${SSH_OPTS[@]}" "$SERVER" "rm -rf $REMOTE_DIR/src && mkdir -p $REMOTE_DIR/src && tar -C $REMOTE_DIR/src -xzf -"
-
-echo "==> copying compose file and Caddyfile"
-scp "${SSH_OPTS[@]}" "$ROOT/deploy/docker-compose.yml" "$SERVER:$REMOTE_DIR/docker-compose.yml"
-scp "${SSH_OPTS[@]}" "$ROOT/deploy/Caddyfile" "$SERVER:$REMOTE_DIR/Caddyfile.new"
-
-echo "==> building and starting on the box"
-# Caddy mounts the Caddyfile as one file, which keeps the old copy after a replace, so a changed
-# Caddyfile is validated first and then picked up by restarting Caddy (a second's blip). Unchanged: no restart.
-# The swap happens only after the build, so a failed deploy leaves Caddyfile.new to be swapped next time.
-ssh "${SSH_OPTS[@]}" "$SERVER" bash -s -- "$REMOTE_DIR" <<'REMOTE'
+# Everything on the box runs in one SSH session that holds a lock (flock on ~/orbit/.deploy.lock), so two
+# deploys at once can't wipe each other's source mid-build or swap the other's Caddyfile. A second deploy waits
+# for the first, up to 15 minutes, then runs with its own copy. The lock is held by the deploy's process on the
+# box, so it ends when that does; nothing stale is left behind. The compose file and Caddyfile come from the source's
+# deploy/ folder.
+# Caddy mounts the Caddyfile as one file, which keeps the old copy after a replace, so a changed Caddyfile is
+# validated first and then picked up by restarting Caddy (a second's blip). Unchanged: no restart. The swap
+# happens only after the build, so a failed build leaves the running Caddy as it was.
+REMOTE=$(cat <<'REMOTE'
 set -euo pipefail
 cd "$1"
+exec 9>.deploy.lock
+if ! flock -n 9; then
+  echo "==> another deploy is running on the box; waiting for it to finish (up to 15 minutes)"
+  flock -w 900 9 || { echo "the other deploy is still running after 15 minutes; try again later" >&2; exit 1; }
+fi
+echo "==> syncing source"
+rm -rf src && mkdir -p src && tar -C src -xzf -
+cp src/deploy/docker-compose.yml docker-compose.yml
+cp src/deploy/Caddyfile Caddyfile.new
+echo "==> building and starting"
 changed=0
 if ! cmp -s Caddyfile.new Caddyfile 2>/dev/null; then
   [ -f certs/origin.pem ] && [ -f certs/origin.key ] || { echo "certs/origin.pem and origin.key are missing" >&2; exit 1; }
@@ -54,3 +52,17 @@ docker compose up -d --build
 if [ "$changed" = 1 ]; then mv Caddyfile.new Caddyfile; docker compose restart caddy; else rm Caddyfile.new; fi
 docker compose ps
 REMOTE
+)
+
+echo "==> deploying to $SERVER:$REMOTE_DIR"
+# macOS tar packs Finder xattrs and file flags the box's GNU tar can't read; leave them out.
+# The box builds api, web and galaxy only, so the app's generated native projects (hundreds of MB
+# with Pods) and local tooling stay behind too. `^` anchors a pattern at the root; without it bsdtar
+# would also drop, say, a web/src/app/docs route.
+# The tar is the session's input; the script goes as an argument, so the two don't mix.
+COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata --no-fflags -C "$ROOT" \
+  --exclude=node_modules --exclude=.git --exclude='^./docs' --exclude='*.log' --exclude='.env*' \
+  --exclude=.next --exclude=.expo --exclude=dist \
+  --exclude='^./app/ios' --exclude='^./app/android' --exclude='^./.claude' --exclude=.DS_Store \
+  -czf - . \
+  | ssh "${SSH_OPTS[@]}" "$SERVER" "bash -c $(printf '%q' "$REMOTE") deploy $(printf '%q' "$REMOTE_DIR")"
