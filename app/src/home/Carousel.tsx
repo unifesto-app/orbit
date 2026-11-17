@@ -16,7 +16,7 @@ import Svg, { Defs, Image as SvgImage, LinearGradient, Mask, Rect, Stop } from '
 
 import { Glass, useAccessibility } from '../glass';
 import type { AppRatio } from '../media';
-import { around, color, font, radius, rim, space } from '../theme';
+import { around, color, font, radius, rim, space, stoneAt } from '../theme';
 
 export type CarouselSlide = {
   key: string;
@@ -286,13 +286,13 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    backgroundColor: stoneAt(0.3),
   },
   active: {
     width: 18,
     height: 6,
     borderRadius: 3,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    backgroundColor: stoneAt(0.3),
     overflow: 'hidden',
   },
   // Scaled from the left on the native thread while the slide's time runs.

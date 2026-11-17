@@ -44,7 +44,7 @@
   font-weight: 700;
   line-height: 1.15;
   letter-spacing: -0.02em;
-  background: linear-gradient(180deg, #ffffff 0%, #ffffff 40%, var(--steel) 100%);
+  background: linear-gradient(180deg, var(--text) 0%, var(--text) 40%, var(--steel) 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -54,10 +54,10 @@
   font-size: 16px;
 }
 
-/* The white button keeps its own colours inside the footer's link styles. */
+/* The glass button keeps its own label colour inside the footer's link styles. */
 .footer .bandCta {
   margin-top: 8px;
-  color: var(--ground);
+  color: var(--orbit-glass-label);
 }
 
 /* QR block: desktop only. */
@@ -68,7 +68,7 @@
 .qr {
   flex: none;
   padding: 8px;
-  border-radius: 12px;
+  border-radius: var(--r-card);
   background: #ffffff;
   display: flex;
 }
@@ -94,15 +94,19 @@
 
 /* Phones: a plain link to /app, which opens heyorbit://. */
 .appLink {
+  background: var(--orbit-glass-background);
+  border: 1px solid var(--orbit-glass-border);
+  box-shadow: var(--orbit-glass-highlight);
+  color: var(--orbit-glass-label);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  backdrop-filter: blur(16px) saturate(160%);
   align-self: flex-start;
   height: 44px;
   padding: 0 16px;
   border-radius: var(--r-control);
-  background: var(--raised);
   display: flex;
   align-items: center;
   font-weight: 500;
-  color: var(--text);
 }
 
 /* Tier 2: link columns. */

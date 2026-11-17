@@ -74,7 +74,7 @@
 
 /* Poster first on phones; poster beside the text from 960px. */
 .spot {
-  border-radius: 22px;
+  border-radius: var(--r-card);
   background: var(--card);
   padding: 18px;
   display: flex;
@@ -83,7 +83,7 @@
 }
 
 .spotMedia {
-  border-radius: 14px;
+  border-radius: var(--r-card);
   overflow: hidden;
 }
 
@@ -101,7 +101,7 @@
   font-weight: 700;
   line-height: 1;
   letter-spacing: -0.03em;
-  background: linear-gradient(180deg, #ffffff 0%, #ffffff 30%, var(--steel) 100%);
+  background: linear-gradient(180deg, var(--text) 0%, var(--text) 30%, var(--steel) 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -168,7 +168,7 @@
 /* "For hosts with a following": rings with people circling the host at the centre. */
 
 .hostBand {
-  border-radius: 22px;
+  border-radius: var(--r-card);
   background: var(--card);
   padding: 28px 20px;
   display: flex;
@@ -262,7 +262,7 @@
   font-weight: 700;
   line-height: 1.15;
   letter-spacing: -0.02em;
-  background: linear-gradient(180deg, #ffffff 0%, #ffffff 40%, var(--steel) 100%);
+  background: linear-gradient(180deg, var(--text) 0%, var(--text) 40%, var(--steel) 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -272,7 +272,7 @@
   max-width: 56ch;
   font-size: 16px;
   line-height: 1.6;
-  color: rgb(255 255 255 / 0.82);
+  color: rgb(var(--orbit-stone-rgb) / 0.82);
 }
 
 .hostTypes {
@@ -285,7 +285,7 @@
 .hostTypes li {
   height: 36px;
   padding: 0 12px;
-  border-radius: 18px;
+  border-radius: var(--r-control);
   background: var(--raised);
   display: flex;
   align-items: center;

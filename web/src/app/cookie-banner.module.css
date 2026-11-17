@@ -21,14 +21,14 @@
 .text {
   font-size: 14px;
   line-height: 1.5;
-  color: rgb(255 255 255 / 0.82);
+  color: rgb(var(--orbit-stone-rgb) / 0.82);
 }
 
 .link {
   color: var(--text);
   text-decoration: underline;
   text-underline-offset: 3px;
-  text-decoration-color: rgb(255 255 255 / 0.4);
+  text-decoration-color: rgb(var(--orbit-stone-rgb) / 0.4);
 }
 
 /* Both choices are the same size, so neither is pushed. */
@@ -41,31 +41,38 @@
 .primary,
 .secondary {
   height: 44px;
-  border: 0;
-  border-radius: 12px;
+  border-radius: var(--r-control);
   font-family: var(--font-display), system-ui, sans-serif;
   font-size: 15px;
   font-weight: 600;
   cursor: pointer;
-  transition: opacity 150ms ease, background-color 150ms ease;
+  transition: border-color 150ms ease;
 }
 
 .primary {
-  background: var(--text);
-  color: var(--ground);
+  background: var(--orbit-glass-background);
+  border: 1px solid var(--orbit-glass-border);
+  box-shadow: var(--orbit-glass-highlight);
+  color: var(--orbit-glass-label);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  backdrop-filter: blur(16px) saturate(160%);
 }
 
 .primary:hover {
-  opacity: 0.88;
+  border-color: rgb(var(--orbit-stone-rgb) / 0.4);
 }
 
 .secondary {
-  background: var(--raised);
-  color: var(--text);
+  background: var(--orbit-glass-background);
+  border: 1px solid var(--orbit-glass-border);
+  box-shadow: var(--orbit-glass-highlight);
+  color: var(--orbit-glass-label);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  backdrop-filter: blur(16px) saturate(160%);
 }
 
 .secondary:hover {
-  background: #36363b;
+  border-color: rgb(var(--orbit-stone-rgb) / 0.4);
 }
 
 @media (min-width: 720px) {

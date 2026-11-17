@@ -26,7 +26,7 @@ import { Icon, type IconName } from './icons';
 import { Media, type MediaItem } from './media';
 import type { Event, Host } from './mock';
 import { tapHeart, useSaved } from './session';
-import { around, color, font, radius, rim, space } from './theme';
+import { around, color, font, radius, rim, space, stoneAt } from './theme';
 
 export const SEAT = 48; // the 1:1 square on a seat card's top rim
 // Every card's corners nest outward from its contents' corner (owner, 15 Nov 2026: "Inner Radius = Outer Radius -
@@ -576,7 +576,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 16,
   },
-  menuItemPressed: { backgroundColor: 'rgba(255, 255, 255, 0.08)' },
+  menuItemPressed: { backgroundColor: stoneAt(0.08) },
   menuText: { fontFamily: font.medium, fontSize: 15, color: color.text },
   // A circle, as every icon-only button (owner, 15 Nov 2026: "never use squared buttons").
   backGlass: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },

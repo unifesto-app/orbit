@@ -32,11 +32,6 @@
   width: auto;
 }
 
-/* The wordmark is drawn light (#ececee); on the light panel it turns near-black. */
-:global(:root[data-theme="light"]) .logo img {
-  filter: invert(1);
-}
-
 .form {
   display: flex;
   flex-direction: column;

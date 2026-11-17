@@ -1,17 +1,18 @@
-/* Orbit theme (approved board): dark only, white text, one accent on elements only. */
+/* Orbit theme: dark only, one accent on elements only. Every value comes from the brand tokens (@orbit/tokens, loaded
+   in layout.tsx); these names point at them so the pages keep their own vocabulary. */
 :root {
-  --ground: #121215;
-  --card: #1c1c1e;
-  --card-hover: #232326;
-  --raised: #2c2c30;
-  --text: #ffffff;
-  --text-2: rgb(255 255 255 / 0.64);
-  --hairline: rgb(255 255 255 / 0.08);
-  --track: rgb(255 255 255 / 0.12);
-  --accent: #295eff; /* progress, switches, selection, live dots. Never buttons or text. Owner, 15 Nov 2026 (was #375df6; #2953A4 on the Theme board). */
-  --steel: #7c818c;
-  --r-control: 14px;
-  --r-card: 20px;
+  --ground: var(--orbit-ground); /* Charcoal: every background (owner, 18 Nov 2026) */
+  --card: #10261f; /* night 60%, forest 40%. Open (18 Nov 2026): the brand kit keeps panels Charcoal with a hairline; kept until the owner decides */
+  --card-hover: #142a21;
+  --raised: var(--orbit-fill); /* forest */
+  --text: var(--orbit-text); /* stone */
+  --text-2: var(--orbit-text-2);
+  --hairline: var(--orbit-hairline);
+  --track: var(--orbit-track);
+  --accent: var(--orbit-accent); /* sage: progress, switches, selection, live dots. Never buttons or text. Owner, 18 Nov 2026 (was #295eff blue). */
+  --steel: var(--orbit-accent); /* sage */
+  --r-control: var(--orbit-radius-pill); /* every button, chip, select and search field is a pill */
+  --r-card: var(--orbit-radius); /* one corner (owner, 15 Nov 2026) */
   --nav-h: 76px; /* navbar height from 720px; the event page's sticky poster sits below it */
   --page-x: 20px; /* side margin of page content; the navbar and footer keep their own */
   color-scheme: dark;
@@ -72,26 +73,29 @@ ul {
   outline-offset: 2px;
 }
 
-/* The primary button, shared by every page: white with a dark label; the accent never goes on it. */
+/* The primary button, shared by every page: glass with a Stone label, as in the app; the accent never goes on it. */
 .button {
   height: 50px;
   padding: 0 28px;
   border-radius: var(--r-control);
-  background: var(--text);
-  color: var(--ground);
+  background: var(--orbit-glass-background);
+  border: 1px solid var(--orbit-glass-border);
+  box-shadow: var(--orbit-glass-highlight);
+  color: var(--orbit-glass-label);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  backdrop-filter: blur(16px) saturate(160%);
   font-family: var(--font-display), system-ui, sans-serif;
   font-size: 16px;
   font-weight: 600;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 0;
   cursor: pointer;
-  transition: opacity 150ms ease;
+  transition: border-color 150ms ease;
 }
 
 .button:hover {
-  opacity: 0.88;
+  border-color: rgb(var(--orbit-stone-rgb) / 0.4);
 }
 
 .sr-only {
@@ -165,7 +169,7 @@ ul {
   font-weight: 700;
   line-height: 1;
   letter-spacing: -0.03em;
-  background: linear-gradient(180deg, #ffffff 0%, #ffffff 30%, var(--steel) 100%);
+  background: linear-gradient(180deg, var(--text) 0%, var(--text) 30%, var(--steel) 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;

@@ -41,7 +41,7 @@ const CATEGORY_COLOR: Record<CategorySlug, string> = {
   workshops: '#099268', // mint: a laptop
   fests: '#E03131', // red: a string of lights
   sports: '#2F9E44', // pitch green: a football and a cricket bat
-  film: color.accent, // a screen's blue: a reel and a camera
+  film: '#295EFF', // a screen's blue: a reel and a camera. Its own colour, like the others: the drawing is baked blue, and the brand accent is Sage since 18 Nov 2026
   startups: '#7048E8', // violet: a rocket on a growth line
   gaming: '#AE3EC9', // neon grape: a controller
 };

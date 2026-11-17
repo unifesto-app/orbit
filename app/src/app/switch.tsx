@@ -75,7 +75,7 @@ export default function Switch() {
   const reduced = useReducedMotion();
   const modes = modesFor(useMe()); // signed out: Home, Host an event and Saved, each asking to sign in where it needs to
   const items: Item[] = [
-    { key: 'home', label: 'Home', art: ART.home, tint: color.accent, route: '(tabs)' },
+    { key: 'home', label: 'Home', art: ART.home, tint: '#295EFF', route: '(tabs)' }, // the drawing is baked blue; Sage would need new art
     modes.console === 'open'
       ? { key: 'console', label: 'Console', art: ART.console, tint: '#099268', route: 'console' }
       : { key: 'host', label: 'Host an event', art: ART.host, tint: '#FCC419', route: 'account/host' },
@@ -172,7 +172,7 @@ export default function Switch() {
               cy={cy}
               rx={orbit}
               ry={lift / 2}
-              stroke="#FFFFFF"
+              stroke={color.text}
               strokeWidth={1}
               fill="none"
               opacity={0.16}

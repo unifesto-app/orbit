@@ -1,0 +1,45 @@
+/* Generated from tokens/src/index.ts by `pnpm --filter @orbit/tokens build`. Don't edit by hand. */
+:root {
+  /* Palette */
+  --orbit-charcoal: #121215;
+  --orbit-forest: #1d372a;
+  --orbit-moss: #515f46;
+  --orbit-sage: #869381;
+  --orbit-stone: #dfdad7;
+  --orbit-night: #081b17;
+  --orbit-love: #ff453a;
+  --orbit-galaxy: #7598ff;
+  --orbit-stone-rgb: 223 218 215;
+  --orbit-charcoal-rgb: 18 18 21;
+  --orbit-accent-rgb: 134 147 129;
+  /* Roles */
+  --orbit-ground: #121215;
+  --orbit-text: #dfdad7;
+  --orbit-text-2: rgba(223, 218, 215, 0.64);
+  --orbit-hairline: rgba(223, 218, 215, 0.08);
+  --orbit-border: rgba(223, 218, 215, 0.12);
+  --orbit-track: rgba(223, 218, 215, 0.12);
+  --orbit-accent: #869381;
+  --orbit-on-accent: #121215;
+  --orbit-fill: #1d372a;
+  --orbit-shadow: #081b17;
+  /* Shape and space */
+  --orbit-radius: 6px;
+  --orbit-radius-pill: 999px;
+  --orbit-space-small: 8px;
+  --orbit-space-big: 24px;
+  --orbit-rim: 2px;
+  /* Type */
+  --orbit-tracking-display: -0.045em;
+  --orbit-weight-display: 800;
+  --orbit-weight-headline: 700;
+  --orbit-weight-title: 600;
+  --orbit-weight-medium: 500;
+  --orbit-weight-text: 400;
+  --orbit-weight-price: 600;
+  /* Glass: every button and floating control */
+  --orbit-glass-background: linear-gradient(180deg, rgba(223, 218, 215, 0.08), rgba(223, 218, 215, 0) 45%), linear-gradient(180deg, rgba(18, 18, 21, 0.5), rgba(18, 18, 21, 0.72));
+  --orbit-glass-border: rgba(223, 218, 215, 0.22);
+  --orbit-glass-highlight: inset 0 1px 0 rgba(223, 218, 215, 0.22);
+  --orbit-glass-label: #dfdad7;
+}

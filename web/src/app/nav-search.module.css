@@ -13,7 +13,7 @@
   max-height: min(70vh, 480px);
   overflow-y: auto;
   padding: 6px;
-  border-radius: 16px;
+  border-radius: var(--r-card);
   background: var(--card);
   box-shadow:
     inset 0 0 0 1px var(--hairline),
@@ -23,7 +23,7 @@
 .option {
   min-height: 44px;
   padding: 8px 10px;
-  border-radius: 12px;
+  border-radius: var(--r-card);
   display: flex;
   align-items: center;
   gap: 12px;
@@ -38,7 +38,7 @@
   flex: none;
   width: 44px;
   height: 44px;
-  border-radius: 8px;
+  border-radius: var(--r-card);
   overflow: hidden;
   background: var(--raised);
 }

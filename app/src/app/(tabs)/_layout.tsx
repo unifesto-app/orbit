@@ -7,7 +7,7 @@ import { NativeTabs } from 'expo-router/native-tabs';
 import { Platform } from 'react-native';
 
 import { retap } from '../../modeKit';
-import { color } from '../../theme';
+import { color, stoneAt } from '../../theme';
 
 export default function TabsLayout() {
   return (
@@ -16,7 +16,7 @@ export default function TabsLayout() {
       iconColor={{ default: color.secondary, selected: color.text }}
       labelStyle={{ default: { color: color.secondary }, selected: { color: color.text } }}
       backgroundColor={color.ground} // Android and iOS before 26; iOS 26 draws its own glass
-      indicatorColor="rgba(255, 255, 255, 0.14)" // Android's pill behind the selected icon, the glass fallback's fill
+      indicatorColor={stoneAt(0.14)} // Android's pill behind the selected icon, the glass fallback's fill
       // Scrolling down shrinks the bar to the current tab's icon, with no labels; scrolling up brings it back (owner,
       // 15 Nov 2026: "when scroll make the tab small and remove text"). iOS 26 and later; Android keeps its bar.
       minimizeBehavior="onScrollDown"

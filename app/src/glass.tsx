@@ -2,7 +2,7 @@ import { GlassView, isGlassEffectAPIAvailable, isLiquidGlassAvailable } from 'ex
 import { useEffect, useState } from 'react';
 import { AccessibilityInfo, Animated, StyleSheet, View, type ViewProps } from 'react-native';
 
-import { around, color, radius, space } from './theme';
+import { around, color, radius, space, stoneAt } from './theme';
 
 // Real Liquid Glass needs iOS 26 (and the API, which some iOS 26 betas lack).
 const GLASS = isLiquidGlassAvailable() && isGlassEffectAPIAvailable();
@@ -62,8 +62,8 @@ const styles = StyleSheet.create({
   barFace: { flex: 1, borderRadius: BAR_CORNER },
   barShade: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: BAR_CORNER, backgroundColor: `${color.ground}80` },
   fallback: {
-    backgroundColor: 'rgba(255, 255, 255, 0.14)',
+    backgroundColor: stoneAt(0.14),
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255, 255, 255, 0.24)',
+    borderColor: stoneAt(0.24),
   },
 });

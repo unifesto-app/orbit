@@ -10,7 +10,7 @@
   position: sticky;
   top: 0;
   z-index: 10;
-  background: rgb(18 18 21 / 0.78);
+  background: rgb(var(--orbit-charcoal-rgb) / 0.78);
   -webkit-backdrop-filter: saturate(180%) blur(20px);
   backdrop-filter: saturate(180%) blur(20px);
   border-bottom: 1px solid var(--hairline);
@@ -73,7 +73,7 @@
   display: none;
   height: 40px;
   padding: 0 12px;
-  border-radius: 12px;
+  border-radius: var(--r-control);
   align-items: center;
   font-size: 15px;
   font-weight: 500;
@@ -93,23 +93,27 @@
   gap: 8px;
 }
 
-/* Buttons are white with a dark label (Theme board). */
+/* Buttons are glass with a Stone label (brand tokens). */
 .signIn {
+  background: var(--orbit-glass-background);
+  border: 1px solid var(--orbit-glass-border);
+  box-shadow: var(--orbit-glass-highlight);
+  color: var(--orbit-glass-label);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  backdrop-filter: blur(16px) saturate(160%);
   height: 40px;
   padding: 0 18px;
-  border-radius: 12px;
-  background: var(--text);
-  color: var(--ground);
+  border-radius: var(--r-control);
   font-family: var(--font-display), system-ui, sans-serif;
   font-size: 15px;
   font-weight: 600;
   display: flex;
   align-items: center;
-  transition: opacity 150ms ease;
+  transition: border-color 150ms ease;
 }
 
 .signIn:hover {
-  opacity: 0.88;
+  border-color: rgb(var(--orbit-stone-rgb) / 0.4);
 }
 
 @media (min-width: 720px) {

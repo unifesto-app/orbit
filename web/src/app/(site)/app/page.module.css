@@ -21,7 +21,7 @@
   .qr {
     margin-bottom: 12px;
     padding: 12px;
-    border-radius: 16px;
+    border-radius: var(--r-card);
     background: #ffffff;
     display: flex;
   }

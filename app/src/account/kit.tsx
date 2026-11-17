@@ -14,7 +14,7 @@ import { needsAccount } from '../session';
 import type { Contact } from '../signin';
 import { StarLayer } from '../stars';
 import { OPEN_END, STAR_EACH, starLayers } from '../switchMotion';
-import { around, color, font, radius, space } from '../theme';
+import { around, color, font, radius, space, stoneAt } from '../theme';
 
 // Room in every card (owner, 15 Nov 2026: "add proper spacing and padding to cards"): 16 inside and 16 between rows,
 // as the event page's When and where and FAQ cards got for the same words. Corners nest outward: 6 + 16 = 22, rim 24.
@@ -43,7 +43,7 @@ export const TONE = {
   yellow: '#FCC419',
   mint: '#099268',
   red: '#E03131',
-  blue: color.accent,
+  blue: '#295EFF',
   grape: '#AE3EC9',
 } as const;
 
@@ -234,7 +234,7 @@ export function Toggle({ value, onChange, label }: { value: boolean; onChange: (
       accessibilityLabel={label}
       trackColor={{ true: color.accent, false: color.raised }}
       ios_backgroundColor={color.raised}
-      thumbColor={color.text}
+      thumbColor={value ? color.onAccent : color.text}
     />
   );
 }
@@ -403,7 +403,7 @@ export const styles = StyleSheet.create({
   spaced: { marginTop: space.big },
   face: { borderRadius: FACE, backgroundColor: color.card, padding: PAD },
   // Inside the card's padding on both sides (owner: "right side make it full hairline", then "dont use full hairline").
-  hairline: { height: StyleSheet.hairlineWidth, marginVertical: PAD / 2, backgroundColor: 'rgba(255, 255, 255, 0.12)' },
+  hairline: { height: StyleSheet.hairlineWidth, marginVertical: PAD / 2, backgroundColor: stoneAt(0.12) },
   row: { minHeight: ROW, flexDirection: 'row', alignItems: 'center', gap: space.small },
   lines: { gap: 2 }, // line spacing between a row's label and its note
   icon: { marginRight: ICON_GAP - space.small }, // the row's own gap makes up the rest

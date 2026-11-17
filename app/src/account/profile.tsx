@@ -18,7 +18,7 @@ import { useLoad } from '../load';
 import { hosts } from '../mock';
 import { Monogram } from '../rows';
 import { api, useMe, useSession, useViewer } from '../session';
-import { around, color, font, space } from '../theme';
+import { around, color, font, space, stoneAt } from '../theme';
 
 const PHOTO = 72; // the photo at rest on Account
 const GROWN = 96; // the photo grown
@@ -119,7 +119,7 @@ export function ProfileHead({
               <Animated.View style={{ transform: [{ translateY: a.bob }] }}>
                 <Icon name="chevronDown" size={18} color={color.secondary} />
                 <View style={styles.next}>
-                  <Icon name="chevronDown" size={18} color="rgba(255, 255, 255, 0.32)" />
+                  <Icon name="chevronDown" size={18} color={stoneAt(0.32)} />
                 </View>
               </Animated.View>
             </Pressable>

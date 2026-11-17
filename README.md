@@ -7,6 +7,7 @@ New app, API, website and contract for Orbit by Unifesto. Plan: see `docs/contex
 - `web/` - Next.js (TypeScript), the public site at heyorbit.in
 - `galaxy/` - Next.js (TypeScript), the platform admin (Orbit admin)
 - `contract/` - zod schemas and types shared by the API, the app and the web
+- `tokens/` - brand and design tokens (colour, corners, gaps, type, glass, 3D) shared by the website, the app and Galaxy; `pnpm --filter @orbit/tokens build` regenerates `tokens.css` and `tokens.json`
 
 ## Develop
 
