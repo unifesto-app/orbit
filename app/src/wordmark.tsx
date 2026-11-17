@@ -20,16 +20,16 @@ const MARK_BOX = '36 -682 5371 682'; // x, y, width, height in the letters' spac
 let cached: string | null = null;
 let pending: Promise<string> | null = null;
 export function loadWordmark(): Promise<string> {
-  pending ??= Promise.all(LETTERS.map((f) => loadLocalRawResource(f))).then(
-    (files) => {
+  pending ??= Promise.all(LETTERS.map((f) => loadLocalRawResource(f)))
+    .then((files) => {
+      // Android release builds resolve null for a file they couldn't read; f.match then throws, which lands below.
       const paths = files.map((f) => f.match(/<path[^>]*\/>/)?.[0] ?? '').join('');
       return (cached = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${MARK_BOX}">${paths}</svg>`);
-    },
-    (e) => {
+    })
+    .catch((e) => {
       pending = null; // not cached, so the next mount tries again
       throw e;
-    },
-  );
+    });
   return pending;
 }
 
