@@ -62,7 +62,7 @@ const codes = { openTo, dailyCap };
 const mode = (s: unknown) => (s === logCode ? "logs" : s ? "sends" : "off");
 console.log(
   `[codes] WhatsApp ${mode(phone)}, email ${mode(email)}, open to ${openTo ? `${openTo.size} contacts` : "everyone"}, ` +
-    `alert past ${dailyCap} a day per channel`,
+    `alert at ${dailyCap} a day per channel, when WhatsApp codes stop until midnight`,
 );
 const store = production || process.env.REDIS_URL ? redisStore(need("REDIS_URL")) : memoryStore();
 // ponytail: messages to people come with the Notifications flow; until then they're only logged.

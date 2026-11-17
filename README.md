@@ -34,7 +34,7 @@ The API's tests need a Postgres: `createdb orbit_test` locally, or set `TEST_DAT
   - Email by Amazon SES: `SES_REGION`, with AWS credentials from the usual chain (on the server, the `orbit-box` instance role, allowed to send only as `@heyorbit.in`); `EMAIL_FROM` defaults to `Orbit <no-reply@updates.heyorbit.in>`.
   - `OPEN_TO`: the opening gate. `*` for everyone, or a comma-separated list of numbers and emails. Unset, nobody gets a code wherever codes really go out.
   - Proof that a code send or Google's start comes from Orbit (`api/src/auth/proof.ts`): App Attest on iPhones (nothing to set), Play Integrity on Android with `PLAY_INTEGRITY_KEY` (a Google Cloud service account's JSON key, in the project linked to the app in Play Console) and `PLAY_CERTS` (comma-separated signing-certificate digests that pass without a Play install, copied from the API's `[proof]` log), Turnstile on Galaxy with `TURNSTILE_SECRET` (and `TURNSTILE_SITE_KEY` in `galaxy.env`). `PROOF=enforce` refuses requests without one; unset, failures are only logged.
-  - `CODE_DAILY_CAP` (default 500): past this many codes a day on a channel, the API logs an alert; sends go on.
+  - `CODE_DAILY_CAP` (default 500): at this many codes in a day (from midnight IST) on a channel, the API logs an alert, and WhatsApp codes stop until midnight; email codes go on.
   - Off production, a channel without its settings prints codes to the API's log instead.
 
 ## PM board and Claude Code

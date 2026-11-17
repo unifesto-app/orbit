@@ -55,18 +55,41 @@ test("the gate refuses outside openTo before counting anything", async () => {
   assert.deepEqual(await sendCode(store, nobody, secret, ok, "ip", p), { ok: true }); // nothing was used up
 });
 
-test("past the daily cap, the send goes on and one line is logged", async () => {
-  const store = memoryStore();
-  const p = policy(null, 2);
+const email = (i: number): Contact => ({ kind: "email", email: `person${i}@example.com` });
+const logging = async (run: () => Promise<void>) => {
   const logged: string[] = [];
   const orig = console.error;
   console.error = (m: string) => void logged.push(String(m));
   try {
-    for (let i = 1; i <= 4; i++) assert.deepEqual(await sendCode(store, nobody, secret, phone(i), "ip", p), { ok: true });
+    await run();
   } finally {
     console.error = orig;
   }
+  return logged;
+};
+
+test("at the daily cap, email codes go on with one logged line", async () => {
+  const store = memoryStore();
+  const p = policy(null, 2);
+  const logged = await logging(async () => {
+    for (let i = 1; i <= 4; i++) assert.deepEqual(await sendCode(store, nobody, secret, email(i), "ip", p), { ok: true });
+  });
   assert.equal(logged.length, 1);
+});
+
+test("at the daily cap, WhatsApp codes stop until midnight in India, using up nobody's limits", async () => {
+  const store = memoryStore();
+  const p = policy(null, 2);
+  const evening = Date.UTC(2026, 10, 17, 18, 0); // 23:30 IST
+  const logged = await logging(async () => {
+    for (let i = 1; i <= 2; i++) assert.deepEqual(await sendCode(store, nobody, secret, phone(i), "ip", p, evening), { ok: true });
+    for (let i = 0; i < 12; i++) assert.deepEqual(await sendCode(store, nobody, secret, phone(3), "ip", p, evening), { ok: false, error: "paused" });
+    assert.deepEqual(await sendCode(store, nobody, secret, email(1), "ip", p, evening), { ok: true });
+  });
+  assert.equal(logged.length, 1);
+  assert.match(logged[0]!, /WhatsApp codes stop until midnight/);
+  // 00:00 IST: a new day, and the 12 paused tries never counted toward that number's 10 a day.
+  assert.deepEqual(await sendCode(store, nobody, secret, phone(3), "ip", p, evening + 30 * 60 * 1000), { ok: true });
 });
 
 test("a throttled send keeps no code, like a refused one", async () => {

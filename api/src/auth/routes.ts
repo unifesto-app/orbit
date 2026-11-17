@@ -121,7 +121,7 @@ export function authRoutes({ db, store, send, notify, secret, now = Date.now, co
     if (to instanceof Response) return to;
     // Before the limits, so a script can't use up someone's sends without the app.
     if (proven && !(await proven.check(b.proof, proofOf.code(b.to)))) return unproven(c);
-    const r = await sendCode(store, send, secret, to, clientIp(c), codes);
+    const r = await sendCode(store, send, secret, to, clientIp(c), codes, now());
     if (r.ok) return c.json({ retryIn: RESEND_AFTER }); // also when the outcome is unsure: the code is kept, and they can ask again
     const byPhone = to.kind === "phone";
     switch (r.error) {
@@ -131,6 +131,8 @@ export function authRoutes({ db, store, send, notify, secret, now = Date.now, co
         return fail(c, 429, "tooSoon", `Wait ${RESEND_AFTER} seconds, then send a new code.`, { retryIn: RESEND_AFTER });
       case "tooMany":
         return fail(c, 429, "tooMany", "Too many codes sent. Try again tomorrow, or sign in another way.");
+      case "paused":
+        return fail(c, 503, "paused", "Codes by WhatsApp are paused until midnight. Use your email instead.");
       case "notSent":
         if (r.reason === "throttled")
           return fail(c, 503, "tryLater", "A lot of codes are going out right now. Try again in a minute.", { retryIn: 60 });
