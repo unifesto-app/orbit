@@ -3,6 +3,7 @@ import { createApp } from "./app.ts";
 import { runDeletions } from "./auth/deletion.ts";
 import { codeSender, emailSender, sesClient, whatsappSender } from "./auth/senders.ts";
 import { readContact } from "@orbit/contract";
+import type { ProofConfig } from "./auth/proof.ts";
 import { memoryStore, redisStore } from "./auth/store.ts";
 import { ways, type WaysConfig } from "./auth/ways.ts";
 import { connect, migrateDb } from "./db/index.ts";
@@ -107,9 +108,28 @@ console.log(
 );
 const revokeApple = ways(waysConfig, store).revokeApple;
 
+// That code sends and Google's start come from Orbit itself (auth/proof.ts). PROOF=enforce refuses those without a
+// proof; until then a missing or failed one is only logged, so builds from before it keep working.
+// - iPhones: App Attest, for the app's bundle id under the Apple team. Nothing to set up here.
+// - Android: Play Integrity. PLAY_INTEGRITY_KEY is the JSON key of a service account in the Google Cloud project
+//   linked to the app in Play Console; PLAY_CERTS lists signing-certificate digests (as the log shows them) that pass
+//   without a Play install, for test builds.
+// - Web: Turnstile, with TURNSTILE_SECRET.
+const playKey = env.PLAY_INTEGRITY_KEY ? (JSON.parse(env.PLAY_INTEGRITY_KEY) as { client_email: string; private_key: string }) : null;
+const proof: ProofConfig = {
+  enforce: env.PROOF?.trim() === "enforce",
+  apple: { appId: `${env.APPLE_TEAM_ID?.trim() || "9AH3Z5C5DH"}.${audiences[0]}` },
+  play: playKey ? { packageName: env.ANDROID_PACKAGE?.trim() || "in.heyorbit.app", email: playKey.client_email, key: playKey.private_key, certs: list(env.PLAY_CERTS) } : undefined,
+  turnstile: env.TURNSTILE_SECRET ? { secret: env.TURNSTILE_SECRET } : undefined,
+};
+console.log(
+  `[proof] ${proof.enforce ? "enforced" : "logged only"}: App Attest for ${proof.apple.appId}, ` +
+    `Play Integrity ${proof.play ? `for ${proof.play.packageName}` : "not set up"}, Turnstile ${proof.turnstile ? "on" : "not set up"}`,
+);
+
 // Day-30 account deletions. ponytail: an hourly sweep until the job runner runs it nightly at 03:30 IST.
 setInterval(() => runDeletions(db, notify, Date.now(), revokeApple, media).catch((e) => console.error("[deletions]", e)), 60 * 60 * 1000).unref();
 
-serve({ fetch: createApp({ db, store, send, notify, secret, codes, ways: waysConfig, media }).fetch, port }, (info) => {
+serve({ fetch: createApp({ db, store, send, notify, secret, codes, ways: waysConfig, media, proof }).fetch, port }, (info) => {
   console.log(`orbit-api listening on :${info.port}`);
 });

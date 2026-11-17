@@ -22,7 +22,10 @@
       "usesAppleSignIn": true,
       "associatedDomains": [
         "webcredentials:heyorbit.in"
-      ]
+      ],
+      "entitlements": {
+        "com.apple.developer.devicecheck.appattest-environment": "production"
+      }
     },
     "android": {
       "package": "in.heyorbit.app",

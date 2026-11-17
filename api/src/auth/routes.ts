@@ -12,10 +12,12 @@ import {
   type Contact,
   type Device,
   GoogleSignIn,
+  GoogleStart,
   maskName,
   type Me,
   PasskeySignIn,
   PHOTO_MAX_BYTES,
+  proofOf,
   Refresh,
   SendCode,
   UpdateMe,
@@ -28,6 +30,7 @@ import { clientIp, contactOf, type Env, fail, invalid, type Notify, parse, signe
 import { drop, linkOf, type Media, newKey, squareImage } from "../media.ts";
 import { clearLapsedSuspension, rolesOf } from "../roles/access.ts";
 import { checkCode, OPEN, RESEND_AFTER, sendCode, type Sender, type SendPolicy } from "./codes.ts";
+import { proofs, type ProofConfig } from "./proof.ts";
 import { nextFor, resolve, type Pending, type Pick } from "./resolve.ts";
 import { deviceKnown, endSession, isSuspended, refresh, startSession, type User } from "./sessions.ts";
 import type { Store } from "./store.ts";
@@ -37,8 +40,9 @@ import { defaultWays, type Identity, relay, ways, type WaysConfig } from "./ways
 
 // Sign-in, sign-up and the profile (Orbit flows: User). Every error says what to do next.
 
-// `media` is where uploads go; without it (no bucket set) photo uploads say they aren't set up.
-export type Deps = { db: Db; store: Store; send: Sender; notify: Notify; secret: string; now?: () => number; codes?: SendPolicy; ways?: WaysConfig; media?: Media };
+// `media` is where uploads go; without it (no bucket set) photo uploads say they aren't set up. Without `proof` (tests,
+// a laptop) nothing checks that requests come from Orbit itself.
+export type Deps = { db: Db; store: Store; send: Sender; notify: Notify; secret: string; now?: () => number; codes?: SendPolicy; ways?: WaysConfig; media?: Media; proof?: ProofConfig };
 
 // ponytail: the terms version is a constant until Galaxy's Legal documents keeps them in the database. The migration
 // must leave every copied Unifesto acceptance below it, so each migrated person accepts Orbit's terms at About you.
@@ -47,9 +51,12 @@ const TERMS_VERSION = 1;
 const TOO_LONG = "That took too long. Start signing in again.";
 const PHONE_TAKEN = "That number signs in to another Orbit account. Use a different number.";
 
-export function authRoutes({ db, store, send, notify, secret, now = Date.now, codes = OPEN, ways: waysConfig = defaultWays, media }: Deps) {
+export function authRoutes({ db, store, send, notify, secret, now = Date.now, codes = OPEN, ways: waysConfig = defaultWays, media, proof }: Deps) {
   const app = new Hono<Env>();
   const w = ways(waysConfig, store);
+  const proven = proof ? proofs(proof, store) : null;
+  const unproven = (c: Context) =>
+    fail(c, 403, "unproven", "We couldn't check this came from Orbit. Update the app, or reload the page, and try again.");
   const me = async (u: User): Promise<Me> => ({ ...profile(u), ...(await rolesOf(db, u, now())) });
   const userById = async (id: string) => (await db.select().from(users).where(and(eq(users.id, id), isNull(users.deletedAt))))[0] ?? null;
   // A code just proved this account's phone or email. A host-added or migrated row may not have it marked yet.
@@ -112,6 +119,8 @@ export function authRoutes({ db, store, send, notify, secret, now = Date.now, co
     if (!b) return invalid(c);
     const to = contactOf(c, b.to);
     if (to instanceof Response) return to;
+    // Before the limits, so a script can't use up someone's sends without the app.
+    if (proven && !(await proven.check(b.proof, proofOf.code(b.to)))) return unproven(c);
     const r = await sendCode(store, send, secret, to, clientIp(c), codes);
     if (r.ok) return c.json({ retryIn: RESEND_AFTER }); // also when the outcome is unsure: the code is kept, and they can ask again
     const byPhone = to.kind === "phone";
@@ -324,6 +333,11 @@ export function authRoutes({ db, store, send, notify, secret, now = Date.now, co
   const tooManyAsks = async (c: Context, what: string) => (await store.incr(`asks:${what}:${clientIp(c)}`, 60 * 1000)) > 60;
   const slowDown = (c: Context) => fail(c, 429, "tooSoon", "Too many tries. Wait a minute and try again.", { retryIn: 60 });
 
+  // POST /auth/challenge: what the app signs to prove it's Orbit (auth/proof.ts).
+  app.post("/auth/challenge", async (c) =>
+    (await tooManyAsks(c, "challenge")) ? slowDown(c) : c.json({ challenge: proven ? await proven.challenge() : "unchecked" }),
+  );
+
   // POST /auth/nonce: for Apple's sheet, spent by the token Apple makes with it.
   app.post("/auth/nonce", async (c) => ((await tooManyAsks(c, "nonce")) ? slowDown(c) : c.json({ nonce: await w.nonce() })));
 
@@ -339,6 +353,8 @@ export function authRoutes({ db, store, send, notify, secret, now = Date.now, co
   // POST /auth/google/start: the Google page to open, for signing in, linking or a fresh check alike.
   app.post("/auth/google/start", async (c) => {
     if (await tooManyAsks(c, "google")) return slowDown(c);
+    const b = (await parse(c, GoogleStart)) ?? {}; // builds from before proofs send no body
+    if (proven && !(await proven.check(b.proof, proofOf.google))) return unproven(c);
     const started = await w.googleStart();
     return started ? c.json(started) : fail(c, 503, "notSetUp", "Google sign-in isn't set up yet. Use your phone number or email.");
   });

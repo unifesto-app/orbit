@@ -13,6 +13,7 @@ import { router } from 'expo-router';
 import * as Linking from 'expo-linking';
 import { Alert, NativeModules, Platform } from 'react-native';
 
+import { startGoogle } from './proof';
 import { api } from './session';
 
 // Each is used only when its native half is in this build: the JS of all three loads anyway (the passkey module's
@@ -120,7 +121,7 @@ const later = (ms: number) => new Promise<null>((resolve) => setTimeout(() => re
 
 export async function googleProof(): Promise<Got<{ grant: string; verifier: string }>> {
   if (!browserModule) return no(UPDATE);
-  const s = await api.call<{ url: string; verifier: string }>('POST', '/auth/google/start');
+  const s = await startGoogle();
   if (!s.ok) return no(s.error);
   returned = null;
   try {
