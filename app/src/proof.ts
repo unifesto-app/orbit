@@ -5,9 +5,9 @@
 // sends no proof, and the API decides: it lets the request through until PROOF=enforce, then says to update the app.
 // - iPhone: the first proof attests a new key with Apple; later ones are assertions with it. Its id is kept in kv-store,
 //   which a reinstall clears along with the key itself.
-// - Android: the Google Cloud project linked to Play, EXPO_PUBLIC_PLAY_PROJECT_NUMBER, set when the app is built
-//   (without it no proof goes, and the API refuses once enforcing). Play's token provider is made at launch, and made
-//   again if it has expired.
+// - Android: the number of the Google Cloud project linked to Play, in PROJECT (it isn't secret; like API_URL, an
+//   EXPO_PUBLIC_ variable can stand in). Without it no proof goes, and the API refuses once enforcing. Play's token
+//   provider is made at launch, and made again if it has expired.
 import { proofOf, type Proof } from '@orbit/contract';
 import { requireOptionalNativeModule } from 'expo';
 import Storage from 'expo-sqlite/kv-store';
@@ -26,7 +26,7 @@ if (requireOptionalNativeModule('ExpoAppIntegrity')) {
   }
 }
 const KEY = 'orbit.attestKey';
-const PROJECT = process.env.EXPO_PUBLIC_PLAY_PROJECT_NUMBER;
+const PROJECT = process.env.EXPO_PUBLIC_PLAY_PROJECT_NUMBER || ''; // the owner writes the number in once the project exists
 let preparing: Promise<void> | null = null;
 const prepare = (m: NonNullable<typeof integrity>) =>
   (preparing ??= m.prepareIntegrityTokenProviderAsync(PROJECT!).catch((e: unknown) => {

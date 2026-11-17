@@ -163,9 +163,15 @@ export function proofs(cfg: ProofConfig, store: Store) {
     },
     // Null when the request may go on, else why not: "tooMany" (this iPhone's key has proved enough today; the app
     // doesn't attest again for it) or "unproven". `what`: contract's proofOf.
+    // Every outcome is logged by kind, never with the number or email, so the log shows when enforcing is safe. A check
+    // gets 10 seconds in all (the certificate path may fetch Apple's revocation lists).
     async check(p: Proof | undefined, what: string): Promise<null | "tooMany" | "unproven"> {
-      const why = await failure(p, what).catch((e: Error) => `error: ${e.message}`);
-      if (!why) return null;
+      const late = new Promise<string>((done) => setTimeout(done, 10_000, "timed out").unref());
+      const why = await Promise.race([failure(p, what), late]).catch((e: Error) => `error: ${e.message}`);
+      if (!why) {
+        console.log(`[proof] ${p!.kind}: passed`);
+        return null;
+      }
       const refuse = cfg.enforce || why === "unknownKey";
       console.warn(`[proof] ${p?.kind ?? "no proof"}: ${why}${refuse ? "" : " (let through)"}`);
       return !refuse ? null : why === "tooMany" ? "tooMany" : "unproven";
