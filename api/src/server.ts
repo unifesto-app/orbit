@@ -4,6 +4,7 @@ import { runDeletions } from "./auth/deletion.ts";
 import { codeSender, emailSender, sesClient, whatsappSender } from "./auth/senders.ts";
 import { readContact } from "@orbit/contract";
 import { memoryStore, redisStore } from "./auth/store.ts";
+import { ways, type WaysConfig } from "./auth/ways.ts";
 import { connect, migrateDb } from "./db/index.ts";
 import type { Notify } from "./http.ts";
 
@@ -65,10 +66,40 @@ const store = production || process.env.REDIS_URL ? redisStore(need("REDIS_URL")
 // ponytail: messages to people come with the Notifications flow; until then they're only logged.
 const notify: Notify = async (n) => console.log(`[notify] ${n.kind} → ${JSON.stringify(n.to)}`);
 
+// Ways in beyond codes (auth/ways.ts):
+// - Passkeys: RP ID heyorbit.in, fixed for good once anyone adds one. iOS apps answer with the site's origin; Android
+//   apps with "android:apk-key-hash:<their signing key's SHA-256, base64url>", so PASSKEY_ORIGINS lists those too.
+// - Google: off until GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET (a "Web application" client whose redirect URI is
+//   <API_URL>/auth/google/callback) are set; the buttons say it isn't set up.
+// - Apple: tokens for the app's bundle id. APPLE_KEY_ID and APPLE_PRIVATE_KEY (a Sign in with Apple key, .p8 text with
+//   \n for line breaks) let Remove Apple and deletion revoke it.
+const list = (v?: string) => v?.split(",").map((s) => s.trim()).filter(Boolean);
+const apiUrl = env.API_URL?.trim() || "https://api.heyorbit.in";
+const audiences = list(env.APPLE_AUDIENCES) ?? ["in.heyorbit.app"];
+const waysConfig: WaysConfig = {
+  passkey: { rpId: env.PASSKEY_RP_ID?.trim() || "heyorbit.in", origins: list(env.PASSKEY_ORIGINS) ?? ["https://heyorbit.in"] },
+  google:
+    env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
+      ? { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET, callback: `${apiUrl}/auth/google/callback`, app: "heyorbit://google" }
+      : undefined,
+  apple: {
+    audiences,
+    key:
+      env.APPLE_KEY_ID && env.APPLE_PRIVATE_KEY
+        ? { teamId: env.APPLE_TEAM_ID?.trim() || "9AH3Z5C5DH", keyId: env.APPLE_KEY_ID, privateKey: env.APPLE_PRIVATE_KEY.replace(/\\n/g, "\n"), clientId: audiences[0]! }
+        : undefined,
+  },
+};
+console.log(
+  `[ways] passkeys for ${waysConfig.passkey.rpId} (${waysConfig.passkey.origins.length} origins), Google ${waysConfig.google ? "on" : "not set up"}, ` +
+    `Apple for ${audiences.join(" ")}${waysConfig.apple.key ? " with revoke" : ", no revoke key"}`,
+);
+const revokeApple = ways(waysConfig, store).revokeApple;
+
 // Day-30 account deletions. ponytail: an hourly sweep until the job runner runs it nightly at 03:30 IST.
-setInterval(() => runDeletions(db, notify, Date.now()).catch((e) => console.error("[deletions]", e)), 60 * 60 * 1000).unref();
+setInterval(() => runDeletions(db, notify, Date.now(), revokeApple).catch((e) => console.error("[deletions]", e)), 60 * 60 * 1000).unref();
 
 const port = Number(process.env.PORT ?? 3000);
-serve({ fetch: createApp({ db, store, send, notify, secret, codes }).fetch, port }, (info) => {
+serve({ fetch: createApp({ db, store, send, notify, secret, codes, ways: waysConfig }).fetch, port }, (info) => {
   console.log(`orbit-api listening on :${info.port}`);
 });

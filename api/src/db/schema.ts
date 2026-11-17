@@ -1,8 +1,8 @@
 import { sql } from "drizzle-orm";
-import { type AnyPgColumn, boolean, date, index, integer, jsonb, pgTable, primaryKey, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { type AnyPgColumn, bigint, boolean, date, index, integer, jsonb, pgTable, primaryKey, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 // The User flow's tables (Orbit flows: User). Migrated people keep their Unifesto ids, so `id` takes any UUID.
-// Phone and email are the ways in by code; Google, Apple and passkeys get their own tables in their own slices.
+// Phone and email are the ways in by code; Google and Apple live in `identities`, passkeys in `passkeys`.
 
 const at = (name: string) => timestamp(name, { withTimezone: true });
 
@@ -17,6 +17,7 @@ export const users = pgTable("users", {
   dob: date("dob", { mode: "string" }), // only support changes it after sign-up
   gender: text("gender"),
   photo: text("photo"),
+  city: text("city"), // for new events nearby: a name from @orbit/contract's allCities, never a Google place; seen by nobody else
   // Suspended until `suspendedUntil`, or for good when that is null. Set in Galaxy.
   suspendedAt: at("suspended_at"),
   suspendedUntil: at("suspended_until"),
@@ -177,10 +178,12 @@ export const sessions = pgTable(
     prevRefreshHash: text("prev_refresh_hash"),
     rotatedAt: at("rotated_at").notNull().defaultNow(),
     acked: boolean("acked").notNull().default(false), // an access token from the last rotation has been used
-    // The last code (or, later, passkey) proved on this device, and which way in it used. Changing a sign-in method
-    // needs one in the last 10 minutes.
+    // The last way in proved on this device, and which. Changing a sign-in method needs one in the last 10 minutes.
     freshAt: at("fresh_at"),
-    freshVia: text("fresh_via", { enum: ["phone", "email"] }),
+    freshVia: text("fresh_via", { enum: ["phone", "email", "google", "apple", "passkey"] }),
+    // When the Google, Apple or passkey that made it fresh was added to the account: only one from before "Is this
+    // you?" lifts the 7-day hold (security.ts, heldUntil). An email's is read off the account instead.
+    freshSince: at("fresh_since"),
     createdAt: at("created_at").notNull().defaultNow(),
     lastActiveAt: at("last_active_at").notNull().defaultNow(),
     expiresAt: at("expires_at").notNull(),
@@ -267,4 +270,44 @@ export const pmActivity = pgTable(
     createdAt: at("created_at").notNull().defaultNow(),
   },
   (t) => [index().on(t.createdAt), index().on(t.taskId, t.createdAt)],
+);
+
+// Google and Apple, one of each per account (User flow, Sign-in methods). `subject` is the provider's own user id; the
+// email is as the provider gave it, Apple's maybe a private relay address. Not matched to anything after linking.
+export const identities = pgTable(
+  "identities",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    provider: text("provider", { enum: ["google", "apple"] }).notNull(),
+    subject: text("subject").notNull(),
+    email: text("email"),
+    // Apple only: the refresh token its authorization code gave, revoked when Apple is removed or the account deleted
+    // (Apple's rule for apps that offer account deletion). Null when Apple's key isn't set up.
+    appleRefresh: text("apple_refresh"),
+    createdAt: at("created_at").notNull().defaultNow(),
+    lastUsedAt: at("last_used_at"),
+  },
+  (t) => [unique().on(t.provider, t.subject), unique().on(t.userId, t.provider)],
+);
+
+// Passkeys (WebAuthn, RP ID heyorbit.in): each a way in, named after the device that made it.
+export const passkeys = pgTable(
+  "passkeys",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    credentialId: text("credential_id").notNull().unique(), // base64url, as the authenticator gave it
+    publicKey: text("public_key").notNull(), // COSE key, base64url
+    counter: bigint("counter", { mode: "number" }).notNull().default(0),
+    transports: jsonb("transports").$type<string[]>(),
+    name: text("name").notNull(),
+    createdAt: at("created_at").notNull().defaultNow(),
+    lastUsedAt: at("last_used_at"),
+  },
+  (t) => [index().on(t.userId)],
 );

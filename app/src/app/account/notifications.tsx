@@ -4,8 +4,8 @@
 // why a receipt still arrives. Titles only, no descriptions (owner, 15 Nov 2026).
 import { useState } from 'react';
 
-import { profile } from '../../account/data';
 import { Group, Page, Row, Toggle } from '../../account/kit';
+import { useSession } from '../../session';
 
 const PUSH = [
   ['tickets', 'Tickets'],
@@ -19,7 +19,8 @@ const EMAIL = PUSH.filter(([key]) => key !== 'tickets' && key !== 'near');
 
 export default function Notifications() {
   // ponytail: kept on this screen only until settings reach the API.
-  const [on, setOn] = useState<Record<string, boolean>>({ 'push.near': !!profile.city, quiet: false });
+  const near = !!useSession()?.me.city; // nearby needs the account's city for new events
+  const [on, setOn] = useState<Record<string, boolean>>({ 'push.near': near, quiet: false });
   const is = (key: string) => on[key] ?? true; // every switch defaults to on, but quiet hours and near without a city
   const flip = (key: string) => (v: boolean) => setOn((s) => ({ ...s, [key]: v }));
 

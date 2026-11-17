@@ -54,8 +54,22 @@
     {
       "idx": 7,
       "version": "7",
-      "when": 1794868279485,
-      "tag": "0007_pm_board",
+      "when": 1794867444717,
+      "tag": "0007_users_city",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794902496564,
+      "tag": "0008_ways_in",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794904164767,
+      "tag": "0009_pm_board",
       "breakpoints": true
     }
   ]

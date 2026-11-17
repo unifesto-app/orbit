@@ -1,10 +1,10 @@
 import { and, eq, gt, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import type { Db } from "../db/index.ts";
-import { follows, hosts, pmActivity, sessions, staffGrants, teamRoles, users } from "../db/schema.ts";
+import { follows, hosts, identities, passkeys, pmActivity, sessions, staffGrants, teamRoles, users } from "../db/schema.ts";
 import { type Env, fail, type Notify, signedIn } from "../http.ts";
 import { holdIfUnanswered, ownerOnlySql } from "../roles/access.ts";
-import { fresh, heldUntil } from "./security.ts";
+import { fresh, heldUntil, otherAddress, waysIn } from "./security.ts";
 import type { User } from "./sessions.ts";
 import type { Store } from "./store.ts";
 
@@ -41,8 +41,8 @@ export async function blockersOf(db: Db | Tx, u: User, now: number): Promise<Blo
 
 // What the one screen lists (User flow): what goes, what is scrubbed, what stays.
 const WHAT = {
-  deleted: ["Sign-in methods", "Sessions", "Roles on hosts and staff access", "Hosts you follow", "Photo"],
-  scrubbed: ["Name", "Phone", "Email", "Date of birth", "Gender"],
+  deleted: ["Sign-in methods and passkeys", "Sessions", "Roles on hosts and staff access", "Hosts you follow", "Photo"],
+  scrubbed: ["Name", "Phone", "Email", "Date of birth", "Gender", "City"],
   kept: ["Bookings, payments, refunds and payouts, with your details scrubbed, kept 8 years as books of account"],
 };
 
@@ -62,14 +62,17 @@ export function deletionRoutes({ db, store, notify, secret, now = Date.now }: De
   app.post("/me/deletion", auth, async (c) => {
     const u = c.var.user;
     const [s] = await db.select().from(sessions).where(eq(sessions.id, c.var.sid));
-    if (!fresh(s!, now())) return fail(c, 403, "needsFresh", "For your security, confirm it's you with a code first.");
-    // The 7-day hold after "Is this you?" covers deleting the account too: it would take the email with it.
-    const held = u.email ? heldUntil(u, s!, now()) : null;
+    if (!fresh(s!, now())) return fail(c, 403, "needsFresh", "For your security, confirm it's you first.");
+    // The 7-day hold after "Is this you?" covers deleting the account too: it would take every other way in with it.
+    const held = (await waysIn(db, u)) > (u.phone ? 1 : 0) ? heldUntil(u, s!, now()) : null;
     if (held) {
-      // The email hears someone tried, at most once an hour, as for a held email change.
-      if ((await store.incr(`heldNotice:${u.id}`, 3600 * 1000)) === 1)
-        await notify({ to: { contact: u.email! }, kind: "signInMethodChangeHeld", data: { method: "account", change: "delete", until: held.toISOString() } });
-      return fail(c, 403, "held", "You signed in with your number on a new phone. To delete your account this week, confirm with a code to your email.", { until: held.toISOString() });
+      // The other way in hears someone tried, at most once an hour, as for a held email change.
+      const to = await otherAddress(db, u);
+      if (to && (await store.incr(`heldNotice:${u.id}`, 3600 * 1000)) === 1)
+        await notify({ to: { contact: to }, kind: "signInMethodChangeHeld", data: { method: "account", change: "delete", until: held.toISOString() } });
+      return fail(c, 403, "held", "You signed in with your number on a new phone. To delete your account this week, confirm it's you with a way in you had before then.", {
+        until: held.toISOString(),
+      });
     }
     if (u.deletionDueAt) return fail(c, 409, "pending", "Your account is already set to be deleted.");
     const blockers = await blockersOf(db, u, now());
@@ -102,9 +105,10 @@ export function deletionRoutes({ db, store, notify, secret, now = Date.now }: De
 // own step, so one that was kept meanwhile, or taken by another run, is left alone.
 // A blocker found now (say, a host started after the request) cancels the request with one notice; the person asks
 // again once it's sorted. One account failing never stops the rest.
-// ponytail: the server runs this hourly until the job runner arrives to run it nightly at 03:30 IST. Apple tokens are
-// revoked here once Google and Apple sign-in exist.
-export async function runDeletions(db: Db, notify: Notify, now: number) {
+// Apple's tokens are revoked once the account is gone (Apple's rule for apps that offer deletion); a failed revoke is
+// logged and never undoes the deletion.
+// ponytail: the server runs this hourly until the job runner arrives to run it nightly at 03:30 IST.
+export async function runDeletions(db: Db, notify: Notify, now: number, revokeApple?: (token: string) => Promise<void>) {
   const at = new Date(now);
   const due = await db.select({ id: users.id }).from(users).where(and(lte(users.deletionDueAt, at), isNull(users.deletedAt)));
   let done = 0;
@@ -124,6 +128,9 @@ export async function runDeletions(db: Db, notify: Notify, now: number) {
           return { blocked: blockers };
         }
         await tx.delete(sessions).where(eq(sessions.userId, u.id));
+        // Every way in goes; the row stays, so the cascade never fires.
+        await tx.delete(passkeys).where(eq(passkeys.userId, u.id));
+        const links = await tx.delete(identities).where(eq(identities.userId, u.id)).returning({ appleRefresh: identities.appleRefresh });
         await tx.delete(follows).where(eq(follows.userId, u.id)); // the row stays, so the cascade never fires
         const seats = await tx
           .update(teamRoles)
@@ -161,6 +168,7 @@ export async function runDeletions(db: Db, notify: Notify, now: number) {
             dob: null,
             gender: null,
             photo: null,
+            city: null,
             suspensionReason: null,
             newDevicePhoneAt: null,
             platformOwner: false,
@@ -169,13 +177,15 @@ export async function runDeletions(db: Db, notify: Notify, now: number) {
             updatedAt: at,
           })
           .where(eq(users.id, u.id));
-        return { deleted: true, lastWord: u.email ?? u.phone }; // the last message goes to the contact read before the scrub
+        const apple = links.flatMap((l) => (l.appleRefresh ? [l.appleRefresh] : []));
+        return { deleted: true, lastWord: u.email ?? u.phone, apple }; // the last message goes to the contact read before the scrub
       });
       if (!outcome) continue;
       if ("blocked" in outcome) {
         await notify({ to: { userId: id }, kind: "deletionBlocked", data: { blockers: outcome.blocked } });
         continue;
       }
+      for (const token of outcome.apple) await revokeApple?.(token).catch((e) => console.error(`[deletions] ${id} apple revoke`, e));
       if (outcome.lastWord) await notify({ to: { contact: outcome.lastWord }, kind: "accountDeleted", data: {} });
       done++;
     } catch (e) {
