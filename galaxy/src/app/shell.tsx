@@ -106,7 +106,7 @@ export function Shell({ children, account }: { children: ReactNode; account: Rea
 
       <footer className={styles.footer} inert={drawer}>
         <Link href={tokens.href}>{tokens.label}</Link>
-        <span>© 2027 Unifesto Private Limited</span>
+        <span>© 2027 Orbit</span>
       </footer>
     </div>
   );

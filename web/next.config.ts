@@ -1,16 +1,14 @@
 import type { NextConfig } from "next";
 
-// What isn't sent to Coming Soon: the page, the files it loads (the card drawings, social marks, the two logos, the site
-// icon), Next's scripts and dev tools, and /api. Regex pieces, so dots are escaped.
+// What isn't sent to Coming Soon: the page, the files it loads (the Instagram mark, the wordmark, the site icon), Next's
+// scripts and dev tools, and /api. Regex pieces, so dots are escaped.
 const COMING_SOON_KEEPS = [
   "coming-soon",
   "_next/",
   "__nextjs",
   "api/",
-  "explore/",
   "social/",
   "orbit-wordmark\\.svg",
-  "by-unifesto\\.svg",
   "icon\\.svg",
   "favicon\\.ico",
 ];
