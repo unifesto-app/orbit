@@ -162,6 +162,29 @@ test("account deletion removes the photo file", async () => {
   assert.equal(t.media.files.keys().filter((k) => k.includes(a.me.id)).length, 0); // other tests' files stay
 });
 
+// The cap is the middleware's, before the body is read: a body this big that isn't even a form would otherwise be 400.
+test("a body far over the cap is refused before it's read", async () => {
+  const a = await join();
+  const res = await t.app.request("/me/photo", {
+    method: "PUT",
+    headers: { authorization: `Bearer ${a.access}`, "x-forwarded-for": "203.0.113.7", "content-type": "multipart/form-data; boundary=x" },
+    body: new Uint8Array(6 * 1024 * 1024),
+  });
+  assert.equal(res.status, 413);
+  assert.equal(((await res.json()) as any).error, "tooBig");
+  assert.equal(await photoOf(a.me.id), null);
+});
+
+test("two uploads at once leave one file, the one the account points at", async () => {
+  const a = await join();
+  const [x, y] = await Promise.all([send(a.access, await img(400).jpeg().toBuffer()), send(a.access, await img(500).png().toBuffer())]);
+  assert.equal(x.status, 200);
+  assert.equal(y.status, 200);
+  const mine = t.media.files.keys().filter((k) => k.includes(a.me.id));
+  assert.equal(mine.length, 1);
+  assert.equal(await photoOf(a.me.id), `https://api.test/media/${mine[0]}`);
+});
+
 test("without media: 503 notSetUp", async () => {
   const t2 = await testApp({ media: false });
   try {
