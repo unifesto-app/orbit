@@ -72,8 +72,8 @@ export type Device = z.infer<typeof Device>;
 // That the request comes from Orbit itself (User flow, Account security), on code sends and Google's start. The app
 // signs `<challenge>:<what>` (POST /auth/challenge, then proofOf): an iPhone with App Attest, its first time with the
 // key's attestation and after that with an assertion, an Android phone with a Play Integrity token whose request hash
-// is that text (so it holds no number or email: Google sees it). The web (Galaxy, code sends only) sends a Cloudflare
-// Turnstile token.
+// is that text (so it holds no number or email: Google sees it). The web (Galaxy's login and the waitlist page, code
+// sends only) sends a Cloudflare Turnstile token.
 export const Proof = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("ios"),

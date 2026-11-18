@@ -1,0 +1,91 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  padding: 0 16px;
+}
+
+.bar,
+.doc,
+.foot {
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.bar {
+  padding: 24px 0;
+}
+
+.wordmark {
+  display: block;
+  width: auto;
+  height: 22px;
+}
+
+.doc {
+  flex: 1;
+  padding: 32px 0 64px;
+}
+
+.doc h1 {
+  font-family: var(--display);
+  font-weight: var(--orbit-weight-display);
+  font-size: clamp(36px, 6vw, 52px);
+  line-height: 1.05;
+  letter-spacing: var(--orbit-tracking-display);
+}
+
+.updated {
+  margin-top: 12px;
+  font-size: 14px;
+  color: var(--orbit-text-2);
+}
+
+.doc h2 {
+  margin-top: 40px;
+  font-family: var(--display);
+  font-weight: var(--orbit-weight-headline);
+  font-size: 20px;
+  letter-spacing: -0.01em;
+}
+
+.doc p,
+.doc ul {
+  margin: 12px 0 0;
+}
+
+.doc ul {
+  padding-left: 20px;
+}
+
+.doc li + li {
+  margin-top: 6px;
+}
+
+.doc a {
+  text-underline-offset: 3px;
+}
+
+.foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 0 28px;
+  border-top: 1px solid var(--orbit-hairline);
+  font-size: 14px;
+  color: var(--orbit-text-2);
+}
+
+.foot nav {
+  display: flex;
+  gap: 20px;
+}
+
+.foot a {
+  text-decoration: none;
+}
+
+.foot a:hover {
+  color: var(--orbit-text);
+}

@@ -1,7 +1,7 @@
 import { serve } from "@hono/node-server";
 import { createApp } from "./app.ts";
 import { runDeletions } from "./auth/deletion.ts";
-import { codeSender, emailSender, sesClient, whatsappSender } from "./auth/senders.ts";
+import { codeSender, emailSender, type Mail, sesClient, sesMail, whatsappSender } from "./auth/senders.ts";
 import { readContact } from "@orbit/contract";
 import type { ProofConfig } from "./auth/proof.ts";
 import { memoryStore, redisStore } from "./auth/store.ts";
@@ -33,11 +33,10 @@ const phone =
     : production
       ? undefined
       : logCode;
-const email = env.SES_REGION
-  ? emailSender({ from: env.EMAIL_FROM ?? "Orbit <no-reply@updates.heyorbit.in>", send: sesClient(env.SES_REGION) })
-  : production
-    ? undefined
-    : logCode;
+const ses = env.SES_REGION ? { from: env.EMAIL_FROM ?? "Orbit <no-reply@updates.heyorbit.in>", send: sesClient(env.SES_REGION) } : null;
+const email = ses ? emailSender(ses) : production ? undefined : logCode;
+// Other emails (the waitlist's welcome) go the same way; off production without SES they're only logged.
+const mail: Mail | undefined = ses ? sesMail(ses) : production ? undefined : async (to, m) => console.log(`[mail] ${to}: ${m.subject}`);
 const send = codeSender({ phone, email });
 const realSends = (phone && phone !== logCode) || (email && email !== logCode);
 
@@ -140,6 +139,6 @@ console.log(
 // Day-30 account deletions. ponytail: an hourly sweep until the job runner runs it nightly at 03:30 IST.
 setInterval(() => runDeletions(db, notify, Date.now(), revokeApple, media).catch((e) => console.error("[deletions]", e)), 60 * 60 * 1000).unref();
 
-serve({ fetch: createApp({ db, store, send, notify, secret, codes, ways: waysConfig, media, proof }).fetch, port }, (info) => {
+serve({ fetch: createApp({ db, store, send, notify, secret, codes, ways: waysConfig, media, proof, mail }).fetch, port }, (info) => {
   console.log(`orbit-api listening on :${info.port}`);
 });

@@ -45,7 +45,7 @@
 heyorbit.in {
 	import cf_tls
 	# Passkeys for heyorbit.in (api/src/auth/ways.ts): which apps may use them. Served here rather than by the web app,
-	# which sends every page to /coming-soon until launch; each must answer 200 JSON with no redirect.
+	# which sends every other page to / until launch; each must answer 200 JSON with no redirect.
 	# - iOS: team 9AH3Z5C5DH, bundle in.heyorbit.app (app.json's webcredentials:heyorbit.in).
 	# - Android: empty until the Play/EAS signing key's SHA-256 is added as
 	#   [{"relation":["delegate_permission/common.get_login_creds"],"target":{"namespace":"android_app",

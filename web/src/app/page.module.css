@@ -1,0 +1,402 @@
+/* One screen on a laptop, one scroll on a phone. Charcoal only; Stone type; Sage for elements (progress, selection). */
+
+.page {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  padding: 0 16px;
+  overflow-x: clip;
+}
+
+.bar,
+.hero,
+.foot {
+  width: 100%;
+  max-width: 1160px;
+  margin: 0 auto;
+}
+
+.bar {
+  position: relative;
+  z-index: 1;
+  padding: 24px 0;
+}
+
+.wordmark {
+  display: block;
+  width: auto;
+  height: 22px;
+}
+
+@media (min-width: 960px) {
+  .wordmark {
+    height: 26px;
+  }
+}
+
+.hero {
+  flex: 1;
+  display: grid;
+  align-content: center;
+  gap: 24px;
+  padding: 8px 0 48px;
+}
+
+/* The line, with the symbols in orbit above it. The drawing is 888 x 412 and its lowest symbol (the heart, with its
+   tilt) ends by 70% of its height, so the line starts there: 0.70 x 412 / 888 = 32.5% of the width (padding % is of
+   the width). The rings' near arcs run on below, behind the words; no word reaches a symbol. */
+.copy {
+  position: relative;
+  margin-top: 32px; /* owner, 18 Nov 2026: "move orbits and text little bit down" */
+  padding-top: 33%;
+}
+
+.art {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.art [data-symbol] {
+  animation: drift 9s ease-in-out infinite alternate;
+}
+
+@keyframes drift {
+  to {
+    transform: translateY(-6px);
+  }
+}
+
+.aside {
+  font-family: var(--script);
+  font-size: 40px;
+  line-height: 1;
+  color: var(--orbit-accent);
+}
+
+.line {
+  position: relative;
+  font-family: var(--display);
+  font-weight: var(--orbit-weight-display);
+  font-size: clamp(42px, 7.2vw, 80px);
+  line-height: 1.02;
+  letter-spacing: var(--orbit-tracking-display);
+  text-wrap: balance;
+}
+
+/* The one line of type in 3D, as on the kit's Who we are page. */
+.deep {
+  display: inline-block;
+  padding: 0 0.04em 0.16em 0;
+  margin-bottom: -0.16em;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: url(#type3d);
+}
+
+.panel {
+  margin-top: 16px;
+  padding: 24px;
+  border: 1px solid var(--orbit-border);
+  border-radius: var(--orbit-radius);
+  background: var(--orbit-ground);
+}
+
+@media (min-width: 960px) {
+  .hero {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 440px);
+    align-items: start;
+    column-gap: 72px;
+  }
+
+  .panel {
+    margin-top: 0;
+  }
+
+  .copy {
+    margin-top: 72px;
+  }
+}
+
+/* The form */
+
+.formSpace {
+  min-height: 839px; /* the details step's height at every width (measured 18 Nov 2026); keep in step with it */
+}
+
+.form {
+  display: grid;
+  gap: 16px;
+}
+
+.track {
+  height: 2px;
+  border-radius: var(--orbit-radius-pill);
+  background: var(--orbit-track);
+  overflow: hidden;
+}
+
+.track span {
+  display: block;
+  height: 100%;
+  background: var(--orbit-accent);
+  transition: width 0.4s ease;
+}
+
+.title {
+  font-family: var(--display);
+  font-weight: var(--orbit-weight-headline);
+  font-size: 22px;
+  letter-spacing: -0.02em;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.field > span:first-child,
+.wants legend {
+  font-size: 14px;
+  font-weight: var(--orbit-weight-medium);
+  color: var(--orbit-text-2);
+}
+
+.field input,
+.phone {
+  width: 100%;
+  height: 48px;
+  border: 1px solid var(--orbit-border);
+  border-radius: var(--orbit-radius);
+  background: var(--orbit-ground);
+  font-size: 16px; /* 16px or more, so phones don't zoom in */
+  transition: border-color 0.2s;
+}
+
+.field input {
+  padding: 0 14px;
+}
+
+.field input:focus,
+.phone:focus-within {
+  outline: none;
+  border-color: var(--orbit-accent);
+}
+
+.phone {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-left: 14px;
+}
+
+.phone span {
+  color: var(--orbit-text-2);
+}
+
+.phone input {
+  height: 100%;
+  padding: 0 14px 0 0;
+  border: 0;
+  background: none;
+}
+
+.phone input:focus {
+  border: 0;
+}
+
+.field input::placeholder {
+  color: rgb(var(--orbit-stone-rgb) / 0.32);
+}
+
+.wants {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.wants legend {
+  margin-bottom: 10px;
+  padding: 0;
+}
+
+.wants legend span {
+  margin-left: 6px;
+  font-weight: var(--orbit-weight-text);
+  color: rgb(var(--orbit-stone-rgb) / 0.4);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--orbit-border);
+  border-radius: var(--orbit-radius-pill);
+  font-size: 14px;
+  line-height: 1.2;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.2s, border-color 0.2s, color 0.2s;
+}
+
+.chip:hover {
+  border-color: rgb(var(--orbit-stone-rgb) / 0.32);
+}
+
+.chip input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+/* Picked: a Sage fill with a Charcoal label (Stone on Sage is too faint). */
+.chip:has(:checked) {
+  border-color: var(--orbit-accent);
+  background: var(--orbit-accent);
+  color: var(--orbit-on-accent);
+}
+
+.chip:has(:focus-visible) {
+  outline: 2px solid var(--orbit-accent);
+  outline-offset: 2px;
+}
+
+.agree {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--orbit-text-2);
+  cursor: pointer;
+}
+
+.agree input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 1px 0 0;
+  accent-color: var(--orbit-accent);
+  cursor: pointer;
+}
+
+.agree a {
+  color: var(--orbit-text);
+  text-underline-offset: 3px;
+}
+
+.error,
+.note {
+  padding: 10px 12px;
+  border-radius: var(--orbit-radius);
+  background: rgb(var(--orbit-stone-rgb) / 0.06);
+  font-size: 14px;
+}
+
+.error {
+  font-weight: var(--orbit-weight-medium);
+}
+
+.note {
+  color: var(--orbit-text-2);
+}
+
+.sent {
+  margin-top: -8px;
+  color: var(--orbit-text-2);
+}
+
+.field .code {
+  height: 60px;
+  font-family: var(--display);
+  font-size: 28px;
+  font-weight: var(--orbit-weight-title);
+  letter-spacing: 0.4em;
+  text-align: center;
+}
+
+.links {
+  display: flex;
+  justify-content: space-between;
+}
+
+.link {
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: var(--orbit-text-2);
+  font-size: 14px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.link:hover {
+  color: var(--orbit-text);
+}
+
+.done {
+  display: grid;
+  gap: 8px;
+  padding: 24px 0 8px;
+  text-align: center;
+}
+
+.done .title {
+  font-size: 28px;
+}
+
+.count {
+  min-height: 21px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--orbit-hairline);
+  font-size: 14px;
+  color: var(--orbit-text-2);
+  text-align: center;
+}
+
+.count:empty {
+  display: none;
+}
+
+.foot {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  padding: 20px 0 28px;
+  border-top: 1px solid var(--orbit-hairline);
+  font-size: 14px;
+  color: var(--orbit-text-2);
+}
+
+.foot nav {
+  display: flex;
+  gap: 20px;
+}
+
+.foot a {
+  text-decoration: none;
+}
+
+.foot a:hover {
+  color: var(--orbit-text);
+}

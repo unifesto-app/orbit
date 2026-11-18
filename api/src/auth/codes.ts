@@ -33,7 +33,9 @@ export type SendResult =
   | { ok: false; error: "notOpen" | "tooSoon" | "tooMany" | "paused" }
   | { ok: false; error: "notSent"; reason: "refused" | "throttled" | "notSetUp" };
 
-export async function sendCode(store: Store, send: Sender, secret: string, to: Contact, ip: string, policy: SendPolicy = OPEN, now = Date.now()): Promise<SendResult> {
+// `scope` keeps a code for one purpose: "" is sign-in's (keys unchanged), "waitlist:" the landing page's, so a waitlist
+// code never signs anyone in and never replaces a sign-in code on its way. The send and try limits stay shared.
+export async function sendCode(store: Store, send: Sender, secret: string, to: Contact, ip: string, policy: SendPolicy = OPEN, now = Date.now(), scope = ""): Promise<SendResult> {
   const id = idOf(to);
   if (policy.openTo && !policy.openTo.has(id)) return { ok: false, error: "notOpen" };
   const today = `send:all:${to.kind}:${new Date(now + IST).toISOString().slice(0, 10)}`;
@@ -54,7 +56,7 @@ export async function sendCode(store: Store, send: Sender, secret: string, to: C
     console.error(`[codes] ${policy.dailyCap} ${to.kind} codes today: check for abuse${to.kind === "phone" ? "; WhatsApp codes stop until midnight" : ""}`);
 
   const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
-  const keep = () => store.set(`code:${id}`, mac(secret, id, code), CODE_TTL);
+  const keep = () => store.set(`code:${scope}${id}`, mac(secret, scope + id, code), CODE_TTL);
   try {
     await send(to, code);
   } catch (e) {
@@ -76,20 +78,21 @@ export type CheckResult = { ok: true } | { ok: false; error: "tooMany" | "expire
 // or email and IP, 50 per IP, then 40 per number or email, which also deletes the code. Counted in that order, one
 // address can't use up a number's 40.
 // Right once: the code is deleted by the first request that matches it, so two at once can't both sign in.
-export async function checkCode(store: Store, secret: string, to: Contact, code: string, ip: string): Promise<CheckResult> {
+export async function checkCode(store: Store, secret: string, to: Contact, code: string, ip: string, scope = ""): Promise<CheckResult> {
   const id = idOf(to);
+  const key = `code:${scope}${id}`;
   const window = 15 * MIN;
   if ((await store.incr(`tries:${id}:${ip}`, window)) > 5) return { ok: false, error: "tooMany" };
   if ((await store.incr(`tries:ip:${ip}`, window)) > 50) return { ok: false, error: "tooMany" };
   if ((await store.incr(`tries:${id}`, window)) > 40) {
-    await store.del(`code:${id}`);
+    await store.del(key);
     return { ok: false, error: "tooMany" };
   }
 
-  const held = await store.get(`code:${id}`);
+  const held = await store.get(key);
   if (!held) return { ok: false, error: "expired" };
-  if (!timingSafeEqual(Buffer.from(held), Buffer.from(mac(secret, id, code)))) return { ok: false, error: "wrongCode" };
-  if (!(await store.del(`code:${id}`))) return { ok: false, error: "expired" };
+  if (!timingSafeEqual(Buffer.from(held), Buffer.from(mac(secret, scope + id, code)))) return { ok: false, error: "wrongCode" };
+  if (!(await store.del(key))) return { ok: false, error: "expired" };
   // The limits are on wrong codes, so a right one gives its try back: many people signing in from one gate's Wi-Fi
   // never add up to a lockout.
   await Promise.all([store.del(`tries:${id}:${ip}`), store.incr(`tries:ip:${ip}`, window, -1), store.incr(`tries:${id}`, window, -1)]);

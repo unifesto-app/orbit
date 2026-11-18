@@ -85,6 +85,13 @@
       "when": 1794935022616,
       "tag": "0011_prelaunch_interest",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1794958859035,
+      "tag": "0012_waitlist_phone",
+      "breakpoints": true
     }
   ]
 }

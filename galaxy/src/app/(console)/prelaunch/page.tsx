@@ -1,4 +1,4 @@
-import type { InterestList } from "@orbit/contract";
+import { FEATURES, type InterestList } from "@orbit/contract";
 import type { Metadata } from "next";
 import { connection } from "next/server";
 import { Suspense } from "react";
@@ -7,7 +7,8 @@ import { Alert, Container, PageHeader, Pages, ui } from "../../ui";
 import s from "./page.module.css";
 
 // Prelaunch (owner, 17 Nov 2026: "create a page in galaxy web - prelaunch in that display all the info"): everyone on
-// Coming Soon's waitlist, newest first, with what their visit said. API: GET /galaxy/prelaunch, for holders of People.
+// the landing page's waitlist, newest first, with the features they want and what their visit said. Rows from before
+// 18 Nov 2026 have an email only. API: GET /galaxy/prelaunch, for holders of People.
 export const metadata: Metadata = { title: "Prelaunch" };
 
 export default function Prelaunch({ searchParams }: PageProps<"/prelaunch">) {
@@ -59,6 +60,10 @@ async function Body({ searchParams }: Pick<PageProps<"/prelaunch">, "searchParam
           <table className={ui.table}>
             <thead>
               <tr>
+                <th>Name</th>
+                <th>WhatsApp</th>
+                <th>Date of birth</th>
+                <th>Wants</th>
                 <th>Email</th>
                 <th>Joined</th>
                 <th>Country</th>
@@ -75,7 +80,11 @@ async function Body({ searchParams }: Pick<PageProps<"/prelaunch">, "searchParam
             <tbody>
               {list.people.map((p) => (
                 <tr key={p.id}>
-                  <td>{p.email}</td>
+                  <td>{p.name ?? "–"}</td>
+                  <td>{p.phone ?? "–"}</td>
+                  <td>{p.dob ?? "–"}</td>
+                  <td>{p.features.map((f) => FEATURES[f] ?? f).join(", ") || "–"}</td>
+                  <td>{p.email ?? "–"}</td>
                   <td>{when(p.createdAt)}</td>
                   <td>{p.country ?? "–"}</td>
                   <td>{[p.region, p.city].filter(Boolean).join(", ") || "–"}</td>
