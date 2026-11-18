@@ -74,8 +74,8 @@ services:
     logging: *logging
     env_file: ./web.env
     environment:
-      # Coming Soon's server reads the interest count and sends sign-ups to the API directly on `edge`, passing on the
-      # visitor's address (web/src/app/coming-soon/actions.ts).
+      # The waitlist page's server reads the interest count and sends codes and sign-ups to the API directly on `edge`,
+      # passing on the visitor's address (web/src/app/actions.ts).
       ORBIT_API_URL: http://orbit-api:3000
     expose:
       - "3000"

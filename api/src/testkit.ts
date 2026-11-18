@@ -23,6 +23,7 @@ export async function testApp(opts: { send?: Sender; codes?: SendPolicy; ways?: 
 
   let clock = Date.now();
   const sent: { to: Contact; code: string }[] = [];
+  const mails: { to: string; subject: string; html: string; text: string; replyTo?: string }[] = []; // the welcome emails (prelaunch.ts)
   const notices: Notice[] = [];
   const store = memoryStore(() => clock);
   const media = { files: memoryFiles(), url: "https://api.test/media" };
@@ -32,6 +33,7 @@ export async function testApp(opts: { send?: Sender; codes?: SendPolicy; ways?: 
     secret: "test-secret-that-is-at-least-32-characters",
     now: () => clock,
     send: opts.send ?? (async (to, code) => void sent.push({ to, code })),
+    mail: async (to: string, m: { subject: string; html: string; text: string; replyTo?: string }) => void mails.push({ to, ...m }),
     codes: opts.codes,
     ways: opts.ways,
     proof: opts.proof,
@@ -50,5 +52,5 @@ export async function testApp(opts: { send?: Sender; codes?: SendPolicy; ways?: 
   // The code last sent to a phone or email.
   const lastCode = (to: string) => sent.filter((s) => (s.to.kind === "phone" ? s.to.e164 : s.to.email) === to).at(-1)?.code;
 
-  return { db, app, store, call, sent, notices, lastCode, media, close, tick: (ms: number) => void (clock += ms), now: () => clock };
+  return { db, app, store, call, sent, mails, notices, lastCode, media, close, tick: (ms: number) => void (clock += ms), now: () => clock };
 }

@@ -1,31 +1,15 @@
 import type { NextConfig } from "next";
 
-// What isn't sent to Coming Soon: the page, the files it loads (the Instagram mark, the wordmark, the site icon), Next's
-// scripts and dev tools, and /api. Regex pieces, so dots are escaped.
-const COMING_SOON_KEEPS = [
-  "coming-soon",
-  "_next/",
-  "__nextjs",
-  "api/",
-  "social/",
-  "orbit-wordmark\\.svg",
-  "icon\\.svg",
-  "favicon\\.ico",
-];
-
 const nextConfig: NextConfig = {
-  /* config options here */
   cacheComponents: true,
   partialPrefetching: true,
-  // Until launch, every page opens Coming Soon, unknown addresses too (owner, 16 Nov 2026: "/ should open /coming-soon",
-  // then "tempory all page redirect to /coming-soon even 404"). Temporary (307), so browsers and search engines don't
-  // keep it; delete this to bring the site back. Redirects run before Next serves any file, so Coming Soon itself, the
-  // files it loads, Next's own and /api (data, not pages) are left out.
+  // Until launch the site is the waitlist at / plus its terms and privacy pages (owner, 18 Nov 2026: "keep everything in
+  // landing page", "remove /coming-soon", "add terms & privacy pages"). Any other address, old links like /coming-soon
+  // too, opens /. Temporary (307), so search engines keep / as the page. Left out: the other pages, Next's own files,
+  // and what search, link previews and the welcome email read (robots, sitemap, llms.txt, icons, social and email images). Regex: dots escaped.
   async redirects() {
-    return [
-      { source: "/", destination: "/coming-soon", permanent: false },
-      { source: `/:path((?!${COMING_SOON_KEEPS.join("|")}).*)`, destination: "/coming-soon", permanent: false },
-    ];
+    const keep = ["terms$", "privacy$", "_next/", "__nextjs", "robots\\.txt", "sitemap\\.xml", "llms\\.txt", "icon\\.svg", "apple-icon", "favicon\\.ico", "opengraph-image", "twitter-image", "email/"];
+    return [{ source: `/:path((?!${keep.join("|")}).+)`, destination: "/", permanent: false }];
   },
 };
 

@@ -1,101 +1,52 @@
-/* Orbit theme: dark only, one accent on elements only. Every value comes from the brand tokens (@orbit/tokens, loaded
-   in layout.tsx); these names point at them so the pages keep their own vocabulary. */
+/* Every colour, corner and glass comes from @orbit/tokens (--orbit-*); nothing raw here. */
+
 :root {
-  --ground: var(--orbit-ground); /* Charcoal: every background (owner, 18 Nov 2026) */
-  --card: #10261f; /* night 60%, forest 40%. Open (18 Nov 2026): the brand kit keeps panels Charcoal with a hairline; kept until the owner decides */
-  --card-hover: #142a21;
-  --raised: var(--orbit-fill); /* forest */
-  --text: var(--orbit-text); /* stone */
-  --text-2: var(--orbit-text-2);
-  --hairline: var(--orbit-hairline);
-  --track: var(--orbit-track);
-  --accent: var(--orbit-accent); /* sage: progress, switches, selection, live dots. Never buttons or text. Owner, 18 Nov 2026 (was #295eff blue). */
-  --steel: var(--orbit-accent); /* sage */
-  --r-control: var(--orbit-radius-pill); /* every button, chip, select and search field is a pill */
-  --r-card: var(--orbit-radius); /* one corner (owner, 15 Nov 2026) */
-  --nav-h: 76px; /* navbar height from 720px; the event page's sticky poster sits below it */
-  --page-x: 20px; /* side margin of page content; the navbar and footer keep their own */
+  --display: var(--font-display), system-ui, sans-serif;
+  --text: var(--font-text), system-ui, sans-serif;
+  --script: var(--font-script), cursive;
   color-scheme: dark;
 }
 
-@media (min-width: 960px) {
-  :root {
-    --page-x: 64px;
-  }
-}
-
-@media (min-width: 1440px) {
-  :root {
-    --page-x: 96px;
-  }
-}
-
-* {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
-  margin: 0;
-  padding: 0;
 }
 
 html {
-  background: var(--ground);
+  background: var(--orbit-ground);
+  color: var(--orbit-text);
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
+  margin: 0;
   min-height: 100dvh;
-  display: flex;
-  flex-direction: column;
-  background: var(--ground);
-  color: var(--text);
-  font-family: var(--font-text), system-ui, sans-serif;
+  font-family: var(--text);
+  font-size: 16px;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
 }
 
 h1,
 h2,
-h3,
-button {
-  font-family: var(--font-display), system-ui, sans-serif;
+p {
+  margin: 0;
 }
 
 a {
   color: inherit;
-  text-decoration: none;
 }
 
-ul {
-  list-style: none;
+button,
+input {
+  font: inherit;
+  color: inherit;
 }
 
-/* The accent is too dim on the ground colour to carry focus. */
 :focus-visible {
-  outline: 2px solid var(--text);
+  outline: 2px solid var(--orbit-accent);
   outline-offset: 2px;
-}
-
-/* The primary button, shared by every page: glass with a Stone label, as in the app; the accent never goes on it. */
-.button {
-  height: 50px;
-  padding: 0 28px;
-  border-radius: var(--r-control);
-  background: var(--orbit-glass-background);
-  border: 1px solid var(--orbit-glass-border);
-  box-shadow: var(--orbit-glass-highlight);
-  color: var(--orbit-glass-label);
-  -webkit-backdrop-filter: blur(16px) saturate(160%);
-  backdrop-filter: blur(16px) saturate(160%);
-  font-family: var(--font-display), system-ui, sans-serif;
-  font-size: 16px;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: border-color 150ms ease;
-}
-
-.button:hover {
-  border-color: rgb(var(--orbit-stone-rgb) / 0.4);
 }
 
 .sr-only {
@@ -107,102 +58,44 @@ ul {
   white-space: nowrap;
 }
 
-/* 404 page (not-found.tsx). Global on purpose: Next ships the root not-found with every route, so a CSS module
-   for it was preloaded on every page and went unused (the browser warned). These few rules ride along instead. */
-.nf-wrap {
-  flex: 1;
-  width: 100%;
-  max-width: 560px;
-  margin: 0 auto;
-  padding: 56px 16px 72px;
-  display: flex;
-  flex-direction: column;
+/* Every button: frosted glass, a Stone label, a pill. Never Sage. */
+.button {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  text-align: center;
+  min-height: 48px;
+  padding: 0 24px;
+  border: 1px solid var(--orbit-glass-border);
+  border-radius: var(--orbit-radius-pill);
+  background: var(--orbit-glass-background);
+  box-shadow: var(--orbit-glass-highlight);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  color: var(--orbit-glass-label);
+  font-family: var(--display);
+  font-weight: var(--orbit-weight-title);
+  cursor: pointer;
+  transition: border-color 0.2s, transform 0.2s;
 }
 
-/* A ring with the accent dot circling it; the code sits still in the middle. */
-.nf-orbit {
-  position: relative;
-  width: 220px;
-  height: 220px;
-  margin-bottom: 20px;
-  display: grid;
-  place-items: center;
+.button:hover {
+  border-color: rgb(var(--orbit-stone-rgb) / 0.4);
 }
 
-.nf-ring {
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  border: 1px solid var(--track);
-  animation: nf-circle 14s linear infinite;
+.button:active {
+  transform: scale(0.98);
 }
 
-.nf-dot {
-  position: absolute;
-  top: -5px;
-  left: calc(50% - 5px);
-  width: 10px;
-  height: 10px;
-  border-radius: 5px;
-  background: var(--accent);
-}
-
-@keyframes nf-circle {
-  to {
-    transform: rotate(1turn);
-  }
+.button:disabled {
+  cursor: progress;
+  opacity: 0.6;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .nf-ring {
-    animation: none;
-  }
-}
-
-.nf-code {
-  font-family: var(--font-display), system-ui, sans-serif;
-  font-size: 72px;
-  font-weight: 700;
-  line-height: 1;
-  letter-spacing: -0.03em;
-  background: linear-gradient(180deg, var(--text) 0%, var(--text) 30%, var(--steel) 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-
-.nf-title {
-  font-size: 28px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-}
-
-.nf-text {
-  margin-bottom: 16px;
-  font-size: 16px;
-  color: var(--text-2);
-}
-
-@media (min-width: 960px) {
-  .nf-wrap {
-    padding-top: 80px;
-    padding-bottom: 104px;
-  }
-
-  .nf-orbit {
-    width: 260px;
-    height: 260px;
-  }
-
-  .nf-code {
-    font-size: 88px;
-  }
-
-  .nf-title {
-    font-size: 36px;
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
   }
 }

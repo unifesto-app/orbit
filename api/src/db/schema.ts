@@ -411,11 +411,16 @@ export const passkeys = pgTable(
   (t) => [index().on(t.userId)],
 );
 
-// Prelaunch interest from Coming Soon (contract/src/prelaunch.ts): an email each, with what the visit said about
-// itself. Seen in Galaxy's Prelaunch by holders of People.
+// Prelaunch interest from the landing page (contract/src/prelaunch.ts): a name, a WhatsApp number a code proved, a
+// date of birth and the features wanted, with what the visit said about itself. Rows from before 18 Nov 2026 hold an
+// email only. Seen in Galaxy's Prelaunch by holders of People.
 export const interest = pgTable("interest", {
   id: uuid("id").primaryKey().defaultRandom(),
-  email: text("email").notNull().unique(), // lowercased
+  email: text("email"), // lowercased; where the welcome email went (the first waitlist's only field); not unique, as a family may share one
+  name: text("name"),
+  phone: text("phone").unique(), // +91…, proved by a WhatsApp code
+  dob: date("dob", { mode: "string" }),
+  features: jsonb("features").$type<string[]>(),
   ip: text("ip"), // the API's own read of the visitor's address (http.ts, clientIp)
   country: text("country"),
   region: text("region"),

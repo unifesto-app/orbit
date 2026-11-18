@@ -93,16 +93,20 @@ export const sesClient = (region: string): SesSend => {
 // AWS errors that mean our side is misconfigured, not the address.
 const SES_SETUP = /AccessDenied|InvalidClientTokenId|SignatureDoesNotMatch|UnrecognizedClient|ExpiredToken|CredentialsProvider|NotVerified|ConfigurationSet|AccountSendingPaused/i;
 
-// Amazon SES, from the domain Unifesto already sends its codes from.
-export const emailSender =
-  (c: { from: string; send: SesSend }) =>
-  async (email: string, code: string) => {
-    const m = codeEmail(code);
+// One email by Amazon SES: a subject, HTML and plain text.
+export type Mail = (to: string, m: { subject: string; html: string; text: string; replyTo?: string }) => Promise<void>;
+
+// Amazon SES, from Orbit's sending domain (EMAIL_FROM): sign-in codes (emailSender) and the waitlist's
+// welcome email (prelaunch.ts) alike.
+export const sesMail =
+  (c: { from: string; send: SesSend }): Mail =>
+  async (email, m) => {
     let out: { MessageId?: string };
     try {
       out = await c.send({
         Source: c.from,
         Destination: { ToAddresses: [email] },
+        ...(m.replyTo ? { ReplyToAddresses: [m.replyTo] } : {}),
         Message: {
           Subject: { Data: m.subject, Charset: "UTF-8" },
           Body: { Html: { Data: m.html, Charset: "UTF-8" }, Text: { Data: m.text, Charset: "UTF-8" } },
@@ -123,6 +127,11 @@ export const emailSender =
     }
     if (!out.MessageId) throw new NotSent("email", "unknown", "no message id");
   };
+
+export const emailSender = (c: { from: string; send: SesSend }) => {
+  const mail = sesMail(c);
+  return (email: string, code: string) => mail(email, codeEmail(code));
+};
 
 // One Sender for both channels. A channel without keys refuses with notSetUp rather than stopping the API.
 export function codeSender(ch: { phone?: (e164: string, code: string) => Promise<void>; email?: (email: string, code: string) => Promise<void> }): Sender {
