@@ -11,7 +11,8 @@ import type { Store } from "./store.ts";
 // that is also why an assertion's counter isn't kept.
 // `enforce` off: a missing or failed proof is logged and the request goes on, until the app that proves itself is out.
 // One exception: an assertion from an iPhone key this server doesn't know is refused anyway, since the app then attests
-// a new key and asks again, and the log shows what enforcing would.
+// a new key and asks again, and the log shows what enforcing would. The waitlist (prelaunch.ts) runs its own instance
+// with `enforce` on once Turnstile is set up, so its code sends never go out unproven.
 // ponytail: a Turnstile token isn't bound to the challenge or the number, so on the web a code send is as safe as
 // Turnstile itself; Google's start takes none (Galaxy never starts it).
 

@@ -246,6 +246,29 @@ test("enforced, the waitlist code send needs a proof and sends nothing without o
   }
 });
 
+test("with Turnstile set, the waitlist send needs a proof even when enforce is off; sign-in does not", async () => {
+  const f = (async (_url: string, init?: RequestInit) =>
+    Response.json({ success: JSON.parse(String(init?.body)).response === "good" })) as unknown as typeof fetch;
+  const p = await testApp({ proof: { enforce: false, apple: { appId: "TEAM123456.in.heyorbit.app" }, turnstile: { secret: "s" }, fetch: f } });
+  try {
+    const go = (body: object) => p.app.request("/public/interest/code", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const no = await go({ phone: "9877000006" });
+    assert.equal(no.status, 403);
+    assert.equal(((await no.json()) as any).error, "unproven");
+    assert.equal(p.lastCode("+919877000006"), undefined);
+    assert.equal((await go({ phone: "9877000006", proof: { kind: "web", token: "bad" } })).status, 403);
+    assert.equal(p.sent.length, 0);
+    assert.equal((await go({ phone: "9877000006", proof: { kind: "web", token: "good" } })).status, 200);
+    assert.ok(p.lastCode("+919877000006"));
+    assert.equal((await p.call("POST", "/auth/code", { to: "9877000007" })).status, 200); // sign-in follows enforce
+  } finally {
+    await p.close();
+  }
+  // No Turnstile configured (the shared app): unchanged, no proof needed.
+  t.tick(30_000);
+  assert.equal(await send("9877000008"), 200);
+});
+
 test("the sign-in opening gate does not block the waitlist", async () => {
   await t.close();
   t = await testApp({ codes: { openTo: new Set(["+919999999999"]), dailyCap: Infinity } });
