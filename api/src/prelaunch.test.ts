@@ -391,3 +391,78 @@ test("the welcome email keeps its dark-in-every-client scaffolding", () => {
   assert.ok(html.includes("</span></span></span> <span"));
   assert.ok(!html.includes("</span></span></span><span"));
 });
+
+test("stats sum the waitlist in India's days and hours, for People holders only", async () => {
+  await t.close();
+  t = await testApp(); // the earlier tests may leave a gated app
+  const someone = await join();
+  assert.equal((await t.call("GET", "/galaxy/prelaunch/stats")).status, 401);
+  const day = 24 * 3600_000;
+  const grant = (feature: "hosts" | "people") =>
+    t.db.insert(staffGrants).values({ userId: someone.me.id, feature, addedBy: someone.me.id, addedAt: new Date(t.now() - 2 * day), startsAt: new Date(t.now() - day) });
+  await grant("hosts");
+  assert.equal((await t.call("GET", "/galaxy/prelaunch/stats", undefined, someone.access)).status, 404);
+  await grant("people");
+  await t.db.delete(interest);
+  const istDay = (ms: number) => new Date(ms + 330 * 60_000).toISOString().slice(0, 10);
+  const today = istDay(t.now());
+  const dob = (years: number) => new Date(t.now() - years * 365.25 * day - 100 * day).toISOString().slice(0, 10);
+  const noon = new Date(`${today}T06:30:00Z`); // 12:00 IST today
+  const lateUtc = new Date(`${new Date(t.now() - 2 * day).toISOString().slice(0, 10)}T18:40:00Z`); // 00:10 IST the next day
+  const old = new Date(`${istDay(t.now() - 40 * day)}T03:30:00Z`); // 09:00 IST, whatever the hour now
+  const iaUa = "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36 Instagram 300.0.0";
+  await t.db.insert(interest).values([
+    { email: "a@gmail.com", dob: dob(19), features: ["slots", "host"], userAgent: iaUa, utm: { utm_source: "ig" }, country: "IN", region: "MH", city: "Pune", createdAt: noon },
+    { email: "b@gmail.com", dob: dob(19), features: ["slots"], userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0 Safari/537.36", referrer: "https://t.co/x", country: "IN", region: "MH", city: "Pune", createdAt: lateUtc },
+    { email: "c@gmail.com", dob: dob(26), features: [], userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Mobile/15E148 [LinkedInApp]/9.32.5491", createdAt: old },
+    { email: "d@gmail.com", dob: dob(35), referrer: "http://heyorbit.in/", createdAt: old },
+    ...Array.from({ length: 13 }, (_, i) => ({ email: `x@d${i}.com`, createdAt: old })),
+  ]);
+  const r = await t.call("GET", "/galaxy/prelaunch/stats", undefined, someone.access);
+  assert.equal(r.status, 200);
+  const s = r.body;
+  const by = (list: { name: string; count: number }[]) => Object.fromEntries(list.map((x) => [x.name, x.count]));
+  assert.equal(s.total, 17);
+  assert.equal(s.today, 1);
+  assert.equal(s.week, 2); // the 00:10 IST join falls on the next IST date, inside the week
+  assert.equal(s.days.length, 30);
+  assert.equal(s.days.at(-1).day, today);
+  assert.equal(s.days.find((d: any) => d.day === istDay(lateUtc.getTime()))?.count, 1); // 00:10 IST is the next IST date
+  assert.equal(s.hours.length, 24);
+  assert.deepEqual([s.hours[0], s.hours[9], s.hours[12]], [1, 15, 1]);
+  assert.deepEqual(by(s.ages), { "18–19": 2, "20–21": 0, "22–24": 0, "25–29": 1, "30+": 1 });
+  assert.ok(s.medianAge > 19 && s.medianAge < 27);
+  assert.deepEqual(s.wants.slice(0, 2), [{ feature: "slots", count: 2 }, { feature: "host", count: 1 }]);
+  assert.equal(s.wants.length, Object.keys(FEATURES).length);
+  assert.deepEqual([s.asked, s.wantedNone], [3, 1]); // the 14 rows with null features were never asked
+  assert.deepEqual([by(s.sources).Instagram, by(s.sources).X, by(s.sources).LinkedIn, by(s.sources).Direct], [1, 1, 1, 14]);
+  assert.deepEqual([by(s.apps).Instagram, by(s.apps).Chrome, by(s.apps).LinkedIn, by(s.apps).Unknown], [1, 1, 1, 14]);
+  assert.deepEqual([by(s.os).Android, by(s.os).Windows, by(s.os).iPhone], [1, 1, 1]);
+  assert.deepEqual(s.cities, [{ name: "Pune, MH", count: 2 }]);
+  assert.equal(s.located, 2);
+  assert.equal(s.emailDomains.length, 13); // 12 kept, then the rest folded
+  assert.deepEqual(s.emailDomains.at(-1), { name: "Others", count: 2 });
+  assert.equal((await t.db.select().from(auditLog).where(eq(auditLog.action, "prelaunch.stats"))).length, 1);
+});
+
+test("stats: legacy null features, even median, the 29 and 30 day edge, campaign case", async () => {
+  const someone = await join();
+  const day = 24 * 3600_000;
+  await t.db.insert(staffGrants).values({ userId: someone.me.id, feature: "people", addedBy: someone.me.id, addedAt: new Date(t.now() - 2 * day), startsAt: new Date(t.now() - day) });
+  await t.db.delete(interest);
+  const istDay = (ms: number) => new Date(ms + 330 * 60_000).toISOString().slice(0, 10);
+  const back = (d: number) => new Date(`${istDay(t.now() - d * day)}T03:30:00Z`); // 09:00 IST, d IST days ago
+  const dob = (years: number) => new Date(t.now() - years * 365.25 * day - 100 * day).toISOString().slice(0, 10);
+  await t.db.insert(interest).values([
+    { email: "l@gmail.com", createdAt: back(1) }, // legacy: features NULL
+    { email: "n@gmail.com", features: [], createdAt: back(1) }, // asked, picked none
+    { email: "p@gmail.com", features: ["host"], dob: dob(20), utm: { utm_source: "IG", utm_medium: "story" }, createdAt: back(29) },
+    { email: "q@gmail.com", dob: dob(23), utm: { utm_source: "ig", utm_medium: "Story" }, createdAt: back(30) },
+  ]);
+  const s = (await t.call("GET", "/galaxy/prelaunch/stats", undefined, someone.access)).body;
+  assert.deepEqual([s.total, s.asked, s.wantedNone], [4, 2, 1]);
+  assert.equal(s.medianAge, 21.5);
+  const count = (d: number) => s.days.find((x: any) => x.day === istDay(t.now() - d * day))?.count;
+  assert.deepEqual([count(29), count(30)], [1, undefined]); // 30 days back is outside the 30 days
+  assert.deepEqual(s.campaigns, [{ name: "ig / story", count: 2 }]);
+});

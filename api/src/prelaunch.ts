@@ -2,7 +2,7 @@ import { isIP, isIPv6 } from "node:net";
 import { count, desc } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { ADULT, ageOn, type Feature, Interest, InterestCode, type InterestList, type InterestMeta, proofOf, readPhone } from "@orbit/contract";
+import { ADULT, ageOn, deviceOf, FEATURES, type Feature, Interest, InterestCode, type InterestList, type InterestMeta, type InterestStats, proofOf, readPhone, sourceOf, type Tally } from "@orbit/contract";
 import type { Deps } from "./auth/routes.ts";
 import { checkCode, OPEN, RESEND_AFTER, sendCode } from "./auth/codes.ts";
 import { proofs } from "./auth/proof.ts";
@@ -130,6 +130,75 @@ export function prelaunchRoutes({ db, store, send, secret, now = Date.now, codes
       total: await total(),
       page,
       pageSize: limit,
+    };
+    return c.json(body);
+  });
+
+  // GET /galaxy/prelaunch/stats: the whole waitlist summed up, for holders of People (owner, 18 Nov 2026: "need all
+  // available useful analytics in prelaunch page of galaxy web"). Days and hours are India's: IST is a fixed UTC+5:30.
+  // ponytail: sums every row in memory on each read (Galaxy asks on page 1 only); move to SQL GROUP BYs if the waitlist
+  // passes ~20k.
+  app.get("/galaxy/prelaunch/stats", signedIn(db, secret, now), requireFeature(db, now, "people"), async (c) => {
+    const rows = await db
+      .select({ createdAt: interest.createdAt, dob: interest.dob, features: interest.features, country: interest.country, region: interest.region, city: interest.city, referrer: interest.referrer, utm: interest.utm, userAgent: interest.userAgent, email: interest.email })
+      .from(interest);
+    const at = now(); // one clock for the whole answer, so today and the last day agree across midnight
+    await db.insert(auditLog).values({ actorId: c.var.actor.id, action: "prelaunch.stats", data: {}, at: new Date(at) });
+    const DAY = 86_400_000;
+    const ist = (ms: number) => new Date(ms + 330 * 60_000).toISOString(); // India's wall clock, read as UTC
+    const dayOf = (ms: number) => ist(ms).slice(0, 10);
+    const tally = (names: (string | null | undefined)[], keep = Infinity): Tally => {
+      const m = new Map<string, number>();
+      for (const n of names) if (n) m.set(n, (m.get(n) ?? 0) + 1);
+      const all = [...m].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+      const rest = all.slice(keep).reduce((n, t) => n + t.count, 0);
+      return rest ? [...all.slice(0, keep), { name: "Others", count: rest }] : all;
+    };
+    const today = dayOf(at);
+    const perDay = new Map<string, number>();
+    const hours = Array<number>(24).fill(0);
+    for (const r of rows) {
+      const t = ist(r.createdAt.getTime());
+      perDay.set(t.slice(0, 10), (perDay.get(t.slice(0, 10)) ?? 0) + 1);
+      hours[Number(t.slice(11, 13))]!++;
+    }
+    const days = Array.from({ length: 30 }, (_, i) => {
+      const day = dayOf(at - (29 - i) * DAY);
+      return { day, count: perDay.get(day) ?? 0 };
+    });
+    const ages = rows.flatMap((r) => (r.dob ? [ageOn(r.dob, at)] : [])).sort((a, b) => a - b);
+    const mid = ages.length >> 1;
+    const medianAge = ages.length ? Math.round((ages.length % 2 ? ages[mid]! : (ages[mid - 1]! + ages[mid]!) / 2) * 10) / 10 : null;
+    const bands: [string, (a: number) => boolean][] = [["18–19", (a) => a < 20], ["20–21", (a) => a < 22], ["22–24", (a) => a < 25], ["25–29", (a) => a < 30], ["30+", () => true]];
+    const ageTally: Tally = bands.map(([name]) => ({ name, count: 0 }));
+    for (const a of ages) ageTally[bands.findIndex(([, f]) => f(a))]!.count++;
+    const wants = (Object.keys(FEATURES) as Feature[])
+      .map((feature) => ({ feature, count: rows.filter((r) => r.features?.includes(feature)).length }))
+      .sort((a, b) => b.count - a.count); // a stable sort keeps FEATURES order for ties
+    const device = (pick: "app" | "os") => tally(rows.map((r) => (r.userAgent ? (deviceOf(r.userAgent)[pick] ?? "Other") : "Unknown")));
+    const withCity = rows.filter((r) => r.city);
+    // The first waitlist (before 18 Nov 2026) never asked about features: its rows hold null, a later join with no
+    // pick holds []. Only the asked count toward what people want.
+    const asked = rows.filter((r) => r.features !== null);
+    const body: InterestStats = {
+      total: rows.length,
+      today: perDay.get(today) ?? 0,
+      week: days.slice(-7).reduce((n, d) => n + d.count, 0),
+      days,
+      hours,
+      ages: ageTally,
+      medianAge,
+      wants,
+      asked: asked.length,
+      wantedNone: asked.filter((r) => !r.features!.length).length,
+      sources: tally(rows.map(sourceOf), 12),
+      campaigns: tally(rows.map((r) => (r.utm ? [r.utm.utm_source, r.utm.utm_medium, r.utm.utm_campaign].filter(Boolean).join(" / ").toLowerCase() : "")), 12),
+      apps: device("app"),
+      os: device("os"),
+      cities: tally(withCity.map((r) => (r.region ? `${r.city}, ${r.region}` : r.city)), 12),
+      located: withCity.length,
+      countries: tally(rows.map((r) => r.country), 12),
+      emailDomains: tally(rows.map((r) => (r.email ? r.email.slice(r.email.lastIndexOf("@") + 1).toLowerCase() : null)), 12),
     };
     return c.json(body);
   });

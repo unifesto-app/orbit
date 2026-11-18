@@ -90,3 +90,83 @@ export type InterestRow = InterestMeta & {
   createdAt: string;
 };
 export type InterestList = { people: InterestRow[]; total: number; page: number; pageSize: number };
+
+// What a visit's user agent says, at a glance (owner, 18 Nov 2026: "need all available useful analytics"): the app or
+// browser, and the system. Galaxy's table and the API's analytics read it the same way.
+// ponytail: a few common names, not a parser; the whole user agent is kept for anything finer.
+export function deviceOf(ua?: string | null): { app: string | null; os: string | null } {
+  if (!ua) return { app: null, os: null };
+  const app = /Instagram/.test(ua)
+    ? "Instagram"
+    : /FBAN|FBAV/.test(ua)
+      ? "Facebook"
+      : /LinkedInApp/.test(ua)
+        ? "LinkedIn"
+        : /Twitter for|TwitterAndroid/.test(ua)
+          ? "X"
+          : /Edg\/|EdgiOS|EdgA\//.test(ua)
+            ? "Edge"
+            : /CriOS|Chrome\//.test(ua)
+              ? "Chrome"
+              : /FxiOS|Firefox\//.test(ua)
+                ? "Firefox"
+                : /Safari\//.test(ua)
+                  ? "Safari"
+                  : null;
+  const os = /iPhone/.test(ua) ? "iPhone" : /iPad/.test(ua) ? "iPad" : /Android/.test(ua) ? "Android" : /Mac OS X/.test(ua) ? "Mac" : /Windows/.test(ua) ? "Windows" : /Linux/.test(ua) ? "Linux" : null;
+  return { app, os };
+}
+
+// Where a visit came from, as one name: the link's utm_source, else the referring site (heyorbit.in itself is none),
+// else the app whose browser opened the page (in-app browsers often send no referrer), else Direct.
+// Joins through the share button after joining (web waitlist.tsx tags its link utm_source=waitlist).
+export const SHARED = "Shared by a member";
+// A tag, a referring host, or an Android app's package (android-app://com.whatsapp/), each to one name.
+const SOURCES: [RegExp, string][] = [
+  [/^(ig|insta|instagram)$|(^|\.)instagram\.com$|^com\.instagram\.android$/, "Instagram"],
+  [/^(li|linkedin)$|(^|\.)linkedin\.com$|^lnkd\.in$|^com\.linkedin\.android$/, "LinkedIn"],
+  [/^(x|tw|twitter)$|^t\.co$|(^|\.)(x|twitter)\.com$|^com\.twitter\.android$/, "X"],
+  [/^(wa|whatsapp)$|(^|\.)whatsapp\.(com|net)$|^wa\.me$|^l\.wl\.co$|^com\.whatsapp(\.w4b)?$/, "WhatsApp"],
+  [/^(fb|facebook)$|(^|\.)facebook\.com$|^fb\.me$|^com\.facebook\.(katana|lite)$/, "Facebook"],
+  [/^waitlist$/, SHARED],
+  [/^google$|(^|\.)google\.(com|co\.[a-z]{2}|com\.[a-z]{2}|[a-z]{2})$|^com\.google\.android\.[a-z.]+$/, "Google"],
+  [/^direct$/, "Direct"],
+];
+const named = (s: string) => SOURCES.find(([re]) => re.test(s))?.[1];
+export function sourceOf(r: { referrer?: string | null; utm?: Record<string, string> | null; userAgent?: string | null }): string {
+  const tag = r.utm?.utm_source?.trim().toLowerCase();
+  if (tag) return named(tag) ?? tag.slice(0, 40);
+  let host: string | null = null;
+  try {
+    host = r.referrer ? new URL(r.referrer).hostname.replace(/^www\./, "").toLowerCase() : null;
+  } catch {}
+  if (host && host !== "heyorbit.in" && !host.endsWith(".heyorbit.in")) return named(host) ?? host; // our own pages are no source
+  const app = deviceOf(r.userAgent).app;
+  return app && ["Instagram", "Facebook", "LinkedIn", "X"].includes(app) ? app : "Direct";
+}
+
+// A count per name, most first.
+export type Tally = { name: string; count: number }[];
+
+// GET /galaxy/prelaunch/stats: the whole waitlist summed up, for People holders. Days and hours are India's (IST).
+// Only joins are kept, so there are no visit or conversion numbers.
+export type InterestStats = {
+  total: number;
+  today: number; // since midnight IST
+  week: number; // the last 7 days, today included
+  days: { day: string; count: number }[]; // the last 30 days, oldest first, "2026-11-18"
+  hours: number[]; // joins by hour of day, 0 to 23
+  ages: Tally; // in age order: 18–19, 20–21, 22–24, 25–29, 30+
+  medianAge: number | null;
+  wants: { feature: Feature; count: number }[]; // people who picked each, most first; a person can pick several
+  asked: number; // joins that were asked about features (the first waitlist wasn't)
+  wantedNone: number; // of those, joins that picked none
+  sources: Tally;
+  campaigns: Tally; // "source / medium / campaign" of tagged links
+  apps: Tally;
+  os: Tally;
+  cities: Tally; // "City, Region", only for joins since Cloudflare's location headers went on (18 Nov 2026)
+  located: number; // joins with a city
+  countries: Tally;
+  emailDomains: Tally; // gmail.com, college and work domains
+};
