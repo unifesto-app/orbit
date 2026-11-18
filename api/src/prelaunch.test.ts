@@ -5,6 +5,7 @@ import { type Contact, FEATURES } from "@orbit/contract";
 import type { Mail } from "./auth/senders.ts";
 import { testApp } from "./testkit.ts";
 import { auditLog, interest, sessions, staffGrants, users } from "./db/schema.ts";
+import { welcomeEmail } from "./prelaunch-email.ts";
 
 let t: Awaited<ReturnType<typeof testApp>>;
 before(async () => (t = await testApp()));
@@ -376,4 +377,13 @@ test("a welcome email that throws or rejects never fails the join", async () => 
     await settle();
     assert.equal((await rows(`+91${phone}`)).length, 1);
   }
+});
+
+test("the welcome email keeps its dark-in-every-client scaffolding", () => {
+  const { html } = welcomeEmail({ name: "Meera Rao", features: Object.keys(FEATURES).slice(0, 2) as Parameters<typeof welcomeEmail>[0]["features"] });
+  for (const s of ['<body class="body', "u + .body .gs", "u + .body .gd", "[data-ogsc]", "linear-gradient(", 'name="color-scheme" content="dark"'])
+    assert.ok(html.includes(s), s);
+  assert.ok(html.includes('<span class="gd">You’re in, Meera.</span>'));
+  assert.ok(html.includes("</span> <span"));
+  assert.ok(!html.includes("</span></span></span><span"));
 });
