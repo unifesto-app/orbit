@@ -3,7 +3,7 @@ import { DM_Sans, Plus_Jakarta_Sans, Sacramento } from "next/font/google";
 import { palette } from "@orbit/tokens";
 import "@orbit/tokens/tokens.css";
 import "./globals.css";
-import { DESCRIPTION, OPEN_GRAPH, SITE } from "./site";
+import { DESCRIPTION, OPEN_GRAPH, SITE, X_HANDLE } from "./site";
 
 // The kit's three typefaces: Plus Jakarta Sans for display, titles and buttons; DM Sans for text; Sacramento for asides.
 const display = Plus_Jakarta_Sans({ variable: "--font-display", subsets: ["latin"] });
@@ -20,7 +20,7 @@ export const metadata: Metadata = {
   applicationName: "Orbit",
   alternates: { canonical: "/" },
   openGraph: { ...OPEN_GRAPH, url: "/", title: "Orbit: There’s more to live beyond the usual.", description: DESCRIPTION },
-  twitter: { card: "summary_large_image", title: "Orbit: There’s more to live beyond the usual.", description: DESCRIPTION },
+  twitter: { card: "summary_large_image", site: X_HANDLE, title: "Orbit: There’s more to live beyond the usual.", description: DESCRIPTION },
   formatDetection: { telephone: false },
 };
 

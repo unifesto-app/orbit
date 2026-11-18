@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { CONTACT, LEGAL_UPDATED, OPEN_GRAPH, OPERATOR } from "../../site";
+import { CONTACT, LEGAL_UPDATED, OPEN_GRAPH, OPERATOR, X_HANDLE } from "../../site";
 import styles from "../legal.module.css";
 
 // The waitlist's terms. A draft for the waitlist only, with the successor clause the plan asks for; a lawyer reviews
@@ -10,7 +10,7 @@ export const metadata: Metadata = {
   description: "The terms for joining the Orbit waitlist.",
   alternates: { canonical: "/terms" },
   openGraph: { ...OPEN_GRAPH, url: "/terms", title: "Terms · Orbit", description: "The terms for joining the Orbit waitlist." },
-  twitter: { card: "summary_large_image", title: "Terms · Orbit", description: "The terms for joining the Orbit waitlist." },
+  twitter: { card: "summary_large_image", site: X_HANDLE, title: "Terms · Orbit", description: "The terms for joining the Orbit waitlist." },
 };
 
 export default function Terms() {

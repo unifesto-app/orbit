@@ -32,9 +32,10 @@ const body = "'DM Sans','Helvetica Neue',Helvetica,Arial,sans-serif";
 // A background Gmail's dark mode can't flip: the colour, and the same colour as an image.
 const bg = (c: string) => `background-color:${c};background-image:linear-gradient(${c},${c})`;
 // Light type through Gmail's dark mode: its apps invert text colours, and these two blends turn them back (the
-// classes only apply in Gmail, under the u + .body selector below). Both layers must be the same box, or the gap
-// between them shows as a light line (seen in Gmail on iPhone, 18 Nov 2026, with inline spans): text goes in a block,
-// and pills and the button in matching inline-blocks.
+// classes only apply in Gmail, under the u + .body selector below). Wrapped in inline spans, each line of text showed a
+// thin light line in Gmail on iPhone (18 Nov 2026); blocks, and inline-blocks for pills and the button, don't. The
+// heading, paragraphs and footer links stay the innermost elements, so screen readers still hear a heading and
+// paragraphs.
 const keep = (html: string) => `<div class="gs"><div class="gd">${html}</div></div>`;
 const keepInline = (html: string) =>
   `<span class="gs" style="display:inline-block"><span class="gd" style="display:inline-block">${html}</span></span>`;
@@ -91,11 +92,11 @@ u + .body .gd{background:#000;mix-blend-mode:difference}
 <table role="presentation" class="b0" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${ground}" style="max-width:560px;${bg(ground)}">
 <tr><td class="px" style="padding:0 32px"><img src="${site}/email/wordmark.png" width="120" alt="Orbit" style="display:block;width:120px;height:auto;border:0"></td></tr>
 <tr><td style="padding:28px 16px 0"><img src="${site}/email/orbits.png" width="528" alt="" style="display:block;width:100%;max-width:528px;height:auto;border:0"></td></tr>
-<tr><td class="px" style="padding:12px 32px 0">${keep(`<div class="h1 t1" style="color:${text};font:800 34px/1.1 ${display};letter-spacing:-0.03em">${esc(hello)}</div>`)}</td></tr>
-<tr><td class="px" style="padding:14px 32px 0">${keep(`<div class="t2" style="color:${text2};font:400 16px/1.6 ${body}">${lead}</div>`)}</td></tr>
+<tr><td class="px" style="padding:8px 32px 0">${keep(`<h1 class="h1 t1" style="margin:0;color:${text};font:800 34px/1.3 ${display};letter-spacing:-0.03em">${esc(hello)}</h1>`)}</td></tr>
+<tr><td class="px" style="padding:14px 32px 0">${keep(`<p class="t2" style="margin:0;color:${text2};font:400 16px/1.6 ${body}">${lead}</p>`)}</td></tr>
 ${
   chips
-    ? `<tr><td class="px" style="padding:28px 32px 12px">${keep(`<div class="t2" style="color:${text2};font:500 13px/1.4 ${body}">You’d love</div>`)}</td></tr>
+    ? `<tr><td class="px" style="padding:28px 32px 12px">${keep(`<p class="t2" style="margin:0;color:${text2};font:500 13px/1.4 ${body}">You’d love</p>`)}</td></tr>
 <tr><td class="px" style="padding:0 32px">${chips}</td></tr>`
     : ""
 }
@@ -103,11 +104,11 @@ ${
 <a class="t1 b1" href="https://www.instagram.com/heyorbit.in" style="display:inline-block;padding:12px 22px;border:1px solid ${glassBorder};border-radius:${radius.pill}px;${bg(glassFill)};color:${text};font:600 15px/1.2 ${display};text-decoration:none">${keepInline("Follow Orbit on Instagram")}</a>
 </td></tr>
 <tr><td class="px" style="padding:40px 32px 0"><div style="height:1px;line-height:1px;font-size:0;${bg(hairline)}">&nbsp;</div></td></tr>
-<tr><td class="px" style="padding:20px 32px 0">${keep(`<div class="t2" style="color:${text2};font:400 12px/1.6 ${body}">
+<tr><td class="px" style="padding:20px 32px 0">${keep(`<p class="t2" style="margin:0;color:${text2};font:400 12px/1.6 ${body}">
 ${why.replace(WAITLIST_CONTACT, `<a class="t2" href="mailto:${WAITLIST_CONTACT}" style="color:${text2}">${WAITLIST_CONTACT}</a>`)}<br>
 <a class="t2" href="${site}/terms" style="color:${text2}">Terms</a> &middot; <a class="t2" href="${site}/privacy" style="color:${text2}">Privacy</a><br>
 © 2027 Orbit
-</div>`)}</td></tr>
+</p>`)}</td></tr>
 </table>
 </td></tr>
 </table>

@@ -16,6 +16,14 @@ export const OPERATOR = "Unifesto Private Limited";
 export const CONTACT = WAITLIST_CONTACT;
 export const LEGAL_UPDATED = "18 November 2026";
 
+// Orbit's accounts, for the footers and the structured data (owner, 18 Nov 2026: "add X account to web"); the X handle
+// also marks link previews on X as Orbit's.
+export const SOCIAL = [
+  ["Instagram", "https://www.instagram.com/heyorbit.in"],
+  ["X", "https://x.com/HeyOrbitIn"],
+] as const;
+export const X_HANDLE = "@HeyOrbitIn";
+
 // Link previews for every page: a page that sets its own openGraph replaces the root's whole object, so each spreads
 // this (the image is app/opengraph-image.png).
 export const OPEN_GRAPH = {

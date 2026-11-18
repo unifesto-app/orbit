@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Wordmark } from "../brand";
+import { SOCIAL } from "../site";
 import styles from "./legal.module.css";
 
 // The terms and privacy pages (owner, 18 Nov 2026: "add terms & privacy pages"): plain reading pages on Charcoal, the
@@ -18,9 +19,11 @@ export default function Legal({ children }: { children: React.ReactNode }) {
         <nav>
           <Link href="/terms">Terms</Link>
           <Link href="/privacy">Privacy</Link>
-          <a href="https://www.instagram.com/heyorbit.in" target="_blank" rel="noopener noreferrer">
-            Instagram
-          </a>
+          {SOCIAL.map(([name, url]) => (
+            <a key={name} href={url} target="_blank" rel="noopener noreferrer" aria-label={`Orbit on ${name}`}>
+              {name}
+            </a>
+          ))}
         </nav>
       </footer>
     </div>

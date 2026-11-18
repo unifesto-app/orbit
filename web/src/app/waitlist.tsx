@@ -1,7 +1,7 @@
 "use client";
 
 import Script from "next/script";
-import { useActionState, useEffect, useRef } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { type Details, join, sendCode, type Step } from "./actions";
 import styles from "./page.module.css";
 
@@ -50,6 +50,39 @@ const asForm = (d: Details) => {
 
 const OFFLINE = "Can't reach Orbit right now. Try again in a minute.";
 
+// After joining (owner, 18 Nov 2026: "after joined waitlist add share with your network button"): the phone's own share
+// sheet (WhatsApp, Instagram, LinkedIn, X), or the link copied where there's none (most desktop browsers). The link is
+// tagged, so Galaxy's Campaign column shows who came from a share.
+function Share() {
+  const [said, say] = useState<string>();
+  async function share() {
+    const url = `${location.origin}/?utm_source=waitlist&utm_medium=share`;
+    const text = "I’m on the Orbit waitlist. There’s more to live beyond the usual.";
+    try {
+      if (navigator.share) return await navigator.share({ title: "Orbit", text, url });
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return; // they closed the sheet
+    }
+    try {
+      await navigator.clipboard.writeText(`${text} ${url}`);
+      say("Link copied. Paste it anywhere.");
+    } catch {
+      say(url); // no clipboard either: the link to copy by hand
+    }
+  }
+  return (
+    <>
+      <button type="button" className={`button ${styles.share}`} onClick={share}>
+        Share with your network
+      </button>
+      {/* Always there, so a screen reader announces the text when it appears. */}
+      <p role="status" className={said ? styles.note : undefined}>
+        {said}
+      </p>
+    </>
+  );
+}
+
 export function Waitlist({ features, turnstile }: { features: [string, string][]; turnstile?: string }) {
   const check = useTurnstile(turnstile);
 
@@ -88,9 +121,12 @@ export function Waitlist({ features, turnstile }: { features: [string, string][]
 
   if (s.at === "done")
     return (
-      <div role="status" className={styles.done}>
-        <p className={styles.aside}>see you soon</p>
-        <h2 className={styles.title}>You’re in, {s.name}.</h2>
+      <div className={styles.done}>
+        <div role="status" className={styles.joined}>
+          <p className={styles.aside}>see you soon</p>
+          <h2 className={styles.title}>You’re in, {s.name}.</h2>
+        </div>
+        <Share />
       </div>
     );
 

@@ -69,8 +69,9 @@
 
 .foot {
   display: flex;
+  flex-wrap: wrap; /* the links take their own line on a narrow phone */
   justify-content: space-between;
-  gap: 16px;
+  gap: 8px 16px;
   padding: 20px 0 28px;
   border-top: 1px solid var(--orbit-hairline);
   font-size: 14px;
