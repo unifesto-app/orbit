@@ -105,6 +105,68 @@ export const EditEvent = z
   .refine(endsAfterStart, { message: "The event must end after it starts", path: ["endsAt"] });
 export type EditEvent = z.infer<typeof EditEvent>;
 
+// ---------- What the API answers (plain types, like PublicHost: the input validators above aren't reused) ----------
+
+const Iso = z.string(); // an ISO instant, as Date.toISOString writes it
+
+// What the host's team reads, and what creating and editing return.
+export const TeamEvent = z.object({
+  id: z.uuid(),
+  hostId: z.uuid(),
+  slug: z.string(),
+  status: EventStatus,
+  visibility: EventVisibility,
+  title: z.string(),
+  category: z.string().nullable(),
+  startsAt: Iso.nullable(),
+  endsAt: Iso.nullable(),
+  timezone: z.string(),
+  place: z
+    .object({
+      venue: z.string(),
+      address: z.string(),
+      area: z.string(),
+      city: z.string(),
+      lat: z.number().nullable(),
+      lng: z.number().nullable(),
+      placeId: z.string().nullable(),
+    })
+    .nullable(),
+  online: z.boolean(),
+  onlineLink: z.string().nullable(),
+  about: z.string().nullable(),
+  agenda: z.array(z.object({ at: Iso, item: z.string() })),
+  faq: z.array(z.object({ q: z.string(), a: z.string() })),
+  terms: z.array(z.string()),
+  publishedAt: Iso.nullable(),
+  cancelledAt: Iso.nullable(),
+  cancelReason: z.string().nullable(),
+  createdAt: Iso,
+  updatedAt: Iso,
+});
+export type TeamEvent = z.infer<typeof TeamEvent>;
+
+// One row in a host's list.
+export const EventRow = z.object({
+  id: z.uuid(),
+  slug: z.string(),
+  status: EventStatus,
+  visibility: EventVisibility,
+  title: z.string(),
+  category: z.string().nullable(),
+  startsAt: Iso.nullable(),
+  endsAt: Iso.nullable(),
+  timezone: z.string(),
+  area: z.string().nullable(),
+  city: z.string().nullable(),
+  online: z.boolean(),
+});
+export type EventRow = z.infer<typeof EventRow>;
+
+// GET /hosts/:id/events: drafts, upcoming and past.
+export const HostEvents = z.object({ drafts: z.array(EventRow), upcoming: z.array(EventRow), past: z.array(EventRow) });
+export type HostEvents = z.infer<typeof HostEvents>;
+
 const salesOpenBeforeClose = (b: { salesStartAt?: string | null; salesEndAt?: string | null }) =>
   !b.salesStartAt || !b.salesEndAt || Date.parse(b.salesEndAt) > Date.parse(b.salesStartAt);
 const salesWindow = { message: "Sales must end after they start", path: ["salesEndAt"] };
