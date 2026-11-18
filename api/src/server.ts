@@ -133,7 +133,8 @@ const proof: ProofConfig = {
 };
 console.log(
   `[proof] ${proof.enforce ? "enforced" : "logged only"}: App Attest for ${proof.apple.appId}, ` +
-    `Play Integrity ${proof.play ? `for ${proof.play.packageName}` : "not set up"}, Turnstile ${proof.turnstile ? "on" : "not set up"}`,
+    `Play Integrity ${proof.play ? `for ${proof.play.packageName}` : "not set up"}, ` +
+    `Turnstile ${proof.turnstile ? "on (the waitlist's code sends enforce it)" : "not set up"}`,
 );
 
 // Day-30 account deletions. ponytail: an hourly sweep until the job runner runs it nightly at 03:30 IST.

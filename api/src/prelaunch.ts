@@ -32,7 +32,10 @@ const expand = (ip: string) => {
 export function prelaunchRoutes({ db, store, send, secret, now = Date.now, codes = OPEN, proof, mail }: Deps) {
   const app = new Hono<StaffEnv>();
   const total = async () => (await db.select({ n: count() }).from(interest))[0]!.n;
-  const proven = proof ? proofs(proof, store) : null;
+  // The waitlist comes only from the web page, which carries a Turnstile token. Once Turnstile is set up
+  // (TURNSTILE_SECRET), a waitlist send without a good token is refused, whatever PROOF says: PROOF=enforce also governs
+  // the app's iPhone and Android proofs, and the waitlist shouldn't wait for those (owner, 18 Nov 2026: "set it up").
+  const proven = proof ? proofs(proof.turnstile ? { ...proof, enforce: true } : proof, store) : null;
   // One address's bucket: one IPv6 network (a /64, what one home or phone gets) counts as one address.
   const bucketOf = (ip: string) => (isIPv6(ip) ? expand(ip).slice(0, 4).join(":") : ip);
   const ipOf = (c: Context) => clientIp(c).replace(/^::ffff:(?=\d+\.)/i, ""); // an IPv4 address as Node may show it
@@ -54,7 +57,8 @@ export function prelaunchRoutes({ db, store, send, secret, now = Date.now, codes
     if (phone instanceof Response) return phone;
     const r = proven && (await proven.check(b.proof, proofOf.code));
     if (r === "tooMany") return fail(c, 429, "tooMany", "Too many tries today. Try again tomorrow.");
-    if (r) return fail(c, 403, "unproven", "We couldn't check this came from Orbit. Reload the page and try again.");
+    // Most often a content blocker stopped Cloudflare's check from loading on the page.
+    if (r) return fail(c, 403, "unproven", "We couldn't check you’re a person. If a content blocker is on, allow this page, then try again.");
     // The opening gate is sign-in's (who may sign in yet); the waitlist is for everyone. The daily cap still holds.
     const sent = await sendCode(store, send, secret, { kind: "phone", e164: phone }, ipOf(c), { ...codes, openTo: null }, now(), WAITLIST);
     if (sent.ok) return c.json({ retryIn: RESEND_AFTER });
