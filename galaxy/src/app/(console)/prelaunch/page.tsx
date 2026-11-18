@@ -30,15 +30,17 @@ const when = (iso: string) =>
 // ponytail: a few common names, not a parser; the full user agent is kept for anything finer.
 function device(ua?: string) {
   if (!ua) return null;
-  const app = /Instagram/.test(ua) ? "Instagram" : /FBAN|FBAV/.test(ua) ? "Facebook" : /Edg\//.test(ua) ? "Edge" : /CriOS|Chrome\//.test(ua) ? "Chrome" : /FxiOS|Firefox\//.test(ua) ? "Firefox" : /Safari\//.test(ua) ? "Safari" : null;
+  const app = /Instagram/.test(ua) ? "Instagram" : /FBAN|FBAV/.test(ua) ? "Facebook" : /LinkedInApp/.test(ua) ? "LinkedIn" : /Twitter for|TwitterAndroid/.test(ua) ? "X" : /Edg\/|EdgiOS|EdgA\//.test(ua) ? "Edge" : /CriOS|Chrome\//.test(ua) ? "Chrome" : /FxiOS|Firefox\//.test(ua) ? "Firefox" : /Safari\//.test(ua) ? "Safari" : null;
   const os = /iPhone/.test(ua) ? "iPhone" : /iPad/.test(ua) ? "iPad" : /Android/.test(ua) ? "Android" : /Mac OS X/.test(ua) ? "Mac" : /Windows/.test(ua) ? "Windows" : /Linux/.test(ua) ? "Linux" : null;
   return app && os ? `${app} on ${os}` : (app ?? os ?? "Other");
 }
 
-// Where they came from, by site only.
+// Where they came from, by site only. heyorbit.in itself (a reload, or an app's in-app browser passing the page on) is
+// no source, so it reads as Direct; the Campaign column still shows a tagged link.
 const site = (referrer?: string) => {
   try {
-    return referrer ? new URL(referrer).hostname.replace(/^www\./, "") : null;
+    const host = referrer ? new URL(referrer).hostname.replace(/^www\./, "") : null;
+    return host === "heyorbit.in" ? null : host;
   } catch {
     return referrer ?? null;
   }

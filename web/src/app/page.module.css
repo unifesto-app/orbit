@@ -304,6 +304,8 @@
 
 .error,
 .note {
+  min-width: 0;
+  overflow-wrap: anywhere; /* a link shown by hand wraps inside the panel */
   padding: 10px 12px;
   border-radius: var(--orbit-radius);
   background: rgb(var(--orbit-stone-rgb) / 0.06);
@@ -363,6 +365,16 @@
   font-size: 28px;
 }
 
+.joined {
+  display: grid;
+  gap: 8px;
+}
+
+.share {
+  justify-self: center;
+  margin-top: 16px;
+}
+
 .count {
   min-height: 21px;
   margin-top: 20px;
@@ -381,7 +393,9 @@
   position: relative;
   z-index: 1;
   display: flex;
+  flex-wrap: wrap; /* the links take their own line on a narrow phone */
   justify-content: space-between;
+  gap: 8px 16px;
   padding: 20px 0 28px;
   border-top: 1px solid var(--orbit-hairline);
   font-size: 14px;

@@ -6,7 +6,7 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 import { API_URL } from "./api";
 import { deepType, Defs, Orbits, Wordmark } from "./brand";
-import { DESCRIPTION, SITE } from "./site";
+import { DESCRIPTION, SITE, SOCIAL } from "./site";
 import styles from "./page.module.css";
 import { Waitlist } from "./waitlist";
 
@@ -45,9 +45,11 @@ export default function Home() {
         <nav>
           <Link href="/terms">Terms</Link>
           <Link href="/privacy">Privacy</Link>
-          <a href="https://www.instagram.com/heyorbit.in" target="_blank" rel="noopener noreferrer">
-            Instagram
-          </a>
+          {SOCIAL.map(([name, url]) => (
+            <a key={name} href={url} target="_blank" rel="noopener noreferrer" aria-label={`Orbit on ${name}`}>
+              {name}
+            </a>
+          ))}
         </nav>
       </footer>
     </main>
@@ -67,7 +69,7 @@ const LD = {
       slogan: "There’s more to live beyond the usual.",
       description: DESCRIPTION,
       areaServed: { "@type": "City", name: "Hyderabad" },
-      sameAs: ["https://www.instagram.com/heyorbit.in"],
+      sameAs: SOCIAL.map(([, url]) => url),
     },
     { "@type": "WebSite", "@id": `${SITE}/#site`, name: "Orbit", url: SITE, inLanguage: "en-IN", publisher: { "@id": `${SITE}/#org` } },
   ],

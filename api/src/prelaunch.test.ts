@@ -383,9 +383,11 @@ test("the welcome email keeps its dark-in-every-client scaffolding", () => {
   const { html } = welcomeEmail({ name: "Meera Rao", features: Object.keys(FEATURES).slice(0, 2) as Parameters<typeof welcomeEmail>[0]["features"] });
   for (const s of ['<body class="body', "u + .body .gs", "u + .body .gd", "[data-ogsc]", "linear-gradient(", 'name="color-scheme" content="dark"'])
     assert.ok(html.includes(s), s);
-  assert.ok(html.includes('<div class="gd"><div class="h1 t1"'));
-  assert.ok(html.includes("You’re in, Meera.</div></div></div>"));
-  assert.ok(html.includes('<span class="gd" style="display:inline-block">'));
+  assert.ok(html.includes('<div class="gd"><h1 class="h1 t1" style="margin:0;'));
+  assert.ok(html.includes('<div class="gd"><p class="t2" style="margin:0;'));
+  assert.ok(!html.includes('<span class="gs">'));
+  assert.ok(html.includes('<span class="gs" style="display:inline-block"><span class="gd" style="display:inline-block">'));
+  assert.ok(html.includes("You’re in, Meera.</h1></div></div>"));
   assert.ok(html.includes("</span></span></span> <span"));
   assert.ok(!html.includes("</span></span></span><span"));
 });

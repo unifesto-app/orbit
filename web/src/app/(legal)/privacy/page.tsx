@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { CONTACT, LEGAL_UPDATED, OPEN_GRAPH, OPERATOR } from "../../site";
+import { CONTACT, LEGAL_UPDATED, OPEN_GRAPH, OPERATOR, X_HANDLE } from "../../site";
 import styles from "../legal.module.css";
 
 // The waitlist's privacy policy: exactly what the page and the API keep (api/src/prelaunch.ts, contract
@@ -11,7 +11,7 @@ export const metadata: Metadata = {
   description: "What Orbit keeps when you join the waitlist, why, and how to have it deleted.",
   alternates: { canonical: "/privacy" },
   openGraph: { ...OPEN_GRAPH, url: "/privacy", title: "Privacy Policy · Orbit", description: "What Orbit keeps when you join the waitlist, why, and how to have it deleted." },
-  twitter: { card: "summary_large_image", title: "Privacy Policy · Orbit", description: "What Orbit keeps when you join the waitlist, why, and how to have it deleted." },
+  twitter: { card: "summary_large_image", site: X_HANDLE, title: "Privacy Policy · Orbit", description: "What Orbit keeps when you join the waitlist, why, and how to have it deleted." },
 };
 
 export default function Privacy() {
