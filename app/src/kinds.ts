@@ -10,7 +10,7 @@
 // Outside the docs, and the owner's to change: comedy's runtime, language and seating, a jam's style and what to bring,
 // and a fest's type.
 // ponytail: written here by hand; the host fills them in on the event once events reach the API.
-import { formatPrice } from '@orbit/contract';
+import { type CategorySlug, formatPrice } from '@orbit/contract';
 
 /** Performer hosts on an event, in billing order (Discover 23: "with [act]", three names then "+N"). */
 export const acts: Record<string, readonly string[]> = {
@@ -165,6 +165,12 @@ export type Station = {
 };
 // `open` is the first and last hour, 24h India time; past 24 runs into the next morning (26 is 2 AM).
 export type Venue = { kind: 'turf' | 'court' | 'gaming'; hours: string; open: [number, number]; address: string; stations: Station[] };
+
+/** A place to play's tile: turfs and courts in Sports, gaming cafés in Gaming (plan, Categories); other hosts none. */
+export function tileFor(hostId: string): CategorySlug | undefined {
+  const v = venues[hostId];
+  return v && (v.kind === 'gaming' ? 'gaming' : 'sports');
+}
 
 export const venues: Record<string, Venue> = {
   'kickoff-arena': {

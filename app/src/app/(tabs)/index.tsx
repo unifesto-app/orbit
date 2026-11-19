@@ -20,7 +20,7 @@ import { planHome, type Viewer } from '../../home/layout';
 import { Icon } from '../../icons';
 import { type Event, type Host, events, hosts, now } from '../../mock';
 import { refreshPlace, usePlace } from '../../place';
-import { meetups } from '../../kinds';
+import { fromPricePaise, meetups, perHour, tileFor, venues } from '../../kinds';
 import { EventRow, loveIt, Monogram, Poster, SEAT, SeatCard, Section, StatusDot, Tag } from '../../rows';
 import { bookAction, eventStatus, isNews } from '../../status';
 import { needsAccount, setFollowing, skipInterests, useLoved, useViewer } from '../../session';
@@ -67,7 +67,7 @@ export default function Home() {
   useEffect(() => {
     refreshPlace(); // once a launch, only if location is already allowed (src/place.ts)
   }, []);
-  const plan = planHome(v, events, hosts, now);
+  const plan = planHome(v, events, hosts.map((h) => ({ ...h, tile: tileFor(h.id) })), now);
   const hostOf = (id: string) => hosts.find((h) => h.id === id) as Host;
   const ticketLabel = (id: string) => v.tickets?.find((t) => t.eventId === id)?.label ?? '';
 
@@ -174,6 +174,17 @@ export default function Home() {
           <>
             <Section title={plan.list.title} />
             {plan.list.events.map((e) => <EventRow key={e.id} event={e} host={hostOf(e.hostId)} />)}
+          </>
+        )}
+
+        {plan.places.length > 0 && (
+          <>
+            <Section title={plan.near ? 'Places to play near you' : 'Places to play'} />
+            <View style={styles.feed}>
+              {plan.places.map((h) => (
+                <PlaceRow key={h.id} host={h} />
+              ))}
+            </View>
           </>
         )}
 
@@ -419,6 +430,27 @@ function FeedRow({ event: e, host }: { event: Event; host: Host }) {
         <Text style={styles.feedWhen}>{e.when}</Text>
       </View>
       <Poster media={e.poster} width={48} label={e.title} />
+    </Pressable>
+  );
+}
+
+// A place to play (turf, court or gaming café), in the feed's shape: what it is over its name, then its cheapest hour.
+// It opens the host page, where Book a slot is.
+function PlaceRow({ host }: { host: Host }) {
+  const venue = venues[host.id];
+  return (
+    <Pressable
+      onPress={() => router.push(`/host/${host.id}`)}
+      accessibilityRole="button"
+      style={({ pressed }) => [styles.feedRow, pressed && styles.pressed]}>
+      <Monogram mark={host} size={40} />
+      <View style={[styles.grow, styles.feedText]}>
+        <View style={styles.feedHead}>
+          <Text style={styles.feedHost} numberOfLines={1}>{host.about}</Text>
+        </View>
+        <Text style={styles.feedTitle} numberOfLines={1}>{host.name}</Text>
+        {venue && <Text style={styles.feedWhen}>From {perHour(fromPricePaise(venue))}</Text>}
+      </View>
     </Pressable>
   );
 }

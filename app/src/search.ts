@@ -15,7 +15,7 @@ export type When = (typeof WHEN)[number]['id'];
 
 export type Filters = { q: string; when?: When; free: boolean; category?: CategorySlug };
 type Findable = { hostId: string; title: string; area: string; category: CategorySlug; startsAt: string; pricePaise: number };
-type FindableHost = { id: string; name: string; area: string; about?: string };
+type FindableHost = { id: string; name: string; area: string; about?: string; tile?: CategorySlug }; // tile: a place to play's
 
 export const MAX_QUERY = 100;
 const DAY = 86_400_000;
@@ -35,7 +35,12 @@ export function span(when: When, now: number): [number, number] {
 
 export function search<E extends Findable, H extends FindableHost>(f: Filters, events: readonly E[], hosts: readonly H[], now: number) {
   const needle = f.q.trim().slice(0, MAX_QUERY).toLowerCase();
-  const has = (text: string) => text.toLowerCase().includes(needle);
+  // Every word somewhere in the fields, so "cricket turf" finds "Turf and box cricket".
+  const words = needle.split(/\s+/).filter(Boolean);
+  const has = (...texts: (string | undefined)[]) => {
+    const hay = texts.join(' ').toLowerCase();
+    return words.every((w) => hay.includes(w));
+  };
   const hostName = (id: string) => hosts.find((h) => h.id === id)?.name ?? '';
   const window = f.when && span(f.when, now);
   const found = events
@@ -43,14 +48,20 @@ export function search<E extends Findable, H extends FindableHost>(f: Filters, e
       const at = Date.parse(e.startsAt);
       return (
         at >= now &&
-        (!needle || has(e.title) || has(hostName(e.hostId)) || has(e.area) || has(label(e.category))) &&
+        (!needle || has(e.title, hostName(e.hostId), e.area, label(e.category))) &&
         (!window || (at >= window[0] && at < window[1])) &&
         (!f.free || e.pricePaise === 0) &&
         (!f.category || e.category === f.category)
       );
     })
     .sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt));
-  return { events: found, hosts: needle ? hosts.filter((h) => has(h.name) || has(h.area) || (!!h.about && has(h.about))) : [] };
+  // Typed text finds hosts; a tile alone finds its places to play (none of them is free).
+  const foundHosts = needle
+    ? hosts.filter((h) => has(h.name, h.area, h.about))
+    : f.category && !f.free
+      ? hosts.filter((h) => h.tile === f.category)
+      : [];
+  return { events: found, hosts: foundHosts };
 }
 
 // The one-line count over the events: "4 events for “jam” in Music", "2 free events this weekend".

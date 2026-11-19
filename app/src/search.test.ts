@@ -50,6 +50,17 @@ test('chips narrow by When, Free and category', () => {
   assert.deepEqual(ids(search({ ...none, category: 'comedy' }, events, hosts, NOW)), ['mic']);
 });
 
+test('a tile alone lists its places to play; every typed word must appear', () => {
+  const places = [...hosts, { id: 'turf', name: 'Kickoff Arena', area: 'Gachibowli', about: 'Turf and box cricket', tile: 'sports' as const }];
+  const hostIds = (f: typeof none & { q?: string; category?: 'sports' | 'comedy'; free?: boolean }) =>
+    search({ ...none, ...f }, events, places, NOW).hosts.map((h) => h.id);
+  assert.deepEqual(hostIds({ category: 'sports' }), ['turf']);
+  assert.deepEqual(hostIds({ category: 'comedy' }), []);
+  assert.deepEqual(hostIds({ category: 'sports', free: true }), []); // no place to play is free
+  assert.deepEqual(hostIds({ q: 'cricket turf' }), ['turf']);
+  assert.deepEqual(hostIds({ q: 'cricket kbr' }), []);
+});
+
 test('this weekend is Saturday and Sunday in India time, or what is left of it', () => {
   const day = (iso: string) => Date.parse(at(iso));
   assert.deepEqual(span('weekend', NOW), [day('2026-11-21T00:00:00'), day('2026-11-23T00:00:00')]);
