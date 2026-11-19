@@ -11,6 +11,7 @@ import Reanimated, {
 } from 'react-native-reanimated';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Circle, Defs, Ellipse, G, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import { past as history, ticketFor } from '../../account/data';
 import { Pill } from '../../account/kit';
@@ -18,14 +19,14 @@ import { Carousel, type CarouselSlide } from '../../home/Carousel';
 import { BarGlass, Glass } from '../../glass';
 import { planHome, type Viewer } from '../../home/layout';
 import { Icon } from '../../icons';
-import { type Event, type Host, events, hosts, now } from '../../mock';
+import { type Event, type Host, type OrbitAd, events, hosts, now, orbitAds } from '../../mock';
 import { refreshPlace, usePlace } from '../../place';
 import { fromPricePaise, meetups, perHour, tileFor, venues } from '../../kinds';
 import { promoteOne } from '../../labels';
 import { EventRow, isPromoted, loveIt, Monogram, Poster, SEAT, SeatCard, Section, StatusDot, Tag } from '../../rows';
 import { bookAction, eventStatus, isNews } from '../../status';
 import { needsAccount, setFollowing, skipInterests, useLoved, useViewer } from '../../session';
-import { around, color, darkInkOn, font, groundAt, radius, rim, space } from '../../theme';
+import { around, color, darkInkOn, font, groundAt, radius, rim, space, stoneAt } from '../../theme';
 
 const HEADER = 44;
 const FRAME = rim; // the thin frosted rim around cards
@@ -195,12 +196,17 @@ export default function Home() {
           </>
         )}
 
+        {/* Orbit's own ads, as strips at two breaks in the middle, apart from the promoted card above. */}
+        {orbitAds[0] && <OrbitAdStrip ad={orbitAds[0]} width={width - 40} />}
+
         {!plan.hostsFirst && plan.hosts.length > 0 && (
           <>
             <Section title="Hosts near you" />
             {hostCards}
           </>
         )}
+
+        {orbitAds[1] && <OrbitAdStrip ad={orbitAds[1]} width={width - 40} />}
 
         {plan.all.length > 0 && (
           <>
@@ -566,11 +572,13 @@ function Notice({ kind, area }: { kind: 'noLocation' | 'comingSoon' | 'nothingNe
 // frosted rim, a card, "apply the rim to card", then "remove padding for poster"). The poster runs edge to edge across
 // the top of the card face, which rounds its top corners; only the text is padded. A card, so no icons and no heart.
 // The card face and rim use FACE and RIM, like every card.
-// The ad in the middle of Home (owner, 19 Nov 2026: "ad banners in middle of home"): a promoted event as one wide card,
-// its 4:3 poster with no words on it (as the carousel), then Promoted, the date, title, host and price under it. The
-// whole card opens the event. planHome picks it: the second promoted event, the first leading the carousel.
+// A promoted event in the middle of Home (owner, 19 Nov 2026: "even that promoted is good"): one wide card, its 4:3
+// poster with Promoted, the date, title, host and price over it ("hover content on poster") on a fade to the ground at
+// the bottom. The whole card opens the event. planHome picks it: the second promoted event, the first leading the
+// carousel.
 function AdBanner({ event: e, host, width }: { event: Event; host: Host; width: number }) {
   const inner = width - 2 * FRAME;
+  const tall = (inner * 3) / 4;
   return (
     <Pressable
       onPress={() => router.push(`/event/${e.id}`)}
@@ -579,16 +587,67 @@ function AdBanner({ event: e, host, width }: { event: Event; host: Host; width: 
       style={({ pressed }) => [styles.ad, pressed && styles.pressed]}>
       <Glass style={[styles.gridRim, { width }]}>
         <View style={styles.gridCard}>
-          <Image source={e.wide!.source} style={{ width: inner, height: (inner * 3) / 4 }} />
-          <View style={styles.adBody}>
+          <Image source={e.wide!.source} style={{ width: inner, height: tall }} />
+          <Svg style={StyleSheet.absoluteFill} width={inner} height={tall} pointerEvents="none">
+            <Defs>
+              <LinearGradient id="adFade" x1="0" y1="0" x2="0" y2="1">
+                <Stop offset={0.3} stopColor={color.ground} stopOpacity={0} />
+                <Stop offset={1} stopColor={color.ground} stopOpacity={0.92} />
+              </LinearGradient>
+            </Defs>
+            <Rect width={inner} height={tall} fill="url(#adFade)" />
+          </Svg>
+          <View style={styles.adOver}>
             <View style={styles.adHead}>
-              <Tag text="Promoted" />
-              <Text style={styles.feedWhen} numberOfLines={1}>{e.when}</Text>
+              <Glass style={styles.adMark}>
+                <Text style={styles.adMarkText}>Promoted</Text>
+              </Glass>
+              <Text style={styles.adMeta} numberOfLines={1}>{e.when}</Text>
             </View>
-            <Text style={styles.feedTitle} numberOfLines={2}>{e.title}</Text>
-            <Text style={styles.feedWhen} numberOfLines={1}>
+            <Text style={styles.adTitle} numberOfLines={2}>{e.title}</Text>
+            <Text style={styles.adMeta} numberOfLines={1}>
               {host.name} · {formatPrice(e.pricePaise)}
             </Text>
+          </View>
+        </View>
+      </Glass>
+    </Pressable>
+  );
+}
+
+// Orbit's own ad (owner, 19 Nov 2026: "its orbit ads like card promotion or any other promotion, full width, less height
+// banners", "it may be anything"): a short strip, three times as wide as it's tall, in the ad's own colour, its words
+// in Stone or Charcoal to suit it, two tilted crossing orbits with a pearl at the right (the kit's orbits, never
+// bullseye rings). Opens its link, if it has one. Not a host's boost, so no Promoted.
+function OrbitAdStrip({ ad, width }: { ad: OrbitAd; width: number }) {
+  const inner = width - 2 * FRAME;
+  const tall = Math.round(inner / 3);
+  const ink = darkInkOn(ad.bg) ? groundAt(1) : color.text;
+  const cx = inner - tall * 0.6;
+  const cy = tall / 2;
+  return (
+    <Pressable
+      disabled={!ad.href}
+      onPress={() => ad.href && router.push(ad.href)}
+      accessibilityRole={ad.href ? 'button' : undefined}
+      accessibilityLabel={`${ad.kicker}. ${ad.title}. ${ad.line}`}
+      style={({ pressed }) => [styles.ad, pressed && styles.pressed]}>
+      <Glass style={[styles.gridRim, { width }]}>
+        <View style={[styles.strip, { height: tall, backgroundColor: ad.bg }]}>
+          <Svg style={StyleSheet.absoluteFill} width={inner} height={tall} pointerEvents="none">
+            {[-22, 26].map((turn) => (
+              <G key={turn} rotation={turn} origin={`${cx}, ${cy}`}>
+                <Ellipse cx={cx} cy={cy} rx={tall * 0.62} ry={tall * 0.2} stroke={ink} strokeOpacity={0.24} strokeWidth={1.5} fill="none" />
+              </G>
+            ))}
+            <G rotation={-22} origin={`${cx}, ${cy}`}>
+              <Circle cx={cx + tall * 0.62} cy={cy} r={4.5} fill={ink} fillOpacity={0.6} />
+            </G>
+          </Svg>
+          <View style={styles.stripText}>
+            <Text style={[styles.stripKicker, { color: ink }]} numberOfLines={1}>{ad.kicker}</Text>
+            <Text style={[styles.stripTitle, { color: ink }]} numberOfLines={1}>{ad.title}</Text>
+            <Text style={[styles.stripLine, { color: ink }]} numberOfLines={2}>{ad.line}</Text>
           </View>
         </View>
       </Glass>
@@ -688,8 +747,19 @@ const styles = StyleSheet.create({
   gridBody: { padding: CARD_INSET, gap: 2 }, // padded on its own; the 2px is line spacing within the text
   // 40 above, as a section; the poster card's own padding (a poster card keeps 8, not the text cards' 16).
   ad: { marginTop: 40, marginHorizontal: 20 },
-  adBody: { padding: CARD_INSET, gap: 4 },
+  // The words over the promoted poster, a text card's 16 in from its edges.
+  adOver: { position: 'absolute', left: 0, right: 0, bottom: 0, padding: TEXT_PAD, gap: 4 },
   adHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  adMark: { height: 22, paddingHorizontal: 8, borderRadius: 11, justifyContent: 'center' },
+  adMarkText: { fontFamily: font.medium, fontSize: 11, color: color.text },
+  adTitle: { fontFamily: font.title, fontSize: 18, lineHeight: 23, color: color.text },
+  adMeta: { flexShrink: 1, fontFamily: font.text, fontSize: 13, color: stoneAt(0.8) },
+  // Orbit's strip: a text card's 16 inside; the words keep clear of the orbits on the right.
+  strip: { borderRadius: FACE, overflow: 'hidden', paddingHorizontal: TEXT_PAD, justifyContent: 'center' },
+  stripText: { maxWidth: '68%', gap: 2 },
+  stripKicker: { fontFamily: font.medium, fontSize: 11, opacity: 0.75 },
+  stripTitle: { fontFamily: font.title, fontSize: 17, lineHeight: 22 },
+  stripLine: { fontFamily: font.text, fontSize: 12, lineHeight: 16, opacity: 0.8 },
   gridMeta: { fontFamily: font.text, fontSize: 11, color: color.secondary },
   gridTitle: { fontFamily: font.title, fontSize: 13, lineHeight: 17, color: color.text },
   gridPrice: { fontFamily: font.price, fontSize: 13, color: color.text },
