@@ -69,6 +69,30 @@
         "expo-alternate-app-icons",
         [
           {
+            "name": "InOrbit",
+            "ios": "./assets/icons/inorbit.png",
+            "android": {
+              "foregroundImage": "./assets/icons/inorbit-android.png",
+              "backgroundColor": "#121215"
+            }
+          },
+          {
+            "name": "Heart",
+            "ios": "./assets/icons/heart.png",
+            "android": {
+              "foregroundImage": "./assets/icons/heart-android.png",
+              "backgroundColor": "#121215"
+            }
+          },
+          {
+            "name": "Glass",
+            "ios": "./assets/icons/glass.png",
+            "android": {
+              "foregroundImage": "./assets/icons/glass-android.png",
+              "backgroundColor": "#121215"
+            }
+          },
+          {
             "name": "Ticket",
             "ios": "./assets/icons/ticket.png",
             "android": {
