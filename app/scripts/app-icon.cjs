@@ -126,11 +126,11 @@ const ALT = {
   },
   // The 16 Nov Ticket in the kit's look: a 3D ticket in the symbols' body over a Sage glow, ORBIT printed on it.
   Ticket: {
-    ground: GROUND,
+    ground: `${GROUND}<rect width="1024" height="1024" fill="url(#glow)"/>`, // full bleed, so Android doesn't shrink it
     defs: `<radialGradient id="glow" cx="0.5" cy="1" r="0.9"><stop offset="0" stop-color="${P.sage}" stop-opacity=".42"/><stop offset="1" stop-color="${P.sage}" stop-opacity="0"/></radialGradient>
       ${ramp('ticket', depth.symbol, 0.95)}${shade('ticket3d', 14, 22, 20)}
       <mask id="cut"><rect width="1024" height="1024" fill="#fff"/><circle cx="222" cy="540" r="44" fill="#000"/><circle cx="802" cy="540" r="44" fill="#000"/><circle cx="640" cy="330" r="26" fill="#000"/><circle cx="640" cy="750" r="26" fill="#000"/></mask>`,
-    art: () => `<rect width="1024" height="1024" fill="url(#glow)"/><g transform="rotate(-14 512 540)">
+    art: () => `<g transform="rotate(-14 512 540)">
       <g filter="url(#ticket3d)"><rect x="222" y="330" width="580" height="420" rx="36" fill="url(#ticket)" mask="url(#cut)"/></g>
       <line x1="640" y1="380" x2="640" y2="700" stroke="${P.charcoal}" stroke-opacity=".45" stroke-width="8" stroke-dasharray="4 22" stroke-linecap="round"/>
       <g fill="${P.charcoal}" opacity=".5"><rect x="290" y="640" width="140" height="14" rx="7"/><rect x="290" y="670" width="90" height="14" rx="7"/></g>
