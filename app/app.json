@@ -13,7 +13,7 @@
     "backgroundColor": "#121215",
     "scheme": "heyorbit",
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "bundleIdentifier": "in.heyorbit.app",
       "appleTeamId": "9AH3Z5C5DH",
       "infoPlist": {
