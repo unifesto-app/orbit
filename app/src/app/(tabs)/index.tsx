@@ -80,7 +80,7 @@ export default function Home() {
   const card = (width - 40 - space.big) / 2; // All events and host cards: two columns on the 20px margins, a big gap apart
   const slides: CarouselSlide[] = plan.slides.map((s) =>
     s.kind === 'event'
-      ? { key: `e:${s.event.id}`, image: s.event.wide!.source, edge: s.event.wide!.edge, label: `Poster for ${s.event.title}`, action: slideAction(s.event), href: `/event/${s.event.id}`, mark: boosted(s.event) ? 'Promoted' : undefined }
+      ? { key: `e:${s.event.id}`, image: s.event.wide!.source, edge: s.event.wide!.edge, label: `${s.event === plan.lead ? 'Promoted. ' : ''}Poster for ${s.event.title}`, action: slideAction(s.event), href: `/event/${s.event.id}`, mark: s.event === plan.lead ? 'Promoted' : undefined }
       : { key: `h:${s.host.id}`, image: s.host.banner!.source, edge: s.host.banner!.edge, label: `Banner for ${s.host.name}`, action: 'View events', href: `/host/${s.host.id}` },
   );
 
@@ -177,8 +177,9 @@ export default function Home() {
         {plan.list.events.length > 0 && (
           <>
             <Section title={plan.list.title} />
-            {/* One promoted event leads the list (Boost); it's still one of the list's own events, never an extra. */}
-            {promoteOne(plan.list.events, boosted).map((e) => (
+            {/* One promoted event leads the list (Boost); it's still one of the list's own events, never an extra. The
+                banner's event is the banner just below, so it isn't a row too. */}
+            {promoteOne(plan.list.events.filter((e) => e !== plan.ad), boosted).map((e) => (
               <EventRow key={e.id} event={e} host={hostOf(e.hostId)} labelled />
             ))}
           </>
@@ -207,7 +208,8 @@ export default function Home() {
           </>
         )}
 
-        {orbitAds[1] && <OrbitAdStrip ad={orbitAds[1]} width={width - 40} />}
+        {/* Only with All events under it, so the two strips never sit back to back at the end of Home. */}
+        {plan.all.length > 0 && orbitAds[1] && <OrbitAdStrip ad={orbitAds[1]} width={width - 40} />}
 
         {plan.all.length > 0 && (
           <>
@@ -592,8 +594,10 @@ function AdBanner({ event: e, host, width }: { event: Event; host: Host; width: 
           <Svg style={StyleSheet.absoluteFill} width={inner} height={tall} pointerEvents="none">
             <Defs>
               <LinearGradient id="adFade" x1="0" y1="0" x2="0" y2="1">
-                <Stop offset={0.3} stopColor={color.ground} stopOpacity={0} />
-                <Stop offset={1} stopColor={color.ground} stopOpacity={0.92} />
+                {/* Dark by halfway, where the words start on a two-line title, so they read on a light poster too. */}
+                <Stop offset={0.25} stopColor={color.ground} stopOpacity={0} />
+                <Stop offset={0.5} stopColor={color.ground} stopOpacity={0.72} />
+                <Stop offset={1} stopColor={color.ground} stopOpacity={0.94} />
               </LinearGradient>
             </Defs>
             <Rect width={inner} height={tall} fill="url(#adFade)" />

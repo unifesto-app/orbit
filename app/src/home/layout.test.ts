@@ -100,6 +100,27 @@ test('a second promoted event is the banner in the middle, kept out of the carou
   assert.equal(booked.ad?.id, 'ad3');
 });
 
+test('the banner skips a promoted event already in your orbit or interests; lead is the carousel’s paid slide', () => {
+  const kind = (e: ReturnType<typeof ev>, category: string) => ({ ...e, category });
+  const events = [
+    kind(ev('ad1', 'h2', NEAR, 17, 1, true), 'comedy'),
+    kind(ev('ad2', 'h1', NEAR, 18, 2, true), 'comedy'), // from a host you follow: in your orbit
+    kind(ev('ad3', 'h3', NEAR, 19, 3, true), 'jams'), // a kind you picked: in its interest section
+    kind(ev('ad4', 'h4', NEAR, 20, 4, true), 'comedy'),
+  ];
+  const promoted = (e: { id: string }) => e.id.startsWith('ad');
+  const viewer = { signedIn: true, follows: ['h1'], place, interests: ['jams'] };
+  const p = planHome(viewer, events, [], NOW, promoted);
+  assert.equal(p.lead?.id, 'ad1');
+  assert.equal(p.ad?.id, 'ad4');
+  assert.ok(!slideIds(p.slides).includes('ad4'));
+  // Outside the served states there is no near: boosts come from everywhere, as the list does.
+  const away = planHome({ ...signedOut, place: { area: 'Bengaluru', city: 'Bengaluru', state: 'Karnataka', nearAreas: [] } }, events, [], NOW, promoted);
+  assert.equal(away.notice, 'comingSoon');
+  assert.equal(away.lead?.id, 'ad1');
+  assert.equal(away.ad?.id, 'ad2');
+});
+
 test('signed out ignores follows; slides near only, newest first, hosts included', () => {
   const events = [ev('a', 'h1', NEAR, 16, 3, true), ev('b', 'h1', NEAR, 17, 9, true), ev('far', 'h1', FAR, 17, 14, true)];
   const hosts = [host('hn', NEAR, 20, true), host('hf', FAR, 28, true), host('ho', NEAR, 10, true)];

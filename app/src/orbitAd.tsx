@@ -19,6 +19,7 @@ import { around, color, darkInkOn, font, groundAt, radius, rim, space } from './
 // The card corners every Home card nests (its contents' 6, the small gap, then the frosted rim).
 const FACE = around(radius.sm, space.small);
 const PAD = 16; // a text card's padding
+const MAX_TEXT = 1.15; // how far the words grow with the phone's text size: 51pt of lines stay inside 64
 
 // The splash's rings (radius as a share of the scene, tilt back, turn in the plane, opacity), and where each symbol
 // rests: its ring, its angle round it (past 180 is round the back), and its size as a share of the strip's height.
@@ -84,7 +85,8 @@ export function OrbitAdStrip({
   symbols?: boolean;
 }) {
   const inner = width - 2 * rim;
-  const tall = Math.round(inner / 4.5);
+  // Never shorter than its three lines at their largest (MAX_TEXT), so a small phone or bigger text doesn't clip them.
+  const tall = Math.max(Math.round(inner / 4.5), 64);
   const dark = darkInkOn(ad.bg);
   const ink = dark ? groundAt(1) : color.text;
   const rx = tall * 0.8; // the orbits' half-width, kept inside the strip with the pearl
@@ -115,9 +117,9 @@ export function OrbitAdStrip({
             </Svg>
           )}
           <View style={styles.text}>
-            <Text style={[styles.kicker, { color: ink }]} numberOfLines={1}>{ad.kicker}</Text>
-            <Text style={[styles.title, { color: ink }]} numberOfLines={1}>{ad.title}</Text>
-            <Text style={[styles.line, { color: ink }]} numberOfLines={1}>{ad.line}</Text>
+            <Text style={[styles.kicker, { color: ink }]} numberOfLines={1} maxFontSizeMultiplier={MAX_TEXT}>{ad.kicker}</Text>
+            <Text style={[styles.title, { color: ink }]} numberOfLines={1} maxFontSizeMultiplier={MAX_TEXT}>{ad.title}</Text>
+            <Text style={[styles.line, { color: ink }]} numberOfLines={1} maxFontSizeMultiplier={MAX_TEXT}>{ad.line}</Text>
           </View>
         </View>
       </Glass>

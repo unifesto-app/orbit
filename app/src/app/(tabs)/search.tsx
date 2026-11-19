@@ -100,7 +100,10 @@ export default function Search() {
             <EventSection title="People’s choice" events={choice} hostOf={hostOf} />
             <EventSection title="This weekend" events={weekend} hostOf={hostOf} onMore={() => setWhen('weekend')} />
             {/* One of Orbit's own ads, before the places to play (owner, 19 Nov 2026: "add one strip in search"). */}
-            {orbitAds[1] && <OrbitAdStrip ad={orbitAds[1]} width={width - 40} />}
+            {/* A link to Search itself goes nowhere from here, so the strip is only read. */}
+            {orbitAds[1] && (
+              <OrbitAdStrip ad={{ ...orbitAds[1], href: orbitAds[1].href === '/search' ? undefined : orbitAds[1].href }} width={width - 40} />
+            )}
             {places.length > 0 && (
               <>
                 <CenteredHeading title="Places to play" />

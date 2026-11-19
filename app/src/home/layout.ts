@@ -108,6 +108,10 @@ export function planHome<E extends PlanEvent, H extends PlanHost>(
   // the second is the banner in the middle of Home (owner, 19 Nov 2026: "promotion banners", "ad banners in middle of
   // home"), so neither shows twice up there.
   const boosts = upcoming.filter((e) => e.wide && promoted(e) && !booked.has(e.id) && (notice || isNear(e.area)));
+  const lead = boosts[0];
+  // The banner is the next one no section above already shows (your orbit, your interests); the screen keeps it out of
+  // the list under them. It stays in `list` here, so "All events" still knows when the list is everything.
+  const ad = boosts.slice(1).find((e) => !shown.has(e.id));
 
   // Hosts near you: up to three to follow, then ones the viewer already follows (owner, 15 Nov 2026), four at most.
   const near = hosts.filter((h) => !h.tile && isNear(h.area));
@@ -128,8 +132,9 @@ export function planHome<E extends PlanEvent, H extends PlanHost>(
     // The end of Home (owner, 15 Nov 2026): every upcoming event, everywhere. Skipped when the list above already is that.
     // The list above is always a subset of `upcoming`, so the same length means the same events.
     all: notice || list.events.length === upcoming.length ? [] : upcoming,
-    slides: pickSlides(upcoming.filter((e) => e !== boosts[1]), hosts, followed, following, notice === null, isNear, boosts[0]),
-    ad: boosts[1],
+    slides: pickSlides(upcoming.filter((e) => e !== ad), hosts, followed, following, notice === null, isNear, lead),
+    lead, // the carousel's paid slide: the only one marked Promoted there
+    ad,
   };
 }
 

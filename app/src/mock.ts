@@ -168,8 +168,10 @@ export const viewer: Viewer = previews.signedIn;
  */
 export type OrbitAd = { id: string; kicker: string; title: string; line: string; bg: string; href?: string };
 export const orbitAds: OrbitAd[] = [
-  { id: 'card-offer', kicker: 'Card offer', title: '10% off with credit cards', line: 'Up to ₹150 on any ticket or slot, till 30 Nov', bg: '#1D372A', href: '/account/payment' },
-  { id: 'first-slot', kicker: 'Play', title: '₹200 off your first slot', line: 'At any turf, court or gaming café on Orbit', bg: '#869381', href: '/search' },
+  // Short: a strip gives its words about 190pt, so a title of about 20 letters and a line of about 28.
+  { id: 'card-offer', kicker: 'Card offer', title: '10% off with cards', line: 'Up to ₹150, till 30 Nov', bg: '#1D372A', href: '/account/payment' },
+  // Moss, a fill: Sage is the accent, never a button.
+  { id: 'first-slot', kicker: 'Play', title: 'First slot ₹200 off', line: 'Any turf, court or café', bg: '#515F46', href: '/search' },
 ];
 
 // What an event is like, as small cards on its page under About (owner, 19 Nov 2026: "add interest cards for events",
