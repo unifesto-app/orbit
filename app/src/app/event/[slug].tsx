@@ -6,20 +6,21 @@
 // page carousel"), from the very top of the screen ("remove the poster top blur, instead start poster from top"): the
 // 4:3 poster when the event has one, else the 3:4.
 // Not here yet: picking a ticket type and quantity, agenda, prizes and FAQ.
-import { formatPrice } from '@orbit/contract';
+import { categories, formatPrice } from '@orbit/contract';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ticketFor } from '../../account/data';
+import { past as history, ticketFor } from '../../account/data';
 import { barPrice, cast } from '../../detail';
 import { Glass } from '../../glass';
 import { Carousel } from '../../home/Carousel';
 import { Icon } from '../../icons';
-import { events, hosts, now, people, type Person } from '../../mock';
-import { BackBar, FaceWash, MenuButton, Monogram, NotFound, SaveButton, Section, shareLink, Verified } from '../../rows';
-import { addToList, needsAccount, setFollowing, useViewer } from '../../session';
+import { type Event, events, hosts, interestedBase, now, people, type Person, vibes } from '../../mock';
+import { BackBar, FaceWash, LoveButton, MenuButton, Monogram, NotFound, SaveButton, Section, shareLink, StatusDot, Tag, Verified } from '../../rows';
+import { eventStatus, seatsLine, type StatusKind } from '../../status';
+import { addToList, needsAccount, setFollowing, setInterested, useInterested, useViewer } from '../../session';
 import { around, color, font, radius, rim, space } from '../../theme';
 
 // This page's cards have more room than the app's usual 8 (owner, 15 Nov 2026: "add padding for card in event"), and
@@ -52,7 +53,9 @@ export default function EventPage() {
   if (!e || !host) return <NotFound what="event" />;
 
   const past = Date.parse(e.startsAt) < now;
+  const status = eventStatus(e, now); // the line at the top (src/status.ts)
   const booked = viewer.signedIn && !!viewer.tickets?.some((t) => t.eventId === e.id);
+  const went = viewer.signedIn && history.some((h) => h.eventId === e.id && h.status === 'Went');
   const following = viewer.signedIn && viewer.follows.includes(host.id);
   const openHost = () => router.push(`/host/${host.id}`);
   const price = barPrice(e);
@@ -74,8 +77,8 @@ export default function EventPage() {
         />
         <View style={styles.head}>
           <View style={styles.status}>
-            <View style={[styles.dot, past && styles.dotPast]} />
-            <Text style={styles.statusText}>{past ? 'Ended' : 'Booking open'}</Text>
+            <StatusDot tone={status.tone} />
+            <Text style={styles.statusText}>{status.label}</Text>
           </View>
           <Text style={styles.title} accessibilityRole="header">
             {e.title}
@@ -101,8 +104,18 @@ export default function EventPage() {
           </View>
         </Glass>
 
+        {!past && <InterestedCard event={e} />}
+
         <Section title="About" />
         <Text style={styles.prose}>{e.about}</Text>
+
+        {/* What it's like, as small cards: its kind, then the vibe (owner, 19 Nov 2026: interest cards, all four). */}
+        <Section title="What it’s like" />
+        <View style={styles.tags}>
+          {[categories.find((c) => c.slug === e.category)?.label ?? e.category, ...(vibes[e.id] ?? [])].map((t) => (
+            <Tag key={t} text={t} />
+          ))}
+        </View>
 
         {cast(e.people).map((g) => (
           <View key={g.title}>
@@ -162,12 +175,12 @@ export default function EventPage() {
         </Pressable>
       </Animated.ScrollView>
 
-      {!past && (
+      {!past && status.kind !== 'cancelled' && (
         <TicketBar
           price={formatPrice(price.paise)}
           from={price.from}
-          note={e.seats}
-          action={booked ? 'View ticket' : e.pricePaise ? 'Book ticket' : 'Register'}
+          note={seatsLine(e)}
+          action={booked ? 'View ticket' : (SHUT[status.kind] ?? (status.kind === 'waitlist' ? 'Join waitlist' : e.pricePaise ? 'Book ticket' : 'Register'))}
           // A booking opens its ticket (src/app/ticket/[id].tsx, keyed by booking id). Signed out, Book and Register open
           // the sign-in sheet over this page and come back to it (Booking doc, step 2); booking itself isn't built yet.
           onAction={
@@ -176,7 +189,7 @@ export default function EventPage() {
                   const t = ticketFor(e.id);
                   if (t) router.push(`/ticket/${t.id}`);
                 }
-              : viewer.signedIn
+              : status.kind in SHUT || viewer.signedIn
                 ? undefined
                 : () => needsAccount()
           }
@@ -184,10 +197,11 @@ export default function EventPage() {
         />
       )}
       {/* Save and the menu (owner, 15 Nov 2026: "add top right, love and menu"); the menu holds the rest of the doc's list.
+          Once it's over, Save goes; an event you went to has Loved it's heart there instead (owner, 19 Nov 2026).
           Signed out, Save asks to sign in first, then saves; so does Add to a list, which saves first if it isn't
           (Saved events and lists doc). Copy link, Add to calendar and Report aren't built yet. */}
       <BackBar scrollY={scrollY}>
-        <SaveButton event={e} bar />
+        {past ? went && <LoveButton event={e} bar /> : <SaveButton event={e} bar />}
         <MenuButton
           actions={[
             { label: 'Add to a list', icon: 'listPlus', onPress: () => addToList(e.id) },
@@ -208,6 +222,33 @@ export default function EventPage() {
 
 // A label over its value. One that opens something shows a ">" on its right (owner, 15 Nov 2026: "add > for when and
 // where"), an exception to no icons in cards, like the verified tick.
+// Interested (owner, 19 Nov 2026: "add interest cards for events", all four): apart from Save, it says you're thinking
+// of going. How many are shows under the question, yours included, at any number (owner, same day: "in interested add
+// count too", then "in button remove the count"). Signed out, it asks to sign in first. A card, so text and a pill only.
+function InterestedCard({ event: e }: { event: Event }) {
+  const mine = useInterested(e.id);
+  const n = interestedBase(e.id) + (mine ? 1 : 0);
+  return (
+    <Glass style={styles.cardRim}>
+      <View style={[styles.card, styles.interestCard]}>
+        <View style={styles.grow}>
+          <Text style={styles.name}>{mine ? 'You’re interested' : 'Thinking of going?'}</Text>
+          <Text style={styles.meta}>{`${n} ${n === 1 ? 'person is' : 'people are'} interested`}</Text>
+        </View>
+        <Pressable
+          onPress={() => needsAccount(() => setInterested(e.id, !mine))}
+          accessibilityRole="button"
+          accessibilityState={{ selected: mine }}
+          hitSlop={6}>
+          <Glass style={styles.follow}>
+            <Text style={[styles.followText, mine && styles.followingText]}>{mine ? 'Interested' : 'I’m interested'}</Text>
+          </Glass>
+        </Pressable>
+      </View>
+    </Glass>
+  );
+}
+
 function Fact({ label, value, note, onPress }: { label: string; value: string; note?: string; onPress?: () => void }) {
   const lines = (
     <View style={[styles.grow, styles.factLines]}>
@@ -256,6 +297,14 @@ function PersonRow({ person: p }: { person: Person }) {
 const BAR_PAD = space.small;
 const BUTTON = 44;
 // With more than one ticket type, the cheapest leads with "Starting from" (`from`).
+// The ticket bar's button when its status says there's nothing to book yet or any more; with a waitlist it's the way
+// on (owner, 19 Nov 2026: "need various status"). Anything else books or registers.
+const SHUT: Partial<Record<StatusKind, string>> = {
+  opensSoon: 'Not open yet',
+  soldOut: 'Sold out',
+  closed: 'Closed',
+};
+
 function TicketBar({
   price,
   from,
@@ -301,8 +350,6 @@ const styles = StyleSheet.create({
   head: { marginHorizontal: 20, alignItems: 'center' },
   status: { marginTop: space.big, flexDirection: 'row', alignItems: 'center', gap: 6 },
   // The accent on a dot, never on text.
-  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: color.accent },
-  dotPast: { backgroundColor: color.secondary },
   statusText: { fontFamily: font.medium, fontSize: 13, color: color.secondary },
   title: { marginTop: space.small, fontFamily: font.headline, fontSize: 24, lineHeight: 30, color: color.text, textAlign: 'center' },
   by: { marginTop: 4, fontFamily: font.medium, fontSize: 15, color: color.secondary, textAlign: 'center' },
@@ -311,7 +358,7 @@ const styles = StyleSheet.create({
   card: { borderRadius: FACE, backgroundColor: color.card, padding: CARD_PAD, gap: space.small },
   infoRim: { marginHorizontal: 20, marginTop: space.big, padding: rim, borderRadius: INFO_RIM },
   infoCard: { borderRadius: INFO_FACE, backgroundColor: color.card, padding: INFO_PAD, gap: INFO_PAD },
-  bareCard: { marginHorizontal: 20, marginTop: space.big },
+  bareCard: { marginHorizontal: 20, marginTop: space.big, borderWidth: 1, borderColor: color.border }, // no rim, so an outline
   factLines: { gap: 2 }, // line spacing between a fact's label, value and note
   factRow: { flexDirection: 'row', alignItems: 'center', gap: space.small },
   label: { fontFamily: font.medium, fontSize: 12, color: color.secondary },
@@ -324,6 +371,8 @@ const styles = StyleSheet.create({
   name: { fontFamily: font.title, fontSize: 15, lineHeight: 20, color: color.text },
 
   hostCard: { flexDirection: 'row', alignItems: 'center' },
+  interestCard: { flexDirection: 'row', alignItems: 'center' },
+  tags: { marginHorizontal: 20, flexDirection: 'row', flexWrap: 'wrap', gap: space.small },
   // A finer rim than the app's 2px (owner, 15 Nov 2026: "reduce rim of hosted by to 1px"); its corner still nests.
   hostRim: { padding: HOST_RIM, borderRadius: around(FACE, HOST_RIM) },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },

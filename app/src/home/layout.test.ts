@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { justAnnounced, planHome } from './layout.ts';
+import { planHome } from './layout.ts';
 
 const NOW = Date.parse('2026-11-15T10:00:00+05:30');
 const NEAR = 'Indiranagar';
@@ -134,12 +134,6 @@ test('past events never appear', () => {
   }
 });
 
-test('justAnnounced flips at 3 days', () => {
-  const e = ev('a', 'h1', NEAR, 20, 1);
-  const at = Date.parse(e.announced);
-  assert.equal(justAnnounced(e, at + 3 * 86_400_000 - 1), true);
-  assert.equal(justAnnounced(e, at + 3 * 86_400_000), false);
-});
 
 test('following hosts with no wide events falls back to near slides', () => {
   const events = [ev('f', 'h1', NEAR, 16, 1), ev('x', 'h2', NEAR, 17, 2, true), ev('far', 'h2', FAR, 17, 9, true)];
@@ -232,4 +226,24 @@ test('tickets: upcoming bookings in start order, out of orbit and list, kept in 
     assert.ok(ids(p.all).includes(id));
   }
   assert.deepEqual(planHome({ ...signedOut, tickets }, events, [], NOW).tickets, []);
+});
+
+test('interests: a section per picked kind near you, in the order picked, and its events leave the list', () => {
+  const kind = (e: ReturnType<typeof ev>, category: string) => ({ ...e, category });
+  const events = [
+    kind(ev('c1', 'h1', NEAR, 16, 3), 'comedy'),
+    kind(ev('c2', 'h1', NEAR, 17, 3), 'comedy'),
+    kind(ev('cFar', 'h1', FAR, 17, 3), 'comedy'),
+    kind(ev('m1', 'h2', NEAR, 18, 3), 'music'),
+    kind(ev('s1', 'h2', NEAR, 18, 3), 'sports'),
+  ];
+  const viewer = { signedIn: true, follows: [], place, interests: ['music', 'gaming', 'comedy'] };
+  const plan = planHome(viewer, events, [], NOW);
+  assert.deepEqual(plan.byInterest.map((k) => [k.category, ids(k.events)]), [['music', ['m1']], ['comedy', ['c1', 'c2']]]);
+  assert.deepEqual(ids(plan.list.events), ['s1']); // shown once only
+  assert.equal(plan.askInterests, false);
+  // Signed in with none picked yet: asked once, no sections. Signed out: neither.
+  assert.equal(planHome({ signedIn: true, follows: [], place }, events, [], NOW).askInterests, true);
+  assert.equal(planHome({ ...signedOut, interests: ['comedy'] }, events, [], NOW).byInterest.length, 0);
+  assert.equal(planHome(signedOut, events, [], NOW).askInterests, false);
 });

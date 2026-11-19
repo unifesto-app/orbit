@@ -6,7 +6,7 @@
 // token is kept in the Keychain, and the access token only in memory.
 // ponytail: saved events, saved lists and followed hosts stay on this phone, seeded from the mock (src/account/data.ts,
 // src/mock.ts), until the API has them.
-import type { AuthStep, Me as Account } from '@orbit/contract';
+import type { AuthStep, CategorySlug, Me as Account } from '@orbit/contract';
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import Storage from 'expo-sqlite/kv-store';
@@ -27,7 +27,15 @@ const DEVICE = 'orbit.device';
 const REFRESH = 'orbit.refresh';
 
 // Saved events and lists (src/account/saves.ts) ride along: each save with when it was made, and the lists.
-export type Session = { via: Way; follows: readonly string[]; me: Account } & saves.Saves;
+// `interests` is unset until you pick or skip them (Home asks once); `interested` and `loved` are event ids.
+export type Session = {
+  via: Way;
+  follows: readonly string[];
+  interests?: readonly CategorySlug[];
+  interested?: readonly string[];
+  loved?: readonly string[];
+  me: Account;
+} & saves.Saves;
 
 // The refresh token, in the Keychain (Android: the Keystore), readable once the phone has been unlocked after a restart
 // and never copied to a backup or another phone. expo-secure-store is a native module: on a build made before it was
@@ -109,16 +117,32 @@ export const useSignedIn = () => useSession() !== null;
 export function useViewer(): Viewer {
   const s = useSession();
   const initial = s?.me.name?.trim()[0]?.toUpperCase();
-  return s ? { ...viewer, signedIn: true, follows: s.follows, ...(initial && { initial }) } : { signedIn: false, follows: [], place: viewer.place };
+  return s
+    ? { ...viewer, signedIn: true, follows: s.follows, interests: s.interests, ...(initial && { initial }) }
+    : { signedIn: false, follows: [], place: viewer.place };
 }
 // Roles for the mode switcher and the Console and Galaxy guards, from the API: none while signed out, so Home only.
 export const useMe = (): Me => useSession()?.me ?? nobody;
 
 export const useSaved = (eventId: string) => useSession()?.saved.some((x) => x.id === eventId) ?? false;
+export const useLoved = (eventId: string) => useSession()?.loved?.includes(eventId) ?? false;
+export const useInterested = (eventId: string) => useSession()?.interested?.includes(eventId) ?? false;
 export const useFollowing = (hostId: string) => useSession()?.follows.includes(hostId) ?? false;
 
 const turn = (list: readonly string[], id: string, on: boolean) => (on ? [...new Set([...list, id])] : list.filter((x) => x !== id));
 export const setFollowing = (hostId: string, on: boolean) => current && set({ ...current, follows: turn(current.follows, hostId, on) });
+// "Loved it" on an event you went to (owner, 19 Nov 2026: "replace the love with loved it"; Booking doc: after the
+// show, only people scanned in). A tap turns it on or off.
+// ponytail: on this phone only, like follows; the API's Loved it (counting toward the performer or host) replaces it.
+export const setLoved = (eventId: string, on: boolean) => current && set({ ...current, loved: turn(current.loved ?? [], eventId, on) });
+// Interest (owner, 19 Nov 2026: "add interest cards for events", all four): the kinds of event you like, picked on
+// Account › Interests or from Home's one ask (an empty list once skipped, so it isn't asked again), and Interested on
+// an event's page, apart from Save.
+// ponytail: on this phone only, like follows, until the API keeps them and Recommendations reads them.
+export const setInterest = (slug: CategorySlug, on: boolean) =>
+  current && set({ ...current, interests: turn(current.interests ?? [], slug, on) as CategorySlug[] });
+export const skipInterests = () => current && set({ ...current, interests: current.interests ?? [] });
+export const setInterested = (eventId: string, on: boolean) => current && set({ ...current, interested: turn(current.interested ?? [], eventId, on) });
 
 // Anything that needs an account: done at once when signed in; otherwise the sign-in sheet opens over the screen and
 // `action` runs once it closes signed in. Every way into the sheet comes through here, so a sheet closed without
@@ -150,14 +174,15 @@ function apply(change: (s: saves.Saves) => saves.Saves | string): string | null 
 }
 const saveEvent = (eventId: string) => apply((s) => saves.save(s, eventId, Date.now(), canOpen));
 
-// The heart (owner, 16 Nov 2026: "instead of toast use modal, when clicked on love"): an empty heart saves at once and
+// The star, Save (owner, 16 Nov 2026: "instead of toast use modal, when clicked on love"; a heart until 19 Nov, "saved love
+// with star"): an empty star saves at once and
 // opens the list modal over the page (src/app/lists/[event].tsx); a saved one opens it too, where Remove from saved
 // unsaves. `on` is what the tap asked for, never a toggle, so a save tapped while signed out still saves when the
 // account already had it. Signed out, the sign-in sheet comes first and the save lands after; no modal then, as the
-// sheet is still leaving and one opened over it goes astray. The heart turning red says it's saved.
-// ponytail: at the cap the heart doesn't fill first and roll back (doc); it stays empty and an alert says why. The
+// sheet is still leaving and one opened over it goes astray. The star filling says it's saved.
+// ponytail: at the cap the star doesn't fill first and roll back (doc); it stays empty and an alert says why. The
 // API's answer makes it a real roll-back. The push ask on an event not on sale yet waits for notifications.
-export function tapHeart(eventId: string, on: boolean, fromMenu = false) {
+export function tapSave(eventId: string, on: boolean, fromMenu = false) {
   const signingIn = !current;
   const openLists = () => router.push(`/lists/${eventId}`);
   needsAccount(() => {
@@ -168,8 +193,8 @@ export function tapHeart(eventId: string, on: boolean, fromMenu = false) {
     else if (fromMenu) showNote({ text: 'Saved', action: { label: 'Add to a list', run: openLists } });
   });
 }
-// Add to a list, from an event's menu or a saved row's: the heart's modal, saving first if it isn't.
-export const addToList = (eventId: string) => tapHeart(eventId, true, true);
+// Add to a list, from an event's menu or a saved row's: the star's modal, saving first if it isn't.
+export const addToList = (eventId: string) => tapSave(eventId, true, true);
 
 // Unsave, from the list modal or a saved row's menu: gone from All saved and every list at once, with Undo for 5
 // seconds (until dismissed with assistive tech on, src/note.tsx). Remove all past passes every past save.
@@ -232,7 +257,9 @@ export function signIn(done: Extract<AuthStep, { step: 'signedIn' }>, via: Way) 
   }
   api.start(done);
   const kept = current ? { saved: current.saved, lists: current.lists } : saves.normalise({ saved: savedMock, lists: listsMock }, Date.now());
-  set({ via, ...kept, follows: current?.follows ?? viewer.follows, me: done.me });
+  // What's kept on this phone carries over, follows to Loved it, as saves do.
+  const mine = current && { interests: current.interests, interested: current.interested, loved: current.loved };
+  set({ via, ...kept, ...mine, follows: current?.follows ?? viewer.follows, me: done.me });
 }
 
 // The account as the API has it now (a name, a role or a deletion changed elsewhere). Once at launch.

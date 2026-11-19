@@ -1,5 +1,6 @@
-// The list modal (Saved events and lists doc), opened by the heart (owner, 16 Nov 2026: "instead of toast use modal,
-// when clicked on love"): an empty heart saves the event, then this opens over the page; a saved heart opens it too.
+// The list modal (Saved events and lists doc), opened by the Save star (owner, 16 Nov 2026: "instead of toast use
+// modal, when clicked on love"; a heart until 19 Nov): an empty star saves the event, then this opens over the page; a
+// saved star opens it too.
 // Saved and the event, New list, then every list with a tick where the event is: each tap saves at once, and taking an
 // event out of a list leaves it saved. Remove from saved, at the bottom, unsaves it everywhere (with Undo), so unsaving
 // is deliberate and nobody loses their lists by accident. An event's menu opens it the same way (Add to a list).

@@ -1,28 +1,25 @@
-// The head of Account's glass panel, which grows into the profile's (owner, 15 Nov 2026: "make drag to view profile
-// V V", "drag transition is needed", then picked "Panel grows into profile"; 16 Nov: "the profile should be a seperate
-// screen"). `p` is how far it has grown: 0 at rest on Account, with two chevrons; 1 grown, the photo up from 72 to 96
-// and Going, Been and Following where the chevrons were. Account drives `p` with the pull; the profile screen
-// (src/app/account/profile.tsx) shows it grown, so the screen fades in over a panel that already looks like its top.
+// The head of Account's glass panel and of the profile's, grown (owner, 16 Nov 2026: "the profile should be a seperate
+// screen"). On Account, View profile opens the profile screen (src/app/account/profile.tsx), which fades in with the
+// head grown.
 import type { Me as Account } from '@orbit/contract';
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useRef } from 'react';
+import { Image, StyleSheet, Text, View } from 'react-native';
 
 import { past } from './data';
-import { EDGE } from './kit';
+import { EDGE, Pill } from './kit';
 import { year } from './rules';
-import { Glass, useAccessibility } from '../glass';
+import { Glass } from '../glass';
 import { type Followed, hostsApi, markOf } from '../hosts';
-import { Icon } from '../icons';
 import { useLoad } from '../load';
 import { hosts } from '../mock';
 import { Monogram } from '../rows';
 import { api, useMe, useSession, useViewer } from '../session';
-import { around, color, font, space, stoneAt } from '../theme';
+import { around, color, font, space } from '../theme';
 
 const PHOTO = 72; // the photo at rest on Account
 const GROWN = 96; // the photo grown
-const SLOT = 44; // the chevrons' place, which the counts take
+const SLOT = 44; // View profile's place, which the counts take
 
 // Your photo, a circle in Account's 1px frosted rim (owner, 17 Nov 2026: "instead of squared profile use rounded one"),
 // or your initials until there's one.
@@ -33,7 +30,7 @@ export function Photo({ me, size }: { me: Pick<Account, 'id' | 'name' | 'photo'>
       {me.photo ? (
         <Image source={{ uri: me.photo }} style={[round, styles.photo]} accessibilityIgnoresInvertColors />
       ) : (
-        <Monogram mark={{ initials: markOf({ id: me.id, name: me.name ?? '' }).initials, bg: color.raised, fg: color.text }} size={size} round />
+        <Monogram mark={{ initials: markOf({ id: me.id, name: me.name ?? '' }).initials, bg: color.fill, fg: color.text }} size={size} round />
       )}
     </Glass>
   );
@@ -68,44 +65,20 @@ export function useFollows() {
   return { real, data, mock, count: (data?.length ?? 0) + mock.length };
 }
 
-// `onChevrons` shows the chevrons (Account) and is their tap, Android's way in; without it (the profile) only the
-// counts show. `following` is useFollows' count, which the screen reads anyway for its own rows.
-export function ProfileHead({
-  p,
-  onChevrons,
-  following,
-}: {
-  p: Animated.AnimatedInterpolation<number>;
-  onChevrons?: () => void;
-  following: number;
-}) {
-  const chevrons = !!onChevrons;
+// Account's head shows View profile, the way in (owner, 19 Nov 2026: "replace swipe down, and change to button"; it was
+// a pull with two chevrons); `grown` (the profile) shows the photo grown from 72 to 96, up into the panel's extra
+// room, and Going, Been and Following in the button's place. `following` is useFollows' count, which the screen reads
+// anyway for its own rows.
+export function ProfileHead({ grown = false, onOpen, following }: { grown?: boolean; onOpen?: () => void; following: number }) {
   const me = useSession()?.me;
   const viewer = useViewer();
-  const reduceMotion = useAccessibility('reduceMotionChanged');
-  const [bob] = useState(() => new Animated.Value(0));
-  // The chevrons bob gently while nothing is pulled; not under Reduce Motion.
-  useEffect(() => {
-    if (!chevrons || reduceMotion) return;
-    const half = (toValue: number) => Animated.timing(bob, { toValue, duration: 700, easing: Easing.inOut(Easing.ease), useNativeDriver: true });
-    const loop = Animated.loop(Animated.sequence([half(1), half(0)]));
-    loop.start();
-    return () => loop.stop();
-  }, [bob, chevrons, reduceMotion]);
-  const [a] = useState(() => ({
-    grow: p.interpolate({ inputRange: [0, 1], outputRange: [1, GROWN / PHOTO] }),
-    chevrons: p.interpolate({ inputRange: [0, 0.4], outputRange: [1, 0], extrapolate: 'clamp' }),
-    counts: p.interpolate({ inputRange: [0.4, 1], outputRange: [0, 1], extrapolate: 'clamp' }),
-    rise: p.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }),
-    bob: bob.interpolate({ inputRange: [0, 1], outputRange: [0, 4] }),
-  }));
   if (!me) return null; // signed out: Account draws its own head, and the profile says to sign in
   return (
     <View style={styles.head}>
-      {/* Grows from its bottom edge, up into the room the stretch makes, so it never covers the name. */}
-      <Animated.View style={[styles.grows, { transform: [{ scale: a.grow }] }]}>
+      {/* Grown from its bottom edge, so it never covers the name. */}
+      <View style={grown && styles.grown}>
         <Photo me={me} size={PHOTO} />
-      </Animated.View>
+      </View>
       <Text style={styles.name} accessibilityRole="header">
         {me.name}
       </Text>
@@ -113,27 +86,15 @@ export function ProfileHead({
           Orbit just since 2025"). */}
       <Text style={styles.meta}>Since {year(me.since)}</Text>
       <View style={styles.slot}>
-        {onChevrons && (
-          <Animated.View style={[styles.fill, { opacity: a.chevrons }]}>
-            <Pressable onPress={onChevrons} accessibilityRole="button" accessibilityLabel="View profile" hitSlop={12}>
-              <Animated.View style={{ transform: [{ translateY: a.bob }] }}>
-                <Icon name="chevronDown" size={18} color={color.secondary} />
-                <View style={styles.next}>
-                  <Icon name="chevronDown" size={18} color={stoneAt(0.32)} />
-                </View>
-              </Animated.View>
-            </Pressable>
-          </Animated.View>
+        {grown ? (
+          <View style={styles.counts}>
+            <Count n={viewer.tickets?.length ?? 0} label="Going" />
+            <Count n={past.filter((x) => x.status === 'Went').length} label="Been" />
+            <Count n={following} label="Following" />
+          </View>
+        ) : (
+          onOpen && <Pill label="View profile" size="small" onPress={onOpen} />
         )}
-        <Animated.View
-          style={[styles.fill, styles.counts, { opacity: a.counts, transform: [{ translateY: a.rise }] }]}
-          pointerEvents="none"
-          accessibilityElementsHidden={chevrons}
-          importantForAccessibility={chevrons ? 'no-hide-descendants' : 'auto'}>
-          <Count n={viewer.tickets?.length ?? 0} label="Going" />
-          <Count n={past.filter((x) => x.status === 'Went').length} label="Been" />
-          <Count n={following} label="Following" />
-        </Animated.View>
       </View>
     </View>
   );
@@ -150,13 +111,11 @@ function Count({ n, label }: { n: number; label: string }) {
 
 const styles = StyleSheet.create({
   head: { marginHorizontal: 20, alignItems: 'center' },
-  grows: { transformOrigin: 'bottom' },
+  grown: { transformOrigin: 'bottom', transform: [{ scale: GROWN / PHOTO }] },
   photo: { backgroundColor: color.raised }, // while it loads
   name: { marginTop: space.small + 4, fontFamily: font.headline, fontSize: 22, lineHeight: 28, color: color.text },
   meta: { marginTop: 2, fontFamily: font.text, fontSize: 13, lineHeight: 18, color: color.secondary, textAlign: 'center' },
-  slot: { marginTop: 16, height: SLOT, alignSelf: 'stretch' },
-  fill: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
-  next: { marginTop: -8 }, // the second chevron tucked under the first
+  slot: { marginTop: 16, height: SLOT, alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center' },
   counts: { flexDirection: 'row', gap: 40 },
   count: { alignItems: 'center' },
   countN: { fontFamily: font.headline, fontSize: 20, lineHeight: 24, color: color.text },

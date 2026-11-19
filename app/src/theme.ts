@@ -1,4 +1,4 @@
-import { alpha, functional, palette, radius as corners, role, space as gaps } from '@orbit/tokens';
+import { alpha, channels, contrast, functional, palette, radius as corners, role, space as gaps } from '@orbit/tokens';
 
 // The app's names for Orbit's brand tokens (@orbit/tokens, shared with the web and Galaxy). Since 18 Nov 2026 the app
 // is on the green kit: Charcoal ground, Stone text, Sage accent (was #295EFF blue).
@@ -6,24 +6,44 @@ import { alpha, functional, palette, radius as corners, role, space as gaps } fr
 // Buttons are frosted glass with a Stone label (Glass in src/glass.tsx; owner, 15 Nov 2026).
 export const color = {
   ground: role.ground,
-  // Open (18 Nov 2026): the brand kit keeps every panel Charcoal, set apart by a hairline. These two greys stay until the
-  // owner decides how the app's cards should change.
-  card: '#1C1C1E',
-  raised: '#2C2C30',
+  // Cards are Charcoal like the page, set apart by their glass rim or, where they have none, a 1px `border` (owner,
+  // 19 Nov 2026: "switch cards", ending the iOS greys #1C1C1E and #2C2C30). Tags and placeholders while a poster or
+  // photo loads stay grey (owner, same day: "keep tags and placeholders grey"): Stone at 12% over the Charcoal. Forest
+  // (`fill`) is for your own: your profile circle and your messages in a support chat.
+  card: role.ground,
+  raised: alpha(palette.stone, 0.12),
+  fill: role.fill,
+  border: role.border, // a rimless card's outline
   text: role.text,
   secondary: role.text2,
   accent: role.accent,
+  track: role.track, // the empty part of a progress bar or switch
   onAccent: role.onAccent, // a thumb or tick on a Sage fill: Stone on Sage is only 2.3:1
   // Galaxy's own colour, its card on the mode switcher (owner, 16 Nov 2026, after #7048E8 and #94AFFF). The glow at the top
   // of Galaxy's pages and its lock, so staff always know where they are. An element, never text.
   galaxy: functional.galaxy,
-  // A saved event's heart, filled (owner, 16 Nov 2026: "for saved events add love red"). iOS's dark-mode red. An element,
-  // like the accent, never text.
+  // A loved event's heart, filled: "Loved it" (owner, 19 Nov 2026: "replace the love with loved it"; the red was a
+  // saved heart's from 16 Nov, "for saved events add love red", until saves took a star). iOS's dark-mode red. An
+  // element, like the accent, never text.
   love: functional.love,
 } as const;
 
 // Stone at an opacity, for tints, hairlines and pressed states (never pure white).
 export const stoneAt = (a: number) => alpha(palette.stone, a);
+// Charcoal at an opacity, for text set dark over a light poster.
+export const groundAt = (a: number) => alpha(palette.charcoal, a);
+
+// Whether text over `bg` reads better in Charcoal than in Stone (owner, 19 Nov 2026: "in home, the location text should
+// adapt the bg and switch colors"). `wash` is the ground laid over it at that opacity, as the carousel's wash behind
+// Home's header. A colour that isn't #rrggbb keeps Stone.
+export function darkInkOn(bg: string, wash = 0): boolean {
+  if (!/^#[0-9a-f]{6}$/i.test(bg)) return false;
+  const g = channels(role.ground);
+  const under = `#${channels(bg)
+    .map((c, i) => Math.round(c * (1 - wash) + g[i] * wash).toString(16).padStart(2, '0'))
+    .join('')}`;
+  return contrast(under, role.ground) > contrast(under, role.text);
+}
 
 // One corner for everything (owner, 15 Nov 2026: "reduce the round of corners in entire app", "use same roundness
 // across all. use the all events poster one", "make the poster 8px", then 6 with 8px padding, picked in the corners

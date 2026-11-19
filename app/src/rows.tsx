@@ -24,8 +24,9 @@ import Svg, { Defs, LinearGradient, RadialGradient, Rect, Stop } from 'react-nat
 import { BarGlass, Glass } from './glass';
 import { Icon, type IconName } from './icons';
 import { Media, type MediaItem } from './media';
-import type { Event, Host } from './mock';
-import { tapHeart, useSaved } from './session';
+import { type Event, type Host, now } from './mock';
+import { setLoved, tapSave, useLoved, useSaved } from './session';
+import { eventStatus, isNews, seatsLine, type Status } from './status';
 import { around, color, font, radius, rim, space, stoneAt } from './theme';
 
 export const SEAT = 48; // the 1:1 square on a seat card's top rim
@@ -34,15 +35,18 @@ export const SEAT = 48; // the 1:1 square on a seat card's top rim
 const FACE = around(radius.sm, space.small);
 const RIM = around(FACE, rim);
 
-// A plain row (no card), so it keeps its Save heart, on the app's frosted glass (owner, 15 Nov 2026). The poster and
-// text open the event page; the heart stays a target of its own. `tag` takes the repeat tag's place (a person's role
-// on their sheet); a `past` row drops the price and the heart. `onPress` replaces opening the event the usual way.
-// `menu` adds a ⋯ after the heart, as saved rows have (Saved events and lists doc: Add to a list, Remove from saved).
+// A plain row (no card), so it keeps its Save star, on the app's frosted glass (owner, 15 Nov 2026). The poster and
+// text open the event page; the star stays a target of its own. Its tag is the event's status when that's news (Sold
+// out, Almost full, Just announced; src/status.ts), else its repeat; `tag` takes their place (a person's role on their
+// sheet); a `past` row drops the price and the star, and an event you `went` to gets Loved it's heart in its
+// place. `onPress` replaces opening the event the usual way.
+// `menu` adds a ⋯ after the star, as saved rows have (Saved events and lists doc: Add to a list, Remove from saved).
 export function EventRow({
   event: e,
   host,
-  tag = e.repeats,
+  tag,
   past = false,
+  went = false,
   menu,
   onPress = () => router.push(`/event/${e.id}`),
 }: {
@@ -50,9 +54,12 @@ export function EventRow({
   host: Host;
   tag?: string;
   past?: boolean;
+  went?: boolean;
   menu?: MenuAction[];
   onPress?: () => void;
 }) {
+  const st = eventStatus(e, now);
+  const shown = tag ?? (isNews(st) ? st.short : e.repeats);
   return (
     <View style={styles.row}>
       <Pressable onPress={onPress} accessibilityRole="button" style={({ pressed }) => [styles.grow, styles.rowLink, pressed && styles.pressed]}>
@@ -60,14 +67,14 @@ export function EventRow({
         <View style={[styles.grow, styles.lines]}>
           <View style={styles.whenRow}>
             <Text style={styles.meta}>{e.when}</Text>
-            {tag && <Tag text={tag} />}
+            {shown && <Tag text={shown} />}
           </View>
           <Text style={styles.rowTitle}>{e.title}</Text>
           <Text style={styles.meta} numberOfLines={1}>{host.name} · {e.area}</Text>
           {!past && <Price event={e} />}
         </View>
       </Pressable>
-      {!past && <SaveButton event={e} />}
+      {past ? went && <LoveButton event={e} /> : <SaveButton event={e} />}
       {menu && <MenuButton actions={menu} label={`More for ${e.title}`} anchored />}
     </View>
   );
@@ -77,7 +84,7 @@ function Price({ event: e }: { event: Event }) {
   return (
     <View style={styles.priceRow}>
       <Text style={styles.price}>{formatPrice(e.pricePaise)}</Text>
-      {e.seats && <Text style={styles.small}>{e.seats}</Text>}
+      {seatsLine(e) && <Text style={styles.small}>{seatsLine(e)}</Text>}
     </View>
   );
 }
@@ -131,7 +138,7 @@ export function SeatCard({
   return (
     <View style={{ width, paddingTop: box / 2 }}>
       <Glass style={styles.cardRim}>
-        <View style={[styles.seatFace, tint !== undefined && styles.groundFace, { height: (face * 3) / 4, paddingTop: size / 2 + space.small }]}>
+        <View style={[styles.seatFace, { height: (face * 3) / 4, paddingTop: size / 2 + space.small }]}>
           {tint && <FaceWash tint={tint} />}
           {children}
         </View>
@@ -249,24 +256,44 @@ export function BackBar({ scrollY, children }: { scrollY: Animated.Value; childr
   );
 }
 
-// The heart, on every event row and the event page (`bar`, a 44pt circle like its neighbours). One tap saves and opens
-// the list modal; on a saved event it opens the modal, where Remove from saved unsaves (src/session.ts; owner, 16 Nov
-// 2026: "instead of toast use modal, when clicked on love"). Signed out, the sign-in sheet comes first. Filled and red
-// when saved ("for saved events add love red"), else the white duotone outline. It says what a tap will do, its state
-// exposed to screen readers (Saved events and lists doc).
+// The star, Save, on every upcoming event row and the event page (`bar`, a 44pt circle like its neighbours; a heart
+// until 19 Nov 2026, owner: "saved love with star"). One tap saves and opens the list modal; on a saved event it opens
+// the modal, where Remove from saved unsaves (src/session.ts; owner, 16 Nov 2026: "instead of toast use modal, when
+// clicked on love"). Signed out, the sign-in sheet comes first. Filled Stone when saved, else the duotone outline. It
+// says what a tap will do, its state exposed to screen readers (Saved events and lists doc).
 export function SaveButton({ event: e, bar = false }: { event: Pick<Event, 'id' | 'title'>; bar?: boolean }) {
   const saved = useSaved(e.id);
   return (
     <Pressable
-      onPress={() => tapHeart(e.id, !saved)}
-      style={bar ? undefined : styles.heart}
+      onPress={() => tapSave(e.id, !saved)}
+      style={bar ? undefined : styles.rowCircle}
       hitSlop={bar ? 4 : 0}
       accessibilityRole="button"
       accessibilityLabel={saved ? `Saved, ${e.title}` : `Save ${e.title}`}
       accessibilityHint={saved ? 'Opens its lists and Remove from saved' : 'Saves it and opens your lists'}
       accessibilityState={{ selected: saved }}>
-      <Glass style={bar ? styles.backGlass : styles.heartGlass}>
-        {saved ? <Icon name="heartFill" size={20} color={color.love} /> : <Icon name="heart" size={20} color={color.text} />}
+      <Glass style={bar ? styles.backGlass : styles.rowGlass}>
+        <Icon name={saved ? 'starFill' : 'star'} size={20} color={color.text} />
+      </Glass>
+    </Pressable>
+  );
+}
+
+// "Loved it", the heart, on an event you went to, once it's over (owner, 19 Nov 2026: "replace the love with loved
+// it"): on its History row and in place of Save on its page. A tap says you loved it, red; another takes it back.
+export function LoveButton({ event: e, bar = false }: { event: Pick<Event, 'id' | 'title'>; bar?: boolean }) {
+  const loved = useLoved(e.id);
+  return (
+    <Pressable
+      onPress={() => setLoved(e.id, !loved)}
+      style={bar ? undefined : styles.rowCircle}
+      hitSlop={bar ? 4 : 0}
+      accessibilityRole="button"
+      accessibilityLabel={loved ? `Loved it, ${e.title}` : `Loved it? ${e.title}`}
+      accessibilityHint={loved ? 'Takes your Loved it back' : 'Says you loved it'}
+      accessibilityState={{ selected: loved }}>
+      <Glass style={bar ? styles.backGlass : styles.rowGlass}>
+        {loved ? <Icon name="heartFill" size={20} color={color.love} /> : <Icon name="heart" size={20} color={color.text} />}
       </Glass>
     </Pressable>
   );
@@ -274,7 +301,7 @@ export function SaveButton({ event: e, bar = false }: { event: Pick<Event, 'id' 
 
 // A frosted 44pt circle holding one icon, as every icon-only button in a bar (owner, 15 Nov 2026: "never use squared
 // buttons"). Without `onPress` it isn't a button yet and only says what it is.
-// `children` replaces the icon, for one that changes, like a saved event's heart.
+// `children` replaces the icon, for one that changes, like a saved event's star.
 export function CircleButton({ icon, label, onPress, children }: { icon?: IconName; label: string; onPress?: () => void; children?: ReactNode }) {
   const face = <Glass style={styles.backGlass}>{children ?? (icon && <Icon name={icon} size={20} color={color.text} />)}</Glass>;
   return onPress ? (
@@ -299,7 +326,7 @@ export const shareLink = (line: string, path: string) => Share.share({ message: 
 // Each item has its icon on the right of its label, as iOS's own pull-down menus do (owner: "add icons in menu").
 // React Native's own Modal, so no native module: expo-router's native menus open only from a long press on a link or
 // from the system header, and these pages draw their own.
-// `anchored`, on a row: a 36pt circle like the row's heart, its menu opening under it, or over it near the bottom.
+// `anchored`, on a row: a 36pt circle like the row's star, its menu opening under it, or over it near the bottom.
 export type MenuAction = { label: string; icon: IconName; onPress?: () => void };
 export function MenuButton({ actions, label = 'More', anchored = false }: { actions: MenuAction[]; label?: string; anchored?: boolean }) {
   const insets = useSafeAreaInsets();
@@ -330,8 +357,8 @@ export function MenuButton({ actions, label = 'More', anchored = false }: { acti
   return (
     <>
       {anchored ? (
-        <Pressable ref={button} onPress={show} style={styles.heart} accessibilityRole="button" accessibilityLabel={label}>
-          <Glass style={styles.heartGlass}>
+        <Pressable ref={button} onPress={show} style={styles.rowCircle} accessibilityRole="button" accessibilityLabel={label}>
+          <Glass style={styles.rowGlass}>
             <Icon name="more" size={20} color={color.text} />
           </Glass>
         </Pressable>
@@ -486,6 +513,12 @@ export function ScriptTitle({ title, size = 44 }: { title: string; size?: number
   );
 }
 
+// A status's dot (src/status.ts): Sage while there's something to book, a Sage ring while booking hasn't opened, grey
+// once there's nothing to book. An element, so the accent is allowed; the words beside it stay grey.
+export function StatusDot({ tone }: { tone: Status['tone'] }) {
+  return <View style={[styles.statusDot, tone === 'soon' && styles.statusSoon, tone === 'closed' && styles.statusClosed]} />;
+}
+
 export function Tag({ text }: { text: string }) {
   return (
     <View style={styles.tag}>
@@ -514,14 +547,17 @@ const styles = StyleSheet.create({
   rowTitle: { fontFamily: font.title, fontSize: 15, lineHeight: 20, color: color.text },
   meta: { fontFamily: font.text, fontSize: 13, color: color.secondary },
   small: { fontFamily: font.text, fontSize: 12, color: color.secondary },
-  heart: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  rowCircle: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   // Circles (owner, 15 Nov 2026: "circle for love and user profile"), the two exceptions to the one corner.
-  heartGlass: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  rowGlass: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   priceRow: { marginTop: 2, flexDirection: 'row', alignItems: 'baseline', gap: 10 },
   price: { fontFamily: font.price, fontSize: 15, color: color.text },
   poster: { overflow: 'hidden' },
   monogram: { alignItems: 'center', justifyContent: 'center' },
   monogramText: { fontFamily: font.headline },
+  statusDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: color.accent },
+  statusSoon: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: color.accent },
+  statusClosed: { backgroundColor: color.secondary },
   tag: { minHeight: 22, paddingHorizontal: 8, paddingVertical: 1, borderRadius: radius.sm, backgroundColor: color.raised, justifyContent: 'center' },
   tagText: { fontFamily: font.medium, fontSize: 12, color: color.text },
   searchBox: {
@@ -535,7 +571,6 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, height: '100%', fontFamily: font.text, fontSize: 15, color: color.text },
   cardRim: { padding: rim, borderRadius: RIM },
   seatFace: { borderRadius: FACE, backgroundColor: color.card, paddingHorizontal: space.small, alignItems: 'center', gap: 2 },
-  groundFace: { backgroundColor: color.ground },
   wash: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, pointerEvents: 'none' },
   domeClip: { position: 'absolute', top: 0, overflow: 'hidden' },
   seat: { position: 'absolute' },

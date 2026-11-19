@@ -1,4 +1,4 @@
-// Naming a list: New list from Account › Saved, and Rename list from a list's menu (the heart's list modal names its
+// Naming a list: New list from Account › Saved, and Rename list from a list's menu (the star's list modal names its
 // new lists in place). A full modal with the field at the top, as the sign-in sheet, so the keyboard never covers it.
 // A name is 1 to 40 letters, trimmed, and no two lists share one, ignoring case (src/account/saves.ts).
 import { router, useLocalSearchParams } from 'expo-router';

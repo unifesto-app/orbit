@@ -23,8 +23,9 @@ export type Viewer = {
   follows: readonly string[]; // host ids
   place: Place | null;
   tickets?: readonly { eventId: string; label: string }[]; // the viewer's upcoming bookings
+  interests?: readonly string[]; // category slugs picked on Account › Interests; unset until picked or skipped
 };
-export type PlanEvent = { id: string; hostId: string; area: string; startsAt: string; announced: string; wide?: unknown };
+export type PlanEvent = { id: string; hostId: string; area: string; startsAt: string; announced: string; category?: string; wide?: unknown };
 export type PlanHost = { id: string; area: string; joined: string; banner?: unknown };
 export type Slide<E, H> = { kind: 'event'; event: E } | { kind: 'host'; host: H };
 
@@ -32,9 +33,9 @@ const DAY = 86_400_000;
 const MAX_SLIDES = 6; // owner, 15 Nov 2026: "around 6"
 const MAX_ORBIT = 3;
 const MAX_HOSTS = 4; // two rows of two host cards
+const MAX_KINDS = 3; // sections by interest
+const MAX_PER_KIND = 3;
 
-// Repeat tags lose to this on orbit cards: a new date from a host you follow is the news.
-export const justAnnounced = (e: PlanEvent, now: number) => now - Date.parse(e.announced) < 3 * DAY;
 
 export function planHome<E extends PlanEvent, H extends PlanHost>(
   viewer: Viewer,
@@ -65,6 +66,18 @@ export function planHome<E extends PlanEvent, H extends PlanHost>(
       ? null
       : 'nothingNear';
   const shown = new Set([...tickets.map((e) => e.id), ...orbit.map((e) => e.id)]);
+
+  // A section for each kind of event you picked (owner, 19 Nov 2026: interest cards, "all four"), in the order picked,
+  // up to MAX_KINDS with something on: near you when you're somewhere with events, else everywhere. Their events leave
+  // the list below, as tickets and your orbit do.
+  const byInterest = (viewer.signedIn ? (viewer.interests ?? []) : [])
+    .map((category) => ({
+      category,
+      events: upcoming.filter((e) => e.category === category && !shown.has(e.id) && (notice || isNear(e.area))).slice(0, MAX_PER_KIND),
+    }))
+    .filter((k) => k.events.length > 0)
+    .slice(0, MAX_KINDS);
+  for (const k of byInterest) for (const e of k.events) shown.add(e.id);
   const rest = upcoming.filter((e) => !shown.has(e.id));
 
   // Nothing near or no location: everything upcoming. Otherwise this week near you, and under four of
@@ -84,6 +97,10 @@ export function planHome<E extends PlanEvent, H extends PlanHost>(
   return {
     tickets,
     orbit,
+    byInterest,
+    near: notice === null, // whether the interest sections are near you
+    // Home asks once, signed in, until interests are picked or skipped.
+    askInterests: viewer.signedIn && viewer.interests === undefined,
     notice,
     list,
     hosts: nearHosts,

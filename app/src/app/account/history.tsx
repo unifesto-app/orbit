@@ -1,5 +1,6 @@
 // History: bookings that are no longer tickets, latest first: events that are over (Went or Missed), and bookings
-// cancelled or refunded (Booking doc: "cancelled as plain status text"). The upcoming half is Tickets.
+// cancelled or refunded (Booking doc: "cancelled as plain status text"). The upcoming half is Tickets. An event you
+// went to has Loved it's heart.
 import { View } from 'react-native';
 
 import { past } from '../../account/data';
@@ -17,7 +18,7 @@ export default function History() {
       {list.length ? (
         <View style={{ marginTop: space.big }}>
           {list.map(({ event: e, status }) => (
-            <EventRow key={e.id} event={e} host={hosts.find((h) => h.id === e.hostId)!} past tag={status} />
+            <EventRow key={e.id} event={e} host={hosts.find((h) => h.id === e.hostId)!} past went={status === 'Went'} tag={status} />
           ))}
         </View>
       ) : (

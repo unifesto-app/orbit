@@ -9,8 +9,7 @@
 import * as LocalAuthentication from 'expo-local-authentication';
 import { Stack, router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { StyleSheet, Text, View, useWindowDimensions } from 'react-native';
-import { Easing, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
+import { StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Pill } from '../../account/kit';
@@ -18,8 +17,6 @@ import { Glass } from '../../glass';
 import { isStaff } from '../../modes';
 import { Glow, ScriptTitle } from '../../rows';
 import { useMe } from '../../session';
-import { StarLayer } from '../../stars';
-import { OPEN_END, starLayers } from '../../switchMotion';
 import { color, font, space } from '../../theme';
 
 export const unstable_settings = { anchor: '(tabs)' };
@@ -68,31 +65,18 @@ export default function GalaxyLayout() {
 }
 
 // The lock, the switch screen's glass (owner, 16 Nov 2026: "entering page glass one with Galaxy ( explore font )",
-// "shortn the subtitle add space dots from switch screen"): frosted glass with the ground at 70% over Galaxy's glow,
-// "Galaxy" in Explore's script, one short line, and the switch screen's dots gathering in waves. Nothing of Galaxy
+// "shortn the subtitle"): frosted glass with the ground at 70% over Galaxy's glow, "Galaxy" in Explore's script and one
+// short line. No space dots (owner, 19 Nov 2026: "remove space dots, completely"). Nothing of Galaxy
 // itself is drawn under the glass: without Liquid Glass it falls back to a clear fill, which would show staff data
 // before the passcode.
-const FLAT = 0.45; // the dots' orbits, height over width, about the switch screen's
 function Locked({ lock, onUnlock }: { lock: Lock; onUnlock: () => void }) {
   const insets = useSafeAreaInsets();
-  const { width, height } = useWindowDimensions();
-  const [stars] = useState(() => starLayers(width, height));
-  const reduced = useReducedMotion();
-  const open = useSharedValue(reduced ? OPEN_END : 0);
-  useEffect(() => {
-    if (!reduced) open.value = withTiming(OPEN_END, { duration: OPEN_END * 1000, easing: Easing.linear });
-  }, [open, reduced]);
   const line = lock === 'no-passcode' ? 'Set a passcode on this phone first.' : 'Use your passcode to enter.';
   return (
     <View style={styles.screen}>
       <Glow tint={color.galaxy} />
       <Glass style={StyleSheet.absoluteFill} />
       <View style={[StyleSheet.absoluteFill, styles.shade]} />
-      <View style={StyleSheet.absoluteFill} pointerEvents="none">
-        {stars.map((dots, k) => (
-          <StarLayer key={k} layer={k} dots={dots} open={open} flat={FLAT} />
-        ))}
-      </View>
       <View style={[styles.content, { paddingTop: insets.top + space.big, paddingBottom: insets.bottom + space.big }]}>
         <View style={styles.middle}>
           <ScriptTitle title="Galaxy" />
