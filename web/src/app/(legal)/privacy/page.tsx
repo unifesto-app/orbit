@@ -22,8 +22,7 @@ export default function Privacy() {
       <p className={styles.updated}>Last updated {LEGAL_UPDATED}</p>
 
       <p>
-        This policy covers the Orbit waitlist at heyorbit.in. Orbit is run by {OPERATOR}, India, until Orbit’s own company
-        is formed; this policy then passes to that company, and we’ll tell you.
+        This policy covers the Orbit waitlist at heyorbit.in. Orbit is run by {OPERATOR}, India.
       </p>
 
       <h2>What we keep</h2>

@@ -6,7 +6,7 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 import { API_URL } from "./api";
 import { deepType, Defs, Orbits, Wordmark } from "./brand";
-import { DESCRIPTION, SITE, SOCIAL } from "./site";
+import { DESCRIPTION, OPERATOR, SITE, SOCIAL } from "./site";
 import styles from "./page.module.css";
 import { Waitlist } from "./waitlist";
 
@@ -54,7 +54,7 @@ export default function Home() {
       </section>
 
       <footer className={styles.foot}>
-        <p>© 2027 Orbit</p>
+        <p>© 2027 {OPERATOR}</p>
         <nav>
           <Link href="/terms">Terms</Link>
           <Link href="/privacy">Privacy</Link>
