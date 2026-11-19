@@ -12,7 +12,7 @@ import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { Pill } from '../../account/kit';
 import { BookBar } from '../../bookBar';
-import { bookingDays, freeAt, holdLeft, MAX_HOURS, mmss, slotLine, slotPrice, startTimes, timeLabel } from '../../booking';
+import { bookingDays, freeAt, HOLD_MS, holdLeft, MAX_HOURS, mmss, slotLine, slotPrice, startTimes, timeLabel } from '../../booking';
 import { Fact, FactCard } from '../../fact';
 import { perHour, startsLine, venues } from '../../kinds';
 import { hosts, now } from '../../mock';
@@ -20,7 +20,6 @@ import { Chip, Stepper } from '../../pickers';
 import { NotFound, Sheet } from '../../rows';
 import { color, font, space } from '../../theme';
 
-const DAYS = bookingDays(now);
 
 export default function SlotSheet() {
   const { venue: id } = useLocalSearchParams<{ venue: string }>();
@@ -36,18 +35,23 @@ export default function SlotSheet() {
   const [clock, setClock] = useState(() => Date.now());
   const [asked, setAsked] = useState(false);
   const [bar, setBar] = useState(140);
-  // While held, the countdown ticks every second, and stops once it's run out.
+  // While held, the countdown ticks every second, and stops itself once the hold has run out.
   useEffect(() => {
     if (heldAt === null) return;
-    const t = setInterval(() => setClock(Date.now()), 1000);
+    const t = setInterval(() => {
+      const at = Date.now();
+      setClock(at);
+      if (at - heldAt >= HOLD_MS) clearInterval(t);
+    }, 1000);
     return () => clearInterval(t);
   }, [heldAt]);
   if (!v || !host) return <NotFound what="place to play" />;
+  const days = bookingDays(now); // the app's clock, read each time, so the days move with it
 
   const s = v.stations[si]!;
   const whole = v.kind !== 'gaming'; // a pitch or court is booked whole, for the group
   const need = whole || coop ? 1 : count; // stations a time needs free
-  const times = startTimes(v, DAYS[day]!.start, now, hours);
+  const times = startTimes(v, days[day]!.start, now, hours);
   const chosen = start !== null && times.includes(start) && freeAt(s, start, hours) >= need ? start : null;
   const free = chosen !== null ? freeAt(s, chosen, hours) : s.count;
   const price = chosen !== null ? slotPrice(s, chosen, hours, need, coop) : 0;
@@ -75,7 +79,7 @@ export default function SlotSheet() {
 
             <Text style={styles.heading}>When</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
-              {DAYS.map((d, i) => (
+              {days.map((d, i) => (
                 <Chip key={d.start} label={d.label} picked={i === day} onPress={() => pick(() => setDay(i))} />
               ))}
             </ScrollView>
@@ -133,7 +137,8 @@ export default function SlotSheet() {
         )}
       </ScrollView>
       <BookBar
-        price={chosen !== null ? formatPrice(price) : perHour(s.pricePaise)}
+        // Before a start is picked, the station's cheapest hour (its off-peak where it has one), as the venue page's from.
+        price={chosen !== null ? formatPrice(price) : perHour(Math.min(s.pricePaise, s.offPeak?.pricePaise ?? Infinity))}
         from={chosen === null}
         note={line ?? 'Pick a start time'}
         action={heldAt === null ? 'Hold for 10 minutes' : lapsed ? 'Pick again' : `Pay ${formatPrice(price)}`}

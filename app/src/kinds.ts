@@ -101,6 +101,11 @@ export const hackathons: Record<string, Hackathon> = {
   },
 };
 
+/** Team tickets' seats, by event and ticket type: a team ticket takes its team's places from the seats left. */
+export const teamSeats: Record<string, Record<string, number>> = {
+  'build-anything-hackathon': { 'Team of 4': 4 },
+};
+
 export const meetups: Record<string, Meetup> = {
   'design-critique-night': { inRoom: true },
   'design-critique-18-nov': { inRoom: true },

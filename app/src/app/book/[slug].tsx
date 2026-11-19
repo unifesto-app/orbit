@@ -3,7 +3,10 @@
 // - Pick: each ticket type with how many (Booking 17: sold-out types say so). An 18+ or 21+ event books one ticket each
 //   (Booking 14). A fest with one ticket type books in one tap for you, with Add people: friends by name only, up to 10
 //   in all, off on 18+ and 21+ (Booking 13).
-// - Review: what you're getting and the total, then Pay or Register.
+// - Review: what you're getting and the total, then Pay or Register; Change goes back with everything kept.
+// - Sold out with a waitlist: Join the waitlist, for how many, with no prices (Booking 17).
+// How many of a type fit is ticketMax (src/booking.ts): the booking's limit and the seats left, a team ticket taking its
+// team's seats. Free or paid is the event's prices, not what's picked.
 // ponytail: payments (Razorpay) and the bookings API aren't on yet, so the last button says so and charges nothing.
 import { formatPrice } from '@orbit/contract';
 import { useLocalSearchParams } from 'expo-router';
@@ -12,23 +15,28 @@ import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 
 
 import { Pill } from '../../account/kit';
 import { BookBar } from '../../bookBar';
-import { maxGuests, maxTickets } from '../../booking';
+import { maxGuests, maxTickets, ticketMax } from '../../booking';
 import { Fact, FactCard } from '../../fact';
-import { fests, shows } from '../../kinds';
-import { events } from '../../mock';
+import { fests, shows, teamSeats } from '../../kinds';
+import { events, now } from '../../mock';
 import { Stepper } from '../../pickers';
 import { NotFound, Sheet } from '../../rows';
+import { eventStatus } from '../../status';
 import { color, font, space } from '../../theme';
 
 export default function Book() {
   const { slug } = useLocalSearchParams<{ slug: string }>();
   const e = events.find((x) => x.id === slug);
-  const tiers = e?.tiers?.length ? e.tiers : [{ name: e?.pricePaise ? 'Ticket' : 'Entry', pricePaise: e?.pricePaise ?? 0 }];
+  const tiers = (e?.tiers?.length ? e.tiers : [{ name: e?.pricePaise ? 'Ticket' : 'Entry', pricePaise: e?.pricePaise ?? 0 }]).map((t) => ({
+    ...t,
+    seats: teamSeats[slug]?.[t.name] ?? t.seats,
+  }));
   const [qty, setQty] = useState<number[]>(() => {
     const first = tiers.findIndex((t) => !t.soldOut);
     return tiers.map((_, i) => (i === first ? 1 : 0));
   });
   const [guests, setGuests] = useState<string[]>([]);
+  const [wanted, setWanted] = useState(1); // on the waitlist
   const [step, setStep] = useState<'pick' | 'review'>('pick');
   const [bar, setBar] = useState(140);
   if (!e) return <NotFound what="event" />;
@@ -42,8 +50,33 @@ export default function Book() {
     : tiers.map((t, i) => ({ name: t.name, count: qty[i]!, pricePaise: t.pricePaise })).filter((l) => l.count > 0);
   const count = lines.reduce((n, l) => n + l.count, 0);
   const total = lines.reduce((n, l) => n + l.count * l.pricePaise, 0);
-  const free = total === 0;
-  const room = maxTickets(age) - count; // more tickets this booking can take
+  const free = tiers.every((t) => t.pricePaise === 0);
+  // A paid event with nothing picked shows ₹0, not Free.
+  const price = !free && total === 0 ? '₹0' : formatPrice(total);
+
+  if (eventStatus(e, now).kind === 'waitlist') {
+    return (
+      <Sheet title="Join the waitlist" note={`${e.title} · ${e.when}`} full>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.list, { paddingBottom: bar }]}>
+          <FactCard flush>
+            <Fact label="Sold out" value="Join, and hear if tickets free up" note="Nothing is booked or charged by joining." />
+            <View style={styles.line}>
+              <Text style={[styles.grow, styles.name]}>How many</Text>
+              <Stepper value={wanted} min={1} max={maxTickets(age)} label="Tickets wanted" onChange={setWanted} />
+            </View>
+          </FactCard>
+        </ScrollView>
+        <BookBar
+          price="Sold out"
+          from={false}
+          note={`${wanted} ${wanted === 1 ? 'ticket' : 'tickets'} wanted`}
+          action="Join the waitlist"
+          onAction={() => Alert.alert('Waitlists aren’t on yet', 'Orbit isn’t taking bookings yet, so nothing was joined.')}
+          onHeight={setBar}
+        />
+      </Sheet>
+    );
+  }
 
   const finish = () =>
     Alert.alert(
@@ -71,7 +104,12 @@ export default function Book() {
                     {t.soldOut ? (
                       <Text style={styles.meta}>Sold out</Text>
                     ) : (
-                      <Stepper value={qty[i]!} max={qty[i]! + room} label={`${t.name} tickets`} onChange={(n) => setQty((q) => q.map((v, j) => (j === i ? n : v)))} />
+                      <Stepper
+                        value={qty[i]!}
+                        max={ticketMax(tiers, qty, i, { age, left: e.left })}
+                        label={`${t.name} tickets`}
+                        onChange={(n) => setQty((q) => q.map((v, j) => (j === i ? n : v)))}
+                      />
                     )}
                   </View>
                 ))}
@@ -118,12 +156,15 @@ export default function Book() {
               <Fact key={l.name} label={`${l.count} × ${formatPrice(l.pricePaise)}`} value={l.name} />
             ))}
             {named.length > 0 && <Fact label="With you" value={named.join(', ')} />}
-            <Fact label="Total" value={formatPrice(total)} note={free ? undefined : 'Fees, if any, show when you pay'} />
+            <Fact label="Total" value={price} note={free ? undefined : 'Fees, if any, show when you pay'} />
+            <View style={styles.add}>
+              <Pill label="Change" size="small" onPress={() => setStep('pick')} />
+            </View>
           </FactCard>
         )}
       </ScrollView>
       <BookBar
-        price={formatPrice(total)}
+        price={price}
         from={false}
         note={`${count} ${count === 1 ? 'ticket' : 'tickets'}`}
         action={step === 'pick' ? 'Review' : free ? 'Register' : `Pay ${formatPrice(total)}`}

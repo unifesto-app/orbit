@@ -58,12 +58,14 @@ const byStateName = (s: string) => Object.keys(byState).find((k) => k.toLowerCas
 export const isServedState = (state: string) => (servedStates as readonly string[]).includes(fullState(state));
 
 /**
- * A place's state: its own when it has one (a picked city's, or the phone's geocoder region), else the state of a
- * listed city by its area or city name, else its city when that names a state (a place saved before places carried
- * their state).
+ * A place's state: its own when it names a state we know (a picked city's, or the phone's geocoder region in English or
+ * short), else the state of a listed city by its area or city name, else its city when that names a state. A region we
+ * can't read (a phone set to Telugu gives "తెలంగాణ") falls through to the city, as does a place saved before places
+ * carried their state.
  */
 export function stateOf(place: { area: string; city: string; state?: string }): string | undefined {
-  if (place.state?.trim()) return fullState(place.state);
+  const own = place.state?.trim() ? fullState(place.state) : undefined;
+  if (own && byStateName(own)) return own;
   const named = (n: string) => allCities.find((c) => c.name === n)?.state ?? byStateName(n);
   return named(place.area) ?? named(place.city);
 }

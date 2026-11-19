@@ -24,6 +24,12 @@ test("Orbit is open in Telangana and Andhra Pradesh only; a place it can't put i
   assert.equal(isServed({ area: "Tirupati", city: "Andhra Pradesh" }), true);
   assert.equal(stateOf({ area: "Somewhere", city: "Kerala" }), "Kerala"); // a city named as its state
   assert.equal(isServed({ area: "Nowhere", city: "Unknown" }), true);
+  // A region we can't read falls back to the city: a phone in Telugu or Hindi, or a longer name.
+  assert.equal(isServed({ area: "Gachibowli", city: "Hyderabad", state: "తెలంగాణ" }), true);
+  assert.equal(isServed({ area: "Gachibowli", city: "Hyderabad", state: "तेलंगाना" }), true);
+  assert.equal(isServed({ area: "Gachibowli", city: "Hyderabad", state: "Telangana State" }), true);
+  assert.equal(isServed({ area: "Koramangala", city: "Bengaluru", state: "ಕರ್ನಾಟಕ" }), false);
+  assert.equal(isServed({ area: "Nowhere", city: "Unknown", state: "Somewhere" }), true); // nothing to go on: open
 });
 
 test("the list is A to Z with no duplicate city-state pairs", () => {

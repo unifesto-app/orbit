@@ -234,12 +234,12 @@ test('interests: a section per picked kind near you, in the order picked, and it
     kind(ev('c1', 'h1', NEAR, 16, 3), 'comedy'),
     kind(ev('c2', 'h1', NEAR, 17, 3), 'comedy'),
     kind(ev('cFar', 'h1', FAR, 17, 3), 'comedy'),
-    kind(ev('m1', 'h2', NEAR, 18, 3), 'music'),
+    kind(ev('m1', 'h2', NEAR, 18, 3), 'jams'),
     kind(ev('s1', 'h2', NEAR, 18, 3), 'sports'),
   ];
-  const viewer = { signedIn: true, follows: [], place, interests: ['music', 'gaming', 'comedy'] };
+  const viewer = { signedIn: true, follows: [], place, interests: ['jams', 'gaming', 'comedy'] };
   const plan = planHome(viewer, events, [], NOW);
-  assert.deepEqual(plan.byInterest.map((k) => [k.category, ids(k.events)]), [['music', ['m1']], ['comedy', ['c1', 'c2']]]);
+  assert.deepEqual(plan.byInterest.map((k) => [k.category, ids(k.events)]), [['jams', ['m1']], ['comedy', ['c1', 'c2']]]);
   assert.deepEqual(ids(plan.list.events), ['s1']); // shown once only
   assert.equal(plan.askInterests, false);
   // Signed in with none picked yet: asked once, no sections. Signed out: neither.
@@ -252,12 +252,12 @@ test('interests: at most three kinds and three events each; tickets and the orbi
   const kind = (e: ReturnType<typeof ev>, category: string) => ({ ...e, category });
   const events = [
     ...['a', 'b', 'c', 'd'].map((id, i) => kind(ev(`c${id}`, 'h1', NEAR, 16 + i, 3), 'comedy')),
-    kind(ev('m1', 'h2', NEAR, 18, 3), 'music'),
+    kind(ev('m1', 'h2', NEAR, 18, 3), 'jams'),
     kind(ev('s1', 'h2', NEAR, 18, 3), 'sports'),
     kind(ev('g1', 'h3', NEAR, 19, 3), 'gaming'),
     kind(ev('gFar', 'h3', FAR, 19, 3), 'gaming'),
   ];
-  const viewer = { signedIn: true, follows: ['h2'], place, interests: ['comedy', 'music', 'sports', 'gaming'], tickets: [{ eventId: 'ca', label: '1 ticket' }] };
+  const viewer = { signedIn: true, follows: ['h2'], place, interests: ['comedy', 'jams', 'sports', 'gaming'], tickets: [{ eventId: 'ca', label: '1 ticket' }] };
   const plan = planHome(viewer, events, [], NOW);
   // ca is a ticket and m1 is h2's next date (your orbit), so neither repeats; music then has nothing left.
   assert.deepEqual(plan.byInterest.map((k) => [k.category, ids(k.events)]), [['comedy', ['cb', 'cc', 'cd']], ['sports', ['s1']], ['gaming', ['g1']]]);

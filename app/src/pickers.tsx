@@ -23,10 +23,21 @@ export function Chip({ label, picked = false, disabled = false, onPress }: { lab
   );
 }
 
-// `label` names what's counted, for screen readers ("Solo tickets", "Hours").
+// `label` names what's counted, for screen readers ("Solo tickets", "Hours"). To VoiceOver and TalkBack it's one
+// adjustable control: swipe up or down to change it (the − and + inside are for touch).
 export function Stepper({ value, min = 0, max, label, onChange }: { value: number; min?: number; max: number; label: string; onChange: (n: number) => void }) {
   return (
-    <View style={styles.stepper} accessible accessibilityLabel={`${label}: ${value}`}>
+    <View
+      style={styles.stepper}
+      accessible
+      accessibilityRole="adjustable"
+      accessibilityLabel={label}
+      accessibilityValue={{ min, max, now: value }}
+      accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
+      onAccessibilityAction={(e) => {
+        if (e.nativeEvent.actionName === 'increment' && value < max) onChange(value + 1);
+        if (e.nativeEvent.actionName === 'decrement' && value > min) onChange(value - 1);
+      }}>
       <Pressable onPress={() => onChange(value - 1)} disabled={value <= min} accessibilityRole="button" accessibilityLabel={`Fewer ${label.toLowerCase()}`} hitSlop={6}>
         <Glass style={[styles.round, value <= min && styles.off]}>
           <Text style={styles.sign}>−</Text>

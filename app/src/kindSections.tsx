@@ -172,7 +172,7 @@ function FestFacts({ eventId }: { eventId: string }) {
         <Fact label="Kind of fest" value={f.type} />
         <Fact label="When" value={f.days} />
         <Fact label="What’s on" value={f.highlights.join('\n')} />
-        {f.oneClick && <Fact label="Booking" value="One tap books it" note="Add up to 10 friends by name. One QR lets you all in." />}
+        {f.oneClick && <Fact label="Booking" value="One tap books it" note="Bring up to 9 friends by name, 10 in all. One QR lets you all in." />}
       </FactCard>
       {items.length > 0 && (
         <>

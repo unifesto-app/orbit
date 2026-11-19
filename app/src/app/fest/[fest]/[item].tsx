@@ -25,7 +25,8 @@ export default function FestItem() {
           <Fact label="Where" value={it.where} note={e.venue.name} />
           {it.team && <Fact label="Teams" value={it.team} />}
           {it.prize && <Fact label="Prize" value={it.prize} />}
-          {act && <Fact label="On stage" value={act.name} note={act.about} onPress={() => router.push(`/host/${act.id}`)} />}
+          {/* Closes this sheet on the way, as the person sheet does, so the act's page doesn't open under it. */}
+          {act && <Fact label="On stage" value={act.name} note={act.about} onPress={() => router.dismissTo(`/host/${act.id}`)} />}
           <Fact label="Entry" value={`Included with ${e.title}`} />
         </FactCard>
       </ScrollView>
