@@ -15,6 +15,7 @@ import { Alert, Platform } from 'react-native';
 
 import { lists as listsMock, saved as savedMock } from './account/data';
 import type { Way } from './account/rules';
+import type { PayWith } from './pay';
 import * as saves from './account/saves';
 import { API_URL, makeApi } from './api';
 import type { Viewer } from './home/layout';
@@ -36,6 +37,7 @@ export type Session = {
   loved?: readonly string[];
   rooms?: readonly string[]; // meetups whose inRoom you joined
   asked?: readonly string[]; // `${event}|${person}`: people you asked to connect with in a room
+  payWith?: PayWith; // the way you like to pay (Account › Payment methods); never a card or bank detail
   me: Account;
 } & saves.Saves;
 
@@ -138,6 +140,9 @@ export const useFollowing = (hostId: string) => useSession()?.follows.includes(h
 
 const turn = (list: readonly string[], id: string, on: boolean) => (on ? [...new Set([...list, id])] : list.filter((x) => x !== id));
 export const setFollowing = (hostId: string, on: boolean) => current && set({ ...current, follows: turn(current.follows, hostId, on) });
+// The way you like to pay, ready at checkout (owner, 19 Nov 2026: Payment methods); on this phone only.
+export const usePayWith = () => useSession()?.payWith;
+export const setPayWith = (p: PayWith) => current && set({ ...current, payWith: p });
 // Who you follow right now, outside a component (a tap's follow-up).
 export const followsNow = () => current?.follows ?? [];
 // "Loved it" on an event you went to (owner, 19 Nov 2026: "replace the love with loved it"; Booking doc: after the
@@ -274,7 +279,7 @@ export function signIn(done: Extract<AuthStep, { step: 'signedIn' }>, via: Way) 
   api.start(done);
   const kept = current ? { saved: current.saved, lists: current.lists } : saves.normalise({ saved: savedMock, lists: listsMock }, Date.now());
   // What's kept on this phone carries over, follows to Loved it, as saves do.
-  const mine = current && { interests: current.interests, interested: current.interested, loved: current.loved, rooms: current.rooms, asked: current.asked };
+  const mine = current && { interests: current.interests, interested: current.interested, loved: current.loved, rooms: current.rooms, asked: current.asked, payWith: current.payWith };
   set({ via, ...kept, ...mine, follows: current?.follows ?? viewer.follows, me: done.me });
 }
 

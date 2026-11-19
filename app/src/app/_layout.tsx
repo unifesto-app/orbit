@@ -77,6 +77,8 @@ export default function RootLayout() {
           {/* Booking: an event's tickets, and a slot at a place to play. */}
           <Stack.Screen name="book/[slug]" options={MODAL} />
           <Stack.Screen name="slot/[venue]" options={MODAL} />
+          {/* How to pay, over either booking sheet (src/app/pay.tsx). */}
+          <Stack.Screen name="pay" options={MODAL} />
           {/* One thing inside a fest, from its page's Inside the fest. */}
           <Stack.Screen name="fest/[fest]/[item]" options={MODAL} />
           {/* Legal, from Account: every legal page in one sheet. */}

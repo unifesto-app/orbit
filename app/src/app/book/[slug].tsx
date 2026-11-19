@@ -9,7 +9,7 @@
 // team's seats. Free or paid is the event's prices, not what's picked.
 // ponytail: payments (Razorpay) and the bookings API aren't on yet, so the last button says so and charges nothing.
 import { formatPrice } from '@orbit/contract';
-import { useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
@@ -18,9 +18,11 @@ import { BookBar } from '../../bookBar';
 import { maxGuests, maxTickets, ticketMax } from '../../booking';
 import { Fact, FactCard } from '../../fact';
 import { fests, shows, teamSeats } from '../../kinds';
+import { payLabel, payName, payReady } from '../../pay';
 import { events, now } from '../../mock';
 import { Stepper } from '../../pickers';
 import { NotFound, Sheet } from '../../rows';
+import { usePayWith } from '../../session';
 import { eventStatus } from '../../status';
 import { color, font, space } from '../../theme';
 
@@ -38,6 +40,7 @@ export default function Book() {
   const [guests, setGuests] = useState<string[]>([]);
   const [wanted, setWanted] = useState(1); // on the waitlist
   const [step, setStep] = useState<'pick' | 'review'>('pick');
+  const pay = usePayWith(); // the way you usually pay (Account › Payment methods), changed from Pay with
   const [bar, setBar] = useState(140);
   if (!e) return <NotFound what="event" />;
 
@@ -157,6 +160,8 @@ export default function Book() {
             ))}
             {named.length > 0 && <Fact label="With you" value={named.join(', ')} />}
             <Fact label="Total" value={price} note={free ? undefined : 'Fees, if any, show when you pay'} />
+            {/* How you'll pay (owner, 19 Nov 2026: Unifesto's pay-method sheet, "wire it in"): it opens How to pay. */}
+            {!free && <Fact label="Pay with" value={payReady(pay) ? payName(pay) : 'Choose how to pay'} onPress={() => router.push('/pay')} />}
             <View style={styles.add}>
               <Pill label="Change" size="small" onPress={() => setStep('pick')} />
             </View>
@@ -167,8 +172,8 @@ export default function Book() {
         price={price}
         from={false}
         note={`${count} ${count === 1 ? 'ticket' : 'tickets'}`}
-        action={step === 'pick' ? 'Review' : free ? 'Register' : `Pay ${formatPrice(total)}`}
-        onAction={count === 0 ? undefined : step === 'pick' ? () => setStep('review') : finish}
+        action={step === 'pick' ? 'Review' : free ? 'Register' : payReady(pay) ? `Pay ${formatPrice(total)}` : payLabel(pay)}
+        onAction={count === 0 ? undefined : step === 'pick' ? () => setStep('review') : free || payReady(pay) ? finish : () => router.push('/pay')}
         onHeight={setBar}
       />
     </Sheet>

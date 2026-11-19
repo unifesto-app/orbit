@@ -148,6 +148,7 @@ export function Row({
   chevron = false,
   external = false,
   checked,
+  picked,
   disabled = false,
   onPress,
 }: {
@@ -161,6 +162,7 @@ export function Row({
   chevron?: boolean; // a > at the right, saying it opens a screen
   external?: boolean; // a ↗ there instead: it opens the web
   checked?: boolean; // a row that ticks, as a list in the heart's modal: a checkbox to screen readers
+  picked?: boolean; // one of a choice, as a way to pay: the accent dot when it's the one, a radio to screen readers
   disabled?: boolean; // faded and not pressable while a request is out, as the sign-in sheet's ways in
   onPress?: () => void;
 }) {
@@ -182,15 +184,16 @@ export function Row({
         </Text>
       )}
       {right}
+      {picked && <View style={styles.pickDot} />}
       {(chevron || external) && <Icon name={external ? 'external' : 'chevron'} size={14} color={color.secondary} />}
     </>
   );
   return onPress ? (
     <Pressable
       onPress={onPress}
-      accessibilityRole={checked === undefined ? 'button' : 'checkbox'}
+      accessibilityRole={picked !== undefined ? 'radio' : checked === undefined ? 'button' : 'checkbox'}
       disabled={disabled}
-      accessibilityState={checked === undefined ? { disabled } : { checked, disabled }}
+      accessibilityState={picked !== undefined ? { checked: picked, disabled } : checked === undefined ? { disabled } : { checked, disabled }}
       hitSlop={SLOP}
       style={({ pressed }) => [styles.row, pressed && styles.pressed, disabled && styles.disabled]}>
       {body}
@@ -375,6 +378,7 @@ export const styles = StyleSheet.create({
   bare: { marginHorizontal: 20 },
   spaced: { marginTop: space.big },
   flush: { marginHorizontal: 0 },
+  pickDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: color.accent }, // a pick is an accent dot, never accent text
   face: { borderRadius: FACE, backgroundColor: color.card, padding: PAD },
   outline: { borderWidth: 1, borderColor: color.border }, // a bare group has no rim
   // Inside the card's padding on both sides (owner: "right side make it full hairline", then "dont use full hairline").
