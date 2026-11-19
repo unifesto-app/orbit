@@ -35,7 +35,9 @@ import { Wordmark } from '../wordmark';
 // Made as Explore's are (owner: "create home console and galaxy svgs", "also for host event, use same process"): Canva AI
 // line art, picked one by one ("for home use home", "for galaxy planet + orbit only", "for console - gear", "gear and
 // wrench", "for host an event star ( 4 edged ) resembles plus"), on pages 12 to 15 of the Canva design "Orbit Explore
-// elements", then cut out and tinted in the card's colour by scripts/explore-art.cjs.
+// elements", then cut out and tinted in the card's colour by scripts/explore-art.cjs. Saved's five-point star (owner,
+// 19 Nov 2026: "replace the switcher's saved heart with a star") is Canva AI's take on the heart's drawing, in its
+// uploads.
 const ART = {
   home: require('../../assets/modes/home.png'),
   console: require('../../assets/modes/console.png'),
@@ -53,13 +55,13 @@ const ART_SCALE: Partial<Record<string, number>> = { galaxy: 1.25, home: 1.08, c
 type Item = { key: string; label: string; art: ImageSourcePropType; tint: string; route: string };
 
 // The third card, which fits the person (src/modes.ts): Galaxy for staff, Check-in for hosts, Saved for everyone else
-// (owner, 16 Nov 2026: "Host approved", "use Checkin", "General users - Saved events ( svg - love heart )", "use red for
-// saved"): Saved in the app's love red, a saved event's heart. Host an event is yellow (Explore's comedy yellow; owner:
-// "change the color of host an event to yellow"), so the two never sit side by side in red.
+// (owner, 16 Nov 2026: "Host approved", "use Checkin", "General users - Saved events"). Saved is a star, as Save is
+// (owner, 19 Nov 2026), in violet (Explore's startups violet): love red means Loved it now, and Host an event, beside it
+// when signed out, is yellow (owner: "change the color of host an event to yellow").
 const THIRD: Record<Third, Item> = {
   galaxy: { key: 'galaxy', label: 'Galaxy', art: ART.galaxy, tint: color.galaxy, route: 'galaxy' },
   checkin: { key: 'checkin', label: 'Check-in', art: ART.checkin, tint: '#E8590C', route: 'checkin' },
-  saved: { key: 'saved', label: 'Saved', art: ART.saved, tint: color.love, route: 'account/saved' },
+  saved: { key: 'saved', label: 'Saved', art: ART.saved, tint: '#7048E8', route: 'account/saved' },
 };
 
 const AnimatedEllipse = Animated.createAnimatedComponent(Ellipse);

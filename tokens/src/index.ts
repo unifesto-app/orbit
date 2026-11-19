@@ -14,7 +14,7 @@ export const palette = {
 
 // Functional colours, not brand: each means one thing.
 export const functional = {
-  love: '#ff453a', // a saved event's filled heart in the app
+  love: '#ff453a', // a loved event's filled heart in the app (Loved it)
   galaxy: '#7598ff', // staff: Galaxy's glow and lock
 } as const;
 
