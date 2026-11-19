@@ -7,6 +7,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 
 import { NoteHost } from '../note';
+import { PushHost } from '../push';
 import { refreshAccount } from '../session';
 import { Splash } from '../splash/Splash';
 import { color } from '../theme';
@@ -58,6 +59,10 @@ export default function RootLayout() {
           {/* The tabs, Home and Search (src/app/(tabs)/_layout.tsx), with the location as a sheet over them: swipe down
               on iOS, back on Android. */}
           <Stack.Screen name="location" options={MODAL} />
+          {/* The chat, from the orb beside the tab bar: a full screen, not a sheet (owner, 19 Nov 2026), drawn over the
+              tabs with no animation of the system's, as its own colours spread from the orb (src/app/chat.tsx). Singular, so a quick
+              second tap on the orb doesn't stack a second chat. */}
+          <Stack.Screen name="chat" dangerouslySingular options={{ presentation: 'transparentModal', animation: 'none', contentStyle: { backgroundColor: 'transparent' } }} />
           {/* A speaker, guest or anyone on an event, as a sheet over the event page the same way. The event and host
               pages (event/[slug], host/[slug]) push over the tabs as plain screens. */}
           <Stack.Screen name="person/[id]" options={MODAL} />
@@ -105,6 +110,8 @@ export default function RootLayout() {
       )}
       {/* The note (Undo after removing saves, and the like), over every screen (src/note.tsx). */}
       <NoteHost />
+      {/* Push: a tapped push opens its screen, so only once the screens are there (src/push.tsx). */}
+      {(ready || splashLeaving) && <PushHost />}
       {!splashDone && <Splash ready={ready} onLeave={() => setSplashLeaving(true)} onDone={() => setSplashDone(true)} />}
     </>
   );

@@ -100,20 +100,20 @@ test('a second promoted event is the banner in the middle, kept out of the carou
   assert.equal(booked.ad?.id, 'ad3');
 });
 
-test('the banner skips a promoted event already in your orbit or interests; lead is the carousel’s paid slide', () => {
+test('the banner skips a promoted event already in your orbit; lead is the carousel’s paid slide', () => {
   const kind = (e: ReturnType<typeof ev>, category: string) => ({ ...e, category });
   const events = [
     kind(ev('ad1', 'h2', NEAR, 17, 1, true), 'comedy'),
     kind(ev('ad2', 'h1', NEAR, 18, 2, true), 'comedy'), // from a host you follow: in your orbit
-    kind(ev('ad3', 'h3', NEAR, 19, 3, true), 'jams'), // a kind you picked: in its interest section
+    kind(ev('ad3', 'h3', NEAR, 19, 3, true), 'jams'), // a kind you picked: still a banner, as picks only order the list
     kind(ev('ad4', 'h4', NEAR, 20, 4, true), 'comedy'),
   ];
   const promoted = (e: { id: string }) => e.id.startsWith('ad');
   const viewer = { signedIn: true, follows: ['h1'], place, interests: ['jams'] };
   const p = planHome(viewer, events, [], NOW, promoted);
   assert.equal(p.lead?.id, 'ad1');
-  assert.equal(p.ad?.id, 'ad4');
-  assert.ok(!slideIds(p.slides).includes('ad4'));
+  assert.equal(p.ad?.id, 'ad3');
+  assert.ok(!slideIds(p.slides).includes('ad3'));
   // Outside the served states there is no near: boosts come from everywhere, as the list does.
   const away = planHome({ ...signedOut, place: { area: 'Bengaluru', city: 'Bengaluru', state: 'Karnataka', nearAreas: [] } }, events, [], NOW, promoted);
   assert.equal(away.notice, 'comingSoon');
@@ -282,44 +282,48 @@ test('tickets: upcoming bookings in start order, out of orbit and list, kept in 
   assert.deepEqual(planHome({ ...signedOut, tickets }, events, [], NOW).tickets, []);
 });
 
-test('interests: a section per picked kind near you, in the order picked, and its events leave the list', () => {
+test('interests: the kinds you picked lead the near-you list, each part soonest first; one list, no sections', () => {
   const kind = (e: ReturnType<typeof ev>, category: string) => ({ ...e, category });
   const events = [
-    kind(ev('c1', 'h1', NEAR, 16, 3), 'comedy'),
-    kind(ev('c2', 'h1', NEAR, 17, 3), 'comedy'),
+    kind(ev('s1', 'h2', NEAR, 16, 3), 'sports'),
+    kind(ev('c1', 'h1', NEAR, 17, 3), 'comedy'),
     kind(ev('cFar', 'h1', FAR, 17, 3), 'comedy'),
     kind(ev('m1', 'h2', NEAR, 18, 3), 'jams'),
-    kind(ev('s1', 'h2', NEAR, 18, 3), 'sports'),
+    kind(ev('c2', 'h1', NEAR, 19, 3), 'comedy'),
   ];
   const viewer = { signedIn: true, follows: [], place, interests: ['jams', 'gaming', 'comedy'] };
   const plan = planHome(viewer, events, [], NOW);
-  assert.deepEqual(plan.byInterest.map((k) => [k.category, ids(k.events)]), [['jams', ['m1']], ['comedy', ['c1', 'c2']]]);
-  assert.deepEqual(ids(plan.list.events), ['s1']); // shown once only
+  assert.equal(plan.list.title, 'Near you this week');
+  assert.deepEqual(ids(plan.list.events), ['c1', 'm1', 'c2', 's1']);
   assert.equal(plan.askInterests, false);
-  // Signed in with none picked yet: asked once, no sections. Signed out: neither.
-  assert.equal(planHome({ signedIn: true, follows: [], place }, events, [], NOW).askInterests, true);
-  assert.equal(planHome({ ...signedOut, interests: ['comedy'] }, events, [], NOW).byInterest.length, 0);
+  // Signed in with none picked yet: asked once, the list soonest first. Signed out: picks are ignored, and no ask.
+  const unasked = planHome({ signedIn: true, follows: [], place }, events, [], NOW);
+  assert.equal(unasked.askInterests, true);
+  assert.deepEqual(ids(unasked.list.events), ['s1', 'c1', 'm1', 'c2']);
+  assert.deepEqual(ids(planHome({ ...signedOut, interests: ['comedy'] }, events, [], NOW).list.events), ['s1', 'c1', 'm1', 'c2']);
   assert.equal(planHome(signedOut, events, [], NOW).askInterests, false);
 });
 
-test('interests: at most three kinds and three events each; tickets and the orbit stay out; no place means everywhere', () => {
+test('interests: tickets and the orbit stay out of the list; no place means everywhere, picks still first', () => {
   const kind = (e: ReturnType<typeof ev>, category: string) => ({ ...e, category });
   const events = [
-    ...['a', 'b', 'c', 'd'].map((id, i) => kind(ev(`c${id}`, 'h1', NEAR, 16 + i, 3), 'comedy')),
+    kind(ev('ca', 'h1', NEAR, 16, 3), 'comedy'),
+    kind(ev('s1', 'h3', NEAR, 16, 3), 'sports'),
+    kind(ev('cb', 'h1', NEAR, 17, 3), 'comedy'),
+    kind(ev('gFar', 'h3', FAR, 17, 3), 'gaming'),
     kind(ev('m1', 'h2', NEAR, 18, 3), 'jams'),
-    kind(ev('s1', 'h2', NEAR, 18, 3), 'sports'),
     kind(ev('g1', 'h3', NEAR, 19, 3), 'gaming'),
-    kind(ev('gFar', 'h3', FAR, 19, 3), 'gaming'),
   ];
-  const viewer = { signedIn: true, follows: ['h2'], place, interests: ['comedy', 'jams', 'sports', 'gaming'], tickets: [{ eventId: 'ca', label: '1 ticket' }] };
+  const viewer = { signedIn: true, follows: ['h2'], place, interests: ['comedy', 'gaming'], tickets: [{ eventId: 'ca', label: '1 ticket' }] };
+  // ca is a ticket and m1 is h2's next date (your orbit), so neither repeats; three near this week makes it Coming up.
   const plan = planHome(viewer, events, [], NOW);
-  // ca is a ticket and m1 is h2's next date (your orbit), so neither repeats; music then has nothing left.
-  assert.deepEqual(plan.byInterest.map((k) => [k.category, ids(k.events)]), [['comedy', ['cb', 'cc', 'cd']], ['sports', ['s1']], ['gaming', ['g1']]]);
+  assert.equal(plan.list.title, 'Coming up');
+  assert.deepEqual(ids(plan.list.events), ['cb', 'g1', 's1']);
   assert.equal(plan.near, true);
-  // No location: from everywhere, and the sections say "coming up".
-  const away = planHome({ ...viewer, place: null, interests: ['gaming'] }, events, [], NOW);
+  // No location: everything coming up, everywhere, the picked kinds still first.
+  const away = planHome({ ...viewer, place: null }, events, [], NOW);
   assert.equal(away.near, false);
-  assert.deepEqual(away.byInterest.map((k) => [k.category, ids(k.events)]), [['gaming', ['g1', 'gFar']]]);
+  assert.deepEqual(ids(away.list.events), ['cb', 'gFar', 'g1', 's1']);
 });
 
 test('outside Telangana and Andhra Pradesh: Coming soon, with everything on there', () => {

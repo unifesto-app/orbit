@@ -2,7 +2,7 @@
 // box, section headings, the top glow, and the back bar and not-found view of the pages pushed over the tabs.
 import { formatPrice } from '@orbit/contract';
 import { router } from 'expo-router';
-import { type ComponentRef, type ReactNode, useId, useRef, useState } from 'react';
+import { type ComponentProps, type ComponentRef, type ReactNode, useId, useRef, useState } from 'react';
 import {
   type Animated,
   Modal,
@@ -21,16 +21,17 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, LinearGradient, RadialGradient, Rect, Stop } from 'react-native-svg';
 
-import { BarGlass, Glass } from './glass';
+import { BarGlass, DARK_TINT, Glass } from './glass';
 import { Icon, type IconName } from './icons';
 import { Media, type MediaItem } from './media';
-import { acts } from './kinds';
+import { acts, fromPricePaise, perHour, venues } from './kinds';
 import { type Event, type Host, hosts, now } from './mock';
 import { showNote } from './note';
-import { followsNow, needsAccount, setFollowing, setLoved, tapSave, useLoved, useSaved } from './session';
+import { followsNow, needsAccount, setFollowing, setLoved, tapSave, useFollowing, useLoved, useSaved, useViewer } from './session';
 import { eventLabel } from './labels';
-import { eventStatus, rowTag, seatsLine, type Status } from './status';
-import { around, color, font, radius, rim, space, stoneAt } from './theme';
+import { OrbitSays } from './orbitSays';
+import { eventStatus, isNews, rowTag, seatsLine, type Status } from './status';
+import { around, color, font, groundAt, radius, rim, space, stoneAt } from './theme';
 
 export const SEAT = 48; // the 1:1 square on a seat card's top rim
 // Every card's corners nest outward from its contents' corner (owner, 15 Nov 2026: "Inner Radius = Outer Radius -
@@ -45,15 +46,21 @@ const RIM = around(FACE, rim);
 // price; a `past` row drops the price and the star, and an event you `went` to gets Loved it's heart in its
 // place. `onPress` replaces opening the event the usual way.
 // `menu` adds a ⋯ after the star, as saved rows have (Saved events and lists doc: Add to a list, Remove from saved).
-// `labelled` adds its label (Promoted, People’s choice, New on Orbit; src/labels.ts) as a second tag: only where events
-// are found (Home, Search), never on your tickets, history or saved lists.
+// `found` is a row where events are found, Home and Search (owner, 19 Nov 2026: picked "Clean" from the section takes):
+// no grey tags. A quiet line on top with the host and its label (Promoted, People’s choice, New on Orbit; src/labels.ts,
+// only here, never on your tickets, history or saved lists), the title, the date and area, then the status as a dot and
+// words (StatusLine). The price at the top right, the star under it on the tab bar's dark glass. 20 between rows.
+// `kicker` false drops that top line (and so the label) on a host's own page, where every row is theirs (its Take 2,
+// owner, 19 Nov 2026); a string takes its place, with no label (a person's role there and the host, on their sheet:
+// Take 3). A `past` found row drops the price and star, keeping Loved it for one you `went` to.
 export function EventRow({
   event: e,
   host,
   tag,
   past = false,
   went = false,
-  labelled = false,
+  found = false,
+  kicker = true,
   menu,
   onPress = () => router.push(`/event/${e.id}`),
 }: {
@@ -62,13 +69,35 @@ export function EventRow({
   tag?: string;
   past?: boolean;
   went?: boolean;
-  labelled?: boolean;
+  found?: boolean;
+  kicker?: boolean | string;
   menu?: MenuAction[];
   onPress?: () => void;
 }) {
   const st = eventStatus(e, now);
+  if (found) {
+    const label = kicker === true ? eventLabel(e, host, st, now) : undefined;
+    const kick = typeof kicker === 'string' ? kicker : [host.name, label].filter(Boolean).join(' · ');
+    return (
+      <View style={[styles.row, styles.foundRow]}>
+        <Pressable onPress={onPress} accessibilityRole="button" style={({ pressed }) => [styles.grow, styles.rowLink, styles.foundLink, pressed && styles.pressed]}>
+          <Poster media={e.poster} width={64} label={e.title} />
+          <View style={[styles.grow, styles.foundLines]}>
+            {kicker !== false && <Text style={styles.kick} numberOfLines={1}>{kick}</Text>}
+            <Text style={styles.rowTitle} numberOfLines={2}>{e.title}</Text>
+            <Text style={styles.meta} numberOfLines={1}>{e.when} · {e.area}</Text>
+            {/* A row that isn't for booking (past, or your ticket's) only ever says Cancelled (rowTag's rule). */}
+            {(!past || st.kind === 'cancelled') && <StatusLine event={e} status={st} />}
+          </View>
+        </Pressable>
+        <View style={styles.side}>
+          {!past && st.kind !== 'cancelled' && <Text style={styles.sidePrice}>{formatPrice(e.pricePaise)}</Text>}
+          {past ? went && <LoveButton event={e} dark /> : <SaveButton event={e} dark />}
+        </View>
+      </View>
+    );
+  }
   const shown = rowTag(st, e.repeats, !past, tag);
-  const label = labelled && !past ? eventLabel(e, host, st, now) : undefined;
   return (
     <View style={styles.row}>
       <Pressable onPress={onPress} accessibilityRole="button" style={({ pressed }) => [styles.grow, styles.rowLink, pressed && styles.pressed]}>
@@ -77,7 +106,6 @@ export function EventRow({
           <View style={styles.whenRow}>
             <Text style={styles.meta}>{e.when}</Text>
             {shown && <Tag text={shown} />}
-            {label && <Tag text={label} />}
           </View>
           <Text style={styles.rowTitle}>{e.title}</Text>
           <Text style={styles.meta} numberOfLines={1}>{host.name} · {e.area}</Text>
@@ -86,6 +114,87 @@ export function EventRow({
       </Pressable>
       {past ? went && <LoveButton event={e} /> : <SaveButton event={e} />}
       {menu && <MenuButton actions={menu} label={`More for ${e.title}`} anchored />}
+    </View>
+  );
+}
+
+// An event's status as a dot and words, or its repeat, with the seats left ("Almost full · 8 seats left"): the quiet line
+// on found rows and Home's orbit rows, in place of grey tags. Nothing when there's nothing to say.
+export function StatusLine({ event: e, status: st }: { event: Event; status: Status }) {
+  const news = isNews(st);
+  const words = [news ? st.short : e.repeats, seatsLine(e, st)].filter(Boolean).join(' · ');
+  if (!words) return null;
+  return (
+    <View style={styles.statusLine}>
+      {news && <StatusDot tone={st.tone} />}
+      <Text style={[styles.small, styles.shrink]} numberOfLines={1}>{words}</Text>
+    </View>
+  );
+}
+
+// A place to play or a host as one row with its button (owner, 19 Nov 2026: picked "With a button" from the section
+// takes): the logo, the name, its line and a place's cheapest hour; on the right Book for a place (its slot sheet, after
+// signing in, as the host page's Book a slot) or Follow / Following for a host. The rest of the row opens its page.
+// Home's Places to play, and Search's Places to play, New on Orbit and the hosts it finds.
+export function HostRow({ host }: { host: Host }) {
+  const venue = venues[host.id];
+  const following = useViewer().follows.includes(host.id);
+  const action = venue
+    ? { label: 'Book', run: () => router.push(`/slot/${host.id}`) }
+    : { label: following ? 'Following' : 'Follow', run: () => setFollowing(host.id, !following) };
+  return (
+    <View style={styles.hostRow}>
+      <Pressable
+        onPress={() => router.push(`/host/${host.id}`)}
+        accessibilityRole="button"
+        accessibilityLabel={`${host.name}, ${host.about}`}
+        style={({ pressed }) => [styles.grow, styles.rowLink, pressed && styles.pressed]}>
+        <Monogram mark={host} size={44} />
+        <View style={[styles.grow, styles.hostLines]}>
+          <Text style={styles.rowTitle} numberOfLines={1}>{host.name}</Text>
+          <Text style={styles.meta} numberOfLines={1}>{host.about}</Text>
+          {venue && <Text style={styles.from}>From {perHour(fromPricePaise(venue))}</Text>}
+        </View>
+      </Pressable>
+      <Pressable onPress={() => needsAccount(action.run)} accessibilityRole="button" accessibilityLabel={`${action.label}, ${host.name}`} hitSlop={6}>
+        <Glass style={styles.smallPill}>
+          <Text style={[styles.smallPillText, following && !venue && styles.mutedText]}>{action.label}</Text>
+        </Glass>
+      </Pressable>
+    </View>
+  );
+}
+
+// A host with Follow, as a row: the 1:1 logo, the name with its tick, one `line`, and Follow / Following on the right
+// (signed out, sign in first). `onPress` opens the host. The event page's Hosted by and a fest item's On stage (the
+// detail pages' Takes 1 and 3, owner, 19 Nov 2026), as Home's and Search's host rows. No margins: a page sets them.
+export function FollowRow({ host, line, onPress }: { host: Host; line: string; onPress: () => void }) {
+  const following = useFollowing(host.id);
+  return (
+    <View style={styles.hostRow}>
+      <Pressable
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={`${host.name}${host.verified ? ', verified' : ''}, ${line}`}
+        style={({ pressed }) => [styles.grow, styles.rowLink, pressed && styles.pressed]}>
+        <Monogram mark={host} size={44} />
+        <View style={[styles.grow, styles.hostLines]}>
+          <View style={styles.nameRow}>
+            <Text style={[styles.rowTitle, styles.shrink]} numberOfLines={1}>{host.name}</Text>
+            {host.verified && <Verified size={16} />}
+          </View>
+          <Text style={styles.meta} numberOfLines={1}>{line}</Text>
+        </View>
+      </Pressable>
+      <Pressable
+        onPress={() => needsAccount(() => setFollowing(host.id, !following))}
+        accessibilityRole="button"
+        accessibilityLabel={`${following ? 'Following' : 'Follow'}, ${host.name}`}
+        hitSlop={6}>
+        <Glass style={styles.smallPill}>
+          <Text style={[styles.smallPillText, following && styles.mutedText]}>{following ? 'Following' : 'Follow'}</Text>
+        </Glass>
+      </Pressable>
     </View>
   );
 }
@@ -172,11 +281,12 @@ export function SeatCard({
 
 // The search box, on Search and the location screen: a frosted pill like every control, so whatever is behind it shows
 // through (owner, 15 Nov 2026: "also squared search", "search box bg is odd. blend everything and fix", then "in
-// location screen, update the search box"). Takes the TextInput's props; `style` places the box.
+// location screen, update the search box"). Takes the TextInput's props; `style` places the box, `tint` darkens its glass
+// (Search's, on the tab bar's dark glass since 19 Nov 2026).
 export const SEARCH_BOX = 44;
-export function SearchBox({ style, ...input }: Omit<TextInputProps, 'style'> & { style?: StyleProp<ViewStyle> }) {
+export function SearchBox({ style, tint, ...input }: Omit<TextInputProps, 'style'> & { style?: StyleProp<ViewStyle>; tint?: string }) {
   return (
-    <Glass style={[styles.searchBox, style]}>
+    <Glass style={[styles.searchBox, style]} tint={tint}>
       <Icon name="search" size={18} color={color.secondary} />
       <TextInput
         style={styles.searchInput}
@@ -215,10 +325,12 @@ export function FaceWash({ tint, opacity = 0.75, corner = FACE }: { tint: string
 }
 
 // Titles only, no descriptions under them (owner, 15 Nov 2026); 16 down to their content ("add gap after Your Tickets
-// and apply to all").
-export function Section({ title }: { title: string }) {
+// and apply to all"). `top` is the gap above, a big gap unless a screen spaces its sections wider (Home's 40).
+// Home's and Search's gap between sections (owner, 19 Nov 2026: "add proper gaps b/w sections"), on the detail pages too.
+export const SECTION = 40;
+export function Section({ title, top = space.big }: { title: string; top?: number }) {
   return (
-    <View style={styles.section}>
+    <View style={[styles.section, { marginTop: top }]}>
       <Text style={styles.h2} accessibilityRole="header">{title}</Text>
     </View>
   );
@@ -260,12 +372,15 @@ export const BAR = 4 + 44;
 export const TOP = BAR + space.small;
 // `children` sit on the right: the page's own circles, such as Save and the menu (owner, 15 Nov 2026: "add top right,
 // love and menu").
-export function BackBar({ scrollY, children }: { scrollY: Animated.Value; children?: ReactNode }) {
+// `dark`: the circles on the tab bar's dark glass with nothing behind the bar, as Home's and Search's controls since
+// "Both" (owner, 19 Nov 2026: "remove the header bg in both home and search"); the event page since its Take 1. Without
+// `scrollY` no glass fades in behind it.
+export function BackBar({ scrollY, dark = false, children }: { scrollY?: Animated.Value; dark?: boolean; children?: ReactNode }) {
   const insets = useSafeAreaInsets();
   return (
     <View style={[styles.backBar, { paddingTop: insets.top + 4 }]}>
-      <BarGlass scrollY={scrollY} />
-      <CircleButton icon="back" label="Back" onPress={goBack} />
+      {scrollY && <BarGlass scrollY={scrollY} />}
+      <CircleButton icon="back" label="Back" onPress={goBack} tint={dark ? DARK_TINT : undefined} />
       {children && <View style={styles.barRight}>{children}</View>}
     </View>
   );
@@ -276,7 +391,7 @@ export function BackBar({ scrollY, children }: { scrollY: Animated.Value; childr
 // the modal, where Remove from saved unsaves (src/session.ts; owner, 16 Nov 2026: "instead of toast use modal, when
 // clicked on love"). Signed out, the sign-in sheet comes first. Filled Stone when saved, else the duotone outline. It
 // says what a tap will do, its state exposed to screen readers (Saved events and lists doc).
-export function SaveButton({ event: e, bar = false }: { event: Pick<Event, 'id' | 'title'>; bar?: boolean }) {
+export function SaveButton({ event: e, bar = false, dark = false }: { event: Pick<Event, 'id' | 'title'>; bar?: boolean; dark?: boolean }) {
   const saved = useSaved(e.id);
   return (
     <Pressable
@@ -287,7 +402,7 @@ export function SaveButton({ event: e, bar = false }: { event: Pick<Event, 'id' 
       accessibilityLabel={saved ? `Saved, ${e.title}` : `Save ${e.title}`}
       accessibilityHint={saved ? 'Opens its lists and Remove from saved' : 'Saves it and opens your lists'}
       accessibilityState={{ selected: saved }}>
-      <Glass style={bar ? styles.backGlass : styles.rowGlass}>
+      <Glass style={bar ? styles.backGlass : styles.rowGlass} tint={dark ? DARK_TINT : undefined}>
         <Icon name={saved ? 'starFill' : 'star'} size={20} color={color.text} />
       </Glass>
     </Pressable>
@@ -313,8 +428,8 @@ export function loveIt(eventId: string, on: boolean) {
 
 // "Loved it", the heart, on an event you went to, once it's over (owner, 19 Nov 2026: "replace the love with loved
 // it"): on its History row and in place of Save on its page. A tap says you loved it, red; another takes it back.
-// Signed out, it asks to sign in first.
-export function LoveButton({ event: e, bar = false }: { event: Pick<Event, 'id' | 'title'>; bar?: boolean }) {
+// Signed out, it asks to sign in first. `dark` as SaveButton's.
+export function LoveButton({ event: e, bar = false, dark = false }: { event: Pick<Event, 'id' | 'title'>; bar?: boolean; dark?: boolean }) {
   const loved = useLoved(e.id);
   return (
     <Pressable
@@ -325,7 +440,7 @@ export function LoveButton({ event: e, bar = false }: { event: Pick<Event, 'id' 
       accessibilityLabel={loved ? `Loved it, ${e.title}` : `Loved it? ${e.title}`}
       accessibilityHint={loved ? 'Takes your Loved it back' : 'Says you loved it'}
       accessibilityState={{ selected: loved }}>
-      <Glass style={bar ? styles.backGlass : styles.rowGlass}>
+      <Glass style={bar ? styles.backGlass : styles.rowGlass} tint={dark ? DARK_TINT : undefined}>
         {loved ? <Icon name="heartFill" size={20} color={color.love} /> : <Icon name="heart" size={20} color={color.text} />}
       </Glass>
     </Pressable>
@@ -334,9 +449,21 @@ export function LoveButton({ event: e, bar = false }: { event: Pick<Event, 'id' 
 
 // A frosted 44pt circle holding one icon, as every icon-only button in a bar (owner, 15 Nov 2026: "never use squared
 // buttons"). Without `onPress` it isn't a button yet and only says what it is.
-// `children` replaces the icon, for one that changes, like a saved event's star.
-export function CircleButton({ icon, label, onPress, children }: { icon?: IconName; label: string; onPress?: () => void; children?: ReactNode }) {
-  const face = <Glass style={styles.backGlass}>{children ?? (icon && <Icon name={icon} size={20} color={color.text} />)}</Glass>;
+// `children` replaces the icon, for one that changes, like a saved event's star. `tint`: the dark glass (DARK_TINT).
+export function CircleButton({
+  icon,
+  label,
+  onPress,
+  tint,
+  children,
+}: {
+  icon?: IconName;
+  label: string;
+  onPress?: () => void;
+  tint?: string;
+  children?: ReactNode;
+}) {
+  const face = <Glass style={styles.backGlass} tint={tint}>{children ?? (icon && <Icon name={icon} size={20} color={color.text} />)}</Glass>;
   return onPress ? (
     <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={label} hitSlop={4}>
       {face}
@@ -361,7 +488,18 @@ export const shareLink = (line: string, path: string) => Share.share({ message: 
 // from the system header, and these pages draw their own.
 // `anchored`, on a row: a 36pt circle like the row's star, its menu opening under it, or over it near the bottom.
 export type MenuAction = { label: string; icon: IconName; onPress?: () => void };
-export function MenuButton({ actions, label = 'More', anchored = false }: { actions: MenuAction[]; label?: string; anchored?: boolean }) {
+// `tint`: the bar's circle on the dark glass (DARK_TINT), as the event page's.
+export function MenuButton({
+  actions,
+  label = 'More',
+  anchored = false,
+  tint,
+}: {
+  actions: MenuAction[];
+  label?: string;
+  anchored?: boolean;
+  tint?: string;
+}) {
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
   const [open, setOpen] = useState(false);
@@ -396,7 +534,7 @@ export function MenuButton({ actions, label = 'More', anchored = false }: { acti
           </Glass>
         </Pressable>
       ) : (
-        <CircleButton icon="more" label={label} onPress={show} />
+        <CircleButton icon="more" label={label} onPress={show} tint={tint} />
       )}
       {/* Under the status bar on Android too, so `top` is measured from the screen's top as on iOS. */}
       <Modal
@@ -460,6 +598,35 @@ export function Sheet({ title, note, full = false, children }: { title: string; 
         <CloseButton />
       </View>
       {children}
+    </View>
+  );
+}
+
+// Orbit's bubble inside a Sheet, which already has the page's margins: the booking sheets' rules, notes and answers
+// (the Tickets and Slot sheets' Takes 4 and 5, owner, 19 Nov 2026).
+export function SheetSays(props: Omit<ComponentProps<typeof OrbitSays>, 'top'>) {
+  return (
+    <View style={styles.sheetSays}>
+      <OrbitSays top={0} {...props} />
+    </View>
+  );
+}
+
+// A host talking, in the chat's bubble with its 1:1 logo at the foot, as Orbit's are (src/orbitSays.tsx) but from the
+// host: the FAQ's answers (the detail pages' Take 3) and a ticket's announcement (Take 7), with `line` (who and when)
+// above it. No margins: a page sets them.
+export function HostSays({ host, text, line }: { host: Pick<Host, 'initials' | 'bg' | 'fg'>; text: string; line?: string }) {
+  return (
+    <View>
+      {line && <Text style={[styles.kick, styles.saysLine]}>{line}</Text>}
+      <View style={styles.saysRow}>
+        <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+          <Monogram mark={host} size={28} />
+        </View>
+        <View style={styles.theirs}>
+          <Text style={styles.saysText}>{text}</Text>
+        </View>
+      </View>
     </View>
   );
 }
@@ -578,6 +745,22 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.7 },
   whenRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
   rowTitle: { fontFamily: font.title, fontSize: 15, lineHeight: 20, color: color.text },
+  foundRow: { marginBottom: 20, alignItems: 'stretch' },
+  foundLink: { alignItems: 'stretch' },
+  foundLines: { justifyContent: 'center', gap: 4 },
+  kick: { fontFamily: font.medium, fontSize: 12, color: color.secondary },
+  side: { alignItems: 'flex-end', justifyContent: 'space-between' },
+  sidePrice: { paddingTop: 2, fontFamily: font.price, fontSize: 15, color: color.text },
+  statusLine: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  shrink: { flexShrink: 1 },
+  hostRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  hostLines: { gap: 2 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  from: { fontFamily: font.medium, fontSize: 13, color: color.text },
+  // Fully round, as every action pill (the 32pt small one).
+  smallPill: { height: 32, paddingHorizontal: 12, borderRadius: 16, justifyContent: 'center' },
+  smallPillText: { fontFamily: font.title, fontSize: 13, color: color.text },
+  mutedText: { color: color.secondary },
   meta: { fontFamily: font.text, fontSize: 13, color: color.secondary },
   small: { fontFamily: font.text, fontSize: 12, color: color.secondary },
   rowCircle: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
@@ -608,7 +791,7 @@ const styles = StyleSheet.create({
   domeClip: { position: 'absolute', top: 0, overflow: 'hidden' },
   seat: { position: 'absolute' },
 
-  section: { marginTop: space.big, marginBottom: 16, marginHorizontal: 20 },
+  section: { marginBottom: 16, marginHorizontal: 20 },
   h2: { fontFamily: font.headline, fontSize: 18, color: color.text },
   glow: { position: 'absolute', top: 0, left: 0, right: 0, pointerEvents: 'none' },
   backBar: {
@@ -628,6 +811,12 @@ const styles = StyleSheet.create({
   // No hairline: the glass's fallback edge would draw one round the whole modal.
   glassFill: { position: 'absolute', top: 0, left: 0, right: 0, bottom: -BLEED, borderWidth: 0 },
   glassShade: { backgroundColor: `${color.ground}80` },
+  sheetSays: { marginHorizontal: -20 },
+  saysLine: { marginLeft: 28 + space.small, marginBottom: 6 },
+  saysRow: { flexDirection: 'row', alignItems: 'flex-end', gap: space.small },
+  // 20 round with the 6 tail corner on the speaker's side, Charcoal (src/orbitSays.tsx).
+  theirs: { maxWidth: '80%', paddingVertical: 10, paddingHorizontal: 14, borderRadius: 20, borderBottomLeftRadius: 6, borderWidth: StyleSheet.hairlineWidth, backgroundColor: groundAt(0.6), borderColor: stoneAt(0.12) },
+  saysText: { fontFamily: font.text, fontSize: 16, lineHeight: 22, color: color.text },
   sheetHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   sheetTitle: { fontFamily: font.headline, fontSize: 20, color: color.text },
   sheetNote: { marginTop: 2, fontFamily: font.medium, fontSize: 14, color: color.secondary },

@@ -5,20 +5,28 @@
 // shows with no signal.
 // Not here yet: Pass on, for free single tickets (it needs its own form), and a brighter screen at the gate
 // (expo-brightness, a native rebuild). No wallet pass in v1 (Booking decision 8).
-// Signed out (a link or a push opened it), a line and Sign in, and the ticket once signed in.
+// Signed out (a link or a push opened it), a line and Sign in, and the ticket once signed in. The host's newest
+// announcement for the event is on top (src/inboxStore.ts).
+// Since 19 Nov 2026 in the event page's language (owner approved Take 7 of the detail pages mockup): the back circle on
+// the dark glass with nothing behind it, the announcement as the host talking in its bubble, the event as a Clean row
+// and the booking's details in an outlined card.
 import { formatPrice } from '@orbit/contract';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMemo } from 'react';
-import { Alert, Linking, Share, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Alert, Linking, ScrollView, Share, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 
 import { bookings, payments, refunds } from '../../account/data';
-import { EDGE, Group, PAD, Page, Pill, RIM, Row, SignInNote } from '../../account/kit';
+import { EDGE, PAD, Page, Pill, RIM, SignInNote } from '../../account/kit';
 import { calendarLink, isOpen, spacedCode, ticketActions } from '../../account/rules';
+import { Fact, FactCard } from '../../fact';
 import { Glass } from '../../glass';
+import { dayLabel, timeLabel } from '../../inbox';
+import { announcementFor } from '../../inboxStore';
 import { events, hosts, now } from '../../mock';
 import { qr } from '../../qr';
-import { EventRow, NotFound } from '../../rows';
+import { BackBar, EventRow, HostSays, NotFound, TOP } from '../../rows';
 import { useSession, useSignedIn } from '../../session';
 import { around, color, font, radius, space } from '../../theme';
 
@@ -28,6 +36,7 @@ const mapsUrl = (q: string) => `https://www.google.com/maps/search/?api=1&query=
 export default function Ticket() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const signedIn = useSignedIn();
   const holder = useSession()?.me.name ?? '';
   const b = bookings.find((x) => x.id === id);
@@ -43,6 +52,9 @@ export default function Ticket() {
 
   const paid = payments.find((p) => p.eventId === e.id);
   const refund = refunds.find((r) => r.eventId === e.id && isOpen(r.status));
+  // The host's newest announcement sits on top (Notifications doc: a host announcement opens "the ticket, with the
+  // announcement on top").
+  const news = announcementFor(e.id);
   const can = ticketActions({ paid: !!paid, startsAt: e.startsAt, refundOpen: !!refund, now });
   const place = `${e.venue.name}, ${e.venue.address}`;
   // As big as the page allows inside the plate, but no bigger than a scanner needs.
@@ -62,52 +74,63 @@ export default function Ticket() {
     ]);
 
   return (
-    <Page>
-      <View style={styles.event}>
-        <EventRow event={e} host={host} past />
-      </View>
-
-      {/* The QR on white, as scanners read best: a 1px frosted rim round a plate whose padding, with the QR's own
-          margin, gives it the standard's quiet zone. Corners nest as on every card (6 + 16 = 22, rim 23). */}
-      <View style={styles.gate}>
-        <Glass style={styles.qrRim}>
-          <View style={styles.plate}>
-            <QrCode value={b.qr} size={size} />
+    <View style={styles.screen}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingTop: insets.top + TOP, paddingBottom: insets.bottom + space.big }}>
+        {news && (
+          <View style={styles.news}>
+            <HostSays host={host} text={news.text} line={`${host.name} · ${dayLabel(news.at, now)}, ${timeLabel(news.at)}`} />
           </View>
-        </Glass>
-        <Text style={styles.admits}>{b.count > 1 ? `Admits ${b.count}` : 'Admits 1'}</Text>
-        <Text style={styles.code} selectable accessibilityLabel={`Ticket code ${b.code.split('').join(' ')}`}>
-          {spacedCode(b.code)}
-        </Text>
-      </View>
-
-      <Group>
-        <Row label="Ticket" value={b.tier} />
-        <Row label="Holder" value={holder} />
-        <Row label="Booking" value={b.id} />
-        <Row label="Venue" value={e.venue.name} />
-        <Row label="Paid" value={paid ? formatPrice(paid.pricePaise + paid.feePaise) : 'Free'} />
-        {refund && <Row label="Refund" value={refund.status} />}
-      </Group>
-
-      <View style={styles.actions}>
-        <Pill label="Add to calendar" size="small" onPress={() => Linking.openURL(calendarLink({ title: e.title, startsAt: e.startsAt, place }))} />
-        <Pill label="Directions" size="small" onPress={() => Linking.openURL(mapsUrl(place))} />
-        <Pill label="Share" size="small" onPress={() => Share.share({ message: `I’m going to ${e.title}, ${e.when}. ${WEB}/event/${e.id}` })} />
-        {b.group && <Pill label="WhatsApp group" size="small" onPress={() => Linking.openURL(b.group!)} />}
-      </View>
-
-      {can.refund && (
-        <View style={styles.last}>
-          <Pill label="Ask for a refund" size="wide" onPress={askRefund} />
+        )}
+        {/* A Clean row, the host on top; no price or star on a ticket. */}
+        <View style={[styles.event, news && styles.afterNews]}>
+          <EventRow event={e} host={host} found kicker={host.name} past />
         </View>
-      )}
-      {can.cancel && (
-        <View style={styles.last}>
-          <Pill label="Cancel ticket" size="wide" onPress={cancel} />
+
+        {/* The QR on white, as scanners read best: a 1px frosted rim round a plate whose padding, with the QR's own
+            margin, gives it the standard's quiet zone. Corners nest as on every card (6 + 16 = 22, rim 23). */}
+        <View style={styles.gate}>
+          <Glass style={styles.qrRim}>
+            <View style={styles.plate}>
+              <QrCode value={b.qr} size={size} />
+            </View>
+          </Glass>
+          <Text style={styles.admits}>{b.count > 1 ? `Admits ${b.count}` : 'Admits 1'}</Text>
+          <Text style={styles.code} selectable accessibilityLabel={`Ticket code ${b.code.split('').join(' ')}`}>
+            {spacedCode(b.code)}
+          </Text>
         </View>
-      )}
-    </Page>
+
+        <View style={styles.details}>
+          <FactCard>
+            <Fact label="Ticket" value={b.tier} />
+            <Fact label="Holder" value={holder} />
+            <Fact label="Booking" value={b.id} />
+            <Fact label="Venue" value={e.venue.name} />
+            <Fact label="Paid" value={paid ? formatPrice(paid.pricePaise + paid.feePaise) : 'Free'} />
+            {refund && <Fact label="Refund" value={refund.status} />}
+          </FactCard>
+        </View>
+
+        <View style={styles.actions}>
+          <Pill label="Add to calendar" size="small" onPress={() => Linking.openURL(calendarLink({ title: e.title, startsAt: e.startsAt, place }))} />
+          <Pill label="Directions" size="small" onPress={() => Linking.openURL(mapsUrl(place))} />
+          <Pill label="Share" size="small" onPress={() => Share.share({ message: `I’m going to ${e.title}, ${e.when}. ${WEB}/event/${e.id}` })} />
+          {b.group && <Pill label="WhatsApp group" size="small" onPress={() => Linking.openURL(b.group!)} />}
+        </View>
+
+        {can.refund && (
+          <View style={styles.last}>
+            <Pill label="Ask for a refund" size="wide" onPress={askRefund} />
+          </View>
+        )}
+        {can.cancel && (
+          <View style={styles.last}>
+            <Pill label="Cancel ticket" size="wide" onPress={cancel} />
+          </View>
+        )}
+      </ScrollView>
+      <BackBar dark />
+    </View>
   );
 }
 
@@ -138,7 +161,11 @@ function QrCode({ value, size }: { value: string; size: number }) {
 
 const PLATE = around(radius.sm, PAD);
 const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: color.ground },
+  news: { marginTop: space.small, marginHorizontal: 20 },
+  details: { marginTop: space.big },
   event: { marginTop: space.small },
+  afterNews: { marginTop: space.big },
   gate: { marginTop: space.small, alignItems: 'center' },
   qrRim: { padding: EDGE, borderRadius: RIM },
   plate: { padding: PAD, borderRadius: PLATE, backgroundColor: '#FFFFFF' },

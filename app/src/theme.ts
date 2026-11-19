@@ -31,8 +31,8 @@ export const stoneAt = (a: number) => alpha(palette.stone, a);
 export const groundAt = (a: number) => alpha(palette.charcoal, a);
 
 // Whether text over `bg` reads better in Charcoal than in Stone (owner, 19 Nov 2026: "in home, the location text should
-// adapt the bg and switch colors"). `wash` is the ground laid over it at that opacity, as the carousel's wash behind
-// Home's header. A colour that isn't #rrggbb keeps Stone.
+// adapt the bg and switch colors"; Home's header has its own dark glass since 19 Nov, and Orbit's ad strips use this).
+// `wash` is the ground laid over it at that opacity. A colour that isn't #rrggbb keeps Stone.
 export function darkInkOn(bg: string, wash = 0): boolean {
   if (!/^#[0-9a-f]{6}$/i.test(bg)) return false;
   const g = channels(role.ground);

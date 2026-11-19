@@ -2,7 +2,12 @@ import { GlassView, isGlassEffectAPIAvailable, isLiquidGlassAvailable } from 'ex
 import { useEffect, useState } from 'react';
 import { AccessibilityInfo, Animated, StyleSheet, View, type ViewProps } from 'react-native';
 
-import { around, color, radius, space, stoneAt } from './theme';
+import { around, color, groundAt, radius, space, stoneAt } from './theme';
+
+// The tab bar's dark glass, as `tint` (owner, 19 Nov 2026: "make bg glass, dark"). Since the Capsule take ("Both", 19
+// Nov) it is also on Home's and Search's floating controls: the location, the profile, the carousel pill, the search
+// box and chips, See all and the row stars. Buttons inside cards stay frosted.
+export const DARK_TINT = groundAt(0.7);
 
 // Real Liquid Glass needs iOS 26 (and the API, which some iOS 26 betas lack).
 const GLASS = isLiquidGlassAvailable() && isGlassEffectAPIAvailable();
@@ -10,15 +15,15 @@ const GLASS = isLiquidGlassAvailable() && isGlassEffectAPIAvailable();
 // Orbit's one glass (owner, 15 Nov 2026): frosted, first on View ticket ("implement frosted glass for view ticket"),
 // then "to entire app". The native take on the Frosted Glass preset of liquid-glass.ybouane.com (blur, no darkening).
 // Every button and floating control uses it, with a white label. Without iOS 26 glass, or with Reduce Transparency
-// on, a light translucent fill.
-export function Glass({ style, children, ...rest }: ViewProps) {
+// on, a light translucent fill. `tint` colours the glass, or is the fill without it (the tab bar's dark glass).
+export function Glass({ style, children, tint, ...rest }: ViewProps & { tint?: string }) {
   const reduceTransparency = useAccessibility('reduceTransparencyChanged');
   return GLASS && !reduceTransparency ? (
-    <GlassView glassEffectStyle="regular" colorScheme="dark" style={style} {...rest}>
+    <GlassView glassEffectStyle="regular" colorScheme="dark" tintColor={tint} style={style} {...rest}>
       {children}
     </GlassView>
   ) : (
-    <View style={[styles.fallback, style]} {...rest}>
+    <View style={[styles.fallback, tint !== undefined && { backgroundColor: tint }, style]} {...rest}>
       {children}
     </View>
   );

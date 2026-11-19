@@ -7,6 +7,7 @@ import { type ComponentProps, useState } from 'react';
 import { Alert, Image, type ImageSourcePropType, Platform, StyleSheet, Text, View } from 'react-native';
 
 import { Field, Group, Pill, Row, TONE } from './account/kit';
+import { Icon } from './icons';
 import { isVpa, payKey, SHOWN, UPI_APPS, type UpiId, verifyUpiId, WALLETS, type PayWith } from './pay';
 import { Tag } from './rows';
 import { addUpiId, removeUpiId, setPayWith, usePayWith, useUpiIds } from './session';
@@ -31,6 +32,15 @@ const LOGO: Record<LogoId, ImageSourcePropType> = {
   freecharge: require('../assets/pay/freecharge.jpg'),
   airtelmoney: require('../assets/pay/airtelmoney.jpg'),
 };
+
+/** The way you pay as the pay bar shows it beside "Pay with …" (Unifesto's pay bar, owner 19 Nov 2026: "move paywith to
+ * cta"): its logo, Apple Pay's mark, or for a card, a UPI ID or nothing chosen yet, the glyph. */
+export function PayMark({ pay }: { pay?: PayWith }) {
+  const id = pay?.kind === 'upiApp' ? pay.id : pay?.kind === 'wallet' ? pay.code : undefined;
+  if (id && id in LOGO) return <Image source={LOGO[id as LogoId]} style={styles.logo} resizeMode="contain" accessibilityIgnoresInvertColors />;
+  if (pay?.kind === 'applePay') return <Image source={require('../assets/pay/applepay.png')} style={styles.applePay} resizeMode="contain" accessibilityIgnoresInvertColors />;
+  return <Icon name={pay?.kind === 'vpa' ? 'vpa' : pay?.kind === 'card' ? 'card' : 'wallet'} size={22} color={color.text} />;
+}
 
 /** A row led by its logo in the glyph's place: 26 wide, the glyph's 22 plus its 4, so labels line up, with the corner
  * a phone gives an app icon. `icon` stays on the element only for Group's hairline indent. */

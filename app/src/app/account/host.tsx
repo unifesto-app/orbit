@@ -11,6 +11,7 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { Chips, Field, Group, Page, Pill, Row, styles as kit } from '../../account/kit';
 import { day } from '../../account/rules';
+import { offerPush, PushAsk } from '../../push';
 import { sendRequest, useMyRequest } from '../../requests';
 import { Section } from '../../rows';
 import { needsAccount, useSession, useSignedIn } from '../../session';
@@ -49,17 +50,20 @@ export default function EventRequest() {
           <Row label="Host" value={sent.host.name} />
           <Row label="Sent" value={day(sent.sent)} />
         </Group>
+        {/* Sending one may ask for push (Notifications doc's line for it; src/push.tsx). */}
+        <PushAsk moment="request" line="Get told when refunds and payouts need you?" />
       </Page>
     );
 
   const ready = [host, kind, city, title, category, when, venue, tickets, size].every((x) => typeof x === 'string' && x.trim());
-  const send = () =>
-    signedIn
-      ? sendRequest({
-          host: { name: host.trim(), kind: kind!, city: city!, about: about.trim() },
-          event: { title: title.trim(), category: category!, when: when.trim(), venue: venue.trim(), tickets: tickets!, size: size! },
-        })
-      : needsAccount();
+  const send = () => {
+    if (!signedIn) return needsAccount();
+    sendRequest({
+      host: { name: host.trim(), kind: kind!, city: city!, about: about.trim() },
+      event: { title: title.trim(), category: category!, when: when.trim(), venue: venue.trim(), tickets: tickets!, size: size! },
+    });
+    void offerPush('request');
+  };
 
   return (
     <Page title="Event Request">

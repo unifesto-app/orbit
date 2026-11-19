@@ -1,6 +1,6 @@
 // Account › Interests (owner, 19 Nov 2026: "add interest cards for events", all four): the kinds of event you like, as
-// Explore's boxes (src/categories.tsx). A tap picks or unpicks at once; Home then has a section for each, in the order
-// picked (src/home/layout.ts). Kept on this phone for now (src/session.ts).
+// Explore's boxes (src/categories.tsx). A tap picks or unpicks at once; Home's near-you list then puts those kinds first
+// (src/home/layout.ts). Kept on this phone for now (src/session.ts).
 import { View } from 'react-native';
 
 import { Page, SignInNote } from '../../account/kit';

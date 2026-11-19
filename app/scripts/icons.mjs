@@ -4,7 +4,7 @@
 // It also renders the tab bar's icons to PNGs in assets/tabs (the native tab bar takes images, not SVG), which needs
 // rsvg-convert (`brew install librsvg`).
 import { execFileSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 
 const icons = {
   pin: "map-pin-duotone",
@@ -69,16 +69,32 @@ const icons = {
   listPlus: "list-plus-duotone",
   rename: "pencil-simple-duotone",
   takeOut: "minus-circle-duotone",
+  send: "arrow-up-bold", // the chat's send button (owner, 19 Nov 2026: "add chat interface")
+  plus: "plus-bold", // the chat's attach button (owner, 19 Nov 2026: "add attachments")
+  mic: "microphone-duotone", // the chat's voice button (owner, 19 Nov 2026: "also bring voice chat")
+  info: "info-duotone", // the chat header's (i) (owner, 19 Nov 2026: "also add info ( i ) to right on header")
 };
 
-// The tab bar's icons, Phosphor duotone too (owner, 15 Nov 2026: "Phosphor duotone even in tab bar").
+// The tab bar's icons, Phosphor filled since our own bar (owner, 15 Nov 2026: "Phosphor duotone even in tab bar"; 19 Nov
+// 2026: "use filled instead of duotone").
 const tabIcons = {
-  home: "house-duotone",
-  search: "magnifying-glass-duotone",
+  home: "house-fill",
+  search: "magnifying-glass-fill",
 };
 const TAB_PT = 25; // Apple's size for a tab bar icon; Android's is 24dp
 
-const names = [...new Set([...Object.values(icons), ...Object.values(tabIcons)])];
+// The chat's reactions (src/app/chat.tsx; owner, 19 Nov 2026: "in reaction bring 3d symbols", "instead of star, plus,
+// peral bring thumbsup and any two useful ones", then "make heart straight and give them original colors"): Phosphor's
+// filled glyphs in the brand's 3D look, each in its own colours, rendered to assets/reactions/<key>.png below. Each
+// ramp runs from the lit top left to the shaded rim.
+const reactionIcons = {
+  heart: ["heart-fill", [[0, "#ffb3ad"], [0.42, "#ff453a"], [0.8, "#d1281f"], [1, "#8f140e"]]], // the app's love red
+  thumbsUp: ["thumbs-up-fill", [[0, "#fff1b8"], [0.42, "#ffc83d"], [0.8, "#e59e0b"], [1, "#a86a00"]]],
+  thumbsDown: ["thumbs-down-fill", [[0, "#fff1b8"], [0.42, "#ffc83d"], [0.8, "#e59e0b"], [1, "#a86a00"]]], // an answer missed
+  fire: ["fire-fill", [[0, "#ffe08a"], [0.4, "#ff9a1f"], [0.78, "#f2541b"], [1, "#b8300c"]]], // something to be excited about
+};
+
+const names = [...new Set([...Object.values(icons), ...Object.values(tabIcons), ...Object.values(reactionIcons).map(([n]) => n)])];
 const res = await fetch(`https://api.iconify.design/ph.json?icons=${names.join(",")}`);
 if (!res.ok) throw new Error(`Iconify answered ${res.status}`);
 const data = await res.json();
@@ -124,15 +140,46 @@ export function Icon({ name, size = 24, color }: { name: IconName; size?: number
 );
 console.log(`icons.tsx: ${Object.keys(icons).join(", ")}`);
 
-// Black on clear, at 1x, 2x and 3x. Both tab bars tint by the image's alpha, so the 20% layer stays 20% in any
-// colour and the icon keeps its duotone.
+// At 1x, 2x and 3x (owner, 19 Nov 2026: "add gradiant to icons", then "move other gradiant to active, for other use
+// text color"): <key> black on clear, tinted the text colour by the bar, for the tabs that aren't open; <key>-on for the
+// open tab, Sage to Moss lit from the top left like the symbols, with no light spot.
+const { palette: P, depth } = JSON.parse(readFileSync(new URL("../../tokens/tokens.json", import.meta.url), "utf8"));
+const lit = `<defs><radialGradient id="g" cx="0.36" cy="0.3" r="0.8"><stop offset="0" stop-color="${P.sage}"/><stop offset="1" stop-color="${P.moss}"/></radialGradient></defs>`;
 for (const [key, name] of Object.entries(tabIcons)) {
-  const [, tint, solid] = data.icons[name].body.match(shape);
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><g fill="#000"><path d="${tint}" opacity=".2"/><path d="${solid}"/></g></svg>`;
-  for (const scale of [1, 2, 3]) {
-    const out = new URL(`../assets/tabs/${key}${scale > 1 ? `@${scale}x` : ""}.png`, import.meta.url);
-    const px = String(TAB_PT * scale);
-    execFileSync("rsvg-convert", ["-w", px, "-h", px, "-o", out.pathname], { input: svg });
+  const [, d] = data.icons[name].body.match(filled);
+  for (const [file, defs, paint] of [[key, "", "#000"], [`${key}-on`, lit, "url(#g)"]]) {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">${defs}<path fill="${paint}" d="${d}"/></svg>`;
+    for (const scale of [1, 2, 3]) {
+      const out = new URL(`../assets/tabs/${file}${scale > 1 ? `@${scale}x` : ""}.png`, import.meta.url);
+      const px = String(TAB_PT * scale);
+      execFileSync("rsvg-convert", ["-w", px, "-h", px, "-o", out.pathname], { input: svg });
+    }
   }
 }
-console.log(`assets/tabs: ${Object.keys(tabIcons).join(", ")}`);
+console.log(`assets/tabs: ${Object.keys(tabIcons).map((k) => `${k}, ${k}-on`).join(", ")}`);
+
+// The reactions, 192px squares: each its own body lit from the top left, a raw gloss and a soft Night shadow below, as
+// the kit's Shade (app-icon.cjs), its numbers in the glyph's 256 grid. The glyph fills the middle 62%, leaving room for
+// the shadow, like the splash's symbol PNGs.
+const REACTION_PX = 192;
+const body = (stops) =>
+  `<radialGradient id="b" cx="0.36" cy="0.3" r="0.8">${stops.map(([at, c]) => `<stop offset="${at}" stop-color="${c}"/>`).join("")}</radialGradient>`;
+const shade = `<filter id="s" x="-30%" y="-30%" width="160%" height="170%" color-interpolation-filters="sRGB">
+  <feGaussianBlur in="SourceAlpha" stdDeviation="12" result="height"/>
+  <feSpecularLighting in="height" surfaceScale="8" specularConstant="1.2" specularExponent="26" lighting-color="${P.stone}" result="spec">
+    <feDistantLight azimuth="${depth.light.azimuth}" elevation="${depth.light.elevation}"/>
+  </feSpecularLighting>
+  <feComposite in="spec" in2="SourceAlpha" operator="in" result="gloss"/>
+  <feOffset in="SourceAlpha" dy="16" result="drop"/>
+  <feGaussianBlur in="drop" stdDeviation="14" result="dropBlur"/>
+  <feFlood flood-color="${P.night}" flood-opacity="${depth.shadowOpacity}" result="ink"/>
+  <feComposite in="ink" in2="dropBlur" operator="in" result="shadow"/>
+  <feMerge><feMergeNode in="shadow"/><feMergeNode in="SourceGraphic"/><feMergeNode in="gloss"/></feMerge>
+</filter>`;
+for (const [key, [name, stops]] of Object.entries(reactionIcons)) {
+  const [, d] = data.icons[name].body.match(filled);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-78 -70 412 412"><defs>${body(stops)}${shade}</defs><path fill="url(#b)" filter="url(#s)" d="${d}"/></svg>`;
+  const out = new URL(`../assets/reactions/${key}.png`, import.meta.url);
+  execFileSync("rsvg-convert", ["-w", String(REACTION_PX), "-h", String(REACTION_PX), "-o", out.pathname], { input: svg });
+}
+console.log(`assets/reactions: ${Object.keys(reactionIcons).join(", ")}`);

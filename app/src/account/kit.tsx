@@ -10,7 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Glass } from '../glass';
 import { Icon, type IconName } from '../icons';
-import { BackBar, FaceWash, Section, TOP } from '../rows';
+import { BackBar, FaceWash, Section, TOP, Verified } from '../rows';
 import { needsAccount } from '../session';
 import type { Contact } from '../signin';
 import { around, color, font, radius, space, stoneAt } from '../theme';
@@ -27,7 +27,9 @@ const SLOP = { top: PAD / 2, bottom: PAD / 2 };
 const ICON = 22; // a row's icon
 const ICON_GAP = 12; // from the icon to its label
 
-export const REVEAL = 120; // how much taller the profile's panel is than Account's, its head grown
+// How much taller the profile's panel is than Account's: room for the photo grown 72 → 96 (Take 1, 19 Nov 2026; it was
+// 120 while the counts sat in the panel).
+export const REVEAL = 56;
 export const TINT = 0.5; // the accent's glow at the panel's bottom centre; Explore's boxes are 0.75
 
 // Each row's icon in its own colour (owner, 15 Nov 2026: "should have various acents"): Search's Explore colours, Open
@@ -105,10 +107,23 @@ export function Panel({ extra = 0, children }: { extra?: number; children: React
 // 15 Nov 2026: "add hairline"). `bare` drops the frosted rim, leaving the face alone (owner, 17 Nov 2026: "in Delete
 // Account, remove the rim of all cards").
 // `flush` drops the card's own margins, for one inside a sheet, which keeps the page's margin already.
-export function Group({ title, bare = false, flush = false, children }: { title?: string; bare?: boolean; flush?: boolean; children: ReactNode }) {
+// `indent` sets where the hairlines start, for rows whose `lead` isn't an icon (the profile's host logos).
+export function Group({
+  title,
+  bare = false,
+  flush = false,
+  indent: lead,
+  children,
+}: {
+  title?: string;
+  bare?: boolean;
+  flush?: boolean;
+  indent?: number;
+  children: ReactNode;
+}) {
   const rows = Children.toArray(children); // drops the false and null of rows shown only sometimes
   // With icons, the hairline starts where the text does, as in iOS Settings.
-  const indent = rows.some((r) => isValidElement<{ icon?: IconName }>(r) && !!r.props.icon) ? ICON + ICON_GAP : 0;
+  const indent = lead ?? (rows.some((r) => isValidElement<{ icon?: IconName }>(r) && !!r.props.icon) ? ICON + ICON_GAP : 0);
   const face = (
     <View style={[styles.face, bare && styles.outline]}>
       {rows.map((row, i) => (
@@ -139,6 +154,7 @@ export function Row({
   tone = color.text,
   lead,
   label,
+  verified,
   note,
   value,
   right,
@@ -153,6 +169,7 @@ export function Row({
   tone?: string;
   lead?: ReactNode; // a mark in place of the icon, as Google's on the sign-in sheet
   label: string;
+  verified?: boolean; // a host's name, on one line, with the tick after it when true (the profile's hosts)
   note?: string;
   value?: string;
   right?: ReactNode;
@@ -172,7 +189,16 @@ export function Row({
       )}
       {lead}
       <View style={[styles.grow, styles.lines]}>
-        <Text style={styles.label}>{label}</Text>
+        {verified !== undefined ? (
+          <View style={styles.named}>
+            <Text style={[styles.label, styles.shrink]} numberOfLines={1}>
+              {label}
+            </Text>
+            {verified && <Verified size={16} />}
+          </View>
+        ) : (
+          <Text style={styles.label}>{label}</Text>
+        )}
         {note && <Text style={styles.note}>{note}</Text>}
       </View>
       {value !== undefined && (
@@ -382,6 +408,8 @@ export const styles = StyleSheet.create({
   hairline: { height: StyleSheet.hairlineWidth, marginVertical: PAD / 2, backgroundColor: stoneAt(0.12) },
   row: { minHeight: ROW, flexDirection: 'row', alignItems: 'center', gap: space.small },
   lines: { gap: 2 }, // line spacing between a row's label and its note
+  named: { flexDirection: 'row', alignItems: 'center', gap: 4 }, // a label and its tick
+  shrink: { flexShrink: 1 },
   icon: { marginRight: ICON_GAP - space.small }, // the row's own gap makes up the rest
   label: { fontFamily: font.title, fontSize: 15, lineHeight: 20, color: color.text },
   note: { fontFamily: font.text, fontSize: 13, lineHeight: 18, color: color.secondary },

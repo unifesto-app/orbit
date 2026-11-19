@@ -6,7 +6,6 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef } from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 
-import { past } from './data';
 import { EDGE, Pill } from './kit';
 import { year } from './rules';
 import { Glass } from '../glass';
@@ -19,7 +18,7 @@ import { around, color, font, space } from '../theme';
 
 const PHOTO = 72; // the photo at rest on Account
 const GROWN = 96; // the photo grown
-const SLOT = 44; // View profile's place, which the counts take
+const SLOT = 44; // the pill's place: View profile on Account, Edit profile on the profile
 
 // Your photo, a circle in Account's 1px frosted rim (owner, 17 Nov 2026: "instead of squared profile use rounded one"),
 // or your initials until there's one.
@@ -66,12 +65,11 @@ export function useFollows() {
 }
 
 // Account's head shows View profile, the way in (owner, 19 Nov 2026: "replace swipe down, and change to button"; it was
-// a pull with two chevrons); `grown` (the profile) shows the photo grown from 72 to 96, up into the panel's extra
-// room, and Going, Been and Following in the button's place. `following` is useFollows' count, which the screen reads
-// anyway for its own rows.
-export function ProfileHead({ grown = false, onOpen, following }: { grown?: boolean; onOpen?: () => void; following: number }) {
+// a pull with two chevrons); `grown` (the profile) shows the photo grown from 72 to 96, up into the panel's extra room,
+// and Edit profile in View profile's place, so only the pill's words change as the profile fades in (Take 1, "Account's
+// card, grown": owner, 19 Nov 2026, "Build Take 1"). Going, Been and Following moved to a card under the profile's panel.
+export function ProfileHead({ grown = false, pill, onPress }: { grown?: boolean; pill: string; onPress: () => void }) {
   const me = useSession()?.me;
-  const viewer = useViewer();
   if (!me) return null; // signed out: Account draws its own head, and the profile says to sign in
   return (
     <View style={styles.head}>
@@ -86,25 +84,8 @@ export function ProfileHead({ grown = false, onOpen, following }: { grown?: bool
           Orbit just since 2025"). */}
       <Text style={styles.meta}>Since {year(me.since)}</Text>
       <View style={styles.slot}>
-        {grown ? (
-          <View style={styles.counts}>
-            <Count n={viewer.tickets?.length ?? 0} label="Going" />
-            <Count n={past.filter((x) => x.status === 'Went').length} label="Been" />
-            <Count n={following} label="Following" />
-          </View>
-        ) : (
-          onOpen && <Pill label="View profile" size="small" onPress={onOpen} />
-        )}
+        <Pill label={pill} size="small" onPress={onPress} />
       </View>
-    </View>
-  );
-}
-
-function Count({ n, label }: { n: number; label: string }) {
-  return (
-    <View style={styles.count}>
-      <Text style={styles.countN}>{n}</Text>
-      <Text style={styles.meta}>{label}</Text>
     </View>
   );
 }
@@ -116,7 +97,4 @@ const styles = StyleSheet.create({
   name: { marginTop: space.small + 4, fontFamily: font.headline, fontSize: 22, lineHeight: 28, color: color.text },
   meta: { marginTop: 2, fontFamily: font.text, fontSize: 13, lineHeight: 18, color: color.secondary, textAlign: 'center' },
   slot: { marginTop: 16, height: SLOT, alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center' },
-  counts: { flexDirection: 'row', gap: 40 },
-  count: { alignItems: 'center' },
-  countN: { fontFamily: font.headline, fontSize: 20, lineHeight: 24, color: color.text },
 });

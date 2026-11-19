@@ -3,25 +3,31 @@
 // one; then it's held for you for 10 minutes while you pay (Play 17). If the hold runs out you can ask to hear if that
 // time frees up, once (Play 18). The rules are in src/booking.ts. Days and free times follow the app's clock (the mock's
 // `now`); the hold counts down on the real one.
+// Since 19 Nov 2026 in the Tickets sheet's language (owner approved Take 5 of the detail pages mockup,
+// https://claude.ai/artifact/5dDmrmZ6soDjoe8kro1xAq): Slot and Pay as a capsule, the picks in outlined cards, the way
+// you pay on the dark bar's left, and Orbit saying what a hold means, that it ended, and what isn't on yet.
 // ponytail: payments (Razorpay) and the slots API aren't on yet, so Pay says so and charges nothing; free stations are a
 // made-up pattern until the API knows the bookings.
 import { formatPrice } from '@orbit/contract';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { type ComponentRef, useEffect, useRef, useState } from 'react';
+import { AccessibilityInfo, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { Pill } from '../../account/kit';
 import { BookBar } from '../../bookBar';
 import { bookingDays, freeAt, HOLD_MS, holdLeft, MAX_HOURS, mmss, slotLine, slotPrice, startTimes, timeLabel } from '../../booking';
 import { Fact, FactCard } from '../../fact';
 import { perHour, startsLine, venues } from '../../kinds';
 import { hosts, now } from '../../mock';
-import { payLabel, payName, payReady } from '../../pay';
-import { Chip, Stepper } from '../../pickers';
-import { NotFound, Sheet } from '../../rows';
+import { payLabel, payReady } from '../../pay';
+import { PayMark } from '../../payChoices';
+import { Chip, Stepper, Steps } from '../../pickers';
+import { answerPush } from '../../push';
+import { NotFound, Sheet, SheetSays } from '../../rows';
 import { usePayWith } from '../../session';
 import { color, font, space } from '../../theme';
 
+
+const NOT_PAYING = 'Orbit isn’t taking payments yet, so nothing was charged.';
 
 export default function SlotSheet() {
   const { venue: id } = useLocalSearchParams<{ venue: string }>();
@@ -36,6 +42,8 @@ export default function SlotSheet() {
   const [heldAt, setHeldAt] = useState<number | null>(null);
   const [clock, setClock] = useState(() => Date.now());
   const [asked, setAsked] = useState(false);
+  const [said, setSaid] = useState(false); // Pay tapped: Orbit says payments aren't on yet
+  const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
   const pay = usePayWith(); // the way you usually pay, changed from Pay with (src/app/pay.tsx)
   const [bar, setBar] = useState(140);
   // While held, the countdown ticks every second, and stops itself once the hold has run out.
@@ -66,103 +74,140 @@ export default function SlotSheet() {
   const pick = (fn: () => void) => {
     fn();
     setHeldAt(null);
+    setSaid(false);
   };
+  const hold = () => {
+    setHeldAt(Date.now());
+    setClock(Date.now());
+    setAsked(false);
+    setSaid(false);
+  };
+  const steps = [
+    { key: 'pick' as const, label: 'Slot', ready: true },
+    { key: 'pay' as const, label: 'Pay', ready: heldAt !== null && !lapsed },
+  ];
 
   return (
     <Sheet title={heldAt === null ? 'Book a slot' : lapsed ? 'Hold ended' : 'Held for you'} note={host.name} full>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.list, { paddingBottom: bar }]}>
+      <ScrollView ref={scroll} showsVerticalScrollIndicator={false} contentContainerStyle={[styles.list, { paddingBottom: bar }]}>
+        {/* Tap Slot while a time is held to pick again (the hold lets go). */}
+        <Steps steps={steps} at={heldAt === null ? 'pick' : 'pay'} onPick={(k) => k === 'pick' && pick(() => undefined)} />
         {heldAt === null ? (
           <>
-            <Text style={styles.heading}>What</Text>
-            <View style={styles.wrap}>
-              {v.stations.map((x, i) => (
-                <Chip key={x.name} label={`${x.name} · ${perHour(x.pricePaise)}`} picked={i === si} onPress={() => pick(() => { setSi(i); setCoop(false); setCount(1); })} />
-              ))}
-            </View>
-
-            <Text style={styles.heading}>When</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
-              {days.map((d, i) => (
-                <Chip key={d.start} label={d.label} picked={i === day} onPress={() => pick(() => setDay(i))} />
-              ))}
-            </ScrollView>
-
-            <Text style={styles.heading}>Start</Text>
-            {times.length ? (
-              <View style={styles.wrap}>
-                {times.map((t) => (
-                  <Chip key={t} label={timeLabel(t)} picked={t === chosen} disabled={freeAt(s, t, hours) < need} onPress={() => pick(() => setStart(t))} />
-                ))}
-              </View>
-            ) : (
-              <Text style={styles.note}>Nothing left that day. Try another.</Text>
-            )}
-            <Text style={styles.note}>{startsLine(v)}</Text>
-
-            <View style={styles.line}>
-              <Text style={[styles.grow, styles.label]}>For {unitHours}</Text>
-              <Stepper value={hours} min={1} max={MAX_HOURS} label="Hours" onChange={(n) => pick(() => setHours(n))} />
-            </View>
-            {!whole && (
-              <>
-                <View style={styles.line}>
-                  <Text style={[styles.grow, styles.label]}>
-                    {coop ? `1 ${s.unit[0]}, two playing` : `${count} ${count === 1 ? s.unit[0] : s.unit[1]}`}
-                  </Text>
-                  {!coop && <Stepper value={count} min={1} max={Math.max(Math.min(free, s.count), 1)} label={s.unit[1]} onChange={(n) => pick(() => setCount(n))} />}
+            <FactCard flush>
+              <View style={styles.group}>
+                <Text style={styles.label}>What</Text>
+                <View style={styles.wrap}>
+                  {v.stations.map((x, i) => (
+                    <Chip key={x.name} label={`${x.name} · ${perHour(x.pricePaise)}`} picked={i === si} onPress={() => pick(() => { setSi(i); setCoop(false); setCount(1); })} />
+                  ))}
                 </View>
-                {s.coopPaise && (
+              </View>
+            </FactCard>
+
+            <FactCard flush>
+              <View style={styles.group}>
+                <Text style={styles.label}>Day</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
+                  {days.map((d, i) => (
+                    <Chip key={d.start} label={d.label} picked={i === day} onPress={() => pick(() => setDay(i))} />
+                  ))}
+                </ScrollView>
+              </View>
+              <View style={styles.group}>
+                <Text style={styles.label}>Start</Text>
+                {times.length > 0 && (
                   <View style={styles.wrap}>
-                    <Chip label={`Two on one · ${perHour(s.coopPaise)}`} picked={coop} onPress={() => pick(() => setCoop(!coop))} />
+                    {times.map((t) => (
+                      <Chip key={t} label={timeLabel(t)} picked={t === chosen} disabled={freeAt(s, t, hours) < need} onPress={() => pick(() => setStart(t))} />
+                    ))}
                   </View>
                 )}
-              </>
-            )}
+                <Text style={styles.note}>{startsLine(v)}</Text>
+              </View>
+            </FactCard>
+            {times.length === 0 && <SheetSays text="Nothing’s left that day. Try another." />}
+
+            <FactCard flush>
+              <View style={styles.line}>
+                <Text style={[styles.grow, styles.value]}>For {unitHours}</Text>
+                <Stepper value={hours} min={1} max={MAX_HOURS} label="Hours" onChange={(n) => pick(() => setHours(n))} />
+              </View>
+              {!whole && (
+                <>
+                  <View style={styles.line}>
+                    <Text style={[styles.grow, styles.value]}>
+                      {coop ? `1 ${s.unit[0]}, two playing` : `${count} ${count === 1 ? s.unit[0] : s.unit[1]}`}
+                    </Text>
+                    {!coop && <Stepper value={count} min={1} max={Math.max(Math.min(free, s.count), 1)} label={s.unit[1]} onChange={(n) => pick(() => setCount(n))} />}
+                  </View>
+                  {s.coopPaise && (
+                    <View style={styles.wrap}>
+                      <Chip label={`Two on one · ${perHour(s.coopPaise)}`} picked={coop} onPress={() => pick(() => setCoop(!coop))} />
+                    </View>
+                  )}
+                </>
+              )}
+            </FactCard>
+          </>
+        ) : lapsed ? (
+          <>
+            <FactCard flush>
+              <Fact label="Was held for you" value={line ?? ''} note={formatPrice(price)} />
+            </FactCard>
+            {/* Ask once to hear if it frees up (Play 18); the tap is the yes to the phone's push prompt (src/push.tsx). */}
+            <SheetSays
+              text="Your hold ended, so someone else can book this time now."
+              then={asked ? { mine: 'Hear if it frees up', reply: 'I’ll tell you once if it frees up.' } : undefined}
+              answers={
+                asked
+                  ? []
+                  : [
+                      {
+                        label: 'Hear if it frees up',
+                        onPress: () => {
+                          setAsked(true);
+                          void answerPush(true); // the tap says it already: the phone's push prompt, if never asked (src/push.tsx)
+                        },
+                      },
+                    ]
+              }
+            />
           </>
         ) : (
-          <FactCard flush>
-            <Fact label={lapsed ? 'Was held for you' : `${mmss(left)} left to pay`} value={line ?? ''} note={formatPrice(price)} />
-            {lapsed ? (
-              <>
-                <Fact label="Your hold ended" value="Someone else can book this time now" />
-                {asked ? (
-                  <Text style={styles.note}>We’ll tell you once if it frees up.</Text>
-                ) : (
-                  <View style={styles.wrap}>
-                    <Pill label="Hear if it frees up" size="small" onPress={() => setAsked(true)} />
-                  </View>
-                )}
-              </>
-            ) : (
-              <>
-                <Fact label="Pay with" value={payReady(pay) ? payName(pay) : 'Choose how to pay'} onPress={() => router.push('/pay')} />
-                <Text style={styles.note}>Pay before the time’s up and it’s yours. You can cancel up to 2 hours before the start.</Text>
-              </>
-            )}
-          </FactCard>
+          <>
+            <FactCard flush>
+              <Fact label={`${mmss(left)} left to pay`} value={line ?? ''} note={formatPrice(price)} />
+            </FactCard>
+            <SheetSays text="It’s yours if you pay before the time’s up. You can cancel up to 2 hours before the start." />
+            {said && <SheetSays text={NOT_PAYING} />}
+          </>
         )}
       </ScrollView>
       <BookBar
+        dark
         // Before a start is picked, the station's cheapest hour (its off-peak where it has one), as the venue page's from.
         price={chosen !== null ? formatPrice(price) : perHour(Math.min(s.pricePaise, s.offPeak?.pricePaise ?? Infinity))}
         from={chosen === null}
         note={line ?? 'Pick a start time'}
-        action={heldAt === null ? 'Hold for 10 minutes' : lapsed ? 'Pick again' : payReady(pay) ? `Pay ${formatPrice(price)}` : payLabel(pay)}
+        action={heldAt === null ? 'Hold for 10 minutes' : lapsed ? 'Pick again' : 'Pay'}
         onAction={
           heldAt === null
             ? chosen === null
               ? undefined
-              : () => {
-                  setHeldAt(Date.now());
-                  setClock(Date.now());
-                  setAsked(false);
-                }
+              : hold
             : lapsed
               ? () => setHeldAt(null)
               : payReady(pay)
-                ? () => Alert.alert('Payments aren’t on yet', 'Orbit isn’t taking payments yet, so nothing was charged.')
+                ? () => {
+                    setSaid(true);
+                    AccessibilityInfo.announceForAccessibility(NOT_PAYING); // focus stays on the bar
+                    requestAnimationFrame(() => scroll.current?.scrollToEnd());
+                  }
                 : () => router.push('/pay')
         }
+        // Held, the way you pay on the bar's left, as on the Tickets sheet; a tap opens How to pay.
+        pay={heldAt !== null && !lapsed ? { mark: <PayMark pay={pay} />, label: payLabel(pay), onPress: () => router.push('/pay') } : undefined}
         onHeight={setBar}
       />
     </Sheet>
@@ -170,12 +215,13 @@ export default function SlotSheet() {
 }
 
 const styles = StyleSheet.create({
-  list: { gap: space.small + 4 },
+  list: { gap: space.big },
   grow: { flex: 1, minWidth: 0 },
-  heading: { marginTop: space.small, fontFamily: font.headline, fontSize: 18, color: color.text },
+  group: { gap: space.small },
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: space.small },
   row: { gap: space.small },
-  line: { marginTop: space.small, minHeight: 36, flexDirection: 'row', alignItems: 'center', gap: space.small },
-  label: { fontFamily: font.title, fontSize: 15, color: color.text },
+  line: { minHeight: 36, flexDirection: 'row', alignItems: 'center', gap: space.small },
+  label: { fontFamily: font.medium, fontSize: 12, color: color.secondary }, // a fact's label (src/fact.tsx)
+  value: { fontFamily: font.title, fontSize: 15, color: color.text },
   note: { fontFamily: font.text, fontSize: 13, lineHeight: 18, color: color.secondary },
 });

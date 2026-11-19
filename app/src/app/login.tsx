@@ -233,8 +233,12 @@ export default function Login() {
     about: { title: 'About you' },
   }[step.at];
 
+  // The two-answer questions are Orbit asking (Choice in src/sheet.tsx): the line under their title is its bubble.
+  const asking = step.at === 'whose' || AFTER.includes(step.at);
+  const say = step.at === 'whose' ? 'Numbers change hands. If this isn’t your account, start fresh.' : (head.note ?? '');
+
   return (
-    <Frame title={head.title} note={head.note} error={error}>
+    <Frame title={head.title} note={asking ? undefined : head.note} error={error}>
       {step.at === 'start' && (
         <Start
           busy={busy}
@@ -259,15 +263,15 @@ export default function Login() {
       )}
       {step.at === 'phone' && <Phone busy={busy} onPhone={(e164) => void send({ kind: 'phone', e164 }, step.signup)} />}
       {step.at === 'whose' && (
-        <Choice yes="Yes, sign in" no="Not me, start fresh" busy={busy} onYes={() => void confirm(step.ticket, true)} onNo={() => void confirm(step.ticket, false)}>
+        <Choice yes="Yes, sign in" no="Not me, start fresh" say={say} busy={busy} onYes={() => void confirm(step.ticket, true)} onNo={() => void confirm(step.ticket, false)}>
           <Account name={step.name} since={step.since} />
         </Choice>
       )}
       {/* Both answers sign in: the number proved the account. */}
-      {step.at === 'link' && <Choice yes="Add email" no="Not now" busy={busy} onYes={() => addEmail(step.token)} onNo={advance} />}
-      {step.at === 'way' && <Choice yes={`Add ${NAMES[step.provider]}`} no="Not now" busy={busy} onYes={() => addWay(step.token)} onNo={advance} />}
-      {step.at === 'keep' && <Choice yes="Keep my account" no="Not now" busy={busy} onYes={() => void keep()} onNo={advance} />}
-      {step.at === 'passkey' && <Choice yes="Add a passkey" no="Not now" busy={busy} onYes={() => void offerPasskey()} onNo={advance} />}
+      {step.at === 'link' && <Choice yes="Add email" no="Not now" say={say} busy={busy} onYes={() => addEmail(step.token)} onNo={advance} />}
+      {step.at === 'way' && <Choice yes={`Add ${NAMES[step.provider]}`} no="Not now" say={say} busy={busy} onYes={() => addWay(step.token)} onNo={advance} />}
+      {step.at === 'keep' && <Choice yes="Keep my account" no="Not now" say={say} busy={busy} onYes={() => void keep()} onNo={advance} />}
+      {step.at === 'passkey' && <Choice yes="Add a passkey" no="Not now" say={say} busy={busy} onYes={() => void offerPasskey()} onNo={advance} />}
       {step.at === 'about' && <About name={name} busy={busy} onName={setName} onDone={(dob) => void create(step.signup, dob)} />}
     </Frame>
   );
