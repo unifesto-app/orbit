@@ -74,7 +74,7 @@ export default function Account() {
           </Group>
           {/* One of Orbit's own ads, after Your events (owner, 19 Nov 2026: "add one in account", "move it after your
               events"), 24 below it as an untitled group. */}
-          {orbitAds[0] && <OrbitAdStrip ad={orbitAds[0]} width={width - 40} style={styles.ad} />}
+          {orbitAds[0] && <OrbitAdStrip ad={orbitAds[0]} width={width - 40} style={styles.ad} symbols />}
 
           <Group title="Money">
             <Row icon="receipt" tone={TONE.green} label="Transactions" chevron onPress={go('/account/transactions')} />
