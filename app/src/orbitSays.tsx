@@ -9,9 +9,6 @@ import { Image, Keyboard, Pressable, StyleSheet, Text, View } from 'react-native
 
 import { color, font, groundAt, space, stoneAt } from './theme';
 
-/** What to ask Orbit, on the chat's welcome and on Search. */
-export const SUGGESTIONS = ['Comedy this weekend', 'Turf slots tonight', 'Free events near me', 'Hackathons this month'];
-
 /** Opens the chat, with `ask` typed in its field when given (src/app/chat.tsx reads it), the keyboard put away first. */
 export function askOrbit(ask?: string) {
   Keyboard.dismiss();

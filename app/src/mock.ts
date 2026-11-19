@@ -160,20 +160,6 @@ export const previews = {
 // Change the key to see another state on the phone; Metro reloads it.
 export const viewer: Viewer = previews.signedIn;
 
-/**
- * Orbit's own ads, as short strips in the middle of Home (owner, 19 Nov 2026: "its orbit ads like card promotion or any
- * other promotion, full width, less height banners", "it may be anything"). Never a host's boost. `bg` is #rrggbb; the
- * words take Stone or Charcoal to suit it. `href` is where a tap goes; none, and it's only read.
- * ponytail: written here, and the offers are made up; staff set real ones once ads reach the API.
- */
-export type OrbitAd = { id: string; kicker: string; title: string; line: string; bg: string; href?: string };
-export const orbitAds: OrbitAd[] = [
-  // Short: a strip gives its words about 190pt, so a title of about 20 letters and a line of about 28.
-  { id: 'card-offer', kicker: 'Card offer', title: '10% off with cards', line: 'Up to ₹150, till 30 Nov', bg: '#1D372A', href: '/account/payment' },
-  // Moss, a fill: Sage is the accent, never a button.
-  { id: 'first-slot', kicker: 'Play', title: 'First slot ₹200 off', line: 'Any turf, court or café', bg: '#515F46', href: '/search' },
-];
-
 // What an event is like, as small cards on its page under About (owner, 19 Nov 2026: "add interest cards for events",
 // all four kinds): its category first (drawn from `category`), then these. Read from each event's About.
 // ponytail: written here by hand; the host picks them on the event once events reach the API.

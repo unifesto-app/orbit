@@ -18,7 +18,8 @@ import { Carousel, type CarouselSlide } from '../../home/Carousel';
 import { DARK_TINT, Glass } from '../../glass';
 import { planHome, type Viewer } from '../../home/layout';
 import { Icon } from '../../icons';
-import { type Event, type Host, events, hosts, now, orbitAds } from '../../mock';
+import { useAds } from '../../content';
+import { type Event, type Host, events, hosts, now } from '../../mock';
 import { useUnread } from '../../inboxStore';
 import { OrbitAdStrip } from '../../orbitAd';
 import { OrbitSays } from '../../orbitSays';
@@ -78,6 +79,7 @@ export default function Home() {
   const boosted = (e: Event) => isPromoted(e, hostOf(e.hostId));
   const plan = planHome(v, events, hosts.map((h) => ({ ...h, tile: tileFor(h.id) })), now, boosted);
   const ticketLabel = (id: string) => v.tickets?.find((t) => t.eventId === id)?.label ?? '';
+  const ads = useAds('home'); // Orbit's own live strips, from Galaxy's App content (src/content.ts)
 
   const headerTop = insets.top + 4;
   const posterTop = headerTop + HEADER + 4;
@@ -188,7 +190,7 @@ export default function Home() {
         )}
 
         {/* Orbit's own ads, as strips at two breaks in the middle, apart from the promoted card above. */}
-        {orbitAds[0] && <OrbitAdStrip ad={orbitAds[0]} width={width - 40} />}
+        {ads[0] && <OrbitAdStrip ad={ads[0]} width={width - 40} />}
 
         {!plan.hostsFirst && plan.hosts.length > 0 && (
           <>
@@ -198,7 +200,7 @@ export default function Home() {
         )}
 
         {/* Only with All events under it, so the two strips never sit back to back at the end of Home. */}
-        {plan.all.length > 0 && orbitAds[1] && <OrbitAdStrip ad={orbitAds[1]} width={width - 40} />}
+        {plan.all.length > 0 && ads[1] && <OrbitAdStrip ad={ads[1]} width={width - 40} />}
 
         {plan.all.length > 0 && (
           <>

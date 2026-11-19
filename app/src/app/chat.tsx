@@ -39,8 +39,8 @@ import Svg, { Ellipse, G } from 'react-native-svg';
 import { Photo as AccountPhoto } from '../account/profile';
 import { BarGlass, Glass, useAccessibility } from '../glass';
 import { Icon } from '../icons';
-import { SUGGESTIONS } from '../orbitSays';
 import { markChatUsed } from '../chatUsed';
+import { useContent } from '../content';
 import { CircleButton } from '../rows';
 import { useSession } from '../session';
 import { RINGS } from '../splash/motion';
@@ -428,8 +428,9 @@ function Info({
 }
 
 // Orbit's welcome, the first bubble, and things to ask as outlined bubbles on your side, sent with a tap; they go once
-// you've said something (`onPick` unset).
+// you've said something (`onPick` unset). The things to ask are staff's, from Galaxy's App content (src/content.ts).
 function Welcome({ onPick }: { onPick?: (text: string) => void }) {
+  const { asks } = useContent();
   return (
     <>
       <Said mine={false}>
@@ -440,7 +441,7 @@ function Welcome({ onPick }: { onPick?: (text: string) => void }) {
       </Said>
       {onPick && (
         <View style={styles.asks}>
-          {SUGGESTIONS.map((s) => (
+          {asks.map((s) => (
             <Pressable key={s} onPress={() => onPick(s)} accessibilityRole="button" style={[styles.bubble, styles.ask]}>
               <Text style={styles.bubbleText}>{s}</Text>
             </Pressable>
