@@ -38,6 +38,19 @@ export default function Home() {
             <Count />
           </Suspense>
         </div>
+        {/* Who it's for, so the right people see themselves and the rest pass (owner, 19 Nov 2026).
+            After the form on a phone (owner: "Form first on phone"), under the line on a laptop. */}
+        <section className={styles.fit} aria-labelledby="fit">
+          <h2 id="fit" className={styles.title}>
+            You’ll probably love Orbit if…
+          </h2>
+          <ul>
+            {FIT.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+          <p>If the usual is enough for you, Orbit probably isn’t. That’s fine too.</p>
+        </section>
       </section>
 
       <footer className={styles.foot}>
@@ -55,6 +68,14 @@ export default function Home() {
     </main>
   );
 }
+
+const FIT = [
+  "You’ve said “there’s nothing to do this weekend” and didn’t quite believe it.",
+  "You usually hear about the good stuff a day late.",
+  "You’d try a jam, a comedy night or a hackathon with people you haven’t met yet.",
+  "You’d rather book the turf than plan it over twenty messages.",
+  "You want what’s on near you in one place, not spread across ten WhatsApp groups.",
+];
 
 // Who Orbit is, for search engines and AI answers (schema.org).
 const LD = {
