@@ -15,12 +15,14 @@ import {
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BarGlass, Glass } from '../../glass';
-import { type Event, type Host, events, hosts, now } from '../../mock';
+import { type Event, type Host, events, hosts, now, orbitAds } from '../../mock';
+import { OrbitAdStrip } from '../../orbitAd';
 import { CategoryGrid } from '../../categories';
 import { tileFor } from '../../kinds';
 import { isNewHost, promoteOne } from '../../labels';
@@ -31,6 +33,7 @@ import { color, font, space } from '../../theme';
 const BAR_BOTTOM = 12; // the glass bar's padding under the chips
 export default function Search() {
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const [q, setQ] = useState('');
   const [when, setWhen] = useState<When>();
   const [free, setFree] = useState(false);
@@ -96,6 +99,8 @@ export default function Search() {
             <CategoryGrid onPress={setCategory} />
             <EventSection title="People’s choice" events={choice} hostOf={hostOf} />
             <EventSection title="This weekend" events={weekend} hostOf={hostOf} onMore={() => setWhen('weekend')} />
+            {/* One of Orbit's own ads, before the places to play (owner, 19 Nov 2026: "add one strip in search"). */}
+            {orbitAds[1] && <OrbitAdStrip ad={orbitAds[1]} width={width - 40} />}
             {places.length > 0 && (
               <>
                 <CenteredHeading title="Places to play" />

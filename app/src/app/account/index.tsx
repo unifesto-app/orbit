@@ -12,10 +12,12 @@
 // Cards hold text only. Log out confirms first; Delete account opens its own screen with what goes and what blocks it.
 import Constants from 'expo-constants';
 import { type Href, router } from 'expo-router';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { Alert, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import { Group, Page, Panel, Pill, Row, TONE } from '../../account/kit';
 import { ProfileHead, useFollows } from '../../account/profile';
+import { orbitAds } from '../../mock';
+import { OrbitAdStrip } from '../../orbitAd';
 import { day } from '../../account/rules';
 import { keepAccount, needsAccount, signOut, useSession, useViewer } from '../../session';
 import { color, font, space } from '../../theme';
@@ -24,6 +26,7 @@ import { Wordmark } from '../../wordmark';
 const go = (href: Href) => () => router.push(href);
 export default function Account() {
   const viewer = useViewer(); // signed in or out on this phone (src/session.ts)
+  const { width } = useWindowDimensions();
   const due = useSession()?.me.deletionDue; // set to be deleted: Keep my account in place of Delete account
   const following = useFollows().count; // the profile's count, read here so it's ready when the profile opens
   const logOut = () =>
@@ -69,6 +72,9 @@ export default function Account() {
             <Row icon="following" tone={TONE.violet} label="Following" chevron onPress={go('/account/following')} />
             <Row icon="history" tone={TONE.cyan} label="History" chevron onPress={go('/account/history')} />
           </Group>
+          {/* One of Orbit's own ads, after Your events (owner, 19 Nov 2026: "add one in account", "move it after your
+              events"), 24 below it as an untitled group. */}
+          {orbitAds[0] && <OrbitAdStrip ad={orbitAds[0]} width={width - 40} style={styles.ad} />}
 
           <Group title="Money">
             <Row icon="receipt" tone={TONE.green} label="Transactions" chevron onPress={go('/account/transactions')} />
@@ -123,6 +129,7 @@ export default function Account() {
 }
 
 const styles = StyleSheet.create({
+  ad: { marginTop: space.big },
   head: { marginHorizontal: 20, alignItems: 'center' },
   name: { marginTop: space.small + 4, fontFamily: font.headline, fontSize: 22, lineHeight: 28, color: color.text },
   headButtons: { marginTop: space.small + 4, flexDirection: 'row', gap: space.small },

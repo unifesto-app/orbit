@@ -11,7 +11,7 @@ import Reanimated, {
 } from 'react-native-reanimated';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Circle, Defs, Ellipse, G, LinearGradient, Rect, Stop } from 'react-native-svg';
+import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import { past as history, ticketFor } from '../../account/data';
 import { Pill } from '../../account/kit';
@@ -19,7 +19,8 @@ import { Carousel, type CarouselSlide } from '../../home/Carousel';
 import { BarGlass, Glass } from '../../glass';
 import { planHome, type Viewer } from '../../home/layout';
 import { Icon } from '../../icons';
-import { type Event, type Host, type OrbitAd, events, hosts, now, orbitAds } from '../../mock';
+import { type Event, type Host, events, hosts, now, orbitAds } from '../../mock';
+import { OrbitAdStrip } from '../../orbitAd';
 import { refreshPlace, usePlace } from '../../place';
 import { fromPricePaise, meetups, perHour, tileFor, venues } from '../../kinds';
 import { promoteOne } from '../../labels';
@@ -615,46 +616,6 @@ function AdBanner({ event: e, host, width }: { event: Event; host: Host; width: 
   );
 }
 
-// Orbit's own ad (owner, 19 Nov 2026: "its orbit ads like card promotion or any other promotion, full width, less height
-// banners", "it may be anything"): a short strip, three times as wide as it's tall, in the ad's own colour, its words
-// in Stone or Charcoal to suit it, two tilted crossing orbits with a pearl at the right (the kit's orbits, never
-// bullseye rings). Opens its link, if it has one. Not a host's boost, so no Promoted.
-function OrbitAdStrip({ ad, width }: { ad: OrbitAd; width: number }) {
-  const inner = width - 2 * FRAME;
-  const tall = Math.round(inner / 3);
-  const ink = darkInkOn(ad.bg) ? groundAt(1) : color.text;
-  const cx = inner - tall * 0.6;
-  const cy = tall / 2;
-  return (
-    <Pressable
-      disabled={!ad.href}
-      onPress={() => ad.href && router.push(ad.href)}
-      accessibilityRole={ad.href ? 'button' : undefined}
-      accessibilityLabel={`${ad.kicker}. ${ad.title}. ${ad.line}`}
-      style={({ pressed }) => [styles.ad, pressed && styles.pressed]}>
-      <Glass style={[styles.gridRim, { width }]}>
-        <View style={[styles.strip, { height: tall, backgroundColor: ad.bg }]}>
-          <Svg style={StyleSheet.absoluteFill} width={inner} height={tall} pointerEvents="none">
-            {[-22, 26].map((turn) => (
-              <G key={turn} rotation={turn} origin={`${cx}, ${cy}`}>
-                <Ellipse cx={cx} cy={cy} rx={tall * 0.62} ry={tall * 0.2} stroke={ink} strokeOpacity={0.24} strokeWidth={1.5} fill="none" />
-              </G>
-            ))}
-            <G rotation={-22} origin={`${cx}, ${cy}`}>
-              <Circle cx={cx + tall * 0.62} cy={cy} r={4.5} fill={ink} fillOpacity={0.6} />
-            </G>
-          </Svg>
-          <View style={styles.stripText}>
-            <Text style={[styles.stripKicker, { color: ink }]} numberOfLines={1}>{ad.kicker}</Text>
-            <Text style={[styles.stripTitle, { color: ink }]} numberOfLines={1}>{ad.title}</Text>
-            <Text style={[styles.stripLine, { color: ink }]} numberOfLines={2}>{ad.line}</Text>
-          </View>
-        </View>
-      </Glass>
-    </Pressable>
-  );
-}
-
 function GridCard({ event: e, width }: { event: Event; width: number }) {
   return (
     <Pressable onPress={() => router.push(`/event/${e.id}`)} accessibilityRole="button">
@@ -754,12 +715,6 @@ const styles = StyleSheet.create({
   adMarkText: { fontFamily: font.medium, fontSize: 11, color: color.text },
   adTitle: { fontFamily: font.title, fontSize: 18, lineHeight: 23, color: color.text },
   adMeta: { flexShrink: 1, fontFamily: font.text, fontSize: 13, color: stoneAt(0.8) },
-  // Orbit's strip: a text card's 16 inside; the words keep clear of the orbits on the right.
-  strip: { borderRadius: FACE, overflow: 'hidden', paddingHorizontal: TEXT_PAD, justifyContent: 'center' },
-  stripText: { maxWidth: '68%', gap: 2 },
-  stripKicker: { fontFamily: font.medium, fontSize: 11, opacity: 0.75 },
-  stripTitle: { fontFamily: font.title, fontSize: 17, lineHeight: 22 },
-  stripLine: { fontFamily: font.text, fontSize: 12, lineHeight: 16, opacity: 0.8 },
   gridMeta: { fontFamily: font.text, fontSize: 11, color: color.secondary },
   gridTitle: { fontFamily: font.title, fontSize: 13, lineHeight: 17, color: color.text },
   gridPrice: { fontFamily: font.price, fontSize: 13, color: color.text },
