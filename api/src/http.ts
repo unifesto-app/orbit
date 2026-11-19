@@ -1,3 +1,4 @@
+import { isIPv6 } from "node:net";
 import type { Context } from "hono";
 import { createMiddleware } from "hono/factory";
 import { getConnInfo } from "@hono/node-server/conninfo";
@@ -86,6 +87,17 @@ export function clientIp(c: Context) {
     return "unknown"; // in tests, which call the app directly
   }
 }
+
+// An IPv6 address as its eight groups, so the first four name its /64.
+const expand = (ip: string) => {
+  const [head, tail = ""] = ip.split("::");
+  const a = head ? head.split(":") : [];
+  const b = tail ? tail.split(":") : [];
+  return [...a, ...Array<string>(Math.max(0, 8 - a.length - b.length)).fill("0"), ...b];
+};
+// One address's bucket: one IPv6 network (a /64, what one home or phone gets) counts as one address.
+export const bucketOf = (ip: string) => (isIPv6(ip) ? expand(ip).slice(0, 4).join(":") : ip);
+export const ipOf = (c: Context) => clientIp(c).replace(/^::ffff:(?=\d+\.)/i, ""); // an IPv4 address as Node may show it
 
 // Messages to people: push, inbox, email or WhatsApp, chosen by the Notifications flow.
 // ponytail: nothing is sent yet; the server logs them and tests collect them.

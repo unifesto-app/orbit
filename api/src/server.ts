@@ -5,6 +5,7 @@ import { codeSender, emailSender, type Mail, sesClient, sesMail, whatsappSender 
 import { readContact } from "@orbit/contract";
 import type { ProofConfig } from "./auth/proof.ts";
 import { memoryStore, redisStore } from "./auth/store.ts";
+import { pruneVisits } from "./visits.ts";
 import { ways, type WaysConfig } from "./auth/ways.ts";
 import { connect, migrateDb } from "./db/index.ts";
 import type { Notify } from "./http.ts";
@@ -139,6 +140,9 @@ console.log(
 
 // Day-30 account deletions. ponytail: an hourly sweep until the job runner runs it nightly at 03:30 IST.
 setInterval(() => runDeletions(db, notify, Date.now(), revokeApple, media).catch((e) => console.error("[deletions]", e)), 60 * 60 * 1000).unref();
+
+// Visit log rows past the privacy page's 180 days.
+setInterval(() => pruneVisits(db, Date.now()).catch((e) => console.error("[visits]", e)), 60 * 60 * 1000).unref();
 
 serve({ fetch: createApp({ db, store, send, notify, secret, codes, ways: waysConfig, media, proof, mail }).fetch, port }, (info) => {
   console.log(`orbit-api listening on :${info.port}`);

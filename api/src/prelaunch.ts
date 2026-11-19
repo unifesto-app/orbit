@@ -1,4 +1,4 @@
-import { isIP, isIPv6 } from "node:net";
+import { isIP } from "node:net";
 import { count, desc } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -8,7 +8,8 @@ import { checkCode, OPEN, RESEND_AFTER, sendCode } from "./auth/codes.ts";
 import { proofs } from "./auth/proof.ts";
 import { welcomeEmail } from "./prelaunch-email.ts";
 import { auditLog, interest } from "./db/schema.ts";
-import { clientIp, fail, invalid, listPage, parse, signedIn } from "./http.ts";
+import { bucketOf, fail, invalid, ipOf, listPage, parse, signedIn } from "./http.ts";
+import { markVisit } from "./visits.ts";
 import { requireFeature, type StaffEnv } from "./roles/access.ts";
 
 // Prelaunch interest: the landing page's waitlist (a name, a WhatsApp number a code proves, a date of birth and the
@@ -21,14 +22,6 @@ const WAITLIST = "waitlist:";
 
 const PER_MINUTE = 10; // sign-ups from one address a minute: room for a shared Wi-Fi, not for filling the table
 
-// An IPv6 address as its eight groups, so the first four name its /64.
-const expand = (ip: string) => {
-  const [head, tail = ""] = ip.split("::");
-  const a = head ? head.split(":") : [];
-  const b = tail ? tail.split(":") : [];
-  return [...a, ...Array<string>(Math.max(0, 8 - a.length - b.length)).fill("0"), ...b];
-};
-
 export function prelaunchRoutes({ db, store, send, secret, now = Date.now, codes = OPEN, proof, mail }: Deps) {
   const app = new Hono<StaffEnv>();
   const total = async () => (await db.select({ n: count() }).from(interest))[0]!.n;
@@ -36,9 +29,6 @@ export function prelaunchRoutes({ db, store, send, secret, now = Date.now, codes
   // (TURNSTILE_SECRET), a waitlist send without a good token is refused, whatever PROOF says: PROOF=enforce also governs
   // the app's iPhone and Android proofs, and the waitlist shouldn't wait for those (owner, 18 Nov 2026: "set it up").
   const proven = proof ? proofs(proof.turnstile ? { ...proof, enforce: true } : proof, store) : null;
-  // One address's bucket: one IPv6 network (a /64, what one home or phone gets) counts as one address.
-  const bucketOf = (ip: string) => (isIPv6(ip) ? expand(ip).slice(0, 4).join(":") : ip);
-  const ipOf = (c: Context) => clientIp(c).replace(/^::ffff:(?=\d+\.)/i, ""); // an IPv4 address as Node may show it
   const cap = bodyLimit({ maxSize: 8 * 1024, onError: (c) => invalid(c) });
   const phoneOf = (c: Context, text: string) => {
     const p = readPhone(text);
@@ -61,7 +51,10 @@ export function prelaunchRoutes({ db, store, send, secret, now = Date.now, codes
     if (r) return fail(c, 403, "unproven", "We couldn't check you’re a person. If a content blocker is on, allow this page, then try again.");
     // The opening gate is sign-in's (who may sign in yet); the waitlist is for everyone. The daily cap still holds.
     const sent = await sendCode(store, send, secret, { kind: "phone", e164: phone }, ipOf(c), { ...codes, openTo: null }, now(), WAITLIST);
-    if (sent.ok) return c.json({ retryIn: RESEND_AFTER });
+    if (sent.ok) {
+      void markVisit(db, b.view, "code", now()); // never waits: a code send needs no database
+      return c.json({ retryIn: RESEND_AFTER });
+    }
     switch (sent.error) {
       case "tooSoon":
         return fail(c, 429, "tooSoon", `Wait ${RESEND_AFTER} seconds, then send a new code.`, { retryIn: RESEND_AFTER });
@@ -98,6 +91,7 @@ export function prelaunchRoutes({ db, store, send, secret, now = Date.now, codes
       .values({ name: b.name, phone, email: b.email, dob: b.dob, features: b.features, ip: isIP(ip) ? ip : null, ...b.meta, createdAt: new Date(now()) })
       .onConflictDoNothing({ target: interest.phone })
       .returning({ id: interest.id });
+    if (row) await markVisit(db, b.view, "joined", now());
     // The welcome email, once, for a new entry only. It never holds up or fails the join: a send that fails is logged.
     if (row && mail)
       void Promise.resolve()

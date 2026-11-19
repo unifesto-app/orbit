@@ -4,24 +4,13 @@ import Script from "next/script";
 import { useActionState, useEffect, useRef, useState } from "react";
 import { type Details, join, sendCode, type Step } from "./actions";
 import styles from "./page.module.css";
+import { formStarted, pageFacts, viewId } from "./visit";
 
 // Two steps and nothing else (owner, 18 Nov 2026: "very simple for user to complete it"): the details with the features
 // they'd love (optional), then the WhatsApp code, which sends itself once six digits are in. `features` comes from the
 // page, so the contract's schemas stay off the browser.
 
 const FRESH = 9 * 60_000; // a code lasts 10 minutes (api auth/codes.ts); one sent within 9 is still worth typing
-
-// What the page can see of the visit: where it came from, the link's utm_ tags, the time zone, language and screen.
-function visit() {
-  const utm = Object.fromEntries([...new URLSearchParams(location.search)].filter(([k]) => k.startsWith("utm_")).slice(0, 10).map(([k, v]) => [k.slice(0, 40), v.slice(0, 200)]));
-  return JSON.stringify({
-    referrer: document.referrer.slice(0, 1000) || undefined,
-    utm: Object.keys(utm).length ? utm : undefined,
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone?.slice(0, 64),
-    language: navigator.language?.slice(0, 35),
-    screen: `${screen.width}x${screen.height}@${Math.round(devicePixelRatio * 100) / 100}`.slice(0, 20),
-  });
-}
 
 const digits = (phone: string) => phone.replace(/\D/g, "").slice(-10);
 const shown = (phone: string) => `+91 ${digits(phone).slice(0, 5)} ${digits(phone).slice(5)}`; // "+91 98765 43210"
@@ -100,6 +89,7 @@ export function Waitlist({ features, turnstile }: { features: [string, string][]
           return r.at === "done" ? r : { ...r, sent };
         }
         data.set("turnstile", (await check.take()) ?? "");
+        data.set("view", viewId() ?? "");
         return stamp(await sendCode(data), sent);
       }
       const intent = data.get("intent");
@@ -107,9 +97,11 @@ export function Waitlist({ features, turnstile }: { features: [string, string][]
       if (intent === "again") {
         const again = asForm(prev.form);
         again.set("turnstile", (await check.take()) ?? "");
+        again.set("view", viewId() ?? "");
         return stamp(await sendCode(again), sent);
       }
-      data.set("visit", visit());
+      data.set("visit", JSON.stringify(pageFacts()));
+      data.set("view", viewId() ?? "");
       const r = await join(prev.form, data);
       return r.at === "done" ? r : { ...r, sent };
     } catch {
@@ -131,7 +123,7 @@ export function Waitlist({ features, turnstile }: { features: [string, string][]
     );
 
   return (
-    <form action={act} className={styles.form}>
+    <form action={act} className={styles.form} onFocus={formStarted}>
       <div className={styles.track} aria-hidden="true">
         <span style={{ width: s.at === "details" ? "50%" : "100%" }} />
       </div>

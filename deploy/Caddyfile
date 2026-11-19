@@ -73,6 +73,9 @@ www.heyorbit.in {
 
 api.heyorbit.in {
 	import cf_tls
+	# Visits come only through the site's own /v (web app/v/route.ts), which reaches the API inside Docker and sets the
+	# place and browser from the request; from outside, the API would take a stranger's word for them.
+	respond /public/visit 404
 	reverse_proxy orbit-api:3000 {
 		header_up X-Forwarded-For {client_ip}
 	}

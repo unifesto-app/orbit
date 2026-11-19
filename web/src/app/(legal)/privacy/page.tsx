@@ -44,6 +44,20 @@ export default function Privacy() {
         for up to 180 days, to keep the site secure. We don’t ask for payment details, and we don’t use advertising or
         analytics cookies.
       </p>
+      <p>What we count from every visit, whether or not you join:</p>
+      <ul>
+        <li>
+          The page you open, where you came from (as a name like Instagram or LinkedIn), the kind of device and browser,
+          and the country, region and city our network provider reads from your IP address.
+        </li>
+        <li>How long the page was on screen, how fast it loaded, and whether you started the form, got a code and joined.</li>
+      </ul>
+      <p>
+        We count visits to see which links bring people and how the site works for them. We use no cookies, and we don’t
+        keep your IP address, name or number with these counts. To count a visitor once a day, we make a code from your
+        network address and browser using a random key that changes every day; the key is deleted when its day ends, so
+        the code can’t be made again afterwards. We keep these counts for up to 180 days.
+      </p>
 
       <h2>Why we keep it</h2>
       <ul>
@@ -52,6 +66,7 @@ export default function Privacy() {
         <li>To send you one email when you join, and to tell you by WhatsApp or email when Orbit opens.</li>
         <li>To decide what to build first and where, from the features people pick.</li>
         <li>To keep the waitlist free of bots and abuse.</li>
+        <li>To see which pages and links bring visitors, and to make the site faster.</li>
       </ul>
       <p>We never sell your data or use it for advertising.</p>
 

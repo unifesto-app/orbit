@@ -1,0 +1,86 @@
+/* Analytics pages (Prelaunch, Website) and their charts (charts.tsx). Recharts draws SVG whose attributes can't read CSS variables, so its colours are set here,
+   from Galaxy's tokens: Sage bars, recessive grid and axis text. */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--space-m);
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xxs);
+}
+
+.tileValue {
+  color: var(--color-text-heading-default);
+  font-family: var(--font-family-heading);
+  font-size: 28px;
+  line-height: 34px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+  gap: var(--space-l);
+  align-items: start;
+}
+
+.chart {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+}
+
+.chart :global(.recharts-rectangle) {
+  fill: var(--color-primary-600);
+}
+
+.chart :global(.recharts-rectangle.recharts-tooltip-cursor) {
+  fill: rgb(var(--orbit-stone-rgb) / 0.06);
+}
+
+.chart :global(.recharts-cartesian-grid line) {
+  stroke: var(--color-border-divider-default);
+}
+
+.chart :global(.recharts-cartesian-axis-tick-value),
+.tick {
+  fill: var(--color-text-body-secondary);
+  font-family: var(--font-family-base);
+  font-size: 12px;
+}
+
+.chart :global(.recharts-label-list text) {
+  fill: var(--color-text-body-default);
+  font-family: var(--font-family-base);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Recharts' keyboard layer makes each chart focusable: a ring for the keyboard, none for a click. */
+.chart :global(.recharts-surface:focus:not(:focus-visible)) {
+  outline: none;
+}
+
+.chart :global(.recharts-surface:focus-visible) {
+  outline: 2px solid var(--color-border-item-focused);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.empty,
+.note {
+  color: var(--color-text-body-secondary);
+}

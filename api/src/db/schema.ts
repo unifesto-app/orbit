@@ -434,3 +434,30 @@ export const interest = pgTable("interest", {
   screen: text("screen"),
   createdAt: at("created_at").notNull().defaultNow(),
 });
+
+// The site's own visit log (contract/src/visit.ts): one row per page view, keyed by the browser's view id. The visitor is
+// a code from a salt that changes daily; no address is kept. Rows older than 180 days are deleted (server.ts).
+export const visit = pgTable(
+  "visit",
+  {
+    id: uuid("id").primaryKey(),
+    at: at("at").notNull(),
+    visitor: text("visitor").notNull(),
+    path: text("path").notNull(),
+    source: text("source").notNull(),
+    app: text("app"),
+    os: text("os"),
+    country: text("country"),
+    region: text("region"),
+    city: text("city"),
+    ms: integer("ms"),
+    lcp: integer("lcp"),
+    inp: integer("inp"),
+    ttfb: integer("ttfb"),
+    cls: doublePrecision("cls"),
+    started: boolean("started").notNull().default(false),
+    code: boolean("code").notNull().default(false),
+    joined: boolean("joined").notNull().default(false),
+  },
+  (t) => [index("visit_at_idx").on(t.at)],
+);

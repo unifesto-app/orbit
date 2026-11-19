@@ -1,7 +1,8 @@
 // Galaxy's side navigation. Sections are the v1 "Platform admins" rows in
 // docs/context/artifacts/orbit-rebuild-plan.md (section 4), plus the admin
 // sides of custom domains and the support queue from the Hosts table.
-// Broadcasts are Later and traffic/OTA screens are dropped, so they're absent.
+// Broadcasts are Later and the app's traffic/OTA screens are dropped, so they're absent; the landing page's own visits
+// are under Website (owner, 19 Nov 2026: "website and pages analytics in galaxy web").
 // Pages that aren't built yet land on not-found.tsx.
 
 // Text only, as the AWS console's side nav is (owner, 17 Nov 2026: "dont use icons always. same like aws").
@@ -21,6 +22,8 @@ export const sections: { title: string; items: NavItem[] }[] = [
       { label: "Events", href: "/events" },
       // Coming Soon's waitlist until launch (owner, 17 Nov 2026: "create a page in galaxy web - prelaunch").
       { label: "Prelaunch", href: "/prelaunch" },
+      // Visits to heyorbit.in from the site's own log (owner, 19 Nov 2026: "Our own visit log").
+      { label: "Website", href: "/website" },
     ],
   },
   {

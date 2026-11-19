@@ -43,7 +43,8 @@ export async function sendCode(data: FormData): Promise<Step> {
   // Only the name, email or date changed and the last code is still good (waitlist.tsx): checked, nothing sent.
   if (data.get("reuse")) return { at: "code", form };
   const token = String(data.get("turnstile") ?? "");
-  const r = await call("/public/interest/code", { phone, proof: token ? { kind: "web", token } : undefined });
+  const view = String(data.get("view") ?? "") || undefined; // the page view, for the visit log (contract visit.ts)
+  const r = await call("/public/interest/code", { phone, proof: token ? { kind: "web", token } : undefined, view });
   if (!r.ok) return data.get("again") ? { at: "code", form, error: r.error } : back(r.error);
   return { at: "code", form, note: data.get("again") ? "New code sent." : undefined };
 }
@@ -67,7 +68,7 @@ export async function join(form: Details, data: FormData): Promise<Step> {
     userAgent: header("user-agent", 500),
     acceptLanguage: header("accept-language", 200),
   };
-  const r = await call("/public/interest", { ...form, code, meta });
+  const r = await call("/public/interest", { ...form, code, meta, view: String(data.get("view") ?? "") || undefined });
   if (r.ok) {
     refresh(); // the count goes up
     return { at: "done", name: form.name.split(/\s+/)[0]!, email: form.email.toLowerCase() };

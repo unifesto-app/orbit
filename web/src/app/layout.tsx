@@ -4,6 +4,7 @@ import { palette } from "@orbit/tokens";
 import "@orbit/tokens/tokens.css";
 import "./globals.css";
 import { DESCRIPTION, OPEN_GRAPH, SITE, X_HANDLE } from "./site";
+import { Visit } from "./visit";
 
 // The kit's three typefaces: Plus Jakarta Sans for display, titles and buttons; DM Sans for text; Sacramento for asides.
 const display = Plus_Jakarta_Sans({ variable: "--font-display", subsets: ["latin"] });
@@ -29,7 +30,10 @@ export const viewport: Viewport = { themeColor: palette.charcoal };
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en-IN" className={`${display.variable} ${text.variable} ${script.variable}`}>
-      <body>{children}</body>
+      <body>
+        <Visit />
+        {children}
+      </body>
     </html>
   );
 }

@@ -8,6 +8,7 @@ import { hostsRoutes } from "./hosts/routes.ts";
 import { mediaRoutes } from "./media.ts";
 import { pmRoutes } from "./pm/routes.ts";
 import { prelaunchRoutes } from "./prelaunch.ts";
+import { visitRoutes } from "./visits.ts";
 import { rolesRoutes } from "./roles/routes.ts";
 
 export const VERSION = "0.0.0";
@@ -32,6 +33,7 @@ export function createApp(deps?: Deps) {
     app.route("/", mediaRoutes(deps.media));
     app.route("/", pmRoutes(deps));
     app.route("/", prelaunchRoutes(deps));
+    app.route("/", visitRoutes(deps));
   }
 
   // An unknown path looks the same as a Galaxy route someone can't use.
