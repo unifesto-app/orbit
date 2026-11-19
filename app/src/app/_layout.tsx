@@ -74,6 +74,11 @@ export default function RootLayout() {
           {/* The event's FAQ and terms ("add Event FAQ & Terms & Conditions Modals"). */}
           <Stack.Screen name="faq/[slug]" options={MODAL} />
           <Stack.Screen name="terms/[slug]" options={MODAL} />
+          {/* Booking: an event's tickets, and a slot at a place to play. */}
+          <Stack.Screen name="book/[slug]" options={MODAL} />
+          <Stack.Screen name="slot/[venue]" options={MODAL} />
+          {/* One thing inside a fest, from its page's Inside the fest. */}
+          <Stack.Screen name="fest/[fest]/[item]" options={MODAL} />
           {/* Legal, from Account: every legal page in one sheet. */}
           <Stack.Screen name="legal" options={MODAL} />
           {/* The sign-in sheet (User flow), over whatever needed an account, so closing it lands back there. */}

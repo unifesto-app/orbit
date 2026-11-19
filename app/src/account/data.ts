@@ -22,6 +22,7 @@ export const lists: List[] = [
 ];
 
 export const past: Past[] = [
+  { eventId: 'design-critique-18-nov', status: 'Went' },
   { eventId: 'campus-esports-cup', status: 'Refunded' },
   { eventId: 'open-mic-night-13-nov', status: 'Went' },
   { eventId: 'monsoon-hack', status: 'Went' },

@@ -43,7 +43,6 @@ function MockHost({ host }: { host: Host }) {
   const followers = followersLine(host.followers);
   // A place to play (Play: a Venue host with stations) adds what you can book, its hours, and the Book a slot bar.
   const venue = venues[host.id];
-  const signedIn = useSignedIn();
   const [bar, setBar] = useState(insets.bottom + 108); // room for the bar, a guess until measured
 
   return (
@@ -115,14 +114,14 @@ function MockHost({ host }: { host: Host }) {
           </>
         )}
       </Animated.ScrollView>
-      {/* Book a slot over "Starting from", the cheapest hour (Play doc). Signed out it asks to sign in first; picking the
-          station, day and hours, and the 10-minute hold while paying, come with booking. */}
+      {/* Book a slot over "Starting from", the cheapest hour (Play doc): the slot picker (src/app/slot/[venue].tsx), after
+          signing in when signed out. */}
       {venue && (
         <BookBar
           price={perHour(fromPricePaise(venue))}
           from
           action="Book a slot"
-          onAction={signedIn ? undefined : () => needsAccount()}
+          onAction={() => needsAccount(() => router.push(`/slot/${host.id}`))}
           onHeight={setBar}
         />
       )}

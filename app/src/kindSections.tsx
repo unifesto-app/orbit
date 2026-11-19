@@ -4,12 +4,13 @@
 // (owner, same day: "Loved it for all"), so nothing here gates it.
 import { router } from 'expo-router';
 import { Fragment } from 'react';
-import { StyleSheet, Text } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
 import { Fact, FactCard } from './fact';
-import { acts, fests, hackathons, jams, meetups, shows, withActs } from './kinds';
+import { acts, festItems, fests, hackathons, jams, meetups, shows, withActs } from './kinds';
 import type { Event } from './mock';
-import { hosts } from './mock';
+import { hosts, now } from './mock';
+import { Pill } from './account/kit';
 import { Section } from './rows';
 import { color, font } from './theme';
 
@@ -34,7 +35,8 @@ export function WithActs({ eventId }: { eventId: string }) {
   );
 }
 
-export function KindSections({ event: e, past }: { event: Event; past: boolean }) {
+// `went`: you were let in, which opens a meetup's room to you.
+export function KindSections({ event: e, past, went = false }: { event: Event; past: boolean; went?: boolean }) {
   switch (e.category) {
     case 'comedy':
       return <ShowFacts eventId={e.id} />;
@@ -43,7 +45,7 @@ export function KindSections({ event: e, past }: { event: Event; past: boolean }
     case 'hackathons':
       return <HackathonFacts eventId={e.id} past={past} />;
     case 'meetups':
-      return <MeetupFacts eventId={e.id} />;
+      return <MeetupFacts eventId={e.id} canJoin={past && went && isRoomOpen(e.startsAt)} />;
     case 'fests':
       return <FestFacts eventId={e.id} />;
     default:
@@ -131,8 +133,12 @@ function HackathonFacts({ eventId, past }: { eventId: string; past: boolean }) {
   );
 }
 
-// One line about the room (inRoom 15): no names or counts here. Join is on the ticket once you're let in (inRoom 3).
-function MeetupFacts({ eventId }: { eventId: string }) {
+// The room's open from the start until a week after (about three hours for the meetup, then 7 days; inRoom 7).
+const isRoomOpen = (startsAt: string) => now < Date.parse(startsAt) + 3 * 3_600_000 + 7 * 86_400_000;
+
+// One line about the room (inRoom 15): no names or counts here. Once you were let in, the room opens from here and from
+// Home's Thanks for coming (inRoom 3: you tap to join; nobody's in it till they do).
+function MeetupFacts({ eventId, canJoin }: { eventId: string; canJoin: boolean }) {
   if (!meetups[eventId]?.inRoom) return null;
   return (
     <>
@@ -141,18 +147,24 @@ function MeetupFacts({ eventId }: { eventId: string }) {
         <Fact
           label="inRoom"
           value="See who’s here once you’re checked in"
-          note="Join the room from your ticket and swap ways to reach each other. It stays open for a week after."
+          note="Join the room once you’re in and swap ways to reach each other. It stays open for a week after."
         />
+        {canJoin && (
+          <View style={styles.join}>
+            <Pill label="Open the room" size="small" onPress={() => router.push(`/room/${eventId}`)} />
+          </View>
+        )}
       </FactCard>
     </>
   );
 }
 
-// A fest is one event (events inside it are Later; Discover 14, 27): its kind, its days, what's on, and one tap to book
-// for the whole group (Booking 13).
+// A fest is one event on Home and Search: its kind, its days, what's on, one tap to book for the whole group (Booking
+// 13), then everything inside it by time, each opening its own sheet (src/app/fest/[fest]/[item].tsx).
 function FestFacts({ eventId }: { eventId: string }) {
   const f = fests[eventId];
   if (!f) return null;
+  const items = festItems[eventId] ?? [];
   return (
     <>
       <Section title="The fest" />
@@ -162,6 +174,22 @@ function FestFacts({ eventId }: { eventId: string }) {
         <Fact label="What’s on" value={f.highlights.join('\n')} />
         {f.oneClick && <Fact label="Booking" value="One tap books it" note="Add up to 10 friends by name. One QR lets you all in." />}
       </FactCard>
+      {items.length > 0 && (
+        <>
+          <Section title="Inside the fest" />
+          <FactCard>
+            {items.map((it) => (
+              <Fact
+                key={it.id}
+                label={`${it.when} · ${it.kind}`}
+                value={it.title}
+                note={it.where}
+                onPress={() => router.push(`/fest/${eventId}/${it.id}`)}
+              />
+            ))}
+          </FactCard>
+        </>
+      )}
     </>
   );
 }
@@ -169,4 +197,5 @@ function FestFacts({ eventId }: { eventId: string }) {
 const styles = StyleSheet.create({
   with: { marginTop: 2, fontFamily: font.medium, fontSize: 15, color: color.secondary, textAlign: 'center' },
   act: { color: color.text },
+  join: { alignItems: 'flex-start' },
 });

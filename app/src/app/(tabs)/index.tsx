@@ -12,7 +12,7 @@ import Reanimated, {
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ticketFor } from '../../account/data';
+import { past as history, ticketFor } from '../../account/data';
 import { Pill } from '../../account/kit';
 import { Carousel, type CarouselSlide } from '../../home/Carousel';
 import { BarGlass, Glass } from '../../glass';
@@ -20,9 +20,10 @@ import { planHome, type Viewer } from '../../home/layout';
 import { Icon } from '../../icons';
 import { type Event, type Host, events, hosts, now } from '../../mock';
 import { refreshPlace, usePlace } from '../../place';
-import { EventRow, Monogram, Poster, SEAT, SeatCard, Section, StatusDot, Tag } from '../../rows';
+import { meetups } from '../../kinds';
+import { EventRow, loveIt, Monogram, Poster, SEAT, SeatCard, Section, StatusDot, Tag } from '../../rows';
 import { bookAction, eventStatus, isNews } from '../../status';
-import { needsAccount, setFollowing, skipInterests, useViewer } from '../../session';
+import { needsAccount, setFollowing, skipInterests, useLoved, useViewer } from '../../session';
 import { around, color, darkInkOn, font, groundAt, radius, rim, space } from '../../theme';
 
 const HEADER = 44;
@@ -132,6 +133,10 @@ export default function Home() {
             )}
           </>
         )}
+
+        {/* Thanks for coming, for each event you were let in at in the last week, newest first (two at most). */}
+        {v.signedIn &&
+          thanksFor(now).map((e) => <Thanks key={e.id} event={e} host={hostOf(e.hostId)} />)}
 
         {plan.orbit.length > 0 && (
           <>
@@ -444,6 +449,38 @@ function HostCard({ host, width, following }: { host: Host; width: number; follo
 function slideAction(e: Event) {
   const book = bookAction(eventStatus(e, now), !e.pricePaise);
   return book.can ? book.label : 'View event';
+}
+
+// Thanks for coming (owner, 19 Nov 2026: "After-check-in bits"; Performer and inRoom docs): after an event you were let
+// in at, for a week. A meetup's card opens its room, to see who was there (inRoom 12); any other offers Loved it, and a
+// love offers to follow the acts (Performer 10). A text card, so words and a pill only.
+const WEEK = 3 * 3_600_000 + 7 * 86_400_000; // the event (about three hours), then a week
+function thanksFor(at: number): Event[] {
+  return history
+    .filter((h) => h.status === 'Went')
+    .map((h) => events.find((e) => e.id === h.eventId))
+    .filter((e): e is Event => !!e && at >= Date.parse(e.startsAt) && at < Date.parse(e.startsAt) + WEEK)
+    .sort((a, b) => Date.parse(b.startsAt) - Date.parse(a.startsAt))
+    .slice(0, 2);
+}
+function Thanks({ event: e, host }: { event: Event; host: Host }) {
+  const loved = useLoved(e.id);
+  const room = meetups[e.id]?.inRoom;
+  return (
+    <View style={[styles.card, styles.notice]}>
+      <Text style={styles.noticeTitle}>Thanks for coming to {e.title}</Text>
+      <Text style={styles.noticeText}>
+        {room ? 'See who was there, and connect. The room’s open for a week after.' : loved ? `You loved it. ${host.name} will hear.` : `Loved it? Let ${host.name} know.`}
+      </Text>
+      <View style={styles.askButtons}>
+        {room ? (
+          <Pill label="See who was there" onPress={() => router.push(`/room/${e.id}`)} />
+        ) : (
+          <Pill label={loved ? 'You loved it' : 'Loved it'} muted={loved} onPress={() => loveIt(e.id, !loved)} />
+        )}
+      </View>
+    </View>
+  );
 }
 
 function AskInterests() {

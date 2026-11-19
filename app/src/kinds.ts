@@ -103,6 +103,7 @@ export const hackathons: Record<string, Hackathon> = {
 
 export const meetups: Record<string, Meetup> = {
   'design-critique-night': { inRoom: true },
+  'design-critique-18-nov': { inRoom: true },
 };
 
 /** The kinds of fest a host can pick (outside the docs: the owner's to change). */
@@ -117,6 +118,34 @@ export const fests: Record<string, Fest> = {
   'udaan-2025': { type: 'College cultural fest', days: 'One day', highlights: ['Battle of the bands'], oneClick: true },
 };
 
+/**
+ * What's on inside a fest, each with its own page (owner, 19 Nov 2026: "Events inside fests", ahead of the docs' Later;
+ * Discover 14, 27). They stay off Home and Search, so a fest lists once; the fest page lists them by time.
+ */
+export type FestItem = {
+  id: string;
+  title: string;
+  kind: 'Competition' | 'Performance' | 'Workshop' | 'Food';
+  when: string;
+  where: string;
+  about: string;
+  team?: string; // a competition's team size
+  prize?: string;
+  act?: string; // the performer host on stage
+};
+export const festItems: Record<string, FestItem[]> = {
+  'udaan-cultural-fest': [
+    { id: 'dance-off', title: 'Group dance', kind: 'Competition', when: '10:30 AM', where: 'Main stage', about: 'College teams, five minutes each, any style. Judged on sync, energy and the story.', team: '6 to 12 people', prize: '₹20,000 for the winners' },
+    { id: 'street-play', title: 'Street play', kind: 'Competition', when: '12:00 PM', where: 'The quad', about: 'Nukkad natak in the round: fifteen minutes, no stage, no mics.', team: '8 to 15 people', prize: '₹10,000 for the winners' },
+    { id: 'block-printing', title: 'Block printing', kind: 'Workshop', when: '1:00 PM', where: 'Room 204', about: 'Print your own tote with wooden blocks. Thirty places, first come.' },
+    { id: 'battle-of-bands', title: 'Battle of the bands', kind: 'Competition', when: '3:00 PM', where: 'Main stage', about: 'Fifteen minutes a band, original songs welcome. The winners open the night show.', team: '3 to 6 people', prize: '₹25,000 and a set at the night show' },
+    { id: 'standup-main', title: 'Stand-up on the main stage', kind: 'Performance', when: '6:00 PM', where: 'Main stage', about: 'Forty minutes of stand-up in Hindi and English.', act: 'arjun-rao-live' },
+    { id: 'local-loop-live', title: 'The Local Loop, live', kind: 'Performance', when: '8:00 PM', where: 'Main stage', about: 'The night show: Telugu and English indie, loud and danceable.', act: 'the-local-loop' },
+    { id: 'closing-set', title: 'Closing set', kind: 'Performance', when: '9:30 PM', where: 'Main stage', about: 'House and Bollywood till the lights come on.', act: 'dj-saanvi' },
+    { id: 'food-street', title: 'Food street', kind: 'Food', when: 'All day', where: 'Back lawns', about: 'Twenty stalls from campus canteens and the city’s street food, open till late.' },
+  ],
+};
+
 /** A place to play, booked by the hour (Play): its stations, hours and how a booking starts. */
 export type Station = {
   name: string;
@@ -124,36 +153,41 @@ export type Station = {
   unit: [string, string]; // what one is called, and many: ["pitch", "pitches"]
   pricePaise: number; // an hour
   coopPaise?: number; // an hour for two playing together (gaming)
-  offPeak?: { when: string; pricePaise: number }; // one cheaper window (Play 8)
+  // One cheaper window (Play 8): hours from-to (24h, India time), on weekdays only or every day.
+  offPeak?: { when: string; pricePaise: number; from: number; to: number; weekdays: boolean };
   games?: string; // plain text (Play 8)
   note?: string;
 };
-export type Venue = { kind: 'turf' | 'court' | 'gaming'; hours: string; address: string; stations: Station[] };
+// `open` is the first and last hour, 24h India time; past 24 runs into the next morning (26 is 2 AM).
+export type Venue = { kind: 'turf' | 'court' | 'gaming'; hours: string; open: [number, number]; address: string; stations: Station[] };
 
 export const venues: Record<string, Venue> = {
   'kickoff-arena': {
     kind: 'turf',
     hours: 'Every day, 6 AM to midnight',
+    open: [6, 24],
     address: 'Stadium Road, Gachibowli, Hyderabad',
     stations: [
-      { name: '5-a-side football', count: 2, unit: ['pitch', 'pitches'], pricePaise: 120000, offPeak: { when: 'before 4 PM on weekdays', pricePaise: 90000 }, note: 'Artificial grass, floodlit' },
+      { name: '5-a-side football', count: 2, unit: ['pitch', 'pitches'], pricePaise: 120000, offPeak: { when: 'before 4 PM on weekdays', pricePaise: 90000, from: 6, to: 16, weekdays: true }, note: 'Artificial grass, floodlit' },
       { name: 'Box cricket', count: 1, unit: ['box', 'boxes'], pricePaise: 100000, note: 'Netted and floodlit' },
     ],
   },
   'smash-court': {
     kind: 'court',
     hours: 'Every day, 5 AM to 11 PM',
+    open: [5, 23],
     address: 'Botanical Garden Road, Kondapur, Hyderabad',
     stations: [
-      { name: 'Badminton', count: 4, unit: ['court', 'courts'], pricePaise: 50000, offPeak: { when: '10 AM to 4 PM', pricePaise: 35000 }, note: 'Wooden floor, rackets to hire' },
+      { name: 'Badminton', count: 4, unit: ['court', 'courts'], pricePaise: 50000, offPeak: { when: '10 AM to 4 PM', pricePaise: 35000, from: 10, to: 16, weekdays: false }, note: 'Wooden floor, rackets to hire' },
     ],
   },
   'respawn-zone': {
     kind: 'gaming',
     hours: 'Every day, 11 AM to 2 AM',
+    open: [11, 26],
     address: 'Above Inorbit Mall entrance, Gachibowli, Hyderabad',
     stations: [
-      { name: 'Gaming PC', count: 12, unit: ['PC', 'PCs'], pricePaise: 16200, offPeak: { when: 'before 4 PM on weekdays', pricePaise: 12000 }, games: 'Valorant, CS2, Dota 2, Fortnite' },
+      { name: 'Gaming PC', count: 12, unit: ['PC', 'PCs'], pricePaise: 16200, offPeak: { when: 'before 4 PM on weekdays', pricePaise: 12000, from: 11, to: 16, weekdays: true }, games: 'Valorant, CS2, Dota 2, Fortnite' },
       { name: 'PS5', count: 4, unit: ['PS5', 'PS5s'], pricePaise: 25000, coopPaise: 35000, games: 'EA FC 25, Tekken 8, Spider-Man 2' },
       { name: 'VR bay', count: 2, unit: ['bay', 'bays'], pricePaise: 40000, games: 'Beat Saber, Superhot' },
     ],

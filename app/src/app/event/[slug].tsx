@@ -126,7 +126,7 @@ export default function EventPage() {
         </View>
 
         {/* Its kind's own sections: the show, the jam, how a hackathon works, the room, the fest (src/kindSections.tsx). */}
-        <KindSections event={e} past={past} />
+        <KindSections event={e} past={past} went={went} />
 
         {cast(e.people).map((g) => (
           <View key={g.title}>
@@ -200,9 +200,9 @@ export default function EventPage() {
                   const t = ticketFor(e.id);
                   if (t) router.push(`/ticket/${t.id}`);
                 }
-              : !book.can || viewer.signedIn
+              : !book.can
                 ? undefined
-                : () => needsAccount()
+                : () => needsAccount(() => router.push(`/book/${e.id}`)) // signed out, sign in first, then on to it
           }
           onHeight={setBar}
         />

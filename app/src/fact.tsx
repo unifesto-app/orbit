@@ -27,9 +27,10 @@ export function Fact({ label, value, note, onPress }: { label?: string; value: s
   );
 }
 
-// No rim, so an outline; it sits under a Section heading, which brings the space above.
-export function FactCard({ children }: { children: ReactNode }) {
-  return <View style={styles.card}>{children}</View>;
+// No rim, so an outline; it sits under a Section heading, which brings the space above. `flush` drops its side margins,
+// for a card inside a sheet, which keeps the page's margin already.
+export function FactCard({ flush = false, children }: { flush?: boolean; children: ReactNode }) {
+  return <View style={[styles.card, flush && styles.flush]}>{children}</View>;
 }
 
 const styles = StyleSheet.create({
@@ -49,4 +50,5 @@ const styles = StyleSheet.create({
     borderColor: color.border,
     backgroundColor: color.card,
   },
+  flush: { marginHorizontal: 0 },
 });
