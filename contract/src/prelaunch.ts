@@ -54,7 +54,10 @@ export const WAITLIST_CONTACT = "hello@heyorbit.in";
 // The waitlist takes what sign-up takes (owner, 18 Nov 2026: "Name, Mobile, WhatsApp Otp, DoB ( same as account
 // creation )"): a WhatsApp code proves the number. It is a list, not an account: no terms, no session.
 // POST /public/interest/code: sends the code. `phone` is read as sign-in reads it (readPhone).
-export const InterestCode = z.object({ phone: z.string().min(1).max(20), proof: Proof.optional().catch(undefined) });
+// `view`: the page view the form sits on (contract visit.ts), so the visit log can count "got a code" and "joined". It
+// never fails a send or a join, and the waitlist row never keeps it.
+const view = z.string().uuid().optional().catch(undefined);
+export const InterestCode = z.object({ phone: z.string().min(1).max(20), proof: Proof.optional().catch(undefined), view });
 
 // POST /public/interest: 204 for a new number and one already on the list alike.
 export const Interest = z.object({
@@ -71,6 +74,7 @@ export const Interest = z.object({
   code: z.string().regex(/^\d{6}$/),
   features: z.array(z.enum(featureKeys)).max(featureKeys.length).default([]).transform((a) => [...new Set(a)]),
   meta: InterestMeta.default({}),
+  view,
 });
 export type Interest = z.infer<typeof Interest>;
 
@@ -140,7 +144,7 @@ export function sourceOf(r: { referrer?: string | null; utm?: Record<string, str
   try {
     host = r.referrer ? new URL(r.referrer).hostname.replace(/^www\./, "").toLowerCase() : null;
   } catch {}
-  if (host && host !== "heyorbit.in" && !host.endsWith(".heyorbit.in")) return named(host) ?? host; // our own pages are no source
+  if (host && host !== "heyorbit.in" && !host.endsWith(".heyorbit.in")) return named(host) ?? host.slice(0, 40); // our own pages are no source
   const app = deviceOf(r.userAgent).app;
   return app && ["Instagram", "Facebook", "LinkedIn", "X"].includes(app) ? app : "Direct";
 }

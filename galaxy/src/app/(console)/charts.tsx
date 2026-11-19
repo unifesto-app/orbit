@@ -2,10 +2,10 @@
 
 import type { Tally } from "@orbit/contract";
 import { Bar, BarChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import s from "./page.module.css";
+import s from "./charts.module.css";
 
 // Prelaunch's charts (owner, 18 Nov 2026: "need all available useful analytics", "use chart library"): Recharts, one
-// series each, so one colour: Sage. Colours, type and the tooltip come from Galaxy's tokens through page.module.css
+// series each, so one colour: Sage. Colours, type and the tooltip come from Galaxy's tokens through charts.module.css
 // (.chart), since SVG attributes can't read CSS variables; nothing here names a colour.
 
 const tooltip = {
@@ -27,12 +27,10 @@ const shortDay = (day: string) => new Date(`${day}T00:00:00Z`).toLocaleDateStrin
 // "12 am", "3 pm".
 const hourName = (h: number) => `${h % 12 || 12} ${h < 12 ? "am" : "pm"}`;
 
-// Joins a day, the last 30 days.
-export function Days({ days }: { days: { day: string; count: number }[] }) {
+// A count a day, the last 30 days: joins on Prelaunch, visitors on Website.
+export function Days({ days, label = "Joins a day, last 30 days", series = "Joined" }: { days: { day: string; count: number }[]; label?: string; series?: string }) {
   const data = days.map((d) => ({ name: shortDay(d.day), count: d.count }));
-  return (
-    <Columns data={data} label="Joins a day, last 30 days" series="Joined" height={220} interval="preserveStartEnd" />
-  );
+  return <Columns data={data} label={label} series={series} height={220} interval="preserveStartEnd" />;
 }
 
 // Joins by hour of the day, India's time: when to post.
@@ -74,18 +72,19 @@ function Columns({ data, label, series, height, interval }: { data: Tally; label
   );
 }
 
-// A ranked list as horizontal bars, the count (and a share of `of`) at each bar's end. Long names are cut, whole on hover.
-export function Ranked({ data, of, label }: { data: Tally; of?: number; label: string }) {
+// A ranked list as horizontal bars, in the order given, with the count (and a share of `of`) at each bar's end, or a
+// row's own `value`. Long names are cut, whole on hover.
+export function Ranked({ data, of, label, series = "People" }: { data: (Tally[number] & { value?: string })[]; of?: number; label: string; series?: string }) {
   if (!data.length) return <p className={s.empty}>Nothing yet.</p>;
-  const rows = data.map((d) => ({ ...d, value: of ? `${d.count} · ${Math.round((d.count / of) * 100)}%` : String(d.count) }));
+  const rows = data.map((d) => ({ ...d, value: d.value ?? (of ? `${d.count} · ${Math.round((d.count / of) * 100)}%` : String(d.count)) }));
   return (
     <figure className={s.chart} style={{ height: rows.length * 34 + 8 }} aria-label={label}>
       <ResponsiveContainer>
       <BarChart layout="vertical" data={rows} margin={{ top: 0, right: 72, bottom: 0, left: 0 }} barCategoryGap={8} accessibilityLayer>
         <XAxis type="number" hide allowDecimals={false} />
         <YAxis type="category" dataKey="name" width={176} tickLine={false} axisLine={false} fontSize={12} tick={<Name />} />
-        <Tooltip {...tooltip} formatter={(_v, _n, p) => [p.payload.value, "People"]} />
-        <Bar dataKey="count" name="People" radius={[0, 4, 4, 0]} maxBarSize={18} isAnimationActive={false}>
+        <Tooltip {...tooltip} formatter={(_v, _n, p) => [p.payload.value, series]} />
+        <Bar dataKey="count" name={series} radius={[0, 4, 4, 0]} maxBarSize={18} isAnimationActive={false}>
           <LabelList dataKey="value" position="right" />
         </Bar>
       </BarChart>

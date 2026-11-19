@@ -14,7 +14,7 @@ export const DESCRIPTION =
 export const OPERATOR = "Unifesto Private Limited";
 // One address with the welcome email (api/src/prelaunch-email.ts).
 export const CONTACT = WAITLIST_CONTACT;
-export const LEGAL_UPDATED = "18 November 2026";
+export const LEGAL_UPDATED = "19 November 2026";
 
 // Orbit's accounts, for the footers and the structured data (owner, 18 Nov 2026: "add X account to web"); the X handle
 // also marks link previews on X as Orbit's.

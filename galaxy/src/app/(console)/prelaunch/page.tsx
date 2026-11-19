@@ -4,7 +4,8 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 import { read } from "../../../api";
 import { Alert, Container, PageHeader, Pages, ui } from "../../ui";
-import { Bins, Days, Hours, Ranked } from "./charts";
+import { Bins, Days, Hours, Ranked } from "../charts";
+import c from "../charts.module.css";
 import s from "./page.module.css";
 
 // Prelaunch (owner, 17 Nov 2026: "create a page in galaxy web - prelaunch in that display all the info"): everyone on
@@ -80,21 +81,21 @@ async function Analytics({ searchParams }: Pick<PageProps<"/prelaunch">, "search
   return (
     <>
       <Container title="At a glance">
-        <div className={s.tiles}>
+        <div className={c.tiles}>
           {tiles.map(([label, value]) => (
-            <div key={label} className={s.tile}>
+            <div key={label} className={c.tile}>
               <span className={ui.secondary}>{label}</span>
-              <span className={s.tileValue}>{value}</span>
+              <span className={c.tileValue}>{value}</span>
             </div>
           ))}
         </div>
         <p className={ui.secondary}>Joins a day, the last 30 days</p>
         <Days days={t.days} />
       </Container>
-      <div className={s.grid}>
+      <div className={c.grid}>
         <Container title="What they want">
           <Ranked label="People who picked each feature" of={t.asked} data={t.wants.map((w) => ({ name: WANTS[w.feature], count: w.count }))} />
-          <p className={s.note}>
+          <p className={c.note}>
             A person can pick several. {t.wantedNone} picked none.{t.asked < t.total && ` Out of ${t.asked}: the first ${t.total - t.asked} joined before features were asked.`}
           </p>
         </Container>
@@ -115,11 +116,11 @@ async function Analytics({ searchParams }: Pick<PageProps<"/prelaunch">, "search
         </Container>
         <Container title="Cities">
           <Ranked label="People by city" data={t.cities} />
-          <p className={s.note}>From Cloudflare, for joins since 18 Nov 2026: {t.located} of {t.total} so far.</p>
+          <p className={c.note}>From Cloudflare, for joins since 18 Nov 2026: {t.located} of {t.total} so far.</p>
         </Container>
         <Container title="Email domains">
           <Ranked label="People by email domain" of={t.total} data={t.emailDomains} />
-          <p className={s.note}>College and work domains show where people study and work.</p>
+          <p className={c.note}>College and work domains show where people study and work.</p>
         </Container>
         {t.campaigns.length > 0 && (
           <Container title="Tagged links">

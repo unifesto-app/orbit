@@ -38,3 +38,10 @@ test("sourceOf prefers utm_source, then the referrer, then the in-app browser", 
   assert.equal(s({ referrer: "https://www.heyorbit.in/" }), "Direct");
   assert.equal(s({ referrer: "https://max.com/" }), "max.com");
 });
+
+test("sourceOf cuts an unnamed referrer host to 40 characters", () => {
+  const host = `${"a".repeat(60)}.example.com`;
+  const out = sourceOf({ referrer: `https://${host}/x` });
+  assert.equal(out.length, 40);
+  assert.equal(out, host.slice(0, 40));
+});
