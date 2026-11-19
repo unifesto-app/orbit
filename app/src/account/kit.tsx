@@ -10,7 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Glass } from '../glass';
 import { Icon, type IconName } from '../icons';
-import { BackBar, FaceWash, Glow, Section, TOP } from '../rows';
+import { BackBar, FaceWash, Section, TOP } from '../rows';
 import { needsAccount } from '../session';
 import type { Contact } from '../signin';
 import { around, color, font, radius, space, stoneAt } from '../theme';
@@ -48,12 +48,10 @@ export const TONE = {
 // A screen pushed over the tabs: its title, then the content; the frosted back circle pinned on top.
 export function Page({
   title,
-  tint,
   bar,
   children,
 }: {
   title?: string;
-  tint?: string; // a colour glowing from the top, as a host's own pages have (Galaxy's host page)
   bar?: ReactNode; // at the back bar's right, as a saved list's ⋯ menu
   children: ReactNode;
 }) {
@@ -61,7 +59,6 @@ export function Page({
   const [scrollY] = useState(() => new Animated.Value(0));
   return (
     <View style={styles.screen}>
-      {tint && <Glow tint={tint} />}
       <Animated.ScrollView
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
@@ -154,7 +151,7 @@ export function Row({
 }: {
   icon?: IconName;
   tone?: string;
-  lead?: ReactNode; // a host's logo or an event's poster in place of the icon (Galaxy's rows)
+  lead?: ReactNode; // a mark in place of the icon, as Google's on the sign-in sheet
   label: string;
   note?: string;
   value?: string;

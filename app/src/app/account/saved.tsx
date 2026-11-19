@@ -1,6 +1,6 @@
 // Account › Saved, the one home of saved events (Saved events and lists doc, settled 16 Nov 2026): the lists first,
 // each with how many upcoming events it holds and the next one's date, and New list; then All saved, the next five
-// upcoming with See all, then Past, folded. The switcher's Saved card opens it too. Signed out, a line and Sign in.
+// upcoming with See all, then Past, folded. Signed out, a line and Sign in.
 import { router } from 'expo-router';
 import { View } from 'react-native';
 

@@ -113,7 +113,7 @@ export const AboutYou = z.object({ signup: z.string(), name: z.string().trim().m
 // POST /auth/refresh. The refresh token rotates on every use.
 export const Refresh = z.object({ refresh: z.string().min(1).max(200) });
 
-// The account and its roles, which the app's mode switcher draws from.
+// The account and its roles.
 export const Me = z
   .object({
     id: z.string(),

@@ -1,6 +1,6 @@
 // The ORBIT wordmark in 3D, the splash's own letters (assets/splash/mark-*.png: the kit's lighter body, raw gloss and
 // Night shadow, rendered from web/src/app/brand.tsx), laid out by the kit's letter positions (LETTERS in
-// src/splash/motion.ts), so there is one source for the logo. At the foot of Account and the mode switcher (owner, 16
+// src/splash/motion.ts), so there is one source for the logo. At the foot of Account (owner, 16
 // Nov 2026: "add orbit logo at bottom"; 19 Nov: "in bottom orbit wordmark update it", from the flat letters) and over
 // the sign-in sheet's title. The splash loads these images first, so they're ready by the time anything shows them.
 import { Image, View } from 'react-native';

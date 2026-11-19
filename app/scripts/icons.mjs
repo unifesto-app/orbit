@@ -64,7 +64,6 @@ const icons = {
   terms: "file-text-duotone",
   privacy: "lock-duotone",
   interests: "sparkle-duotone", // Account › Interests: the brand's spark (owner, 19 Nov 2026)
-  sliders: "sliders-horizontal-duotone", // Galaxy's Platform, a circle at the right of its dashboard's header (owner, 16 Nov 2026)
   // Saved lists (Saved doc, 16 Nov 2026): the ⋯ menus’ Add to a list, Rename list and Take out of a list.
   list: "list-star-duotone", // a list in Account › Saved, starred like a save
   listPlus: "list-plus-duotone",
@@ -76,12 +75,6 @@ const icons = {
 const tabIcons = {
   home: "house-duotone",
   search: "magnifying-glass-duotone",
-  // Console and Galaxy, the app's other two modes (owner, 16 Nov 2026). Find reuses search.
-  console: "squares-four-duotone",
-  money: "wallet-duotone",
-  team: "users-three-duotone",
-  galaxy: "planet-duotone",
-  queues: "tray-duotone",
 };
 const TAB_PT = 25; // Apple's size for a tab bar icon; Android's is 24dp
 

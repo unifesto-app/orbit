@@ -1,7 +1,7 @@
 // Event Request (owner, 16 Nov 2026: "Redesign the Host an Event screen. It should be Event Request in it add Host
-// Details too", then "Orbit staff approve first"). Opened from the switcher's Host an event card, and by Console for
-// someone on no team. One form in two parts, the host and the event, then Send request; Orbit staff review it in
-// Galaxy (src/requests.ts). Once sent, the screen shows the request and where it stands instead of the form.
+// Details too", then "Orbit staff approve first"). Nothing opens it since the mode switcher went (owner, 19
+// Nov 2026); kept for the owner to place. One form in two parts, the host and the event, then Send request; Orbit staff
+// review it (src/requests.ts). Once sent, the screen shows the request and where it stands instead of the form.
 // Titles and values only, as everywhere in Account. Signed out, the form still fills in (ask late), and Send request
 // opens the sign-in sheet over it.
 // ponytail: When is typed, not picked; the app has no date picker (a native module) and staff read it anyway.
