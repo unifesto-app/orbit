@@ -101,13 +101,6 @@ export default function RootLayout() {
           <Stack.Screen name="account/profile" options={{ animation: 'fade' }} />
           {/* Edit profile's city for new events, the same city sheet as the location's. */}
           <Stack.Screen name="account/city" options={MODAL} />
-          {/* The app's three modes (owner, 16 Nov 2026): re-tapping a mode's first tab fades in the mode switcher, a whole
-              screen of frosted glass over the app ("need animated screen instead of just switching in modal"), and Console
-              (host management) and Galaxy (staff) fade in over Home, which stays under them; back from either is Home.
-              No swipe back, so a swipe on a mode's page never drops out of it. */}
-          <Stack.Screen name="switch" options={{ presentation: 'transparentModal', animation: 'fade', contentStyle: { backgroundColor: 'transparent' } }} />
-          <Stack.Screen name="console" options={{ animation: 'fade', gestureEnabled: false }} />
-          <Stack.Screen name="galaxy" options={{ animation: 'fade', gestureEnabled: false }} />
         </Stack>
       )}
       {/* The note (Undo after removing saves, and the like), over every screen (src/note.tsx). */}

@@ -19,9 +19,6 @@ export const color = {
   accent: role.accent,
   track: role.track, // the empty part of a progress bar or switch
   onAccent: role.onAccent, // a thumb or tick on a Sage fill: Stone on Sage is only 2.3:1
-  // Galaxy's own colour, its card on the mode switcher (owner, 16 Nov 2026, after #7048E8 and #94AFFF). The glow at the top
-  // of Galaxy's pages and its lock, so staff always know where they are. An element, never text.
-  galaxy: functional.galaxy,
   // A loved event's heart, filled: "Loved it" (owner, 19 Nov 2026: "replace the love with loved it"; the red was a
   // saved heart's from 16 Nov, "for saved events add love red", until saves took a star). iOS's dark-mode red. An
   // element, like the accent, never text.

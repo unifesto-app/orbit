@@ -20,7 +20,6 @@ import * as saves from './account/saves';
 import { API_URL, makeApi } from './api';
 import type { Viewer } from './home/layout';
 import { events, viewer } from './mock';
-import { type Me, nobody } from './modes';
 import { hideNote, showNote } from './note';
 
 const KEY = 'orbit.session';
@@ -130,8 +129,9 @@ export function useViewer(): Viewer {
     ? { ...viewer, signedIn: true, follows: s.follows, interests: s.interests, ...(initial && { initial }) }
     : { signedIn: false, follows: [], place: viewer.place };
 }
-// Roles for the mode switcher and the Console and Galaxy guards, from the API: none while signed out, so Home only.
-export const useMe = (): Me => useSession()?.me ?? nobody;
+// The account's id, to key what's read for it; '' while signed out.
+const SIGNED_OUT = { id: '' };
+export const useMe = (): { id: string } => useSession()?.me ?? SIGNED_OUT;
 
 export const useSaved = (eventId: string) => useSession()?.saved.some((x) => x.id === eventId) ?? false;
 export const useLoved = (eventId: string) => useSession()?.loved?.includes(eventId) ?? false;

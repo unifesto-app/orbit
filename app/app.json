@@ -66,12 +66,6 @@
         }
       ],
       [
-        "expo-local-authentication",
-        {
-          "faceIDPermission": "Orbit uses Face ID to unlock Galaxy, the staff tools, instead of your passcode."
-        }
-      ],
-      [
         "expo-alternate-app-icons",
         [
           {
@@ -95,7 +89,7 @@
       [
         "expo-secure-store",
         {
-          "faceIDPermission": "Orbit uses Face ID to unlock Galaxy, the staff tools, instead of your passcode."
+          "faceIDPermission": false
         }
       ],
       "expo-web-browser",

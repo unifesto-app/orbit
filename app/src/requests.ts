@@ -1,8 +1,7 @@
 // Event Requests: someone with no host asks to host an event, with the host's details and the event's (owner, 16 Nov
-// 2026: "It should be Event Request in it add Host Details too", then "Orbit staff approve first"). A request waits in
-// Galaxy's Requests queue for staff with Hosts and events (Roles doc: deciding a request needs the feature that owns
-// it). Approved, the host is made with the requester as owner and the event lands as a draft in their Console; declined
-// comes with a note. Either way they hear by push and email.
+// 2026: "It should be Event Request in it add Host Details too", then "Orbit staff approve first"). A request waits for
+// staff with Hosts and events (Roles doc: deciding a request needs the feature that owns it). Approved, the host is made
+// with the requester as owner and the event lands as a draft; declined comes with a note. Either way they hear by push and email.
 // This replaces the Hosts doc's "live at once, Unverified" for people starting their first host from the app.
 // ponytail: kept in memory until the API takes requests; it's gone when the app restarts.
 import { useSyncExternalStore } from 'react';

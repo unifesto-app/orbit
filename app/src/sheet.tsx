@@ -15,7 +15,7 @@ import { color, font, space } from './theme';
 import { Wordmark } from './wordmark';
 
 
-// The sheet, made as Galaxy's lock and Account's panel are (owner, 17 Nov 2026: "feels generic. bring app screens kind
+// The sheet, made as Account's panel is (owner, 17 Nov 2026: "feels generic. bring app screens kind
 // ui"): the accent glowing from the top under the glass (no space dots since 19 Nov 2026) and the
 // ORBIT wordmark over the title, centred, the X pinned at the wordmark's right. A gap
 // at its top on iOS, full screen on Android clear of the status bar (as Sheet in rows.tsx), then the API's message when

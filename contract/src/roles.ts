@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { allCities } from "./cities.ts";
 
-// Roles (Orbit flows: Roles, settled 16 Nov 2026), in the shape the app's mode switcher reads (app/src/modes.ts).
+// Roles (Orbit flows: Roles, settled 16 Nov 2026): a person's host teams and staff access, as the API sends them.
 
 // Orbit's staff: one Staff role with access feature by feature. The platform owner holds every feature.
 export const STAFF_FEATURES = ["people", "hosts", "queues", "money", "platform", "staff"] as const;

@@ -8,7 +8,7 @@
 // - Settings: the Notifications doc's switches, the location, Appearance (dark only, as app.json) and Permissions.
 // - Account: the User doc's one Sign-in and security screen (ways in, passkeys, devices), and Delete account.
 // - Added from the docs: Help and support, Terms, Privacy, the version. Host on Orbit was here too, until the owner
-//   took the Hosting group out; it's the Event Request screen now, opened from the switcher's Host an event card.
+//   took the Hosting group out; it's the Event Request screen now (src/app/account/host.tsx), which nothing opens yet.
 // Cards hold text only. Log out confirms first; Delete account opens its own screen with what goes and what blocks it.
 import Constants from 'expo-constants';
 import { type Href, router } from 'expo-router';
@@ -88,8 +88,8 @@ export default function Account() {
         <Row icon="shield" tone={TONE.green} label="Permissions" chevron onPress={go('/account/permissions')} />
       </Group>
 
-      {/* No Hosting group (owner, 16 Nov 2026: "even remove the hosting"): starting a host is the mode sheet's
-          Host an event card, which opens the Event Request (src/app/account/host.tsx); a host's team uses the Console. */}
+      {/* No Hosting group (owner, 16 Nov 2026: "even remove the hosting"). The app is the people side only (owner,
+          19 Nov 2026: "remove switch, remove console and remove the galaxy from mobile completely"). */}
       {viewer.signedIn && (
         <Group title="Account">
           <Row icon="key" tone={TONE.yellow} label="Sign-in and security" chevron onPress={go('/account/security')} />
