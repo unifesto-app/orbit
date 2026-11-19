@@ -10,7 +10,7 @@ const hosts = [
   { id: 'jam', name: 'Jam Circle', area: 'KBR Park' },
   { id: 'punch', name: 'Punchline', area: 'Jubilee Hills' },
 ];
-const ev = (id: string, hostId: string, title: string, startsAt: string, category: 'music' | 'comedy', pricePaise = 0) => ({
+const ev = (id: string, hostId: string, title: string, startsAt: string, category: 'jams' | 'comedy', pricePaise = 0) => ({
   id,
   hostId,
   title,
@@ -21,9 +21,9 @@ const ev = (id: string, hostId: string, title: string, startsAt: string, categor
 });
 const events = [
   ev('mic', 'punch', 'Open Mic', '2026-11-20T20:00:00', 'comedy', 29900), // tonight
-  ev('jam', 'jam', 'Sunday Jam', '2026-11-22T17:00:00', 'music'), // Sunday
-  ev('late', 'jam', 'Late Jam', '2026-11-26T21:00:00', 'music'), // Thursday
-  ev('past', 'jam', 'Old Jam', '2026-11-19T17:00:00', 'music'), // yesterday
+  ev('jam', 'jam', 'Sunday Jam', '2026-11-22T17:00:00', 'jams'), // Sunday
+  ev('late', 'jam', 'Late Jam', '2026-11-26T21:00:00', 'jams'), // Thursday
+  ev('past', 'jam', 'Old Jam', '2026-11-19T17:00:00', 'jams'), // yesterday
 ];
 const ids = (r: { events: { id: string }[] }) => r.events.map((e) => e.id);
 const none = { q: '', free: false };
@@ -64,7 +64,7 @@ test('this weekend is Saturday and Sunday in India time, or what is left of it',
 test('the count says what is showing', () => {
   assert.equal(countLine(3, none), '3 events coming up');
   assert.equal(countLine(1, { ...none, q: 'jam' }), '1 event for “jam”');
-  assert.equal(countLine(4, { q: 'jam', free: false, category: 'music' }), '4 events for “jam” in Music');
+  assert.equal(countLine(4, { q: 'jam', free: false, category: 'jams' }), '4 events for “jam” in Jams');
   assert.equal(countLine(2, { q: '', free: true, when: 'weekend' }), '2 free events this weekend');
 });
 

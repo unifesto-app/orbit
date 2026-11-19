@@ -8,18 +8,18 @@ import { color, font, space } from './theme';
 
 // Each category's own colour (owner, 15 Nov 2026: "bring various accents to each explore", "also based on category
 // give the accent"), for its 3D prop (src/props.tsx) and its card's glow: a terminal's cyan for hackathons, the
-// spotlight's yellow for comedy, the pitch's green for sports, a screen's blue for film, and so on. Open Color's 8
+// spotlight's yellow for comedy, the pitch's green for sports, a screen's blue for events, and so on. Open Color's 8
 // shades plus the brand blue.
 export const CATEGORY_COLOR: Record<CategorySlug, string> = {
   hackathons: '#1098AD', // terminal cyan: a bulb with code in it
   comedy: '#FCC419', // spotlight yellow: a laughing face
-  music: '#D6336C', // pink: two notes
+  jams: '#D6336C', // pink: two notes (Music's, until 19 Nov 2026's eight tiles)
   meetups: '#E8590C', // warm orange: three people
-  workshops: '#099268', // mint: a laptop
   fests: '#E03131', // red: a string of lights
   sports: '#2F9E44', // pitch green: a football and a cricket bat
-  film: '#295EFF', // a screen's blue: a reel and a camera. Its own colour, like the others: the drawing is baked blue, and the brand accent is Sage since 18 Nov 2026
-  startups: '#7048E8', // violet: a rocket on a growth line
+  // A screen's blue: Film's reel and camera, standing in for Events (gigs, screenings, talks, workshops) until it has
+  // its own drawing. The drawing is baked blue; the brand accent is Sage since 18 Nov 2026.
+  events: '#295EFF',
   gaming: '#AE3EC9', // neon grape: a controller
 };
 // The approved drawings, done one by one (owner, 15 Nov 2026: "lets do one by one", "get approval and changes after
@@ -31,21 +31,20 @@ export const CATEGORY_COLOR: Record<CategorySlug, string> = {
 const CATEGORY_ART: Record<CategorySlug, ImageSourcePropType> = {
   hackathons: require('../assets/explore/hackathons.png'),
   comedy: require('../assets/explore/comedy.png'),
-  music: require('../assets/explore/music.png'),
+  jams: require('../assets/explore/jams.png'),
   meetups: require('../assets/explore/meetups.png'),
-  workshops: require('../assets/explore/workshops.png'),
   fests: require('../assets/explore/fests.png'),
   sports: require('../assets/explore/sports.png'),
-  film: require('../assets/explore/film.png'),
-  startups: require('../assets/explore/startups.png'),
+  events: require('../assets/explore/events.png'),
   gaming: require('../assets/explore/gaming.png'),
 };
 // A lone shape fills its whole square where a scene doesn't, so it's drawn smaller ("music is large, make little
 // small"), and Fests, wide and short, a little bigger ("increase its size little"); scaled about the centre, so the
 // card and its seat keep their size.
-const ART_SCALE: Partial<Record<CategorySlug, number>> = { music: 0.85, fests: 1.15 };
-// Explore's rows: three, three, then four (owner, 15 Nov 2026: "Explore Three Three Four"); the last row takes the rest.
-const exploreRows = [categories.slice(0, 3), categories.slice(3, 6), categories.slice(6)];
+const ART_SCALE: Partial<Record<CategorySlug, number>> = { jams: 0.85, fests: 1.15 };
+// Explore's rows: four and four for the eight tiles (19 Nov 2026; it was "Explore Three Three Four" for ten, owner, 15
+// Nov), in the Discover doc's order.
+const exploreRows = [categories.slice(0, 4), categories.slice(4)];
 
 // A category as a box like Home's host cards (owner, 15 Nov 2026: "add the Types in boxes same as hosts in home"): its
 // drawing on the top rim where a host's logo sits, and its name, nothing else (owner: "from 1 event from card").

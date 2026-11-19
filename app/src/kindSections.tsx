@@ -40,7 +40,7 @@ export function KindSections({ event: e, past, went = false }: { event: Event; p
   switch (e.category) {
     case 'comedy':
       return <ShowFacts eventId={e.id} />;
-    case 'music':
+    case 'jams':
       return <JamFacts eventId={e.id} />;
     case 'hackathons':
       return <HackathonFacts eventId={e.id} past={past} />;
