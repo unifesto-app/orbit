@@ -4,7 +4,8 @@ import { createMiddleware } from "hono/factory";
 import { getConnInfo } from "@hono/node-server/conninfo";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { z } from "zod";
-import { type Contact, readContact } from "@orbit/contract";
+import { CLIENT_HEADER, type Contact, readClient, readContact } from "@orbit/contract";
+import { markActive } from "./activity.ts";
 import type { Db } from "./db/index.ts";
 import { ack, isSuspended, sessionUser, type User } from "./auth/sessions.ts";
 import { read } from "./auth/tokens.ts";
@@ -64,6 +65,8 @@ export const signedIn = (db: Db, secret: string, now: () => number) =>
     if (!found.acked && claims.rh && found.refreshHash.startsWith(claims.rh)) await ack(db, claims.sid, found.refreshHash);
     c.set("user", found.user);
     c.set("sid", claims.sid);
+    // Counted as active today, once (activity.ts): never waits, never fails the request.
+    markActive(db, found.user.id, readClient(c.req.header(CLIENT_HEADER)), now());
     await next();
   });
 

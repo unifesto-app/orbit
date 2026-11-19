@@ -9,6 +9,8 @@ import { mediaRoutes } from "./media.ts";
 import { pmRoutes } from "./pm/routes.ts";
 import { prelaunchRoutes } from "./prelaunch.ts";
 import { contentRoutes } from "./content.ts";
+import { analyticsRoutes } from "./analytics.ts";
+import { dashboardRoutes } from "./dashboard.ts";
 import { visitRoutes } from "./visits.ts";
 import { rolesRoutes } from "./roles/routes.ts";
 
@@ -36,6 +38,8 @@ export function createApp(deps?: Deps) {
     app.route("/", prelaunchRoutes(deps));
     app.route("/", visitRoutes(deps));
     app.route("/", contentRoutes(deps));
+    app.route("/", dashboardRoutes(deps));
+    app.route("/", analyticsRoutes(deps));
   }
 
   // An unknown path looks the same as a Galaxy route someone can't use.

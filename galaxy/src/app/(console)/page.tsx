@@ -1,9 +1,16 @@
+import type { DashboardStats } from "@orbit/contract";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { connection } from "next/server";
 import { Suspense } from "react";
-import { me } from "../../api";
-import { sections } from "../nav";
-import { Container, FEATURE_NAMES, PageHeader, ui } from "../ui";
+import { read } from "../../api";
+import { Alert, Container, PageHeader, Pairs, ui } from "../ui";
+import { Days } from "./charts";
+import c from "./charts.module.css";
+
+// The Dashboard (owner, 19 Nov 2026: "remove all in dashboard page", "add Analytics, Traction and all"): Orbit's traction
+// at a glance, in place of the old list of sections (the side nav has those). API: GET /galaxy/dashboard, which sends
+// only the blocks this staff member's features open; each read is written to the audit log.
 
 // The layout's "%s | Galaxy" template skips its own segment, so spell it out.
 export const metadata: Metadata = { title: { absolute: "Dashboard | Galaxy" } };
@@ -11,38 +18,159 @@ export const metadata: Metadata = { title: { absolute: "Dashboard | Galaxy" } };
 export default function Dashboard() {
   return (
     <div className={ui.page}>
-      <PageHeader title="Dashboard" description="Platform admin for Orbit by Unifesto." />
+      <PageHeader title="Dashboard" description="Orbit’s traction at a glance. Days are India’s; a week is the last 7 days, today included." />
       <Suspense fallback={null}>
-        <Access />
+        <Body />
       </Suspense>
-      <Container title="All sections">
-        <div className={ui.columns}>
-          {sections.map((section) => (
-            <div key={section.title}>
-              <h3 className={ui.h3}>{section.title}</h3>
-              <ul className={ui.list}>
-                {section.items.map((item) => (
-                  <li key={item.href}>
-                    <Link href={item.href}>{item.label}</Link>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
-      </Container>
     </div>
   );
 }
 
-// What this staff member can open. Built so far: Users (People), Hosts and Staff; the rest land on "Page not found".
-async function Access() {
-  const r = await me();
-  const staff = r.ok ? r.data.staff : null;
-  if (!staff) return null;
+const n = (v: number) => v.toLocaleString("en-IN");
+const pct = (part: number, of: number) => (of ? `${Math.round((part / of) * 100)}%` : "–");
+// This week against the 7 days before it: "+25% on last week", "Same as last week", "None last week".
+const change = (week: number, prev: number) =>
+  prev === 0 ? (week ? "None last week" : "None last week either") : week === prev ? "Same as last week" : `${week > prev ? "+" : "−"}${Math.round((Math.abs(week - prev) / prev) * 100)}% on last week`;
+
+function Tiles({ tiles }: { tiles: [string, string, string?][] }) {
   return (
-    <Container title="Your access">
-      <p>{staff.owner ? "Platform owner: every feature." : staff.features.map((f) => FEATURE_NAMES[f]).join(", ")}</p>
-    </Container>
+    <div className={c.tiles}>
+      {tiles.map(([label, value, note]) => (
+        <div key={label} className={c.tile}>
+          <span className={ui.secondary}>{label}</span>
+          <span className={c.tileValue}>{value}</span>
+          {note && <span className={ui.secondary}>{note}</span>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// No prefetch: opening Prelaunch or Website is written to the audit log.
+const More = ({ href, label }: { href: string; label: string }) => (
+  <p>
+    <Link href={href} prefetch={false}>
+      {label}
+    </Link>
+  </p>
+);
+
+async function Body() {
+  await connection(); // read on each visit: written to the audit log
+  const r = await read<DashboardStats>("/galaxy/dashboard");
+  if (!r.ok) return <Alert>{r.error.message}</Alert>;
+  const { people, waitlist, website, hosts, events, staff } = r.data;
+  if (!people && !waitlist && !website && !hosts && !events && !staff)
+    return (
+      <Container title="Traction">
+        <p className={ui.secondary}>Nothing here for your access yet: the Dashboard shows People, Hosts and events, and Staff numbers to those who hold them.</p>
+      </Container>
+    );
+
+  // The numbers that say whether Orbit is growing, first.
+  const traction: [string, string, string?][] = [
+    ...(people
+      ? ([
+          ["Accounts", n(people.total), `+${n(people.today)} today`],
+          ["New this week", n(people.week), change(people.week, people.prevWeek)],
+          ["Active this week", n(people.active.week), `${n(people.active.day)} today`],
+        ] as [string, string, string][])
+      : []),
+    ...(waitlist ? ([["Waitlist", n(waitlist.total), `+${n(waitlist.week)} this week`]] as [string, string, string][]) : []),
+    ...(hosts ? ([["Hosts", n(hosts.total), `${n(hosts.verified)} verified`]] as [string, string, string][]) : []),
+    ...(events ? ([["Events coming up", n(events.upcoming), `${n(events.week)} published this week`]] as [string, string, string][]) : []),
+  ];
+
+  return (
+    <>
+      {traction.length > 0 && (
+        <Container title="Traction">
+          <Tiles tiles={traction} />
+          {people && (
+            <>
+              <p className={ui.secondary}>Sign-ups a day, the last 30 days</p>
+              <Days days={people.days} label="Sign-ups a day, last 30 days" series="Signed up" />
+            </>
+          )}
+        </Container>
+      )}
+
+      <div className={c.grid}>
+        {waitlist && (
+          <Container title="Waitlist">
+            <Tiles
+              tiles={[
+                ["On the list", n(waitlist.total)],
+                ["Joined today", n(waitlist.today)],
+                ["This week", n(waitlist.week), change(waitlist.week, waitlist.prevWeek)],
+              ]}
+            />
+            <Days days={waitlist.days} label="Waitlist joins a day, last 30 days" series="Joined" />
+            <More href="/prelaunch" label="Everyone on the waitlist, and what they want ›" />
+          </Container>
+        )}
+
+        {website && (
+          <Container title="Website, last 7 days">
+            <Tiles
+              tiles={[
+                ["Visitors", n(website.visitors)],
+                ["Page views", n(website.views)],
+                ["Joined the waitlist", n(website.joined), `${pct(website.joined, website.visitors)} of visitors`],
+              ]}
+            />
+            <p className={c.note}>From heyorbit.in’s own visit log: no cookies, and a visitor counts once a day.</p>
+            <More href="/website" label="Visits, sources, pages and speed ›" />
+          </Container>
+        )}
+
+        {people && (
+          <Container title="Active people">
+            <Pairs
+              pairs={[
+                ["Today so far (DAU)", n(people.active.day)],
+                ["Last 7 days (WAU)", n(people.active.week)],
+                ["Last 30 days (MAU)", n(people.active.month)],
+                // How many of the month's people come back on a given day: the usual measure of stickiness.
+                ["Stickiness", pct(people.active.day, people.active.month)],
+              ]}
+            />
+            <p className={c.note}>People who used the app or site while signed in, from the activity log. Deleted accounts never count.</p>
+            <More href="/analytics" label="Daily use, retention, platforms and more ›" />
+          </Container>
+        )}
+
+        {(hosts || events) && (
+          <Container title="Hosts and events">
+            <Pairs
+              pairs={[
+                ...(hosts
+                  ? ([
+                      ["Hosts", n(hosts.total)],
+                      ["Verified", `${n(hosts.verified)} (${pct(hosts.verified, hosts.total)})`],
+                      ["New this week", n(hosts.week)],
+                      ["Follows", n(hosts.follows)],
+                    ] as [string, string][])
+                  : []),
+                ...(events
+                  ? ([
+                      ["Events coming up", n(events.upcoming)],
+                      ["Published this week", n(events.week)],
+                      ["Drafts", n(events.drafts)],
+                      ["Cancelled", n(events.cancelled)],
+                    ] as [string, string][])
+                  : []),
+              ]}
+            />
+          </Container>
+        )}
+
+        {staff && (
+          <Container title="Staff">
+            <Pairs pairs={[["With access", n(staff.active)]]} />
+          </Container>
+        )}
+      </div>
+    </>
   );
 }

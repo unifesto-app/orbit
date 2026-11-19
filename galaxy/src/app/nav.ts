@@ -1,9 +1,7 @@
-// Galaxy's side navigation. Sections are the v1 "Platform admins" rows in
-// docs/context/artifacts/orbit-rebuild-plan.md (section 4), plus the admin
-// sides of custom domains and the support queue from the Hosts table.
-// Broadcasts are Later and the app's traffic/OTA screens are dropped, so they're absent; the landing page's own visits
-// are under Website (owner, 19 Nov 2026: "website and pages analytics in galaxy web").
-// Pages that aren't built yet land on not-found.tsx.
+// Galaxy's side navigation: built pages only (owner, 19 Nov 2026: "remove all the page not founds from galaxy"). The
+// rest of the v1 "Platform admins" rows in docs/context/artifacts/orbit-rebuild-plan.md (section 4) — Events, the
+// Queues, Money, Platform, and the old company content — come back here as each page is built. The landing page's own
+// visits are under Website (owner, 19 Nov 2026: "website and pages analytics in galaxy web").
 
 // Text only, as the AWS console's side nav is (owner, 17 Nov 2026: "dont use icons always. same like aws").
 // `also`: more paths that count as this item, for the current link and the breadcrumb.
@@ -16,43 +14,15 @@ export const sections: { title: string; items: NavItem[] }[] = [
   {
     title: "Community",
     // Every kind of person on one People screen, a tab each (owner, 17 Nov 2026: "One People screen"; the tabs are in
-    // (console)/people.tsx), then their events.
+    // (console)/people.tsx).
     items: [
       { label: "People", href: "/users", also: ["/hosts", "/teams", "/staff"] },
-      { label: "Events", href: "/events" },
+      // DAU, WAU, MAU, retention, platforms and versions (owner, 19 Nov 2026: "user analytics, mau, dau etc").
+      { label: "Analytics", href: "/analytics" },
       // Coming Soon's waitlist until launch (owner, 17 Nov 2026: "create a page in galaxy web - prelaunch").
       { label: "Prelaunch", href: "/prelaunch" },
       // Visits to heyorbit.in from the site's own log (owner, 19 Nov 2026: "Our own visit log").
       { label: "Website", href: "/website" },
-    ],
-  },
-  {
-    title: "Queues",
-    items: [
-      { label: "Requests", href: "/requests" },
-      { label: "Support", href: "/support" },
-      { label: "Content reports", href: "/reports" },
-    ],
-  },
-  {
-    title: "Money",
-    items: [
-      { label: "Transactions", href: "/transactions" },
-      { label: "Refunds", href: "/refunds" },
-      { label: "Payouts", href: "/payouts" },
-      { label: "Orphaned payments", href: "/orphaned-payments" },
-      { label: "Reconciliation", href: "/reconciliation" },
-      { label: "Fees", href: "/fees" },
-    ],
-  },
-  {
-    title: "Platform",
-    items: [
-      { label: "Custom domains", href: "/domains" },
-      { label: "Legal documents", href: "/legal" },
-      { label: "App settings", href: "/settings" },
-      // Galaxy flow (15 Nov): the audit log of every staff action. Staff moved to Community (17 Nov).
-      { label: "Audit log", href: "/audit" },
     ],
   },
   {
@@ -61,13 +31,7 @@ export const sections: { title: string; items: NavItem[] }[] = [
       // The words Orbit itself writes in the app: ad strips, Help answers, Ask Orbit (owner, 19 Nov 2026: "build CMS
       // for Orbit App in galaxy web").
       { label: "App content", href: "/app-content" },
-      { label: "Blog", href: "/blog" },
-      { label: "Help", href: "/help" },
-      { label: "Careers", href: "/careers" },
-      { label: "Company", href: "/company" },
       { label: "PM board", href: "/pm-board" },
-      { label: "WeGoBeyond", href: "/wegobeyond" },
-      { label: "Encore", href: "/encore" },
     ],
   },
 ];

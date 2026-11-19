@@ -1,8 +1,10 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { eq } from "drizzle-orm";
-import { DEFAULT_CONTENT } from "@orbit/contract";
+import sharp from "sharp";
+import { DEFAULT_CONTENT, IMAGE_LINK } from "@orbit/contract";
 import { testApp } from "./testkit.ts";
+import { dropContent } from "./media.ts";
 import { appContent, auditLog, staffGrants, users } from "./db/schema.ts";
 
 let t: Awaited<ReturnType<typeof testApp>>;
@@ -63,7 +65,7 @@ test("2 only staff with platform get in", async () => {
   assert.equal((await as(p)("GET", "/galaxy/app-content")).status, 404);
   const ok = await (await staff())("GET", "/galaxy/app-content");
   assert.equal(ok.status, 200);
-  assert.deepEqual(ok.body.saved, { ads: null, help: null, asks: null });
+  assert.deepEqual(ok.body.saved, { ads: null, help: null, asks: null, featured: null, promoted: null });
 });
 
 test("3 first save shows on both reads, names the saver, and is audited", async () => {
@@ -145,4 +147,214 @@ test("7 saved values come back trimmed", async () => {
   const s = await staff();
   assert.equal((await s("PUT", "/galaxy/app-content/asks", { value: ["  Padded  "], at: null })).status, 200);
   assert.deepEqual((await t.call("GET", "/public/app-content")).body.asks, ["Padded"]);
+});
+
+// ---- images, featured, promoted ----
+const png = (width: number, height: number, background = "#1d372a") => sharp({ create: { width, height, channels: 3, background } }).png().toBuffer();
+const staffUser = async () => {
+  const u = await join();
+  await give(u, "platform");
+  return u;
+};
+const upload = async (u: P, shape: string | null, bytes?: Uint8Array | null, type = "image/png", field = "image") => {
+  const fd = new FormData();
+  if (bytes) fd.append(field, new File([bytes as BlobPart], "a.png", { type }));
+  return t.app.request(`/galaxy/app-content/image${shape === null ? "" : `?shape=${shape}`}`, { method: "POST", headers: { authorization: `Bearer ${u.access}` }, body: fd });
+};
+const up = async (u: P, shape: "strip" | "wide") => {
+  const r = await upload(u, shape, await (shape === "strip" ? png(1350, 300) : png(1200, 900)));
+  assert.equal(r.status, 201);
+  return (await r.json()) as { url: string; edge: string };
+};
+const pathOf = (url: string) => new URL(url).pathname;
+const keyOf = (url: string) => pathOf(url).slice("/media/".length);
+
+test("8 a strip upload is stored, served, and audited", async () => {
+  await clear();
+  const u = await staffUser();
+  const r = await upload(u, "strip", await png(1350, 300));
+  assert.equal(r.status, 201);
+  const b = (await r.json()) as { url: string; edge: string };
+  assert.ok(b.url.startsWith(`https://api.test/media/content/${u.me.id}/`));
+  assert.match(b.url, IMAGE_LINK);
+  // lossy WebP: each channel may drift a little from the fill
+  const d = [1, 3, 5].map((i) => Math.abs(parseInt(b.edge.slice(i, i + 2), 16) - parseInt("1d372a".slice(i - 1, i + 1), 16)));
+  assert.match(b.edge, /^#[0-9a-f]{6}$/);
+  assert.ok(d.every((x) => x <= 3), b.edge);
+  assert.ok(t.media.files.keys().includes(keyOf(b.url)));
+  const g = await t.app.request(pathOf(b.url));
+  assert.equal(g.status, 200);
+  assert.equal(g.headers.get("content-type"), "image/webp");
+  assert.equal(g.headers.get("cache-control"), "public, max-age=86400");
+  assert.ok((await audits("content.image")).some((a) => (a.data as any).url === b.url));
+});
+
+test("9 a wide upload works; wrong shapes and bad uploads are refused", async () => {
+  await clear();
+  const u = await staffUser();
+  assert.equal((await upload(u, "wide", await png(1200, 900))).status, 201);
+  const a = await upload(u, "strip", await png(1200, 900));
+  assert.equal(a.status, 400);
+  const ab = (await a.json()) as any;
+  assert.equal(ab.error, "wrongShape");
+  assert.match(ab.message, /1350 × 300/);
+  const w = await upload(u, "wide", await png(1350, 300));
+  assert.equal(w.status, 400);
+  assert.equal(((await w.json()) as any).error, "wrongShape");
+  const txt = await upload(u, "strip", new TextEncoder().encode("hello"), "text/plain");
+  assert.equal(txt.status, 400);
+  assert.equal(((await txt.json()) as any).error, "notImage");
+  assert.equal((await upload(u, "round", await png(1350, 300))).status, 400);
+  assert.equal((await upload(u, null, await png(1350, 300))).status, 400);
+  assert.equal((await upload(u, "strip", null)).status, 400);
+  const big = await upload(u, "strip", Buffer.concat([await png(1350, 300), Buffer.alloc(5 * 1024 * 1024 + 100_000)]));
+  assert.equal(big.status, 413);
+  assert.equal(((await big.json()) as any).error, "tooBig");
+  const plain = await join();
+  assert.equal((await upload(plain, "strip", await png(1350, 300))).status, 404);
+  const out = await t.app.request("/galaxy/app-content/image?shape=strip", { method: "POST", body: new FormData() });
+  assert.equal(out.status, 401);
+});
+
+test("10 an ad with an uploaded image saves; another host's image is refused", async () => {
+  await clear();
+  const u = await staffUser();
+  const s = as(u);
+  const { url } = await up(u, "strip");
+  const mine = { title: "Card offer", image: url, colour: "forest", places: ["home"] };
+  assert.equal((await s("PUT", "/galaxy/app-content/ads", { value: [mine], at: null })).status, 200);
+  assert.deepEqual((await t.call("GET", "/public/app-content")).body.ads, [mine]);
+  await clear();
+  const evil = { ...mine, image: "https://evil.test/media/content/6f1c2d3e-0000-4000-8000-000000000000/abcdefghijklmnopqrstuv.webp" };
+  const r = await s("PUT", "/galaxy/app-content/ads", { value: [evil], at: null });
+  assert.equal(r.status, 400);
+  assert.equal(r.body.error, "invalid");
+  assert.equal(r.body.message, "Ad 1: Upload the image again.");
+  assert.equal((await t.db.select().from(appContent)).length, 0);
+});
+
+test("11 featured takes picks and image slides, and refuses bad ones", async () => {
+  await clear();
+  const u = await staffUser();
+  const s = as(u);
+  const { url, edge } = await up(u, "wide");
+  const value = [
+    { kind: "pick", href: "/event/open-mic-night" },
+    { kind: "image", image: url, edge, label: "Card offer", action: "See offer", href: "/account/payment" },
+  ];
+  assert.equal((await s("PUT", "/galaxy/app-content/featured", { value, at: null })).status, 200);
+  assert.deepEqual((await t.call("GET", "/public/app-content")).body.featured, value);
+  const pick = await s("PUT", "/galaxy/app-content/featured", { value: [{ kind: "pick", href: "/search" }], at: null });
+  assert.equal(pick.status, 400);
+  assert.match(pick.body.message, /^Slide 1:/);
+  const noEdge = await s("PUT", "/galaxy/app-content/featured", { value: [{ kind: "image", image: url, label: "x" }], at: null });
+  assert.equal(noEdge.status, 400);
+});
+
+test("12 promoted takes events only, once each; fresh reads are the defaults", async () => {
+  await clear();
+  const fresh = (await t.call("GET", "/public/app-content")).body;
+  assert.deepEqual(fresh.promoted, DEFAULT_CONTENT.promoted);
+  assert.deepEqual(fresh.featured, []);
+  const s = await staff();
+  const host = await s("PUT", "/galaxy/app-content/promoted", { value: [{ href: "/host/x" }], at: null });
+  assert.equal(host.status, 400);
+  assert.match(host.body.message, /^Event 1:/);
+  assert.equal((await s("PUT", "/galaxy/app-content/promoted", { value: [{ href: "/event/a" }, { href: "/event/a" }], at: null })).status, 400);
+  assert.equal((await s("PUT", "/galaxy/app-content/promoted", { value: [{ href: "/event/a" }], at: null })).status, 200);
+  assert.deepEqual((await t.call("GET", "/public/app-content")).body.promoted, [{ href: "/event/a" }]);
+});
+
+test("13 replacing an image deletes the old file; refused saves delete nothing", async () => {
+  await clear();
+  const u = await staffUser();
+  const s = as(u);
+  const A = await up(u, "strip");
+  const mk = (image: string) => [{ title: "Offer", image, colour: "forest", places: ["home"] }];
+  const first = await s("PUT", "/galaxy/app-content/ads", { value: mk(A.url), at: null });
+  assert.equal(first.status, 200);
+  const B = await up(u, "strip");
+  const stale = await s("PUT", "/galaxy/app-content/ads", { value: mk(B.url), at: null });
+  assert.equal(stale.status, 409);
+  const bad = await s("PUT", "/galaxy/app-content/ads", { value: [{ ...mk(B.url)[0], colour: "red" }], at: first.body.at });
+  assert.equal(bad.status, 400);
+  assert.ok(t.media.files.keys().includes(keyOf(A.url)));
+  t.tick(1000);
+  const ok = await s("PUT", "/galaxy/app-content/ads", { value: mk(B.url), at: first.body.at });
+  assert.equal(ok.status, 200);
+  assert.ok(!t.media.files.keys().includes(keyOf(A.url)));
+  assert.ok(t.media.files.keys().includes(keyOf(B.url)));
+});
+
+// ---- review fixes: orientation, size, transparency, shared images ----
+const tilted = (width: number, height: number) => sharp({ create: { width, height, channels: 3, background: "#1d372a" } }).jpeg().withMetadata({ orientation: 6 }).toBuffer();
+const sizeOf = async (url: string) => {
+  const f = await t.media.files.get(keyOf(url));
+  const m = await sharp(f!.bytes).metadata();
+  return [m.width, m.height];
+};
+const errOf = async (r: Response) => ((await r.json()) as any).error;
+
+test("14 shape is judged upright: orientation 6 swaps width and height", async () => {
+  await clear();
+  const u = await staffUser();
+  const ok = await upload(u, "wide", await tilted(900, 1200), "image/jpeg");
+  assert.equal(ok.status, 201);
+  assert.deepEqual(await sizeOf(((await ok.json()) as any).url), [1200, 900]);
+  const bad = await upload(u, "wide", await tilted(1200, 900), "image/jpeg");
+  assert.equal(bad.status, 400);
+  assert.equal(await errOf(bad), "wrongShape");
+  assert.equal((await upload(u, "strip", await tilted(300, 1350), "image/jpeg")).status, 201);
+});
+
+test("15 too-small images are refused", async () => {
+  await clear();
+  const u = await staffUser();
+  const s = await upload(u, "strip", await png(450, 100));
+  assert.equal(s.status, 400);
+  assert.equal(await errOf(s), "tooSmall");
+  const w = await upload(u, "wide", await png(400, 300));
+  assert.equal(w.status, 400);
+  assert.equal(await errOf(w), "tooSmall");
+});
+
+test("16 a see-through top row gets the Charcoal edge, not its hidden colour", async () => {
+  await clear();
+  const u = await staffUser();
+  const img = await sharp({ create: { width: 1350, height: 300, channels: 4, background: { r: 255, g: 0, b: 0, alpha: 0 } } }).png().toBuffer();
+  const r = await upload(u, "strip", img);
+  assert.equal(r.status, 201);
+  const { edge } = (await r.json()) as { edge: string };
+  const d = [1, 3, 5].map((i) => Math.abs(parseInt(edge.slice(i, i + 2), 16) - parseInt("121215".slice(i - 1, i + 1), 16)));
+  assert.ok(d.every((x) => x <= 3), edge);
+});
+
+test("17 an image another list still shows is not deleted", async () => {
+  await clear();
+  const u = await staffUser();
+  const s = as(u);
+  const A = await up(u, "wide");
+  const ad = { title: "Offer", image: A.url, colour: "forest", places: ["home"] };
+  const slide = { kind: "image", image: A.url, edge: A.edge, label: "x" };
+  const a1 = await s("PUT", "/galaxy/app-content/ads", { value: [ad], at: null });
+  assert.equal(a1.status, 200);
+  const f1 = await s("PUT", "/galaxy/app-content/featured", { value: [slide], at: null });
+  assert.equal(f1.status, 200);
+  t.tick(1000);
+  assert.equal((await s("PUT", "/galaxy/app-content/ads", { value: [], at: a1.body.at })).status, 200);
+  assert.ok(t.media.files.keys().includes(keyOf(A.url)));
+  t.tick(1000);
+  assert.equal((await s("PUT", "/galaxy/app-content/featured", { value: [], at: f1.body.at })).status, 200);
+  assert.ok(!t.media.files.keys().includes(keyOf(A.url)));
+});
+
+test("18 dropContent leaves keys that aren't App content images", async () => {
+  const id = "6f1c2d3e-0000-4000-8000-000000000000";
+  const name = "abcdefghijklmnopqrstuv";
+  const keys = [`users/${id}/${name}.webp`, `content/${id}/short.webp`, `content/not-a-uuid/${name}.webp`];
+  for (const k of keys) await t.media.files.put(k, new Uint8Array([1]), "image/webp");
+  for (const k of keys) await dropContent(t.media, `${t.media.url}/${k}`);
+  await dropContent(t.media, `https://evil.test/media/content/${id}/${name}.webp`);
+  const have = t.media.files.keys();
+  for (const k of keys) assert.ok(have.includes(k), k);
 });

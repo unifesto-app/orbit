@@ -24,7 +24,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import { DARK_TINT, Glass } from '../../glass';
-import { useAds, useContent } from '../../content';
+import { useAds, useContent, usePromoted } from '../../content';
 import { type Event, type Host, events, hosts, now } from '../../mock';
 import { OrbitAdStrip } from '../../orbitAd';
 import { askOrbit, OrbitSays } from '../../orbitSays';
@@ -43,6 +43,7 @@ export default function Search() {
   const { width } = useWindowDimensions();
   const content = useContent(); // Ask Orbit's chips, from Galaxy's App content (src/content.ts)
   const ad = useAds('search')[0];
+  const promoted = usePromoted(); // events staff marked Promoted (src/content.ts)
   const [q, setQ] = useState('');
   const [when, setWhen] = useState<When>();
   const [free, setFree] = useState(false);
@@ -56,7 +57,7 @@ export default function Search() {
   const hostOf = (id: string) => hosts.find((h) => h.id === id) as Host;
   const result = search(filters, events, findable, now);
   // One promoted event leads what's found (Boost), only if it matched; nothing is added.
-  const found = { ...result, events: promoteOne(result.events, (e) => isPromoted(e, hostOf(e.hostId))) };
+  const found = { ...result, events: promoteOne(result.events, (e) => isPromoted(e, hostOf(e.hostId), promoted)) };
   const nothing = found.events.length === 0 && found.hosts.length === 0;
   // Nothing typed or picked: the categories to explore, then everything coming up. Otherwise the results.
   const browsing = !q0 && !when && !free && !category;
@@ -66,7 +67,7 @@ export default function Search() {
   const everything = { q: '', free: false };
   const [choice, weekend, freeOnes] = browsing
     ? firstUnseen([
-        found.events.filter((e) => labelOf(e, hostOf(e.hostId)) === 'People’s choice'),
+        found.events.filter((e) => labelOf(e, hostOf(e.hostId), promoted) === 'People’s choice'),
         search({ ...everything, when: 'weekend' }, events, findable, now).events,
         search({ ...everything, free: true }, events, findable, now).events,
       ])

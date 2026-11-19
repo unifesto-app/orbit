@@ -276,6 +276,8 @@ export const api = makeApi({
   base: API_URL,
   fetch,
   refreshToken,
+  client: `${Platform.OS}/${Constants.expoConfig?.version ?? ''}`, // "ios/1.0.0", for Galaxy's Analytics
+
   onEnded: (why) => {
     set(null);
     if (why.error === 'suspended') Alert.alert('Signed out', why.message);

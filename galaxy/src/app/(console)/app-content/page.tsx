@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import { read } from "../../../api";
 import { Alert, Container, ui } from "../../ui";
-import { AdsEditor, AsksEditor, HelpEditor } from "./editors";
+import { AdsEditor, AsksEditor, FeaturedEditor, HelpEditor, PromotedEditor } from "./editors";
 
 // App content (owner, 19 Nov 2026: "build CMS for Orbit App in galaxy web"; API: /galaxy/app-content), for holders of
 // Platform: the words Orbit itself writes in the app, each list saved whole (contract/src/content.ts). Hosts' events
@@ -15,7 +15,7 @@ export default function AppContentPage() {
     <div className={ui.page}>
       <header className={ui.pageHeader}>
         <h1 className={ui.h1}>App content</h1>
-        <p className={ui.secondary}>What Orbit itself says in the app. Phones pick up a saved change within a couple of minutes of opening it.</p>
+        <p className={ui.secondary}>What Orbit itself puts in the app. Phones pick up a saved change within a couple of minutes of opening it.</p>
       </header>
       <Suspense fallback={null}>
         <Load />
@@ -30,7 +30,7 @@ const when = (iso: string) =>
 function LastSaved({ s }: { s: ContentAdmin["saved"][keyof ContentAdmin["saved"]] }) {
   return (
     <p className={ui.secondary}>
-      {s ? `Last saved ${when(s.at)}${s.by ? ` by ${s.by}` : ""}.` : "Never saved: the app shows Orbit’s first words, as below."}
+      {s ? `Last saved ${when(s.at)}${s.by ? ` by ${s.by}` : ""}.` : "Never saved: the app shows what’s below, as it did before App content."}
     </p>
   );
 }
@@ -43,9 +43,27 @@ async function Load() {
   const now = new Date().getTime();
   return (
     <>
+      <Container title="Featured" count={content.featured.length}>
+        <p className={ui.secondary}>
+          Home’s carousel, right after a promoted event, in this order, unlabelled: an event or host with its own 4:3 picture, or Orbit’s own image slide.
+          The carousel fills the rest itself, six slides in all.
+        </p>
+        <LastSaved s={saved.featured} />
+        <FeaturedEditor initial={content.featured} at={saved.featured?.at ?? null} now={now} />
+      </Container>
+
+      <Container title="Promoted" count={content.promoted.length}>
+        <p className={ui.secondary}>
+          Events marked Promoted: the label on their rows, first in lists and search, the carousel’s first slide and the banner in the middle of Home (those
+          two need a 4:3 poster). Set here until hosts can buy Boost.
+        </p>
+        <LastSaved s={saved.promoted} />
+        <PromotedEditor initial={content.promoted} at={saved.promoted?.at ?? null} now={now} />
+      </Container>
+
       <Container title="Ad strips" count={content.ads.length}>
         <p className={ui.secondary}>
-          Orbit’s own offers, never a host’s paid reach. Home shows the first two live ads marked Home, after your events and after everything coming up;
+          Orbit’s own offers, never a host’s paid reach: three lines of words, or an uploaded 4.5:1 image. Home shows the first two live ads marked Home, after your events and after everything coming up;
           Search and Account show the first live one marked for each. An ad is live from its start to its end, by the phone’s clock.
         </p>
         <LastSaved s={saved.ads} />

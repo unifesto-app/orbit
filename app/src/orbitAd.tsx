@@ -88,8 +88,10 @@ export function OrbitAdStrip({
 }) {
   const inner = width - 2 * rim;
   // Never shorter than its three lines at their largest (MAX_TEXT), so a small phone or bigger text doesn't clip them.
-  const tall = Math.max(Math.round(inner / 4.5), 64);
-  const bg = palette[ad.colour];
+  // An image strip (owner, 19 Nov 2026: "Ad strips image uplaod also instead of text") is exactly 4.5:1, its upload's
+  // shape, with no words to fit.
+  const tall = ad.image ? inner / 4.5 : Math.max(Math.round(inner / 4.5), 64);
+  const bg = palette[ad.colour]; // under an image too, while it loads
   const dark = darkInkOn(bg);
   const ink = dark ? groundAt(1) : color.text;
   const rx = tall * 0.8; // the orbits' half-width, kept inside the strip with the pearl
@@ -99,12 +101,14 @@ export function OrbitAdStrip({
     <Pressable
       disabled={!ad.href}
       onPress={() => ad.href && router.push(ad.href)}
-      accessibilityRole={ad.href ? 'button' : undefined}
-      accessibilityLabel={`${ad.kicker}. ${ad.title}. ${ad.line}`}
+      accessibilityRole={ad.href ? 'button' : ad.image ? 'image' : undefined}
+      accessibilityLabel={ad.image ? ad.title : [ad.kicker, ad.title, ad.line].join('. ')}
       style={({ pressed }) => [styles.place, style, pressed && styles.pressed]}>
       <Glass style={[styles.rim, { width }]}>
         <View style={[styles.strip, { height: tall, backgroundColor: bg }]}>
-          {symbols ? (
+          {ad.image ? (
+            <Image source={{ uri: ad.image }} resizeMode="cover" accessible={false} style={StyleSheet.absoluteFill} />
+          ) : symbols ? (
             // Sage rings, as the splash draws them, on a dark strip; the ad's own ink on a light one.
             <Symbols inner={inner} tall={tall} cx={cx} cy={cy} stroke={dark ? ink : color.accent} />
           ) : (
@@ -119,11 +123,13 @@ export function OrbitAdStrip({
               </G>
             </Svg>
           )}
-          <View style={styles.text}>
-            <Text style={[styles.kicker, { color: ink }]} numberOfLines={1} maxFontSizeMultiplier={MAX_TEXT}>{ad.kicker}</Text>
-            <Text style={[styles.title, { color: ink }]} numberOfLines={1} maxFontSizeMultiplier={MAX_TEXT}>{ad.title}</Text>
-            <Text style={[styles.line, { color: ink }]} numberOfLines={1} maxFontSizeMultiplier={MAX_TEXT}>{ad.line}</Text>
-          </View>
+          {!ad.image && (
+            <View style={styles.text}>
+              <Text style={[styles.kicker, { color: ink }]} numberOfLines={1} maxFontSizeMultiplier={MAX_TEXT}>{ad.kicker}</Text>
+              <Text style={[styles.title, { color: ink }]} numberOfLines={1} maxFontSizeMultiplier={MAX_TEXT}>{ad.title}</Text>
+              <Text style={[styles.line, { color: ink }]} numberOfLines={1} maxFontSizeMultiplier={MAX_TEXT}>{ad.line}</Text>
+            </View>
+          )}
         </View>
       </Glass>
     </Pressable>

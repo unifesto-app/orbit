@@ -1,7 +1,7 @@
 import { and, eq, gt, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import type { Db } from "../db/index.ts";
-import { follows, hosts, identities, passkeys, pmActivity, sessions, staffGrants, teamRoles, users } from "../db/schema.ts";
+import { activity, follows, hosts, identities, passkeys, pmActivity, sessions, staffGrants, teamRoles, users } from "../db/schema.ts";
 import { type Env, fail, type Notify, signedIn } from "../http.ts";
 import { drop, type Media } from "../media.ts";
 import { holdIfUnanswered, ownerOnlySql } from "../roles/access.ts";
@@ -133,6 +133,7 @@ export async function runDeletions(db: Db, notify: Notify, now: number, revokeAp
         await tx.delete(passkeys).where(eq(passkeys.userId, u.id));
         const links = await tx.delete(identities).where(eq(identities.userId, u.id)).returning({ appleRefresh: identities.appleRefresh });
         await tx.delete(follows).where(eq(follows.userId, u.id)); // the row stays, so the cascade never fires
+        await tx.delete(activity).where(eq(activity.userId, u.id)); // analytics rows go with the account (owner, 19 Nov 2026)
         const seats = await tx
           .update(teamRoles)
           .set({ endedAt: at, endReason: "deleted" })

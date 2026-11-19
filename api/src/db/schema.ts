@@ -469,3 +469,29 @@ export const appContent = pgTable("app_content", {
   updatedAt: at("updated_at").notNull(),
   updatedBy: uuid("updated_by").references(() => users.id),
 });
+
+// The activity log (contract/src/analytics.ts; owner, 19 Nov 2026: "user analytics, mau, dau etc"): one row per person
+// per IST day per platform, from their signed-in requests (activity.ts, markActive). Kept 90 days (owner: "90 days"):
+// older days are summed into activityDays and deleted (server.ts). Deleted with the account (auth/deletion.ts).
+export const activity = pgTable(
+  "activity",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    day: date("day", { mode: "string" }).notNull(),
+    platform: text("platform", { enum: ["ios", "android", "web", "app"] }).notNull(),
+    version: text("version"), // the app's, "1.0.0"; none on the web or an older build
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.day, t.platform] }), index("activity_day_idx").on(t.day)],
+);
+
+// Each day's totals once its activity rows are swept, with no people in them, so long-term charts outlive the 90 days.
+export const activityDays = pgTable("activity_days", {
+  day: date("day", { mode: "string" }).primaryKey(),
+  active: integer("active").notNull(), // distinct people that day
+  ios: integer("ios").notNull(),
+  android: integer("android").notNull(),
+  web: integer("web").notNull(),
+  app: integer("app").notNull(),
+});
