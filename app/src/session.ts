@@ -6,7 +6,7 @@
 // token is kept in the Keychain, and the access token only in memory.
 // ponytail: saved events, saved lists and followed hosts stay on this phone, seeded from the mock (src/account/data.ts,
 // src/mock.ts), until the API has them.
-import type { AuthStep, CategorySlug, Me as Account } from '@orbit/contract';
+import { type AuthStep, type CategorySlug, type Me as Account, movedCategory } from '@orbit/contract';
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import Storage from 'expo-sqlite/kv-store';
@@ -79,7 +79,12 @@ function stored(): Session | null {
   try {
     const s = JSON.parse(Storage.getItemSync(KEY) ?? 'null');
     const ok = typeof s?.via === 'string' && Array.isArray(s.saved) && Array.isArray(s.follows) && typeof s.me?.id === 'string';
-    if (ok && refreshToken.get()) return { ...s, ...saves.normalise(s, Date.now()) }; // one stored before lists keeps its saves
+    if (ok && refreshToken.get()) {
+      // Interests picked before the eight tiles move with their category (Music to Jams; Workshops, Film and Startups
+      // to Events), so none is left unpickable.
+      const interests = Array.isArray(s.interests) ? [...new Set(s.interests.map((c: string) => movedCategory[c] ?? c))] : s.interests;
+      return { ...s, interests, ...saves.normalise(s, Date.now()) }; // one stored before lists keeps its saves
+    }
     // No refresh token: a session from before the API, or one whose token stayed in memory, so signed out, and the
     // account's details aren't left behind on the phone.
     if (s && !unreadable) Storage.removeItemSync(KEY);
