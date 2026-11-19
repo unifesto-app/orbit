@@ -24,9 +24,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import { DARK_TINT, Glass } from '../../glass';
-import { type Event, type Host, events, hosts, now, orbitAds } from '../../mock';
+import { useAds, useContent } from '../../content';
+import { type Event, type Host, events, hosts, now } from '../../mock';
 import { OrbitAdStrip } from '../../orbitAd';
-import { askOrbit, OrbitSays, SUGGESTIONS } from '../../orbitSays';
+import { askOrbit, OrbitSays } from '../../orbitSays';
 import { CategoryGrid } from '../../categories';
 import { tileFor } from '../../kinds';
 import { isNewHost, promoteOne } from '../../labels';
@@ -40,6 +41,8 @@ export default function Search() {
   const insets = useSafeAreaInsets();
   const onTabScroll = useTabBarScroll(); // shrinks the tab bar on the way down
   const { width } = useWindowDimensions();
+  const content = useContent(); // Ask Orbit's chips, from Galaxy's App content (src/content.ts)
+  const ad = useAds('search')[0];
   const [q, setQ] = useState('');
   const [when, setWhen] = useState<When>();
   const [free, setFree] = useState(false);
@@ -111,7 +114,7 @@ export default function Search() {
             <OrbitSays
               title="Not sure yet?"
               text="Ask me about events, places to play and hosts near you."
-              answers={SUGGESTIONS.map((ask) => ({ label: ask, onPress: () => askOrbit(ask) }))}
+              answers={content.asks.map((ask) => ({ label: ask, onPress: () => askOrbit(ask) }))}
             />
             <CenteredHeading title="Explore" script />
             <CategoryGrid onPress={setCategory} />
@@ -119,9 +122,7 @@ export default function Search() {
             <EventSection title="This weekend" events={weekend} hostOf={hostOf} onMore={() => setWhen('weekend')} />
             {/* One of Orbit's own ads, before the places to play (owner, 19 Nov 2026: "add one strip in search"). */}
             {/* A link to Search itself goes nowhere from here, so the strip is only read. */}
-            {orbitAds[1] && (
-              <OrbitAdStrip ad={{ ...orbitAds[1], href: orbitAds[1].href === '/search' ? undefined : orbitAds[1].href }} width={width - 40} />
-            )}
+            {ad && <OrbitAdStrip ad={{ ...ad, href: ad.href === '/search' ? undefined : ad.href }} width={width - 40} />}
             {places.length > 0 && (
               <>
                 <CenteredHeading title="Places to play" />

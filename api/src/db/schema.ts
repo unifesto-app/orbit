@@ -461,3 +461,11 @@ export const visit = pgTable(
   },
   (t) => [index("visit_at_idx").on(t.at)],
 );
+
+// The words in the app that Orbit itself writes (ad strips, help answers, chat chips), one row per list, edited in Galaxy's App content page. Lists and their shapes are in contract/src/content.ts.
+export const appContent = pgTable("app_content", {
+  key: text("key").primaryKey(),
+  value: jsonb("value").notNull(),
+  updatedAt: at("updated_at").notNull(),
+  updatedBy: uuid("updated_by").references(() => users.id),
+});

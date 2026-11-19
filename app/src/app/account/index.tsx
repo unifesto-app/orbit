@@ -16,7 +16,7 @@ import { Alert, StyleSheet, Text, View, useWindowDimensions } from 'react-native
 
 import { Group, Page, Panel, Pill, Row, TONE } from '../../account/kit';
 import { ProfileHead, useFollows } from '../../account/profile';
-import { orbitAds } from '../../mock';
+import { useAds } from '../../content';
 import { OrbitAdStrip } from '../../orbitAd';
 import { day } from '../../account/rules';
 import { keepAccount, needsAccount, signOut, useSession, useViewer } from '../../session';
@@ -27,6 +27,7 @@ const go = (href: Href) => () => router.push(href);
 export default function Account() {
   const viewer = useViewer(); // signed in or out on this phone (src/session.ts)
   const { width } = useWindowDimensions();
+  const ad = useAds('account')[0]; // Orbit's own live strip, from Galaxy's App content (src/content.ts)
   const due = useSession()?.me.deletionDue; // set to be deleted: Keep my account in place of Delete account
   useFollows(); // the profile's Following count, read here so it's ready when the profile opens
   const logOut = () =>
@@ -74,7 +75,7 @@ export default function Account() {
           </Group>
           {/* One of Orbit's own ads, after Your events (owner, 19 Nov 2026: "add one in account", "move it after your
               events"), 24 below it as an untitled group. */}
-          {orbitAds[0] && <OrbitAdStrip ad={orbitAds[0]} width={width - 40} style={styles.ad} symbols />}
+          {ad && <OrbitAdStrip ad={ad} width={width - 40} style={styles.ad} symbols />}
 
           <Group title="Money">
             <Row icon="receipt" tone={TONE.green} label="Transactions" chevron onPress={go('/account/transactions')} />

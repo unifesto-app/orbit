@@ -58,6 +58,9 @@ export const sections: { title: string; items: NavItem[] }[] = [
   {
     title: "Content",
     items: [
+      // The words Orbit itself writes in the app: ad strips, Help answers, Ask Orbit (owner, 19 Nov 2026: "build CMS
+      // for Orbit App in galaxy web").
+      { label: "App content", href: "/app-content" },
       { label: "Blog", href: "/blog" },
       { label: "Help", href: "/help" },
       { label: "Careers", href: "/careers" },

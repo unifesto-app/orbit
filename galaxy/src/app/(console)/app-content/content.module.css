@@ -1,0 +1,96 @@
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-m);
+}
+
+/* One row of a list: AWS's bordered group, its number in the border. */
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-s);
+  padding: var(--space-s) var(--space-m) var(--space-xs);
+  border: var(--border-divider-section-width) solid var(--color-border-divider-default);
+  border-radius: var(--border-radius-container);
+}
+
+.legend {
+  padding: 0 var(--space-xxs);
+  color: var(--color-text-heading-default);
+  font-family: var(--font-family-heading);
+  font-weight: var(--font-weight-heading);
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-s) var(--space-l);
+}
+
+.wide {
+  width: 100%;
+}
+
+.ad {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-s);
+}
+
+.places {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs) var(--space-l);
+  border: 0;
+}
+
+.places legend {
+  margin-bottom: var(--space-xxs);
+}
+
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xxs);
+}
+
+/* The app's ad strip (app/src/orbitAd.tsx), roughly: 4.5 wide to 1 tall, 6 corners, Stone words left, one line each. */
+.strip {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  width: min(100%, 360px);
+  aspect-ratio: 4.5;
+  padding: 0 16px;
+  border-radius: 6px;
+  color: var(--orbit-stone);
+  overflow: hidden;
+}
+
+.strip span {
+  max-width: 64%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kicker {
+  font-size: 11px;
+  line-height: 14px;
+  opacity: 0.75;
+  font-weight: 500;
+}
+
+.title {
+  font-family: var(--font-family-heading);
+  font-size: 16px;
+  line-height: 20px;
+  font-weight: 500;
+}
+
+.line {
+  font-size: 12px;
+  line-height: 15px;
+  opacity: 0.8;
+}

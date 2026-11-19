@@ -4,16 +4,18 @@
 // strip four and a half times as wide as it's tall, on the page's 20 margins, 40 below what's above it. One line each
 // for kicker, title and line, in the ad's own colour, its words in Stone or Charcoal to suit it; two tilted crossing
 // orbits with a pearl at the right (the kit's orbits, never bullseye rings). Opens its link, if it has one. Not a host's
-// boost, so no Promoted. The ads themselves are `orbitAds` in src/mock.ts.
+// boost, so no Promoted. The ads themselves are staff's, from Galaxy's App content (src/content.ts), filled with one of
+// the brand's fills by name.
 // `symbols` (Account; owner, 19 Nov 2026: "bring symbols and orbit in card in account screen", "dont add animation"):
 // the splash's three tilted rings instead, still, with the pearl, spark, star and heart resting on them, smaller and
 // dimmer round the back as on the splash (src/splash/motion.ts).
+import type { Ad } from '@orbit/contract';
+import { palette } from '@orbit/tokens';
 import { router } from 'expo-router';
 import { Image, type ImageSourcePropType, Pressable, type StyleProp, StyleSheet, Text, View, type ViewStyle } from 'react-native';
 import Svg, { Circle, Ellipse, G } from 'react-native-svg';
 
 import { Glass } from './glass';
-import type { OrbitAd } from './mock';
 import { around, color, darkInkOn, font, groundAt, radius, rim, space } from './theme';
 
 // The card corners every Home card nests (its contents' 6, the small gap, then the frosted rim).
@@ -79,7 +81,7 @@ export function OrbitAdStrip({
   style,
   symbols = false,
 }: {
-  ad: OrbitAd;
+  ad: Ad;
   width: number;
   style?: StyleProp<ViewStyle>;
   symbols?: boolean;
@@ -87,7 +89,8 @@ export function OrbitAdStrip({
   const inner = width - 2 * rim;
   // Never shorter than its three lines at their largest (MAX_TEXT), so a small phone or bigger text doesn't clip them.
   const tall = Math.max(Math.round(inner / 4.5), 64);
-  const dark = darkInkOn(ad.bg);
+  const bg = palette[ad.colour];
+  const dark = darkInkOn(bg);
   const ink = dark ? groundAt(1) : color.text;
   const rx = tall * 0.8; // the orbits' half-width, kept inside the strip with the pearl
   const cx = inner - tall * 0.95;
@@ -100,7 +103,7 @@ export function OrbitAdStrip({
       accessibilityLabel={`${ad.kicker}. ${ad.title}. ${ad.line}`}
       style={({ pressed }) => [styles.place, style, pressed && styles.pressed]}>
       <Glass style={[styles.rim, { width }]}>
-        <View style={[styles.strip, { height: tall, backgroundColor: ad.bg }]}>
+        <View style={[styles.strip, { height: tall, backgroundColor: bg }]}>
           {symbols ? (
             // Sage rings, as the splash draws them, on a dark strip; the ad's own ink on a light one.
             <Symbols inner={inner} tall={tall} cx={cx} cy={cy} stroke={dark ? ink : color.accent} />
