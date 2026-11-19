@@ -1,6 +1,6 @@
 "use server";
 
-import type { ContentKey } from "@orbit/contract";
+import type { ContentImage, ContentKey, ContentShape } from "@orbit/contract";
 import { refresh } from "next/cache";
 import { galaxy } from "../../../api";
 
@@ -23,4 +23,15 @@ export async function saveList(key: ContentKey, _: Saved, f: FormData): Promise<
   if (!r.ok) return { error: r.error.message, at: given ?? undefined };
   refresh(); // the page reads again, so "Last saved" says who and when
   return { at: r.data.at, sent };
+}
+
+// An image for an ad strip (4.5:1) or a carousel slide (4:3), uploaded on its own (API: POST /galaxy/app-content/image)
+// and kept only once the list is saved with it. The API checks Platform, the type, the size and the shape.
+export async function uploadImage(shape: ContentShape, f: FormData): Promise<{ image?: ContentImage; error?: string }> {
+  const file = f.get("image");
+  if (!(file instanceof File) || file.size === 0) return { error: "Choose an image." };
+  const body = new FormData();
+  body.append("image", file);
+  const r = await galaxy<ContentImage>("POST", `/galaxy/app-content/image?shape=${shape}`, body);
+  return r.ok ? { image: r.data } : { error: r.error.message };
 }

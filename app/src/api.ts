@@ -5,7 +5,7 @@
 //   refresh token, once, and the request tried again.
 // The refresh token rotates on every use and the previous one stops working 60 seconds later (api/src/auth/tokens.ts),
 // so one refresh runs at a time and the new token is kept the moment it arrives.
-import type { ApiError } from '@orbit/contract';
+import { type ApiError, CLIENT_HEADER } from '@orbit/contract';
 
 export const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://api.heyorbit.in';
 
@@ -30,6 +30,9 @@ export function makeApi(deps: {
   // message says why.
   onEnded: (why: ApiError) => void;
   now?: () => number;
+  // What this is, "ios/1.0.0", sent on every request so Galaxy's Analytics can count people by platform and version
+  // (contract/src/analytics.ts, CLIENT_HEADER).
+  client?: string;
 }) {
   const now = deps.now ?? Date.now;
 
@@ -45,6 +48,7 @@ export function makeApi(deps: {
         headers: {
           ...(body === undefined || form ? {} : { 'content-type': 'application/json' }),
           ...(access ? { authorization: `Bearer ${access}` } : {}),
+          ...(deps.client ? { [CLIENT_HEADER]: deps.client } : {}),
         },
         body: body === undefined ? undefined : form ? body : JSON.stringify(body),
         signal: abort.signal,

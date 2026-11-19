@@ -53,10 +53,6 @@ export function Shell({ children, account }: { children: ReactNode; account: Rea
           <Image src={wordmark} alt="Orbit" priority />
           <span className={ui.script}>Galaxy</span>
         </Link>
-        <form action="/search" role="search" className={styles.search}>
-          <Icon name="search" />
-          <input type="search" name="q" placeholder="Search" aria-label="Search Galaxy" />
-        </form>
         <a className={`${styles.topLink} ${styles.site}`} href="https://heyorbit.in" target="_blank" rel="noreferrer">
           heyorbit.in <Icon name="external" />
         </a>

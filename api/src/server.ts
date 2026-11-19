@@ -5,6 +5,7 @@ import { codeSender, emailSender, type Mail, sesClient, sesMail, whatsappSender 
 import { readContact } from "@orbit/contract";
 import type { ProofConfig } from "./auth/proof.ts";
 import { memoryStore, redisStore } from "./auth/store.ts";
+import { sweepActivity } from "./analytics.ts";
 import { pruneVisits } from "./visits.ts";
 import { ways, type WaysConfig } from "./auth/ways.ts";
 import { connect, migrateDb } from "./db/index.ts";
@@ -143,6 +144,11 @@ setInterval(() => runDeletions(db, notify, Date.now(), revokeApple, media).catch
 
 // Visit log rows past the privacy page's 180 days.
 setInterval(() => pruneVisits(db, Date.now()).catch((e) => console.error("[visits]", e)), 60 * 60 * 1000).unref();
+
+// Activity rows past 90 days (owner, 19 Nov 2026: "90 days"): their day's totals are kept, the people go. On start, then hourly.
+const sweep = () => sweepActivity(db, Date.now()).catch((e) => console.error("[activity]", e));
+void sweep();
+setInterval(sweep, 60 * 60 * 1000).unref();
 
 serve({ fetch: createApp({ db, store, send, notify, secret, codes, ways: waysConfig, media, proof, mail }).fetch, port }, (info) => {
   console.log(`orbit-api listening on :${info.port}`);

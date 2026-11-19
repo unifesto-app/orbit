@@ -28,6 +28,7 @@ import { acts, fromPricePaise, perHour, venues } from './kinds';
 import { type Event, type Host, hosts, now } from './mock';
 import { showNote } from './note';
 import { followsNow, needsAccount, setFollowing, setLoved, tapSave, useFollowing, useLoved, useSaved, useViewer } from './session';
+import { usePromoted } from './content';
 import { eventLabel } from './labels';
 import { OrbitSays } from './orbitSays';
 import { eventStatus, isNews, rowTag, seatsLine, type Status } from './status';
@@ -75,8 +76,9 @@ export function EventRow({
   onPress?: () => void;
 }) {
   const st = eventStatus(e, now);
+  const promoted = usePromoted();
   if (found) {
-    const label = kicker === true ? eventLabel(e, host, st, now) : undefined;
+    const label = kicker === true ? eventLabel({ promoted: promoted.has(e.id) }, host, st, now) : undefined;
     const kick = typeof kicker === 'string' ? kicker : [host.name, label].filter(Boolean).join(' · ');
     return (
       <View style={[styles.row, styles.foundRow]}>
@@ -199,9 +201,13 @@ export function FollowRow({ host, line, onPress }: { host: Host; line: string; o
   );
 }
 
-/** An event's label right now (src/labels.ts), and whether it's Promoted, so a list can move it up (promoteOne). */
-export const labelOf = (e: Event, host: Host) => eventLabel(e, host, eventStatus(e, now), now);
-export const isPromoted = (e: Event, host: Host) => labelOf(e, host) === 'Promoted';
+/**
+ * An event's label right now (src/labels.ts), and whether it's Promoted, so a list can move it up (promoteOne).
+ * `promoted` is the ids staff marked Promoted in Galaxy's App content (usePromoted in src/content.ts).
+ */
+export const labelOf = (e: Event, host: Host, promoted: ReadonlySet<string>) =>
+  eventLabel({ promoted: promoted.has(e.id) }, host, eventStatus(e, now), now);
+export const isPromoted = (e: Event, host: Host, promoted: ReadonlySet<string>) => labelOf(e, host, promoted) === 'Promoted';
 
 function Price({ event: e, status }: { event: Event; status: Status }) {
   const seats = seatsLine(e, status);

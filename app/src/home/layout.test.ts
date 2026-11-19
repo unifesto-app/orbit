@@ -24,7 +24,7 @@ const host = (id: string, area: string, joinedDay: number, banner?: boolean) => 
   ...(banner ? { banner: true } : {}),
 });
 const ids = (xs: { id: string }[]) => xs.map((x) => x.id);
-const slideIds = (s: any[]) => s.map((x) => (x.kind === 'event' ? x.event.id : x.host.id));
+const slideIds = (s: any[]) => s.map((x) => (x.kind === 'event' ? x.event.id : x.kind === 'host' ? x.host.id : `custom:${x.custom.label}`));
 const signedOut = { signedIn: false, follows: [], place };
 
 test('signed in, following, with a ticket', () => {
@@ -86,6 +86,27 @@ test('a promoted event with a 4:3 poster leads the slides once, near you, follow
   assert.equal(slideIds(following.slides)[0], 'ad');
   assert.equal(slideIds(planHome(signedOut, events, [], NOW).slides)[0], 'n6'); // no boost: newest first, as before
   assert.equal(p.ad, undefined); // one boost near: it leads the carousel, no banner
+});
+
+test('featured slides follow the promoted lead in staff order; past, 4:3-less and repeated ones are skipped; six in all', () => {
+  const events = [...[1, 2, 3, 4, 5, 6].map((n) => ev(`n${n}`, 'h1', NEAR, 16 + n, n, true)), ev('ad', 'h2', NEAR, 18, 1, true), ev('farPick', 'h3', FAR, 19, 1, true), ev('flat', 'h3', NEAR, 19, 1), ev('past', 'h3', NEAR, 10, 1, true)];
+  const hosts = [host('banner', FAR, 1, true), host('plain', NEAR, 2)];
+  const promoted = (e: { id: string }) => e.id === 'ad';
+  const image = { kind: 'image' as const, image: 'https://api.test/media/content/x/y.webp', edge: '#000000', label: 'Card offer' };
+  const featured = [
+    { kind: 'pick' as const, href: '/event/farPick' }, // far from you: staff picks show anyway
+    image,
+    { kind: 'pick' as const, href: '/event/ad' }, // already the lead: not twice
+    { kind: 'pick' as const, href: '/event/flat' }, // no 4:3 poster
+    { kind: 'pick' as const, href: '/event/past' }, // over
+    { kind: 'pick' as const, href: '/event/missing' },
+    { kind: 'pick' as const, href: '/host/banner' },
+    { kind: 'pick' as const, href: '/host/plain' }, // no banner
+  ];
+  const p = planHome(signedOut, events, hosts, NOW, promoted, featured);
+  assert.deepEqual(slideIds(p.slides), ['ad', 'farPick', 'custom:Card offer', 'banner', 'n6', 'n5']);
+  // No featured: as before.
+  assert.deepEqual(slideIds(planHome(signedOut, events, hosts, NOW, promoted).slides).slice(0, 2), ['ad', 'n6']);
 });
 
 test('a second promoted event is the banner in the middle, kept out of the carousel; booked ones are neither', () => {
@@ -337,4 +358,13 @@ test('outside Telangana and Andhra Pradesh: Coming soon, with everything on ther
   // A place saved before places carried a state is worked out from its city.
   assert.equal(planHome({ signedIn: false, follows: [], place: { area: 'Koramangala', city: 'Bengaluru', nearAreas: [] } }, events, [], NOW).notice, 'comingSoon');
   assert.equal(planHome({ signedIn: false, follows: [], place: { ...place, state: 'Telangana' } }, events, [], NOW).notice, null);
+});
+
+test('a featured pick of the event that is the banner stays out of the slides, and the banner is still that event', () => {
+  const events = [ev('n1', 'h1', NEAR, 17, 9, true), ev('ad1', 'h2', NEAR, 18, 1, true), ev('ad2', 'h2', NEAR, 19, 2, true)];
+  const promoted = (e: { id: string }) => e.id.startsWith('ad');
+  const p = planHome(signedOut, events, [], NOW, promoted, [{ kind: 'pick', href: '/event/ad2' }]);
+  assert.equal(p.ad?.id, 'ad2');
+  assert.ok(!slideIds(p.slides).includes('ad2'));
+  assert.equal(slideIds(p.slides)[0], 'ad1');
 });

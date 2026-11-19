@@ -18,7 +18,7 @@ import { Carousel, type CarouselSlide } from '../../home/Carousel';
 import { DARK_TINT, Glass } from '../../glass';
 import { planHome, type Viewer } from '../../home/layout';
 import { Icon } from '../../icons';
-import { useAds } from '../../content';
+import { useAds, useFeatured, usePromoted } from '../../content';
 import { type Event, type Host, events, hosts, now } from '../../mock';
 import { useUnread } from '../../inboxStore';
 import { OrbitAdStrip } from '../../orbitAd';
@@ -76,18 +76,26 @@ export default function Home() {
     refreshPlace(); // once a launch, only if location is already allowed (src/place.ts)
   }, []);
   const hostOf = (id: string) => hosts.find((h) => h.id === id) as Host;
-  const boosted = (e: Event) => isPromoted(e, hostOf(e.hostId));
-  const plan = planHome(v, events, hosts.map((h) => ({ ...h, tile: tileFor(h.id) })), now, boosted);
+  // Staff's picks from Galaxy's App content (src/content.ts): the events marked Promoted, the carousel's featured
+  // slides, and Orbit's own strips.
+  const promoted = usePromoted();
+  const featured = useFeatured();
+  const ads = useAds('home');
+  const boosted = (e: Event) => isPromoted(e, hostOf(e.hostId), promoted);
+  const plan = planHome(v, events, hosts.map((h) => ({ ...h, tile: tileFor(h.id) })), now, boosted, featured);
   const ticketLabel = (id: string) => v.tickets?.find((t) => t.eventId === id)?.label ?? '';
-  const ads = useAds('home'); // Orbit's own live strips, from Galaxy's App content (src/content.ts)
 
   const headerTop = insets.top + 4;
   const posterTop = headerTop + HEADER + 4;
   const card = (width - 40 - space.big) / 2; // All events and host cards: two columns on the 20px margins, a big gap apart
-  const slides: CarouselSlide[] = plan.slides.map((s) =>
+  const slides: CarouselSlide[] = plan.slides.map((s, i) =>
     s.kind === 'event'
       ? { key: `e:${s.event.id}`, image: s.event.wide!.source, edge: s.event.wide!.edge, label: `${s.event === plan.lead ? 'Promoted. ' : ''}Poster for ${s.event.title}`, action: slideAction(s.event), href: `/event/${s.event.id}`, mark: s.event === plan.lead ? 'Promoted' : undefined }
-      : { key: `h:${s.host.id}`, image: s.host.banner!.source, edge: s.host.banner!.edge, label: `Banner for ${s.host.name}`, action: 'View events', href: `/host/${s.host.id}` },
+      : s.kind === 'host'
+        ? { key: `h:${s.host.id}`, image: s.host.banner!.source, edge: s.host.banner!.edge, label: `Banner for ${s.host.name}`, action: 'View events', href: `/host/${s.host.id}` }
+        : // Orbit's own image slide: no mark (not a host's paid boost). A pill only with somewhere to go: its words, or
+          // "Open"; with nowhere to go it's a still picture.
+          { key: `c:${i}:${s.custom.image}`, image: { uri: s.custom.image }, edge: s.custom.edge!, label: s.custom.label!, action: s.custom.href ? (s.custom.action ?? 'Open') : undefined, href: s.custom.href },
   );
 
 

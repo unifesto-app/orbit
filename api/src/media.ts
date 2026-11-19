@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { DeleteObjectCommand, GetObjectCommand, NoSuchKey, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { Hono } from "hono";
-import { isSquare } from "@orbit/contract";
+import { type ContentShape, isSquare, isStrip, mediaRatio } from "@orbit/contract";
 import { fail, isUuid } from "./http.ts";
 
 // Uploaded images (owner, 17 Nov 2026: a private S3 bucket, served by the API behind Cloudflare's cache). Keys are
@@ -17,7 +17,7 @@ export type Files = {
 // `url` is where GET /media/... answers, such as https://api.heyorbit.in/media. The database keeps whole links.
 export type Media = { files: Files; url: string };
 
-export type Kind = "users" | "hosts";
+export type Kind = "users" | "hosts" | "content";
 export const newKey = (kind: Kind, ownerId: string) => `${kind}/${ownerId}/${randomBytes(16).toString("base64url")}.webp`;
 export const linkOf = (m: Media, key: string) => `${m.url}/${key}`;
 // Only a link this API made for this owner is a file it may delete: never another's, nor one from elsewhere.
@@ -30,6 +30,13 @@ const keyOf = (m: Media, link: string | null, kind: Kind, ownerId: string) => {
 export const drop = async (m: Media, link: string | null, kind: Kind, ownerId: string) => {
   const key = keyOf(m, link, kind, ownerId);
   if (key) await m.files.remove(key).catch((e) => console.error(`[media] couldn't delete ${key}`, e));
+};
+
+// An App content image (owner, 19 Nov 2026: "Ad strips image uplaod also instead of text", "also add custom ads in
+// carousel"): any staff may replace another's, so the owner segment is the uploader and any uploader's file may go.
+export const dropContent = async (m: Media, link: string | null) => {
+  const key = link?.startsWith(`${m.url}/`) ? link.slice(m.url.length + 1) : null;
+  if (key && /^content\/[0-9a-f-]{36}\/[\w-]{22}\.webp$/.test(key)) await m.files.remove(key).catch((e) => console.error(`[media] couldn't delete ${key}`, e));
 };
 
 const SIDE = 1024; // the most a photo or logo is kept at; Account draws it at 96 points
@@ -65,6 +72,44 @@ async function resave(input: Uint8Array): Promise<Square> {
     return { bytes: new Uint8Array(out) };
   } catch {
     return { error: "notImage" }; // not an image, cut short, or too big to open
+  }
+}
+
+// An App content image, in the shape it's for ("Allow 4.5:1 for ads"): a strip 4.5:1 or wide 4:3, never cropped, kept at
+// most 1350 or 1200 wide. `edge` is the saved image's top row, averaged as #rrggbb: it fills the space above a slide
+// while the image loads. Same queue as squareImage.
+type Content = { bytes: Uint8Array; edge: string } | { error: "notImage" | "wrongShape" | "tooSmall" };
+// The least an image may be wide, so a phone never stretches a thumbnail across the screen.
+const MIN_WIDTH: Record<ContentShape, number> = { strip: 900, wide: 800 };
+export function contentImage(input: Uint8Array, shape: ContentShape): Promise<Content> {
+  const mine = turn.then(() => resaveContent(input, shape));
+  turn = mine.catch(() => {});
+  return mine;
+}
+
+async function resaveContent(input: Uint8Array, shape: ContentShape): Promise<Content> {
+  const { default: sharp } = await import("sharp");
+  try {
+    const meta = await sharp(input, { limitInputPixels: MAX_PIXELS }).metadata();
+    if (!["jpeg", "png", "webp"].includes(meta.format ?? "")) return { error: "notImage" };
+    // Upright, as it's saved and shown: a phone photo can be stored sideways with an orientation tag.
+    const { width: w = 0, height: h = 0 } = meta.autoOrient;
+    if (!(shape === "strip" ? isStrip(w, h) : mediaRatio(w, h) === "4:3")) return { error: "wrongShape" };
+    if (w < MIN_WIDTH[shape]) return { error: "tooSmall" };
+    const out = await sharp(input, { limitInputPixels: MAX_PIXELS })
+      .rotate()
+      .resize(shape === "strip" ? 1350 : 1200, undefined, { fit: "inside", withoutEnlargement: true })
+      .webp({ quality: 82 })
+      .toBuffer();
+    const saved = await sharp(out).metadata();
+    // On the app's Charcoal, as a see-through top row shows there. stats() reads its input, not the steps before it, so
+    // the row is flattened to its own buffer first.
+    const row = await sharp(out).extract({ left: 0, top: 0, width: saved.width!, height: 1 }).flatten({ background: "#121215" }).toBuffer();
+    const { channels } = await sharp(row).stats();
+    const edge = "#" + channels.slice(0, 3).map((c) => Math.round(c.mean).toString(16).padStart(2, "0")).join("");
+    return { bytes: new Uint8Array(out), edge };
+  } catch {
+    return { error: "notImage" };
   }
 }
 
@@ -105,7 +150,7 @@ export function mediaRoutes(media: Media | undefined) {
   app.get("/media/:kind/:owner/:name", async (c) => {
     const { kind, owner, name } = c.req.param();
     // No query string: Cloudflare would keep a copy per string, each first one a bucket read and a transfer from the box.
-    const ok = !new URL(c.req.url).search && (kind === "users" || kind === "hosts") && isUuid(owner) && /^[\w-]{22}\.webp$/.test(name);
+    const ok = !new URL(c.req.url).search && (kind === "users" || kind === "hosts" || kind === "content") && isUuid(owner) && /^[\w-]{22}\.webp$/.test(name);
     const file = ok && media ? await media.files.get(`${kind}/${owner}/${name}`) : null;
     if (!file) return fail(c, 404, "notFound", "There's nothing here.");
     return c.body(file.bytes as Uint8Array<ArrayBuffer>, 200, {

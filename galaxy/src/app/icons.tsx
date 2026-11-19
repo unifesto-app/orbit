@@ -10,12 +10,6 @@ const paths = {
   ),
   "angle-left": <path d="M10 3 5 8l5 5" />,
   "angle-down": <path d="m4 6 4 4 4-4" />,
-  search: (
-    <>
-      <circle cx="7" cy="7" r="5" />
-      <path d="m11 11 3.5 3.5" />
-    </>
-  ),
   external: <path d="M10 2h4v4M14 2 8 8M12 9v5H2V4h5" />,
 };
 

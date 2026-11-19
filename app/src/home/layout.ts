@@ -1,7 +1,7 @@
 // What Home shows, from who is looking and what's on. Pure, so it runs on Node in layout.test.ts;
 // src/app/index.tsx only draws what this returns. Rules: the Discover flow doc and the picked
 // Home B boards on the Orbit canvas (owner, 15 Nov 2026).
-import { isServed } from '@orbit/contract';
+import { isServed, type Slide as Featured } from '@orbit/contract';
 
 // source: "gps" when found from the phone's position, "pick" when chosen from the city list (src/app/location.tsx).
 // `state` is a picked city's state or the geocoder's region; places saved before it existed work it out (stateOf).
@@ -29,7 +29,8 @@ export type Viewer = {
 };
 export type PlanEvent = { id: string; hostId: string; area: string; startsAt: string; announced: string; category?: string; wide?: unknown };
 export type PlanHost = { id: string; area: string; joined: string; banner?: unknown; tile?: string }; // tile: a place to play's
-export type Slide<E, H> = { kind: 'event'; event: E } | { kind: 'host'; host: H };
+// `custom`: Orbit's own image slide from Galaxy's App content (owner, 19 Nov 2026: "also add custom ads in carousel").
+export type Slide<E, H> = { kind: 'event'; event: E } | { kind: 'host'; host: H } | { kind: 'custom'; custom: Featured };
 
 const DAY = 86_400_000;
 const MAX_SLIDES = 6; // owner, 15 Nov 2026: "around 6"
@@ -38,14 +39,16 @@ const MAX_HOSTS = 4; // two rows of two host cards
 const MAX_PLACES = 3;
 
 
-// `promoted` says which events are a paid boost that can show now (isPromoted in src/rows.tsx): one leads the carousel,
-// the next is the banner in the middle (`ad`).
+// `promoted` says which events are marked Promoted now (isPromoted in src/rows.tsx): one leads the carousel, the next is
+// the banner in the middle (`ad`). `featured` is staff's live carousel picks and image slides, in their order
+// (src/content.ts, useFeatured).
 export function planHome<E extends PlanEvent, H extends PlanHost>(
   viewer: Viewer,
   events: readonly E[],
   hosts: readonly H[],
   now: number,
   promoted: (e: E) => boolean = () => false,
+  featured: readonly Featured[] = [],
 ) {
   // Compared as times, not strings, so mixed UTC offsets still sort right.
   const upcoming = events.filter((e) => Date.parse(e.startsAt) >= now).sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt));
@@ -123,7 +126,7 @@ export function planHome<E extends PlanEvent, H extends PlanHost>(
     // The end of Home (owner, 15 Nov 2026): every upcoming event, everywhere. Skipped when the list above already is that.
     // The list above is always a subset of `upcoming`, so the same length means the same events.
     all: notice || list.events.length === upcoming.length ? [] : upcoming,
-    slides: pickSlides(upcoming.filter((e) => e !== ad), hosts, followed, following, notice === null, isNear, lead),
+    slides: pickSlides(upcoming.filter((e) => e !== ad), hosts, followed, following, notice === null, isNear, lead, featured),
     lead, // the carousel's paid slide: the only one marked Promoted there
     ad,
   };
@@ -134,7 +137,9 @@ export function planHome<E extends PlanEvent, H extends PlanHost>(
 // "add some view events"). Otherwise the newest events and hosts near you, or anywhere when nothing is near.
 // Newest = announced (events) or joined (hosts).
 // A promoted event leads (owner, 19 Nov 2026: "promotion banners", the promoted slide picked), following or not. One
-// at most, never twice, still six slides in all.
+// at most. Then staff's featured slides in their order (owner, 19 Nov 2026: "featured", "Lead Home's carousel"),
+// anywhere, unlabelled: a pick shows only while its event is coming up with a 4:3 poster, or its host has a banner.
+// Then the usual picks. Nothing twice, six slides in all.
 function pickSlides<E extends PlanEvent, H extends PlanHost>(
   upcoming: readonly E[],
   hosts: readonly H[],
@@ -143,9 +148,22 @@ function pickSlides<E extends PlanEvent, H extends PlanHost>(
   hasNear: boolean,
   isNear: (area: string) => boolean,
   lead: E | undefined,
+  featured: readonly Featured[],
 ): Slide<E, H>[] {
+  const picked = featured.flatMap((f): Slide<E, H>[] => {
+    if (f.kind === 'image') return [{ kind: 'custom', custom: f }];
+    const [, page, id] = (f.href ?? '').split('/');
+    const event = page === 'event' ? upcoming.find((e) => e.id === id && e.wide) : undefined;
+    const host = page === 'host' ? hosts.find((h) => h.id === id && h.banner) : undefined;
+    return event ? [{ kind: 'event', event }] : host ? [{ kind: 'host', host }] : [];
+  });
   const rest = pickRest(upcoming.filter((e) => e !== lead), hosts, followed, following, hasNear, isNear);
-  return lead ? [{ kind: 'event' as const, event: lead }, ...rest].slice(0, MAX_SLIDES) : rest;
+  const seen = new Set<unknown>();
+  const once = (s: Slide<E, H>) => {
+    const key = s.kind === 'event' ? s.event : s.kind === 'host' ? s.host : s.custom;
+    return !seen.has(key) && !!seen.add(key);
+  };
+  return [...(lead ? [{ kind: 'event' as const, event: lead }] : []), ...picked, ...rest].filter(once).slice(0, MAX_SLIDES);
 }
 
 function pickRest<E extends PlanEvent, H extends PlanHost>(

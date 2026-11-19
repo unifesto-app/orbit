@@ -1,7 +1,7 @@
 // Galaxy's sign-in: the Orbit API's tokens in httpOnly cookies, set and read only by this Next server, so no script in
 // the browser ever holds one. The server calls the API itself (a backend for the frontend), shared by proxy.ts, the
 // pages (src/api.ts) and the sign-in page's Server Actions. Nothing here imports next/headers, so proxy.ts can use it.
-import type { ApiError } from "@orbit/contract";
+import { type ApiError, CLIENT_HEADER } from "@orbit/contract";
 
 // On the box Galaxy reaches the API inside Docker's `edge` network (deploy/docker-compose.yml), not through Caddy, so
 // the X-Forwarded-For it passes on is the visitor's (Caddy set it on the Galaxy request). Local dev: the API on 4000 (web and Galaxy dev take 3000 and 3001).
@@ -27,16 +27,20 @@ export async function apiFetch<T>(
   path: string,
   o: { body?: unknown; access?: string; xff?: string | null } = {},
 ): Promise<Result<T>> {
+  // A FormData body (an upload) goes as it is, and fetch sets its content-type; anything else goes as JSON.
+  const form = o.body instanceof FormData;
   try {
     const res = await fetch(API_URL + path, {
       method,
       headers: {
-        ...(o.body === undefined ? {} : { "content-type": "application/json" }),
+        ...(o.body === undefined || form ? {} : { "content-type": "application/json" }),
         ...(o.access ? { authorization: `Bearer ${o.access}` } : {}),
+        // Staff at work, never counted as people using Orbit in Analytics (api/src/activity.ts).
+        [CLIENT_HEADER]: "galaxy",
         // The API's rate limits read the visitor's address (api/src/http.ts, clientIp), never Galaxy's.
         ...(o.xff ? { "x-forwarded-for": o.xff } : {}),
       },
-      body: o.body === undefined ? undefined : JSON.stringify(o.body),
+      body: o.body === undefined ? undefined : form ? (o.body as FormData) : JSON.stringify(o.body),
       signal: AbortSignal.timeout(15_000),
     });
     const data: unknown = res.status === 204 ? null : await res.json().catch(() => undefined);

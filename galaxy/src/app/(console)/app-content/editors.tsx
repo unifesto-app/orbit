@@ -1,11 +1,28 @@
 "use client";
 
-import { AD_COLOURS, AD_LINKS, AD_PLACES, type Ad, type AdColour, type AdPlace, adLive, type ContentKey, type HelpAnswer } from "@orbit/contract";
-import { type ReactNode, startTransition, useActionState, useMemo, useState } from "react";
+import {
+  AD_COLOURS,
+  AD_LINKS,
+  AD_PLACES,
+  type Ad,
+  type AdColour,
+  type AdPlace,
+  CONTENT_SHAPES,
+  type ContentImage,
+  type ContentKey,
+  type ContentShape,
+  type HelpAnswer,
+  liveAt,
+  PHOTO_MAX_BYTES,
+  type Promotion,
+  SLIDE_KINDS,
+  type Slide,
+} from "@orbit/contract";
+import { type ReactNode, startTransition, useActionState, useMemo, useRef, useState } from "react";
 import { Badge, ui } from "../../ui";
 import act from "../act.module.css";
 import { fromBox, toBox } from "../../../ist";
-import { saveList } from "./actions";
+import { saveList, uploadImage } from "./actions";
 import styles from "./content.module.css";
 
 // One list, edited in place and saved whole: rows move up and down, come out, or are added at the end, then one Save.
@@ -19,7 +36,9 @@ function ListEditor<T>({
   blank,
   toValue = (rows) => rows,
   row,
+  empty = "None. The app shows nothing here.",
 }: {
+  empty?: string;
   k: ContentKey;
   initial: T[];
   at: string | null;
@@ -29,20 +48,27 @@ function ListEditor<T>({
   toValue?: (rows: T[]) => unknown;
   row: (r: T, set: (patch: Partial<T>) => void, i: number) => ReactNode;
 }) {
-  const [rows, setRows] = useState(initial);
+  // Each row keeps an id of its own while the page is open, so an upload that finishes after a row moved or went lands on
+  // the row it started on, or nowhere.
+  const [rows, setRows] = useState(() => initial.map((v, id) => ({ id, v })));
+  const [nextId, setNextId] = useState(initial.length);
   const [read] = useState(at); // what the rows were read at; once saved, the action's answer carries it
   const action = useMemo(() => saveList.bind(null, k), [k]);
   const [state, submit, pending] = useActionState(action, {});
-  const value = JSON.stringify(toValue(rows));
+  const value = JSON.stringify(toValue(rows.map((r) => r.v)));
   const saved = !pending && !state.error && state.sent === value; // what's on screen is what was saved
 
-  const change = setRows;
   const move = (i: number, by: -1 | 1) =>
-    change((rs) => {
+    setRows((rs) => {
       const n = [...rs];
       [n[i], n[i + by]] = [n[i + by]!, n[i]!];
       return n;
     });
+  const patch = (id: number) => (p: Partial<T>) => setRows((rs) => rs.map((r) => (r.id === id ? { id, v: { ...r.v, ...p } } : r)));
+  const add = () => {
+    setRows((rs) => [...rs, { id: nextId, v: blank() }]);
+    setNextId((n) => n + 1);
+  };
   const Noun = noun[0]!.toUpperCase() + noun.slice(1);
 
   return (
@@ -58,13 +84,13 @@ function ListEditor<T>({
     >
       <input type="hidden" name="value" value={value} />
       <input type="hidden" name="at" value={state.at ?? read ?? ""} />
-      {rows.length === 0 && <p className={ui.secondary}>None. The app shows nothing here.</p>}
+      {rows.length === 0 && <p className={ui.secondary}>{empty}</p>}
       {rows.map((r, i) => (
-        <fieldset key={i} className={styles.item}>
+        <fieldset key={r.id} className={styles.item}>
           <legend className={styles.legend}>
             {Noun} {i + 1}
           </legend>
-          {row(r, (patch) => change((rs) => rs.map((x, j) => (j === i ? { ...x, ...patch } : x))), i)}
+          {row(r.v, patch(r.id), i)}
           <div className={ui.row}>
             <button type="button" className={ui.btnLink} disabled={i === 0} onClick={() => move(i, -1)}>
               Move up
@@ -72,7 +98,7 @@ function ListEditor<T>({
             <button type="button" className={ui.btnLink} disabled={i === rows.length - 1} onClick={() => move(i, 1)}>
               Move down
             </button>
-            <button type="button" className={ui.btnLink} onClick={() => change((rs) => rs.filter((_, j) => j !== i))}>
+            <button type="button" className={ui.btnLink} onClick={() => setRows((rs) => rs.filter((x) => x.id !== r.id))}>
               Remove
             </button>
           </div>
@@ -84,7 +110,7 @@ function ListEditor<T>({
         </p>
       )}
       <div className={ui.row}>
-        <button type="button" className={ui.btn} disabled={rows.length >= max} onClick={() => change((rs) => [...rs, blank()])}>
+        <button type="button" className={ui.btn} disabled={rows.length >= max} onClick={add}>
           Add {noun}
         </button>
         <button className={`${ui.btn} ${ui.primary}`} disabled={pending}>
@@ -107,53 +133,165 @@ function Field({ label, note, children }: { label: string; note?: string; childr
   );
 }
 
-const text = (value: string, set: (v: string) => void, max: number, extra: object = {}) => (
-  <input className={`${ui.input} ${styles.wide}`} value={value} maxLength={max} required onChange={(e) => set(e.target.value)} {...extra} />
+const text = (value: string | undefined, set: (v: string) => void, max: number, extra: object = {}) => (
+  <input className={`${ui.input} ${styles.wide}`} value={value ?? ""} maxLength={max} required onChange={(e) => set(e.target.value)} {...extra} />
 );
 
+// A link as staff paste it ("https://heyorbit.in/event/open-mic-night", or "/event/open-mic-night"), as the app's route.
+const route = (v: string | undefined) => v?.trim().replace(/^(https?:\/\/)?(www\.)?heyorbit\.in(?=\/)/, "") || undefined;
+// Drops what's empty, so an untouched optional box isn't sent as "".
+const tidy = <T extends object>(o: T) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined && v !== "")) as T;
+
+const when = (iso: string) =>
+  new Date(iso).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" });
+
+type Timed = { starts?: string; ends?: string };
+// Whether it's on phones right now (as of opening the page, by the server's clock), and until or from when. The
+// server's Node and the browser may spell a time differently ("pm", "PM"), so the words may differ when the page comes
+// alive; the browser's win.
+function Timing({ item, now }: { item: Timed; now: number }) {
+  const [tone, words] = liveAt(item, now)
+    ? (["success", item.ends ? `Live until ${when(item.ends)}` : "Live"] as const)
+    : item.starts && Date.parse(item.starts) > now
+      ? (["info", `Starts ${when(item.starts)}`] as const)
+      : (["neutral", `Ended${item.ends ? ` ${when(item.ends)}` : ""}`] as const);
+  return (
+    <div>
+      <Badge tone={tone}>
+        <span suppressHydrationWarning>{words}</span>
+      </Badge>
+    </div>
+  );
+}
+
+function TimeFields({ item, set }: { item: Timed; set: (patch: Timed) => void }) {
+  return (
+    <>
+      <Field label="Starts" note="India time, empty for now">
+        <input type="datetime-local" className={`${ui.input} ${styles.wide}`} value={toBox(item.starts)} onChange={(e) => set({ starts: fromBox(e.target.value) })} />
+      </Field>
+      <Field label="Ends" note="India time, empty for never">
+        <input
+          type="datetime-local"
+          className={`${ui.input} ${styles.wide}`}
+          value={toBox(item.ends)}
+          min={toBox(item.starts) || undefined}
+          onChange={(e) => set({ ends: fromBox(e.target.value) })}
+        />
+      </Field>
+    </>
+  );
+}
+
+// Uploads one image the moment it's chosen (owner, 19 Nov 2026: "Ad strips image uplaod also instead of text", "also
+// add custom ads in carousel"). It's kept only once the list is saved with it; the API refuses a wrong shape, never
+// crops it.
+function ImagePick({ shape, has, onImage }: { shape: ContentShape; has: boolean; onImage: (image: ContentImage) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  const file = useRef<HTMLInputElement>(null);
+  const send = async (picked: File) => {
+    // Over 5 MB never leaves the browser: past Galaxy's 6 MB limit it wouldn't reach the action at all.
+    if (picked.size > PHOTO_MAX_BYTES) return setError("That image is over 5 MB.");
+    setBusy(true);
+    setError(undefined);
+    try {
+      const f = new FormData();
+      f.append("image", picked);
+      const r = await uploadImage(shape, f);
+      if (r.image) onImage(r.image);
+      else setError(r.error);
+    } catch {
+      setError("The upload didn’t get through. Check your connection and try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className={styles.pick}>
+      <div className={ui.row}>
+        {/* A real button, so a keyboard reaches it; the file box itself is out of sight. */}
+        <button type="button" className={ui.btn} disabled={busy} onClick={() => file.current?.click()}>
+          {busy ? "Uploading…" : has ? "Replace image" : "Upload image"}
+        </button>
+        <input
+          ref={file}
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          className={styles.offscreen}
+          tabIndex={-1}
+          aria-hidden
+          onChange={(e) => {
+            const picked = e.target.files?.[0];
+            e.target.value = ""; // the same file can be chosen again after a refusal
+            if (picked) void send(picked);
+          }}
+        />
+        <span className={ui.secondary}>{CONTENT_SHAPES[shape]}; a JPG, PNG or WebP up to 5 MB</span>
+      </div>
+      {error && (
+        <p role="alert" className={ui.alert}>
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
 // ─── Ad strips ───
-// The strip as a phone draws it, roughly: its fill, Stone words, one line each, 4.5 times as wide as it's tall.
+// The strip as a phone draws it, roughly: its fill, Stone words, one line each, 4.5 times as wide as it's tall; or the
+// uploaded image filling it.
 function Strip({ ad }: { ad: Ad }) {
   return (
     <div className={styles.strip} style={{ background: `var(--orbit-${ad.colour})` }} aria-hidden>
-      <span className={styles.kicker}>{ad.kicker || "Kicker"}</span>
-      <span className={styles.title}>{ad.title || "Title"}</span>
-      <span className={styles.line}>{ad.line || "Line"}</span>
+      {ad.image ? (
+        // A plain img: the API's own address, already a small WebP, so Next's image server adds nothing.
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={ad.image} alt="" className={styles.fill} />
+      ) : (
+        <>
+          <span className={styles.kicker}>{ad.kicker || "Kicker"}</span>
+          <span className={styles.title}>{ad.title || "Title"}</span>
+          <span className={styles.line}>{ad.line || "Line"}</span>
+        </>
+      )}
     </div>
   );
 }
 
 const PLACES = Object.entries(AD_PLACES) as [AdPlace, string][];
 
-const when = (iso: string) =>
-  new Date(iso).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" });
-
-// Whether the ad is on phones right now (as of opening the page, by the server's clock), and until or from when. The
-// server's Node and the browser may spell a time differently ("pm", "PM"), so the words may differ when the page comes
-// alive; the browser's win.
-function Timing({ ad, now }: { ad: Ad; now: number }) {
-  const [tone, text] = adLive(ad, now)
-    ? (["success", ad.ends ? `Live until ${when(ad.ends)}` : "Live"] as const)
-    : ad.starts && Date.parse(ad.starts) > now
-      ? (["info", `Starts ${when(ad.starts)}`] as const)
-      : (["neutral", `Ended${ad.ends ? ` ${when(ad.ends)}` : ""}`] as const);
+function LinkList() {
   return (
-    <Badge tone={tone}>
-      <span suppressHydrationWarning>{text}</span>
-    </Badge>
+    <datalist id="ad-links">
+      {Object.entries(AD_LINKS).map(([href, label]) => (
+        <option key={href} value={href}>
+          {label}
+        </option>
+      ))}
+    </datalist>
+  );
+}
+
+function Opens({ value, set }: { value?: string; set: (href: string) => void }) {
+  return (
+    <Field label="Opens" note="empty for none">
+      <input
+        className={`${ui.input} ${styles.wide}`}
+        value={value ?? ""}
+        list="ad-links"
+        maxLength={100}
+        placeholder="/search, /event/…, /host/…"
+        onChange={(e) => set(e.target.value)}
+      />
+    </Field>
   );
 }
 
 export function AdsEditor({ initial, at, now }: { initial: Ad[]; at: string | null; now: number }) {
   return (
     <>
-      <datalist id="ad-links">
-        {Object.entries(AD_LINKS).map(([href, label]) => (
-          <option key={href} value={href}>
-            {label}
-          </option>
-        ))}
-      </datalist>
+      <LinkList />
       <ListEditor<Ad>
         k="ads"
         initial={initial}
@@ -161,25 +299,37 @@ export function AdsEditor({ initial, at, now }: { initial: Ad[]; at: string | nu
         max={10}
         noun="ad"
         blank={() => ({ kicker: "", title: "", line: "", colour: "forest", places: ["home"] })}
-        // An empty "Opens" is no link at all.
-        toValue={(rows) => rows.map(({ href, ...a }) => (href?.trim() ? { ...a, href: href.trim() } : a))}
+        // An image strip shows no words: its kicker and line go; an empty "Opens" is no link at all.
+        toValue={(rows) =>
+          rows.map((a) => tidy({ ...a, href: route(a.href), ...(a.image ? { kicker: undefined, line: undefined } : {}) }))
+        }
         row={(ad, set) => (
           <div className={styles.ad}>
-            <div>
-              <Timing ad={ad} now={now} />
-            </div>
+            <Timing item={ad} now={now} />
             <Strip ad={ad} />
+            <div className={ui.row}>
+              <ImagePick shape="strip" has={!!ad.image} onImage={(img) => set({ image: img.url })} />
+              {ad.image && (
+                <button type="button" className={ui.btnLink} onClick={() => set({ image: undefined })}>
+                  Use words instead
+                </button>
+              )}
+            </div>
             <div className={styles.fields}>
-              <Field label="Kicker" note="up to 20">
-                {text(ad.kicker, (kicker) => set({ kicker }), 20)}
-              </Field>
-              <Field label="Title" note="up to 24">
+              {!ad.image && (
+                <Field label="Kicker" note="up to 20">
+                  {text(ad.kicker, (kicker) => set({ kicker }), 20)}
+                </Field>
+              )}
+              <Field label="Title" note={ad.image ? "read aloud for the image, up to 24" : "up to 24"}>
                 {text(ad.title, (title) => set({ title }), 24)}
               </Field>
-              <Field label="Line" note="up to 32">
-                {text(ad.line, (line) => set({ line }), 32)}
-              </Field>
-              <Field label="Colour">
+              {!ad.image && (
+                <Field label="Line" note="up to 32">
+                  {text(ad.line, (line) => set({ line }), 32)}
+                </Field>
+              )}
+              <Field label="Colour" note={ad.image ? "under the image while it loads" : undefined}>
                 <select className={`${ui.input} ${styles.wide}`} value={ad.colour} onChange={(e) => set({ colour: e.target.value as AdColour })}>
                   {Object.entries(AD_COLOURS).map(([k, label]) => (
                     <option key={k} value={k}>
@@ -188,33 +338,8 @@ export function AdsEditor({ initial, at, now }: { initial: Ad[]; at: string | nu
                   ))}
                 </select>
               </Field>
-              <Field label="Opens" note="empty for none">
-                <input
-                  className={`${ui.input} ${styles.wide}`}
-                  value={ad.href ?? ""}
-                  list="ad-links"
-                  maxLength={100}
-                  placeholder="/search, /event/…, /host/…"
-                  onChange={(e) => set({ href: e.target.value })}
-                />
-              </Field>
-              <Field label="Starts" note="India time, empty for now">
-                <input
-                  type="datetime-local"
-                  className={`${ui.input} ${styles.wide}`}
-                  value={toBox(ad.starts)}
-                  onChange={(e) => set({ starts: fromBox(e.target.value) })}
-                />
-              </Field>
-              <Field label="Ends" note="India time, empty for never">
-                <input
-                  type="datetime-local"
-                  className={`${ui.input} ${styles.wide}`}
-                  value={toBox(ad.ends)}
-                  min={toBox(ad.starts) || undefined}
-                  onChange={(e) => set({ ends: fromBox(e.target.value) })}
-                />
-              </Field>
+              <Opens value={ad.href} set={(href) => set({ href })} />
+              <TimeFields item={ad} set={set} />
             </div>
             <fieldset className={styles.places}>
               <legend className={act.label}>Shows on</legend>
@@ -233,6 +358,102 @@ export function AdsEditor({ initial, at, now }: { initial: Ad[]; at: string | nu
         )}
       />
     </>
+  );
+}
+
+// ─── Featured: Home's carousel ───
+// A pick draws with its event's 4:3 poster or its host's banner; an image slide with its own upload, the top edge's
+// colour filling the space above it while it loads.
+export function FeaturedEditor({ initial, at, now }: { initial: Slide[]; at: string | null; now: number }) {
+  return (
+    <ListEditor<Slide>
+      k="featured"
+      initial={initial}
+      at={at}
+      max={6}
+      noun="slide"
+      empty="None. The carousel picks all its slides itself."
+      blank={() => ({ kind: "pick", href: "" })}
+      toValue={(rows) =>
+        rows.map((s) =>
+          s.kind === "pick"
+            ? tidy({ kind: s.kind, href: route(s.href), starts: s.starts, ends: s.ends })
+            : tidy({ ...s, href: route(s.href) }),
+        )
+      }
+      row={(s, set) => (
+        <div className={styles.ad}>
+          <Timing item={s} now={now} />
+          <div className={styles.fields}>
+            <Field label="Kind">
+              <select className={`${ui.input} ${styles.wide}`} value={s.kind} onChange={(e) => set({ kind: e.target.value as Slide["kind"] })}>
+                {Object.entries(SLIDE_KINDS).map(([k, label]) => (
+                  <option key={k} value={k}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            {s.kind === "pick" && (
+              <Field label="Event or host" note="its link">
+                {text(s.href, (href) => set({ href }), 100, { placeholder: "/event/… or /host/…" })}
+              </Field>
+            )}
+          </div>
+          {s.kind === "pick" ? (
+            <p className={ui.secondary}>Shows with the event’s own 4:3 poster, or the host’s banner, while it has one and the event is still coming up.</p>
+          ) : (
+            <>
+              {s.image && (
+                <div className={styles.slide} style={{ background: s.edge }} aria-hidden>
+                  {/* eslint-disable-next-line @next/next/no-img-element -- the API's own small WebP */}
+                  <img src={s.image} alt="" className={styles.fill} />
+                </div>
+              )}
+              <ImagePick shape="wide" has={!!s.image} onImage={(img) => set({ image: img.url, edge: img.edge })} />
+              <div className={styles.fields}>
+                <Field label="Says" note="read aloud for the image, up to 80">
+                  {text(s.label, (label) => set({ label }), 80)}
+                </Field>
+                <Field label="Pill" note="its button, up to 16; empty for Open; only with Opens">
+                  <input className={`${ui.input} ${styles.wide}`} value={s.action ?? ""} maxLength={16} placeholder="See offer" onChange={(e) => set({ action: e.target.value })} />
+                </Field>
+                <Opens value={s.href} set={(href) => set({ href })} />
+              </div>
+            </>
+          )}
+          <div className={styles.fields}>
+            <TimeFields item={s} set={set} />
+          </div>
+        </div>
+      )}
+    />
+  );
+}
+
+// ─── Promoted ───
+export function PromotedEditor({ initial, at, now }: { initial: Promotion[]; at: string | null; now: number }) {
+  return (
+    <ListEditor<Promotion>
+      k="promoted"
+      initial={initial}
+      at={at}
+      max={10}
+      noun="event"
+      blank={() => ({ href: "" })}
+      toValue={(rows) => rows.map((p) => tidy({ ...p, href: route(p.href) }))}
+      row={(p, set) => (
+        <div className={styles.ad}>
+          <Timing item={p} now={now} />
+          <div className={styles.fields}>
+            <Field label="Event" note="its link">
+              {text(p.href, (href) => set({ href }), 100, { placeholder: "/event/…" })}
+            </Field>
+            <TimeFields item={p} set={set} />
+          </div>
+        </div>
+      )}
+    />
   );
 }
 

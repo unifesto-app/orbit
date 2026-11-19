@@ -37,11 +37,13 @@
   border-bottom: var(--border-divider-section-width) solid var(--color-border-divider-default);
 }
 
+/* Everything after the logo sits at the bar's right end. */
 .logo {
   display: flex;
   align-items: center;
   gap: var(--space-xs);
   flex: none;
+  margin-right: auto;
   color: var(--color-text-heading-default);
   font-family: var(--font-family-heading);
   font-size: var(--font-size-heading-s);
@@ -58,45 +60,6 @@
   width: auto;
 }
 
-/* Everything after the search sits at the bar's right end. */
-.search {
-  position: relative;
-  display: flex;
-  align-items: center;
-  flex: 0 1 540px;
-  min-width: 0;
-  margin-right: auto;
-}
-
-.search svg {
-  position: absolute;
-  left: var(--space-s);
-  color: var(--color-text-input-placeholder);
-  pointer-events: none;
-}
-
-.search input {
-  width: 100%;
-  height: var(--size-vertical-input);
-  padding: 0 var(--space-field-horizontal) 0 36px;
-  border: var(--border-width-field) solid var(--color-border-input-default);
-  border-radius: var(--border-radius-input);
-  background: var(--color-background-top-navigation);
-  color: var(--color-text-form-default);
-  font: inherit;
-  appearance: none;
-}
-
-.search input::placeholder {
-  color: var(--color-text-input-placeholder);
-  font-style: italic;
-}
-
-.search input:focus {
-  outline: none;
-  border-color: var(--color-border-input-focused);
-  box-shadow: 0 0 0 1px var(--color-border-input-focused);
-}
 
 /* heyorbit.in, the theme switch and Sign out: links or buttons, all drawn as AWS's top bar links. */
 .topLink {
@@ -314,13 +277,6 @@
 
 .footer a:hover {
   color: var(--color-text-interactive-hover);
-}
-
-/* Narrow desktops: the search keeps its room before heyorbit.in does. */
-@media (max-width: 959px) {
-  .site {
-    display: none;
-  }
 }
 
 /* ── Phones: side nav becomes an overlay ───────────────── */
