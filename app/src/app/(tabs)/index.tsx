@@ -1,6 +1,6 @@
-import { categories, formatPrice } from '@orbit/contract';
+import { type CategorySlug, categories, formatPrice } from '@orbit/contract';
 import { type ReactNode, useEffect, useState } from 'react';
-import { Animated, Image, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import Reanimated, {
   Easing,
   interpolate,
@@ -14,20 +14,22 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import { past as history, ticketFor } from '../../account/data';
-import { Pill } from '../../account/kit';
 import { Carousel, type CarouselSlide } from '../../home/Carousel';
-import { BarGlass, Glass } from '../../glass';
+import { DARK_TINT, Glass } from '../../glass';
 import { planHome, type Viewer } from '../../home/layout';
 import { Icon } from '../../icons';
 import { type Event, type Host, events, hosts, now, orbitAds } from '../../mock';
+import { useUnread } from '../../inboxStore';
 import { OrbitAdStrip } from '../../orbitAd';
+import { OrbitSays } from '../../orbitSays';
 import { refreshPlace, usePlace } from '../../place';
-import { fromPricePaise, meetups, perHour, tileFor, venues } from '../../kinds';
+import { meetups, tileFor } from '../../kinds';
 import { promoteOne } from '../../labels';
-import { EventRow, isPromoted, loveIt, Monogram, Poster, SEAT, SeatCard, Section, StatusDot, Tag } from '../../rows';
-import { bookAction, eventStatus, isNews } from '../../status';
-import { needsAccount, setFollowing, skipInterests, useLoved, useViewer } from '../../session';
-import { around, color, darkInkOn, font, groundAt, radius, rim, space, stoneAt } from '../../theme';
+import { EventRow, HostRow, isPromoted, loveIt, Monogram, Poster, SEAT, SeatCard, Section, StatusLine } from '../../rows';
+import { bookAction, eventStatus } from '../../status';
+import { needsAccount, setFollowing, setInterest, skipInterests, useLoved, useViewer } from '../../session';
+import { useTabBarScroll, useTabBarSmall } from '../../tabBar';
+import { around, color, font, radius, rim, space, stoneAt } from '../../theme';
 
 const HEADER = 44;
 const FRAME = rim; // the thin frosted rim around cards
@@ -49,12 +51,13 @@ const CARD_INSET = space.small; // padding inside every card, around its content
 // Padding", then "apply to all cards"): with a 6px corner and 8px padding the face is 14, the frosted rim 16.
 const FACE = around(radius.sm, CARD_INSET);
 const RIM = around(FACE, FRAME);
-// Home's text cards (What do you like?, See what's near you, Coming soon, Nothing near) get the room every text card
-// has, Account's and the event page's (owner, 15 Nov 2026: "add proper spacing and padding to cards"; 19 Nov: "add
-// proper padding to pick interests card", then "remember for cards add proper padding … for Nothing near yet. similar
-// to that all", "but not tickets and all events cards"): 16 inside, 16 from the words to the buttons, corner 6 + 16.
-// Ticket and All events cards keep CARD_INSET, their posters' 8.
+// A text card's 16 in from its edges (owner, 19 Nov 2026: "remember for cards add proper padding"), for the words over
+// the promoted card's poster. Home's other text cards are Orbit's bubbles now (OrbitSays). Ticket and All events cards
+// keep CARD_INSET, their posters' 8.
 const TEXT_PAD = 16;
+// Between sections (owner, 19 Nov 2026: "feels like everything was clumpsed. add proper gaps b/w sections"): 40, as
+// Search's sections, Orbit's strips and the promoted card already had; a heading is 16 above what it heads.
+const SECTION = 40;
 
 // Home B ("Orbit"), picked by the owner on 15 Nov 2026: the boards are on the Orbit canvas. Which blocks show
 // comes from planHome (src/home/layout.ts); the state to look at is `viewer` in src/mock.ts.
@@ -64,6 +67,7 @@ const TEXT_PAD = 16;
 // Follow asks to sign in first, then follows.
 export default function Home() {
   const insets = useSafeAreaInsets();
+  const onTabScroll = useTabBarScroll(); // shrinks the tab bar on the way down
   const { width } = useWindowDimensions();
   const signed = useViewer();
   const v: Viewer = { ...signed, place: usePlace(signed.place) }; // the place chosen on the location screen, if any
@@ -84,12 +88,6 @@ export default function Home() {
       : { key: `h:${s.host.id}`, image: s.host.banner!.source, edge: s.host.banner!.edge, label: `Banner for ${s.host.name}`, action: 'View events', href: `/host/${s.host.id}` },
   );
 
-  // Drives the glass behind the pinned header (BarGlass in src/glass.tsx).
-  const [scrollY] = useState(() => new Animated.Value(0));
-  // The header's location reads in Charcoal over a light poster, Stone over a dark one, switching with the slide.
-  const [active, setActive] = useState(0);
-  const slide = slides[Math.min(active, slides.length - 1)];
-  const darkInk = !!slide && darkInkOn(slide.edge, HEADER_WASH);
 
   // The ticket stack opens to show every ticket (owner, 15 Nov 2026: "need option to see the other tickets").
   const [ticketsOpen, setTicketsOpen] = useState(false);
@@ -107,18 +105,18 @@ export default function Home() {
 
   return (
     <View style={styles.screen}>
-      <Animated.ScrollView
+      <ScrollView
         showsVerticalScrollIndicator={false} // no side scroll line (owner, 15 Nov 2026)
-        // Clear of the tab bar: on iOS the tab's safe area includes it; on Android the tabs already pad the screen.
-        contentContainerStyle={{ paddingBottom: (Platform.OS === 'ios' ? insets.bottom : 0) + 32 }}
+        // Clear of the tab bar: under the tabs the bottom safe area includes it ((tabs)/_layout.tsx).
+        contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}
         scrollEventThrottle={16}
-        onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })}>
+        onScroll={onTabScroll}>
         {/* The header is pinned over the page (below); the carousel still starts at the top, under it. */}
-        {slides.length ? <Carousel slides={slides} top={posterTop} onActive={setActive} /> : <View style={{ height: headerTop + HEADER }} />}
+        {slides.length ? <Carousel slides={slides} top={posterTop} dark /> : <View style={{ height: headerTop + HEADER }} />}
 
         {plan.tickets.length > 0 && (
           <>
-            <Section title="Your tickets" />
+            <Section top={SECTION} title="Your tickets" />
             <Stack
               items={plan.tickets}
               height={TICKET_FACE + 2 * FRAME}
@@ -130,7 +128,7 @@ export default function Home() {
             {/* Under the stack (owner: "move see all to the bottom of stack"). */}
             {ticketsAction && (
               <Pressable onPress={ticketsAction.onPress} accessibilityRole="button" hitSlop={10} style={styles.stackToggle}>
-                <Glass style={styles.stackToggleGlass}>
+                <Glass style={styles.stackToggleGlass} tint={DARK_TINT}>
                   <Text style={styles.stackToggleText}>{ticketsAction.label}</Text>
                 </Glass>
               </Pressable>
@@ -140,11 +138,12 @@ export default function Home() {
 
         {/* Thanks for coming, for each event you were let in at in the last week, newest first (two at most). */}
         {v.signedIn &&
-          thanksFor(now).map((e) => <Thanks key={e.id} event={e} host={hostOf(e.hostId)} />)}
+          // Two in a row read as one thread: the second sits a big gap under the first.
+          thanksFor(now).map((e, i) => <Thanks key={e.id} event={e} host={hostOf(e.hostId)} top={i ? space.big : SECTION} />)}
 
         {plan.orbit.length > 0 && (
           <>
-            <Section title="Next from your orbit" />
+            <Section top={SECTION} title="Next from your orbit" />
             <View style={styles.feed}>
               {plan.orbit.map((e) => (
                 <FeedRow key={e.id} event={e} host={hostOf(e.hostId)} />
@@ -155,32 +154,22 @@ export default function Home() {
 
         {plan.hostsFirst && plan.hosts.length > 0 && (
           <>
-            <Section title="Start your orbit" />
+            <Section top={SECTION} title="Start your orbit" />
             {hostCards}
           </>
         )}
 
         {plan.askInterests && <AskInterests />}
 
-        {/* A section per kind of event you picked (Account › Interests), its events out of the list below. */}
-        {plan.byInterest.map((k) => (
-          <View key={k.category}>
-            <Section title={`${categories.find((c) => c.slug === k.category)?.label ?? k.category} ${plan.near ? 'near you' : 'coming up'}`} />
-            {k.events.map((e) => (
-              <EventRow key={e.id} event={e} host={hostOf(e.hostId)} labelled />
-            ))}
-          </View>
-        ))}
-
         {plan.notice && <Notice kind={plan.notice} area={v.place?.area} />}
 
         {plan.list.events.length > 0 && (
           <>
-            <Section title={plan.list.title} />
+            <Section top={SECTION} title={plan.list.title} />
             {/* One promoted event leads the list (Boost); it's still one of the list's own events, never an extra. The
                 banner's event is the banner just below, so it isn't a row too. */}
             {promoteOne(plan.list.events.filter((e) => e !== plan.ad), boosted).map((e) => (
-              <EventRow key={e.id} event={e} host={hostOf(e.hostId)} labelled />
+              <EventRow key={e.id} event={e} host={hostOf(e.hostId)} found />
             ))}
           </>
         )}
@@ -189,10 +178,10 @@ export default function Home() {
 
         {plan.places.length > 0 && (
           <>
-            <Section title={plan.near ? 'Places to play near you' : 'Places to play'} />
+            <Section top={SECTION} title={plan.near ? 'Places to play near you' : 'Places to play'} />
             <View style={styles.feed}>
               {plan.places.map((h) => (
-                <PlaceRow key={h.id} host={h} />
+                <HostRow key={h.id} host={h} />
               ))}
             </View>
           </>
@@ -203,7 +192,7 @@ export default function Home() {
 
         {!plan.hostsFirst && plan.hosts.length > 0 && (
           <>
-            <Section title="Hosts near you" />
+            <Section top={SECTION} title="Hosts near you" />
             {hostCards}
           </>
         )}
@@ -213,75 +202,50 @@ export default function Home() {
 
         {plan.all.length > 0 && (
           <>
-            <Section title="All events" />
+            <Section top={SECTION} title="All events" />
             <View style={styles.grid}>
               {plan.all.map((e) => <GridCard key={e.id} event={e} width={card} />)}
             </View>
           </>
         )}
-      </Animated.ScrollView>
+      </ScrollView>
 
-      {/* Pinned, with glass fading in behind it once the page scrolls, as on Search (owner, 15 Nov 2026: "apply the
-          same in home"); it replaced a ground strip under the clock. The gaps let taps through. */}
+      {/* Pinned over the page, with nothing behind it: the location and profile are on their own dark glass (owner, 19
+          Nov 2026: "as cards are added, remove the header bg in both home and search"; it had glass fading in once the
+          page scrolled). The gaps let taps through. */}
       <View style={[styles.bar, { paddingTop: headerTop }]}>
-        <BarGlass scrollY={scrollY} />
-        <Header viewer={v} dark={darkInk} scrollY={scrollY} />
+        <Header viewer={v} />
       </View>
     </View>
   );
 }
 
-// The carousel's wash where the location sits: the ground at 50% at the top of the screen, 30% at the header's foot.
-const HEADER_WASH = 0.4;
-
-// The pin, area and city in one ink.
-function Place({ viewer: v, text, soft, pin }: { viewer: Viewer; text: string; soft: string; pin: string }) {
-  return (
-    <View style={styles.place}>
-      <Icon name="pin" size={22} color={pin} />
-      <View>
-        <View style={styles.areaRow}>
-          <Text style={[styles.area, { color: text }]}>{v.place?.area ?? 'Set location'}</Text>
-          <Icon name="caretDown" size={14} color={soft} />
-        </View>
-        <Text style={[styles.city, { color: soft }]}>{v.place?.city ?? 'Showing everywhere'}</Text>
-      </View>
-    </View>
-  );
-}
-
-// The location in two inks laid one on the other (owner, 19 Nov 2026: "the location text should adapt the bg and switch
-// colors"): Stone, and Charcoal for a light poster's edge, cross-faded as the slides change. Once the page scrolls
-// under the header's dark glass (BarGlass, over its first 16pt) it's Stone again. Opacity only, so it runs on the
-// native driver with the scroll.
-function Header({ viewer: v, dark, scrollY }: { viewer: Viewer; dark: boolean; scrollY: Animated.Value }) {
-  const [shade] = useState(() => new Animated.Value(dark ? 1 : 0));
-  useEffect(() => {
-    Animated.timing(shade, { toValue: dark ? 1 : 0, duration: 300, useNativeDriver: true }).start();
-  }, [dark, shade]);
-  const [ink] = useState(() => {
-    const onPoster = scrollY.interpolate({ inputRange: [0, 16], outputRange: [1, 0], extrapolate: 'clamp' });
-    const charcoal = Animated.multiply(shade, onPoster);
-    return { charcoal, stone: charcoal.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }) };
-  });
+// The location and the profile on the tab bar's dark glass (owner, 19 Nov 2026: "Both" from the Home and Search mockup,
+// its Capsule take), so they read the same over every poster; it replaced the Stone and Charcoal switch with each slide.
+// The location opens the location screen; the profile opens Account (src/app/account), signed out too.
+function Header({ viewer: v }: { viewer: Viewer }) {
   return (
     <View style={styles.header}>
       <Pressable
         onPress={() => router.push('/location')}
         accessibilityRole="button"
         accessibilityLabel={v.place ? `Location: ${[v.place.area, v.place.city].filter(Boolean).join(', ')}. Change location` : 'Set location'}
+        style={styles.shrink}
       >
-        <Animated.View style={{ opacity: ink.stone }}>
-          <Place viewer={v} text={color.text} soft={color.secondary} pin={color.accent} />
-        </Animated.View>
-        <Animated.View style={[styles.inkOver, { opacity: ink.charcoal }]} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-          <Place viewer={v} text={color.ground} soft={groundAt(0.64)} pin={color.ground} />
-        </Animated.View>
+        <Glass tint={DARK_TINT} style={styles.place}>
+          <Icon name="pin" size={20} color={color.accent} />
+          <View style={styles.shrink}>
+            <View style={styles.areaRow}>
+              <Text style={[styles.area, styles.shrink]} numberOfLines={1}>{v.place?.area ?? 'Set location'}</Text>
+              <Icon name="caretDown" size={12} color={color.secondary} />
+            </View>
+            <City text={v.place?.city ?? 'Showing everywhere'} />
+          </View>
+        </Glass>
       </Pressable>
-      {/* A thin frosted rim round the profile circle (owner, 15 Nov 2026: "add rim to profile"). It opens Account
-          (src/app/account), signed out too, where only what works without an account shows. */}
+      {v.signedIn && <Bell />}
       <Pressable onPress={() => router.push('/account')} accessibilityRole="button" accessibilityLabel={v.signedIn ? 'Account' : 'Sign in'}>
-        <Glass style={styles.profileRim}>
+        <Glass tint={DARK_TINT} style={styles.profileRim}>
           <View style={styles.round}>
             {v.signedIn && v.initial ? <Text style={styles.initial}>{v.initial}</Text> : <Icon name="user" size={20} color={color.text} />}
           </View>
@@ -289,6 +253,25 @@ function Header({ viewer: v, dark, scrollY }: { viewer: Viewer; dark: boolean; s
       </Pressable>
     </View>
   );
+}
+
+// Notifications (src/app/inbox.tsx), signed in only: a bell on the same dark glass, beside the profile, with a Sage dot
+// while anything is unread (owner, 19 Nov 2026: "Rows, bell in header").
+function Bell() {
+  const unread = useUnread();
+  return (
+    <Pressable onPress={() => router.push('/inbox')} accessibilityRole="button" accessibilityLabel={unread ? 'Notifications, new' : 'Notifications'} style={styles.bell}>
+      <Glass tint={DARK_TINT} style={styles.bellGlass}>
+        <Icon name="bell" size={22} color={color.text} />
+      </Glass>
+      {unread && <View style={styles.unread} />}
+    </Pressable>
+  );
+}
+
+// The city line folds away while the tab bar is small, and back with it, inside the bar's own LayoutAnimation.
+function City({ text }: { text: string }) {
+  return useTabBarSmall() ? null : <Text style={styles.city} numberOfLines={1}>{text}</Text>;
 }
 
 // A Wallet-style stack (owner, 15 Nov 2026: "stack them one on one", then "use this for tickets"): the first item in
@@ -417,55 +400,28 @@ function TicketCard({ event: e, host, label }: { event: Event; host: Host; label
   );
 }
 
-// "Next from your orbit" as a feed (owner, 15 Nov 2026: "change the entire next from orbit", then picked host feed
-// rows): one plain row per followed host, its round 1:1 logo, name and tag, then its next event's title and date,
-// with a small 3:4 poster on the right. 20px between rows, no rules (owner: "remove hairlines between rows, fix the
-// spacing and typography"): the host is a small grey label, the title leads, the date follows. Not a card, but kept
-// icon-free like one.
+// "Next from your orbit" (owner, 15 Nov 2026: host feed rows; 19 Nov: picked "Logo on poster" from the section takes):
+// one plain row per followed host, its next event's 3:4 poster with the host's 1:1 logo seated on the poster's corner,
+// so the row reads like an event row: the host as a small grey label, the title, the date, then the status as a dot
+// and words (StatusLine). 20 between rows, no rules. Not a card, but kept icon-free like one.
 function FeedRow({ event: e, host }: { event: Event; host: Host }) {
-  const st = eventStatus(e, now); // news (Just announced, Almost full…) beats the repeat tag
   return (
     <Pressable
       onPress={() => router.push(`/event/${e.id}`)}
       accessibilityRole="button"
       style={({ pressed }) => [styles.feedRow, pressed && styles.pressed]}>
-      <Monogram mark={host} size={40} />
-      <View style={[styles.grow, styles.feedText]}>
-        <View style={styles.feedHead}>
-          <Text style={styles.feedHost} numberOfLines={1}>{host.name}</Text>
-          {isNews(st) ? (
-            <View style={styles.announced}>
-              <StatusDot tone={st.tone} />
-              <Text style={styles.small}>{st.short}</Text>
-            </View>
-          ) : (
-            e.repeats && <Tag text={e.repeats} />
-          )}
+      <View>
+        <Poster media={e.poster} width={60} label={e.title} />
+        {/* A ring of the page round the logo, so it reads as sitting on the poster's corner. */}
+        <View style={styles.logoOnPoster}>
+          <Monogram mark={host} size={24} />
         </View>
+      </View>
+      <View style={[styles.grow, styles.feedText]}>
+        <Text style={styles.feedHost} numberOfLines={1}>{host.name}</Text>
         <Text style={styles.feedTitle} numberOfLines={2}>{e.title}</Text>
         <Text style={styles.feedWhen}>{e.when}</Text>
-      </View>
-      <Poster media={e.poster} width={48} label={e.title} />
-    </Pressable>
-  );
-}
-
-// A place to play (turf, court or gaming café), in the feed's shape: what it is over its name, then its cheapest hour.
-// It opens the host page, where Book a slot is.
-function PlaceRow({ host }: { host: Host }) {
-  const venue = venues[host.id];
-  return (
-    <Pressable
-      onPress={() => router.push(`/host/${host.id}`)}
-      accessibilityRole="button"
-      style={({ pressed }) => [styles.feedRow, pressed && styles.pressed]}>
-      <Monogram mark={host} size={40} />
-      <View style={[styles.grow, styles.feedText]}>
-        <View style={styles.feedHead}>
-          <Text style={styles.feedHost} numberOfLines={1}>{host.about}</Text>
-        </View>
-        <Text style={styles.feedTitle} numberOfLines={1}>{host.name}</Text>
-        {venue && <Text style={styles.feedWhen}>From {perHour(fromPricePaise(venue))}</Text>}
+        <StatusLine event={e} status={eventStatus(e, now)} />
       </View>
     </Pressable>
   );
@@ -491,8 +447,6 @@ function HostCard({ host, width, following }: { host: Host; width: number; follo
   );
 }
 
-// Home asks once what you like, signed in (owner, 19 Nov 2026: "add interest cards for events", all four): Pick
-// interests opens Account › Interests; Not now stops the asking, and Interests stays on Account for later.
 // An event slide's pill follows its status: Book ticket or Register while open, Join waitlist, else View event.
 function slideAction(e: Event) {
   const book = bookAction(eventStatus(e, now), !e.pricePaise);
@@ -501,7 +455,8 @@ function slideAction(e: Event) {
 
 // Thanks for coming (owner, 19 Nov 2026: "After-check-in bits"; Performer and inRoom docs): after an event you were let
 // in at, for a week. A meetup's card opens its room, to see who was there (inRoom 12); any other offers Loved it, and a
-// love offers to follow the acts (Performer 10). A text card, so words and a pill only.
+// love offers to follow the acts (Performer 10). Orbit says it, as in the chat (owner, 19 Nov 2026: "Both", the Orbit
+// speaks take); a love shows as your answer and Orbit's reply, with Take it back to undo it.
 const WEEK = 3 * 3_600_000 + 7 * 86_400_000; // the event (about three hours), then a week
 function thanksFor(at: number): Event[] {
   return history
@@ -511,62 +466,69 @@ function thanksFor(at: number): Event[] {
     .sort((a, b) => Date.parse(b.startsAt) - Date.parse(a.startsAt))
     .slice(0, 2);
 }
-function Thanks({ event: e, host }: { event: Event; host: Host }) {
+function Thanks({ event: e, host, top }: { event: Event; host: Host; top: number }) {
   const loved = useLoved(e.id);
-  const room = meetups[e.id]?.inRoom;
+  const title = `Thanks for coming to ${e.title}`;
+  if (meetups[e.id]?.inRoom) {
+    return (
+      <OrbitSays
+        top={top}
+        title={title}
+        text="See who was there, and connect. The room’s open for a week after."
+        answers={[{ label: 'See who was there', onPress: () => router.push(`/room/${e.id}`) }]}
+      />
+    );
+  }
   return (
-    <View style={[styles.card, styles.notice]}>
-      <Text style={styles.noticeTitle}>Thanks for coming to {e.title}</Text>
-      <Text style={styles.noticeText}>
-        {room ? 'See who was there, and connect. The room’s open for a week after.' : loved ? `You loved it. ${host.name} will hear.` : `Loved it? Let ${host.name} know.`}
-      </Text>
-      <View style={styles.askButtons}>
-        {room ? (
-          <Pill label="See who was there" onPress={() => router.push(`/room/${e.id}`)} />
-        ) : (
-          <Pill label={loved ? 'You loved it' : 'Loved it'} muted={loved} onPress={() => loveIt(e.id, !loved)} />
-        )}
-      </View>
-    </View>
+    <OrbitSays
+      top={top}
+      title={title}
+      text={`Loved it? Let ${host.name} know.`}
+      then={loved ? { mine: 'Loved it', reply: `${host.name} will hear.` } : undefined}
+      answers={[loved ? { label: 'Take it back', onPress: () => loveIt(e.id, false) } : { label: 'Loved it', onPress: () => loveIt(e.id, true) }]}
+    />
   );
 }
 
+// Home asks once what you like, signed in (owner, 19 Nov 2026: "add interest cards for events", all four), answered
+// right here since the Orbit speaks take ("Both", 19 Nov): tap the kinds of event to pick them, then Done saves them
+// and the ask goes (picks are held here until then, since the first saved one ends the asking). Not now stops the
+// asking; Interests stays on Account for later.
 function AskInterests() {
+  const [picks, setPicks] = useState<CategorySlug[]>([]);
+  const toggle = (slug: CategorySlug) => setPicks((all) => (all.includes(slug) ? all.filter((s) => s !== slug) : [...all, slug]));
   return (
-    <View style={[styles.card, styles.notice]}>
-      <Text style={styles.noticeTitle}>What do you like?</Text>
-      <Text style={styles.noticeText}>Pick a few kinds of event and Home shows more of them.</Text>
-      <View style={styles.askButtons}>
-        <Pill label="Pick interests" onPress={() => router.push('/account/interests')} />
-        <Pill label="Not now" muted onPress={skipInterests} />
-      </View>
-    </View>
+    <OrbitSays
+      top={SECTION}
+      title="What do you like?"
+      text="Pick a few kinds of event and Home puts them first."
+      answers={[
+        ...categories.map((c) => ({ label: c.label, picked: picks.includes(c.slug), onPress: () => toggle(c.slug) })),
+        picks.length > 0 ? { label: 'Done', onPress: () => picks.forEach((slug) => setInterest(slug, true)) } : { label: 'Not now', onPress: skipInterests },
+      ]}
+    />
   );
 }
 
 // Coming soon (owner, 19 Nov 2026: "only ap & telangana. other than it unserviceable. or coming soon"): somewhere
 // outside Telangana and Andhra Pradesh, Home says so and shows what's on there, with Pick a city to look around one.
+// Orbit says it, as in the chat (the Orbit speaks take, 19 Nov).
 function Notice({ kind, area }: { kind: 'noLocation' | 'comingSoon' | 'nothingNear'; area?: string }) {
   const noLocation = kind === 'noLocation';
   const soon = kind === 'comingSoon';
   return (
-    <View style={[styles.card, styles.notice]}>
-      <Text style={styles.noticeTitle}>{noLocation ? 'See what’s near you' : soon ? `Coming soon to ${area}` : `Nothing near ${area} yet`}</Text>
-      <Text style={styles.noticeText}>
-        {noLocation
+    <OrbitSays
+      top={SECTION}
+      title={noLocation ? 'See what’s near you' : soon ? `Coming soon to ${area}` : `Nothing near ${area} yet`}
+      text={
+        noLocation
           ? 'Set your location and Orbit shows what’s within 25 km. Until then, here’s everything coming up.'
           : soon
             ? 'Orbit is in Telangana and Andhra Pradesh for now. Here’s what’s on there, soonest first.'
-            : 'Here’s everything coming up on Orbit instead, soonest first.'}
-      </Text>
-      {(noLocation || soon) && (
-        <Pressable onPress={() => router.push('/location')} accessibilityRole="button">
-          <Glass style={styles.wideButton}>
-            <Text style={styles.buttonText}>{soon ? 'Pick a city' : 'Set location'}</Text>
-          </Glass>
-        </Pressable>
-      )}
-    </View>
+            : 'Here’s everything coming up on Orbit instead, soonest first.'
+      }
+      answers={noLocation || soon ? [{ label: soon ? 'Pick a city' : 'Set location', onPress: () => router.push('/location') }] : []}
+    />
   );
 }
 
@@ -648,18 +610,24 @@ function Button({ label, small }: { label: string; small?: boolean }) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: color.ground },
-  bar: { position: 'absolute', top: 0, left: 0, right: 0, paddingBottom: 12, pointerEvents: 'box-none' },
+  bar: { position: 'absolute', top: 0, left: 0, right: 0, pointerEvents: 'box-none' },
   grow: { flex: 1, minWidth: 0 },
   lines: { gap: 3 },
 
-  header: { height: HEADER, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  place: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  inkOver: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+  header: { height: HEADER, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.small },
+  // A capsule like the tab bar's, the bar's height (taller with big text); its words hug it, so it narrows when the city
+  // folds away, and a long name ends in … before it reaches the profile.
+  place: { minHeight: HEADER, paddingVertical: 4, borderRadius: HEADER / 2, paddingLeft: 10, paddingRight: 16, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  shrink: { flexShrink: 1 },
   areaRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  area: { fontFamily: font.headline, fontSize: 17 },
-  city: { fontFamily: font.text, fontSize: 13 },
-  profileRim: { width: 44, height: 44, borderRadius: 22, padding: FRAME },
-  round: { flex: 1, borderRadius: 22 - FRAME, backgroundColor: color.fill, alignItems: 'center', justifyContent: 'center' },
+  area: { fontFamily: font.headline, fontSize: 15, color: color.text },
+  city: { fontFamily: font.text, fontSize: 12, color: color.secondary },
+  // A ring like the chat orb's round your own circle.
+  profileRim: { width: HEADER, height: HEADER, borderRadius: HEADER / 2, padding: 4 },
+  bell: { marginLeft: 'auto' }, // beside the profile, the location keeping the rest
+  bellGlass: { width: HEADER, height: HEADER, borderRadius: HEADER / 2, alignItems: 'center', justifyContent: 'center' },
+  unread: { position: 'absolute', top: 6, right: 7, width: 10, height: 10, borderRadius: 5, backgroundColor: color.accent, borderWidth: 2, borderColor: color.ground },
+  round: { flex: 1, borderRadius: HEADER / 2 - 4, backgroundColor: color.fill, alignItems: 'center', justifyContent: 'center' },
   initial: { fontFamily: font.headline, fontSize: 17, color: color.text },
 
   stackToggle: { alignSelf: 'center', marginTop: 10 },
@@ -667,7 +635,6 @@ const styles = StyleSheet.create({
   stackToggleGlass: { height: 24, paddingHorizontal: 10, borderRadius: 12, justifyContent: 'center' },
   stackToggleText: { fontFamily: font.title, fontSize: 11, color: color.text },
 
-  card: { marginHorizontal: 20, backgroundColor: color.card },
   ticketTitle: { fontFamily: font.title, fontSize: 15, lineHeight: 20, color: color.text },
   ticketWhen: { fontFamily: font.medium, fontSize: 13, lineHeight: 17, color: color.text },
   ticketMeta: { fontFamily: font.text, fontSize: 12, lineHeight: 16, color: color.secondary },
@@ -680,13 +647,14 @@ const styles = StyleSheet.create({
   ticketFoot: { flexDirection: 'row', alignItems: 'center', gap: space.small },
   feed: { marginHorizontal: 20, gap: 20 },
   pressed: { opacity: 0.7 },
-  feedRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
-  feedText: { gap: 2 },
-  feedHead: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 8, rowGap: 4, marginBottom: 2 },
-  feedHost: { flexShrink: 1, fontFamily: font.medium, fontSize: 12, color: color.secondary },
+  // 20 from the poster to the words: the logo overhangs the poster's corner by 6.
+  feedRow: { flexDirection: 'row', alignItems: 'center', gap: 20 },
+  feedText: { gap: 3 },
+  // The logo's 6 corner plus a 2 ring of the page, 6 over the poster's bottom right.
+  logoOnPoster: { position: 'absolute', right: -6, bottom: -6, padding: 2, borderRadius: around(radius.md, 2), backgroundColor: color.ground },
+  feedHost: { fontFamily: font.medium, fontSize: 12, color: color.secondary },
   feedTitle: { fontFamily: font.title, fontSize: 15, lineHeight: 20, color: color.text },
   feedWhen: { fontFamily: font.text, fontSize: 13, color: color.secondary },
-  announced: { flexDirection: 'row', alignItems: 'center', gap: 6 },
 
 
   hostCardName: { fontFamily: font.title, fontSize: 14, color: color.text, textAlign: 'center' },
@@ -697,13 +665,7 @@ const styles = StyleSheet.create({
   followSmallText: { fontFamily: font.title, fontSize: 13, color: color.text },
   followingText: { color: color.secondary },
 
-  notice: { marginTop: space.big, borderRadius: around(radius.sm, TEXT_PAD), borderWidth: 1, borderColor: color.border, padding: TEXT_PAD, gap: 4 }, // no rim, so an outline
-  noticeTitle: { fontFamily: font.title, fontSize: 16, color: color.text },
-  askButtons: { marginTop: TEXT_PAD - 4, flexDirection: 'row', gap: space.small }, // 16 from the words, the 4 gap included
-  noticeText: { fontFamily: font.text, fontSize: 14, lineHeight: 20, color: color.secondary },
-  wideButton: { marginTop: TEXT_PAD - 4, height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center' },
 
-  small: { fontFamily: font.text, fontSize: 12, color: color.secondary },
 
   grid: { marginHorizontal: 20, flexDirection: 'row', flexWrap: 'wrap', columnGap: space.big, rowGap: space.big },
   cardRim: { padding: FRAME, borderRadius: RIM },

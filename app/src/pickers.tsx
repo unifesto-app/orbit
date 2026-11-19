@@ -1,10 +1,11 @@
 // The booking screens' controls (src/app/book/[slug].tsx, src/app/slot/[venue].tsx): a glass chip, its pick marked with
 // an accent dot as every chip's is (never accent text), and a − and + stepper for how many. Buttons are glass, never
 // squared: chips are pills and the stepper's buttons circles.
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { Glass } from './glass';
-import { color, font, space } from './theme';
+import { DARK_TINT, Glass, useAccessibility } from './glass';
+import { color, font, space, stoneAt } from './theme';
 
 export function Chip({ label, picked = false, disabled = false, onPress }: { label: string; picked?: boolean; disabled?: boolean; onPress: () => void }) {
   return (
@@ -53,7 +54,46 @@ export function Stepper({ value, min = 0, max, label, onChange }: { value: numbe
   );
 }
 
+// The booking sheet's steps as one capsule on the tab bar's dark glass, the lighter pill sliding to the one you're on
+// (owner, 19 Nov 2026: the Tickets sheet's Take 4, like Search's When capsule). Tap an earlier step to go back; a step
+// you can't reach yet is grey. Without motion (Reduce Motion), the pill moves at once.
+const STEPS_PAD = 4;
+export function Steps<K extends string>({ steps, at, onPick }: { steps: readonly { key: K; label: string; ready: boolean }[]; at: K; onPick: (k: K) => void }) {
+  const [width, setWidth] = useState(0);
+  const still = useAccessibility('reduceMotionChanged');
+  const [x] = useState(() => new Animated.Value(0));
+  const i = Math.max(steps.findIndex((s) => s.key === at), 0);
+  const seg = (width - 2 * STEPS_PAD) / steps.length;
+  useEffect(() => {
+    Animated.timing(x, { toValue: i * seg, duration: still ? 0 : 250, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+  }, [i, seg, still, x]);
+  return (
+    <Glass tint={DARK_TINT} style={styles.steps} onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
+      {width > 0 && <Animated.View style={[styles.slide, { width: seg, transform: [{ translateX: x }] }]} />}
+      {steps.map((s) => (
+        <Pressable
+          key={s.key}
+          onPress={() => onPick(s.key)}
+          disabled={!s.ready}
+          accessibilityRole="tab"
+          accessibilityState={{ selected: s.key === at, disabled: !s.ready }}
+          style={styles.step}>
+          <Text style={[styles.stepText, !s.ready && styles.stepOff]} numberOfLines={1}>
+            {s.label}
+          </Text>
+        </Pressable>
+      ))}
+    </Glass>
+  );
+}
+
 const styles = StyleSheet.create({
+  steps: { height: 40, borderRadius: 20, padding: STEPS_PAD, flexDirection: 'row' },
+  // The tab bar's lighter pill for the open tab.
+  slide: { position: 'absolute', top: STEPS_PAD, bottom: STEPS_PAD, left: STEPS_PAD, borderRadius: 16, backgroundColor: stoneAt(0.16), borderWidth: StyleSheet.hairlineWidth, borderColor: stoneAt(0.24) },
+  step: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  stepText: { fontFamily: font.title, fontSize: 14, color: color.text },
+  stepOff: { color: color.secondary },
   chip: { height: 36, paddingHorizontal: 14, borderRadius: 18, flexDirection: 'row', alignItems: 'center', gap: 6 },
   chipText: { fontFamily: font.medium, fontSize: 14, color: color.text },
   dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: color.accent },

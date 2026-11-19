@@ -9,6 +9,7 @@ import Svg, { Path } from 'react-native-svg';
 
 import { Field, Pill, styles as kit } from './account/kit';
 import { Glass } from './glass';
+import { OrbitSays } from './orbitSays';
 import { CloseButton, GlassFill, Glow } from './rows';
 import { readPhone } from './signin';
 import { color, font, space } from './theme';
@@ -51,10 +52,11 @@ export function Frame({ title, note, error, children }: { title: string; note?: 
           </Text>
           {note && <Text style={styles.note}>{note}</Text>}
         </View>
+        {/* The API's message, said by Orbit in its bubble (the detail pages' Take 6, owner, 19 Nov 2026). */}
         {error && (
-          <Text style={[styles.line, styles.block]} accessibilityLiveRegion="polite">
-            {error}
-          </Text>
+          <View accessibilityLiveRegion="polite">
+            <OrbitSays top={0} text={error} />
+          </View>
         )}
         {children}
       </ScrollView>
@@ -119,10 +121,14 @@ export function Phone({ busy, onPhone }: { busy: boolean; onPhone: (e164: string
   );
 }
 
-// A question with two answers, the second in grey: "Not me, start fresh", "Not now".
+// A question with two answers ("Yes, sign in" or "Not me, start fresh", "Add a passkey" or "Not now"), Orbit asking as
+// Home's asks do (the detail pages' Take 6, owner, 19 Nov 2026): `say` in Orbit's bubble, the answers yours to tap. They
+// were a wide pill and a grey one. While the tapped one is going (`busy`), it shows as your bubble with Orbit's "One
+// moment…" and the answers go, so nothing else can be tapped; if it fails they come back (with the API's message).
 export function Choice({
   yes,
   no,
+  say,
   busy,
   onYes,
   onNo,
@@ -130,16 +136,28 @@ export function Choice({
 }: {
   yes: string;
   no: string;
+  say: string;
   busy: boolean;
   onYes: () => void;
   onNo: () => void;
   children?: ReactNode;
 }) {
+  const [tapped, setTapped] = useState<string>();
+  const pick = (label: string, run: () => void) => () => {
+    if (busy) return;
+    setTapped(label);
+    run();
+  };
+  const going = busy && tapped;
   return (
     <View style={styles.body}>
       {children}
-      <Pill label={yes} size="wide" disabled={busy} onPress={onYes} />
-      <Pill label={no} size="wide" muted disabled={busy} onPress={onNo} />
+      <OrbitSays
+        top={0}
+        text={say}
+        then={going ? { mine: tapped, reply: 'One moment…' } : undefined}
+        answers={going ? [] : [{ label: yes, onPress: pick(yes, onYes) }, { label: no, onPress: pick(no, onNo) }]}
+      />
     </View>
   );
 }

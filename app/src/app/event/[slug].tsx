@@ -1,53 +1,64 @@
 // The event page (Discover flow doc, Event page; defaults accepted 15 Nov 2026), from any event row or card and the
-// Home carousel. One column: the poster, the status, title and host; when and where; About; the people, a group per
-// role; and last the host with Follow. Tickets are a bar pinned to the bottom ("In the app this is a bar pinned to the
-// bottom"). No icons in its cards.
+// Home carousel. One column: the poster; the host, title and status; when and where; Orbit asking if you're going;
+// About; what it's like; its kind's own sections; the people, a group per role; FAQ and terms; and last the host with
+// Follow. Tickets are a pill floating at the bottom. No icons in its cards.
+// Redrawn 19 Nov 2026 to match Home and Search's "Both" (owner approved Take 1 of the detail pages mockup,
+// https://claude.ai/artifact/5dDmrmZ6soDjoe8kro1xAq): the floating controls and the ticket pill on the tab bar's dark
+// glass with nothing behind the back bar, a left-aligned head like Home's rows, Orbit's bubbles for Thinking of going?
+// and Thanks for coming, every text card outlined, Hosted by as a host row, sections 40 apart.
 // The poster runs full width like Home's carousel (owner, 15 Nov 2026: "apply 4:3/ 3:4 poster full", "same like home
 // page carousel"), from the very top of the screen ("remove the poster top blur, instead start poster from top"): the
 // 4:3 poster when the event has one, else the 3:4.
-// Each kind adds its own sections (src/kindSections.tsx). Not here yet: picking a ticket type and quantity.
 import { categories, formatPrice } from '@orbit/contract';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { past as history, ticketFor } from '../../account/data';
-import { barPrice, cast } from '../../detail';
 import { BookBar } from '../../bookBar';
-import { Fact } from '../../fact';
-import { Glass } from '../../glass';
-import { KindSections, WithActs } from '../../kindSections';
+import { barPrice, cast, followersLine } from '../../detail';
+import { Fact, FactCard } from '../../fact';
+import { DARK_TINT } from '../../glass';
 import { Carousel } from '../../home/Carousel';
-import { type Event, events, hosts, interestedBase, now, people, type Person, vibes } from '../../mock';
-import { BackBar, FaceWash, LoveButton, MenuButton, Monogram, NotFound, SaveButton, Section, shareLink, StatusDot, Tag, Verified } from '../../rows';
+import { KindSections, WithActs } from '../../kindSections';
+import { meetups } from '../../kinds';
+import { type Event, events, type Host, hosts, interestedBase, now, people, type Person, vibes } from '../../mock';
+import { OrbitSays } from '../../orbitSays';
+import {
+  BackBar,
+  FaceWash,
+  FollowRow,
+  LoveButton,
+  loveIt,
+  MenuButton,
+  Monogram,
+  NotFound,
+  SaveButton,
+  SECTION,
+  Section,
+  shareLink,
+  StatusDot,
+  Tag,
+  Verified,
+} from '../../rows';
+import { addToList, needsAccount, setInterested, useInterested, useLoved, useSaved, useViewer } from '../../session';
 import { bookAction, eventStatus, seatsLine } from '../../status';
-import { addToList, needsAccount, setFollowing, setInterested, useInterested, useSaved, useViewer } from '../../session';
-import { around, color, font, radius, rim, space } from '../../theme';
+import { around, color, font, radius, space } from '../../theme';
 
-// This page's cards have more room than the app's usual 8 (owner, 15 Nov 2026: "add padding for card in event"), and
-// their corners still nest outward from their contents' (a 6px corner and 12px padding make the face 18, the frosted
-// rim 20). The When and where card glows very faintly from the bottom centre in the poster's own colour ("add very
-// less tint too", then "radial gradiant tint, should be based on event banner"), as Search's Explore boxes glow in
-// theirs; Hosted by stays plain ("dont apply for hosted by card").
-const CARD_PAD = 12;
-const FACE = around(radius.sm, CARD_PAD);
-const RIM = around(FACE, rim);
-// The When and where card and the FAQ and terms card have more room still (owner, 15 Nov 2026: "add proper spacing and
-// padding to when & where card and faq &terms card"): 16 inside and 16 between their rows, so each block reads on its
-// own; their corners nest the same way (6 + 16 = 22, rim 24).
-const INFO_PAD = 16;
-const INFO_FACE = around(radius.sm, INFO_PAD);
-const INFO_RIM = around(INFO_FACE, rim);
+// When and where glows very faintly from the bottom centre in the poster's own colour (owner, 15 Nov 2026: "add very
+// less tint too", then "radial gradiant tint, should be based on event banner"), inside the outline every text card
+// has (16 inside, corner 6 + 16 = 22; the glow's corner sits inside its 1pt line).
 const GLOW = 0.2; // the glow's strength at its centre; Explore's is 0.75
-const HOST_RIM = 1; // the Hosted by card's rim
-const PHOTO = 48; // a person's 1:1 photo in their row
-
+const WASH = around(radius.sm, 16) - 1;
+const LOGO = 24; // the host's logo in the head, as Home's feed rows seat it on a poster
+const PHOTO = 44; // a person's photo and the host's logo in their rows, as Home's host rows
+// Thanks for coming shows for a week after, as on Home; a meetup's room is open as long (inRoom 7).
+const WEEK = 3 * 3_600_000 + 7 * 86_400_000;
 
 export default function EventPage() {
   const { slug } = useLocalSearchParams<{ slug: string }>();
   const insets = useSafeAreaInsets();
-  const [scrollY] = useState(() => new Animated.Value(0));
   const [bar, setBar] = useState(insets.bottom + 108); // room under the page for the ticket bar, a guess until measured
   const e = events.find((x) => x.id === slug);
   const host = e && hosts.find((h) => h.id === e.hostId);
@@ -56,25 +67,21 @@ export default function EventPage() {
   if (!e || !host) return <NotFound what="event" />;
 
   const past = Date.parse(e.startsAt) < now;
-  const status = eventStatus(e, now); // the line at the top (src/status.ts)
+  const status = eventStatus(e, now); // the line under the title (src/status.ts)
+  const seats = seatsLine(e, status);
   const booked = viewer.signedIn && !!viewer.tickets?.some((t) => t.eventId === e.id);
   const went = viewer.signedIn && history.some((h) => h.eventId === e.id && h.status === 'Went');
+  const thanks = past && went && now < Date.parse(e.startsAt) + WEEK;
   const book = bookAction(status, !e.pricePaise);
   // The ticket bar: a ticket holder keeps View ticket until the event has ended, while it's on and if it's cancelled;
   // anyone else sees it until the start, never on a cancelled event.
   const showBar = booked ? status.kind !== 'ended' : !past && status.kind !== 'cancelled';
-  const following = viewer.signedIn && viewer.follows.includes(host.id);
   const openHost = () => router.push(`/host/${host.id}`);
   const price = barPrice(e);
-  const tint = <FaceWash tint={e.tone} opacity={GLOW} corner={INFO_FACE} />;
 
   return (
     <View style={styles.screen}>
-      <Animated.ScrollView
-        showsVerticalScrollIndicator={false}
-        scrollEventThrottle={16}
-        onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })}
-        contentContainerStyle={{ paddingBottom: showBar ? bar : insets.bottom + space.big }}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: showBar ? bar : insets.bottom + space.big }}>
         {/* From the top of the screen, under the status bar and the back button. */}
         <Carousel
           top={0}
@@ -82,26 +89,36 @@ export default function EventPage() {
           ratio={e.wide ? '4:3' : '3:4'}
           slides={[{ key: e.id, image: (e.wide ?? e.poster).source, edge: e.wide?.edge ?? host.bg, label: `Poster for ${e.title}` }]}
         />
+        {/* Left, like Home's rows: who's hosting (the tick beside the name), the title, the acts, then the status as a
+            dot and words with the seats left (no grey tags; labels like Promoted stay on Home and Search). */}
         <View style={styles.head}>
-          <View style={styles.status}>
-            <StatusDot tone={status.tone} />
-            <Text style={styles.statusText}>{status.label}</Text>
-          </View>
+          <Pressable
+            onPress={openHost}
+            accessibilityRole="button"
+            accessibilityLabel={`by ${host.name}${host.verified ? ', verified' : ''}`}
+            hitSlop={8}
+            style={({ pressed }) => [styles.hostLine, pressed && styles.pressed]}>
+            <Monogram mark={host} size={LOGO} />
+            <Text style={styles.hostName} numberOfLines={1}>
+              {host.name}
+            </Text>
+            {host.verified && <Verified size={14} />}
+          </Pressable>
           <Text style={styles.title} accessibilityRole="header">
             {e.title}
           </Text>
-          <Pressable onPress={openHost} accessibilityRole="button" hitSlop={8}>
-            <Text style={styles.by}>by {host.name}</Text>
-          </Pressable>
           <WithActs eventId={e.id} />
+          <View style={styles.status}>
+            <StatusDot tone={status.tone} />
+            <Text style={styles.statusText}>{[status.label, seats].filter(Boolean).join(' · ')}</Text>
+          </View>
         </View>
 
-        {/* When and where: a card, so text and a pill only. Times are India time (the event's own zone). */}
-        <Glass style={styles.infoRim}>
-          <View style={styles.infoCard}>
-            {tint}
-            {/* Each opens a short sheet: When its agenda, if it has one; Where the venue with Copy, Share and Get
-                directions (owner, 15 Nov 2026), which replaced the Open in Google Maps pill. */}
+        {/* When and where: a card, so text only. Times are India time (the event's own zone). When opens its agenda, if
+            it has one; Where the venue sheet with Copy, Share and Get directions (owner, 15 Nov 2026). */}
+        <View style={styles.first}>
+          <FactCard>
+            <FaceWash tint={e.tone} opacity={GLOW} corner={WASH} />
             <Fact
               label="When"
               value={`${e.when} IST`}
@@ -109,16 +126,17 @@ export default function EventPage() {
               onPress={e.agenda ? () => router.push(`/agenda/${e.id}`) : undefined}
             />
             <Fact label="Where" value={e.venue.name} note={e.venue.address} onPress={() => router.push(`/venue/${e.id}`)} />
-          </View>
-        </Glass>
+          </FactCard>
+        </View>
 
-        {!past && status.kind !== 'cancelled' && <InterestedCard event={e} />}
+        {thanks && <Thanks event={e} host={host} />}
+        {!past && status.kind !== 'cancelled' && <Interested event={e} />}
 
-        <Section title="About" />
+        <Section top={SECTION} title="About" />
         <Text style={styles.prose}>{e.about}</Text>
 
         {/* What it's like, as small cards: its kind, then the vibe (owner, 19 Nov 2026: interest cards, all four). */}
-        <Section title="What it’s like" />
+        <Section top={SECTION} title="What it’s like" />
         <View style={styles.tags}>
           {[categories.find((c) => c.slug === e.category)?.label ?? e.category, ...(vibes[e.id] ?? [])].map((t) => (
             <Tag key={t} text={t} />
@@ -126,11 +144,11 @@ export default function EventPage() {
         </View>
 
         {/* Its kind's own sections: the show, the jam, how a hackathon works, the room, the fest (src/kindSections.tsx). */}
-        <KindSections event={e} past={past} went={went} />
+        <KindSections event={e} past={past} />
 
         {cast(e.people).map((g) => (
           <View key={g.title}>
-            <Section title={g.title} />
+            <Section top={SECTION} title={g.title} />
             <View style={styles.people}>
               {g.ids.map((id) => {
                 const p = people.find((x) => x.id === id);
@@ -141,59 +159,37 @@ export default function EventPage() {
         ))}
 
         {/* The event's FAQ, if it has one, and its terms, each in a full modal (owner, 15 Nov 2026: "add Event FAQ &
-            Terms & Conditions Modals"). No rim round this one ("remove rim for faq card"): the bare face, its edge in
-            line with the rim of the card above. */}
-        <View style={[styles.infoCard, styles.bareCard]}>
-          {e.faq && (
-            <Fact
-              label="FAQ"
-              value={`${e.faq.length} ${e.faq.length === 1 ? 'question' : 'questions'}`}
-              onPress={() => router.push(`/faq/${e.id}`)}
-            />
-          )}
-          <Fact label="Terms & Conditions" value="Tickets, refunds and entry" onPress={() => router.push(`/terms/${e.id}`)} />
+            Terms & Conditions Modals"). */}
+        <View style={styles.section}>
+          <FactCard>
+            {e.faq && (
+              <Fact
+                label="FAQ"
+                value={`${e.faq.length} ${e.faq.length === 1 ? 'question' : 'questions'}`}
+                onPress={() => router.push(`/faq/${e.id}`)}
+              />
+            )}
+            <Fact label="Terms & Conditions" value="Tickets, refunds and entry" onPress={() => router.push(`/terms/${e.id}`)} />
+          </FactCard>
         </View>
 
-        {/* Last, the host to come back to (Discover doc: "every event page ends on the host and Follow"). */}
-        <Section title="Hosted by" />
-        <Pressable
-          onPress={openHost}
-          accessibilityRole="button"
-          accessibilityLabel={`${host.name}${host.verified ? ', verified' : ''}, ${host.kind}`}>
-          <Glass style={[styles.cardRim, styles.hostRim]}>
-            <View style={[styles.card, styles.hostCard]}>
-              <Monogram mark={host} size={PHOTO} />
-              <View style={styles.grow}>
-                {/* The verified tick beside the name, in place of the word (owner, 15 Nov 2026). */}
-                <View style={styles.nameRow}>
-                  <Text style={[styles.name, styles.shrink]} numberOfLines={1}>
-                    {host.name}
-                  </Text>
-                  {host.verified && <Verified size={16} />}
-                </View>
-                <Text style={styles.meta} numberOfLines={1}>
-                  {host.kind}
-                </Text>
-              </View>
-              {/* Signed out, it asks to sign in first, then follows (src/session.ts). */}
-              <Pressable onPress={() => needsAccount(() => setFollowing(host.id, !following))} accessibilityRole="button" hitSlop={6}>
-                <Glass style={styles.follow}>
-                  <Text style={[styles.followText, following && styles.followingText]}>{following ? 'Following' : 'Follow'}</Text>
-                </Glass>
-              </Pressable>
-            </View>
-          </Glass>
-        </Pressable>
-      </Animated.ScrollView>
+        {/* Last, the host to come back to (Discover doc: "every event page ends on the host and Follow"), a host row with
+            its button as on Home and Search. */}
+        <Section top={SECTION} title="Hosted by" />
+        <View style={styles.hostedBy}>
+          <FollowRow host={host} line={[host.kind, followersLine(host.followers)].filter(Boolean).join(' · ')} onPress={openHost} />
+        </View>
+      </ScrollView>
 
       {showBar && (
         <BookBar
+          dark
           price={formatPrice(price.paise)}
           from={price.from}
-          note={booked ? undefined : seatsLine(e, status)}
+          note={booked ? undefined : seats}
           action={booked ? 'View ticket' : book.label}
           // A booking opens its ticket (src/app/ticket/[id].tsx, keyed by booking id). Signed out, Book and Register open
-          // the sign-in sheet over this page and come back to it (Booking doc, step 2); booking itself isn't built yet.
+          // the sign-in sheet over this page and come back to it (Booking doc, step 2).
           onAction={
             booked
               ? () => {
@@ -207,15 +203,16 @@ export default function EventPage() {
           onHeight={setBar}
         />
       )}
-      {/* Save and the menu (owner, 15 Nov 2026: "add top right, love and menu"); the menu holds the rest of the doc's list.
-          Once it's over, Save goes; an event you went to has Loved it's heart there instead (owner, 19 Nov 2026).
-          Signed out, Save asks to sign in first, then saves; so does Add to a list, which saves first if it isn't
-          (Saved events and lists doc). Copy link, Add to calendar and Report aren't built yet. */}
-      <BackBar scrollY={scrollY}>
-        {/* Once it's started, Save goes: only a saved one keeps its filled star, to manage or remove it. */}
-        {past && went && <LoveButton event={e} bar />}
-        {(!past || saved) && <SaveButton event={e} bar />}
+      {/* Save and the menu (owner, 15 Nov 2026: "add top right, love and menu"), on the dark glass with nothing behind
+          them. Once it's over, Save goes (only a saved one keeps its filled star, to manage or remove it); an event you
+          went to has Loved it's heart there instead (owner, 19 Nov 2026). Signed out, Save asks to sign in first, then
+          saves; so does Add to a list, which saves first if it isn't (Saved events and lists doc). Copy link, Add to
+          calendar and Report aren't built yet. */}
+      <BackBar dark>
+        {past && went && <LoveButton event={e} bar dark />}
+        {(!past || saved) && <SaveButton event={e} bar dark />}
         <MenuButton
+          tint={DARK_TINT}
           actions={[
             ...(past ? [] : [{ label: 'Add to a list', icon: 'listPlus' as const, onPress: () => addToList(e.id) }]),
             {
@@ -233,43 +230,56 @@ export default function EventPage() {
   );
 }
 
-// A label over its value. One that opens something shows a ">" on its right (owner, 15 Nov 2026: "add > for when and
-// where"), an exception to no icons in cards, like the verified tick.
-// Interested (owner, 19 Nov 2026: "add interest cards for events", all four): apart from Save, it says you're thinking
-// of going. How many are shows under the question, yours included, at any number (owner, same day: "in interested add
-// count too", then "in button remove the count"). Signed out, it asks to sign in first. A card, so text and a pill only.
-function InterestedCard({ event: e }: { event: Event }) {
+// Interested (owner, 19 Nov 2026: "add interest cards for events"), apart from Save: it says you're thinking of going.
+// Orbit asks, in its bubble, with the answer on your side (Home's Orbit speaks), and says how many are, yours included
+// ("in interested add count too"). Signed out, it asks to sign in first.
+function Interested({ event: e }: { event: Event }) {
   const mine = useInterested(e.id);
   const n = interestedBase(e.id) + (mine ? 1 : 0);
   return (
-    <Glass style={styles.cardRim}>
-      <View style={[styles.card, styles.interestCard]}>
-        <View style={styles.grow}>
-          <Text style={styles.name}>{mine ? 'You’re interested' : 'Thinking of going?'}</Text>
-          <Text style={styles.meta}>{`${n} ${n === 1 ? 'person is' : 'people are'} interested`}</Text>
-        </View>
-        <Pressable
-          onPress={() => needsAccount(() => setInterested(e.id, !mine))}
-          accessibilityRole="button"
-          accessibilityState={{ selected: mine }}
-          hitSlop={6}>
-          <Glass style={styles.follow}>
-            <Text style={[styles.followText, mine && styles.followingText]}>{mine ? 'Interested' : 'I’m interested'}</Text>
-          </Glass>
-        </Pressable>
-      </View>
-    </Glass>
+    <OrbitSays
+      top={SECTION}
+      title={mine ? 'You’re interested' : 'Thinking of going?'}
+      text={`${n} ${n === 1 ? 'person is' : 'people are'} interested.`}
+      answers={[{ label: mine ? 'Interested' : 'I’m interested', picked: mine, onPress: () => needsAccount(() => setInterested(e.id, !mine)) }]}
+    />
   );
 }
 
-// One person on the event, a plain row like Search's hosts: their 1:1 photo (a circle, as your own; the monogram until
+// Thanks for coming, on an event you went to for a week after, in Home's words (Home's Thanks): Loved it, or for a
+// meetup with a room, See who was there (inRoom 3), which replaced the Open the room pill in its Meet people here card.
+function Thanks({ event: e, host }: { event: Event; host: Host }) {
+  const loved = useLoved(e.id);
+  const title = `Thanks for coming to ${e.title}`;
+  if (meetups[e.id]?.inRoom) {
+    return (
+      <OrbitSays
+        top={SECTION}
+        title={title}
+        text="See who was there, and connect. The room’s open for a week after."
+        answers={[{ label: 'See who was there', onPress: () => router.push(`/room/${e.id}`) }]}
+      />
+    );
+  }
+  return (
+    <OrbitSays
+      top={SECTION}
+      title={title}
+      text={`Loved it? Let ${host.name} know.`}
+      then={loved ? { mine: 'Loved it', reply: `${host.name} will hear.` } : undefined}
+      answers={[loved ? { label: 'Take it back', onPress: () => loveIt(e.id, false) } : { label: 'Loved it', onPress: () => loveIt(e.id, true) }]}
+    />
+  );
+}
+
+// One person on the event, a plain row like the host rows: their 1:1 photo (a circle, as your own; the monogram until
 // photos exist), name and one line. Tapping opens the person sheet.
 function PersonRow({ person: p }: { person: Person }) {
   return (
     <Pressable
       onPress={() => router.push(`/person/${p.id}`)}
       accessibilityRole="button"
-      style={({ pressed }) => [styles.personRow, pressed && styles.pressed]}>
+      style={({ pressed }) => [styles.rowLink, pressed && styles.pressed]}>
       <Monogram mark={p} size={PHOTO} round />
       <View style={styles.grow}>
         <Text style={styles.name} numberOfLines={1}>
@@ -288,35 +298,22 @@ const styles = StyleSheet.create({
   grow: { flex: 1, minWidth: 0 },
   pressed: { opacity: 0.7 },
 
-  head: { marginHorizontal: 20, alignItems: 'center' },
-  status: { marginTop: space.big, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  // The accent on a dot, never on text.
-  statusText: { fontFamily: font.medium, fontSize: 13, color: color.secondary },
-  title: { marginTop: space.small, fontFamily: font.headline, fontSize: 24, lineHeight: 30, color: color.text, textAlign: 'center' },
-  by: { marginTop: 4, fontFamily: font.medium, fontSize: 15, color: color.secondary, textAlign: 'center' },
+  head: { marginTop: space.big, marginHorizontal: 20, alignItems: 'flex-start' },
+  hostLine: { maxWidth: '100%', flexDirection: 'row', alignItems: 'center', gap: space.small },
+  hostName: { flexShrink: 1, fontFamily: font.medium, fontSize: 14, color: color.text },
+  title: { marginTop: 10, fontFamily: font.headline, fontSize: 26, lineHeight: 32, color: color.text },
+  status: { marginTop: 10, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  // The accent on the dot, never on text.
+  statusText: { flexShrink: 1, fontFamily: font.text, fontSize: 13, color: color.secondary },
 
-  cardRim: { marginHorizontal: 20, marginTop: space.big, padding: rim, borderRadius: RIM },
-  card: { borderRadius: FACE, backgroundColor: color.card, padding: CARD_PAD, gap: space.small },
-  infoRim: { marginHorizontal: 20, marginTop: space.big, padding: rim, borderRadius: INFO_RIM },
-  infoCard: { borderRadius: INFO_FACE, backgroundColor: color.card, padding: INFO_PAD, gap: INFO_PAD },
-  bareCard: { marginHorizontal: 20, marginTop: space.big, borderWidth: 1, borderColor: color.border }, // no rim, so an outline
+  first: { marginTop: space.big },
+  section: { marginTop: SECTION },
+  prose: { marginHorizontal: 20, fontFamily: font.text, fontSize: 15, lineHeight: 22, color: color.secondary },
+  tags: { marginHorizontal: 20, flexDirection: 'row', flexWrap: 'wrap', gap: space.small },
+  people: { marginHorizontal: 20, gap: 16 },
+  rowLink: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  name: { fontFamily: font.title, fontSize: 15, lineHeight: 20, color: color.text },
   meta: { fontFamily: font.text, fontSize: 13, lineHeight: 18, color: color.secondary },
 
-  prose: { marginHorizontal: 20, fontFamily: font.text, fontSize: 15, lineHeight: 22, color: color.secondary },
-  people: { marginHorizontal: 20, gap: 16 },
-  personRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
-  name: { fontFamily: font.title, fontSize: 15, lineHeight: 20, color: color.text },
-
-  hostCard: { flexDirection: 'row', alignItems: 'center' },
-  interestCard: { flexDirection: 'row', alignItems: 'center' },
-  tags: { marginHorizontal: 20, flexDirection: 'row', flexWrap: 'wrap', gap: space.small },
-  // A finer rim than the app's 2px (owner, 15 Nov 2026: "reduce rim of hosted by to 1px"); its corner still nests.
-  hostRim: { padding: HOST_RIM, borderRadius: around(FACE, HOST_RIM) },
-  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  shrink: { flexShrink: 1 },
-  // Home's host card Follow: 32 tall and fully round (owner: "even follow and following").
-  follow: { height: 32, paddingHorizontal: 16, borderRadius: 16, justifyContent: 'center' },
-  followText: { fontFamily: font.title, fontSize: 13, color: color.text },
-  followingText: { color: color.secondary },
-
+  hostedBy: { marginHorizontal: 20 },
 });

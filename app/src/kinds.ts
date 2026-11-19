@@ -103,7 +103,29 @@ export const hackathons: Record<string, Hackathon> = {
 
 /** Team tickets' seats, by event and ticket type: a team ticket takes its team's places from the seats left. */
 export const teamSeats: Record<string, Record<string, number>> = {
-  'build-anything-hackathon': { 'Team of 4': 4 },
+  // No solos at launch (owner, 19 Nov 2026: "Remove Solo"; Running hackathons 3): every ticket is a team's.
+  'build-anything-hackathon': { 'Early bird': 4, 'Team of 4': 4 },
+};
+
+// A host's own questions on a booking (owner, 19 Nov 2026: "Hosts can add Custom Questions to registrations"; Booking
+// doc: asked once per booking, with what the profile knows filled in; `each` ones are asked of every person, a teammate
+// or friend answering theirs when they claim their seat). Short text, a choice, or Yes and No.
+// ponytail: examples written here, keyed by event; hosts add their own in Console once events reach the API.
+export type Question = { id: string; q: string; type: 'text' | 'choice' | 'yesno'; options?: readonly string[]; required: boolean; each?: boolean };
+export const questions: Record<string, readonly Question[]> = {
+  'build-anything-hackathon': [
+    { id: 'org', q: 'College or company', type: 'text', required: true, each: true },
+    { id: 'github', q: 'GitHub or portfolio', type: 'text', required: false, each: true },
+  ],
+  'founders-breakfast': [
+    { id: 'building', q: 'What are you building?', type: 'text', required: true },
+    { id: 'stage', q: 'Where is it now?', type: 'choice', options: ['An idea', 'Building', 'Has revenue', 'Raising'], required: true },
+  ],
+  'sunday-jam': [{ id: 'plays', q: 'What will you bring?', type: 'choice', options: ['Guitar', 'Vocals', 'Percussion', 'Keys', 'Just listening'], required: false }],
+  'pottery-for-beginners': [
+    { id: 'wheel', q: 'Have you used a wheel before?', type: 'yesno', required: true },
+    { id: 'note', q: 'Anything the teacher should know?', type: 'text', required: false },
+  ],
 };
 
 export const meetups: Record<string, Meetup> = {

@@ -4,14 +4,13 @@
 // (owner, same day: "Loved it for all"), so nothing here gates it.
 import { router } from 'expo-router';
 import { Fragment } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text } from 'react-native';
 
 import { Fact, FactCard } from './fact';
 import { acts, festItems, fests, hackathons, jams, meetups, shows, withActs } from './kinds';
 import type { Event } from './mock';
-import { hosts, now } from './mock';
-import { Pill } from './account/kit';
-import { Section } from './rows';
+import { hosts } from './mock';
+import { SECTION, Section } from './rows';
 import { color, font } from './theme';
 
 // "with [act]" under "by [host]" (Discover 23): up to three names, each opening the act's page, then "+N".
@@ -35,8 +34,8 @@ export function WithActs({ eventId }: { eventId: string }) {
   );
 }
 
-// `went`: you were let in, which opens a meetup's room to you.
-export function KindSections({ event: e, past, went = false }: { event: Event; past: boolean; went?: boolean }) {
+// Each a heading SECTION (40) below what's above, as the page's own sections.
+export function KindSections({ event: e, past }: { event: Event; past: boolean }) {
   switch (e.category) {
     case 'comedy':
       return <ShowFacts eventId={e.id} />;
@@ -45,7 +44,7 @@ export function KindSections({ event: e, past, went = false }: { event: Event; p
     case 'hackathons':
       return <HackathonFacts eventId={e.id} past={past} />;
     case 'meetups':
-      return <MeetupFacts eventId={e.id} canJoin={past && went && isRoomOpen(e.startsAt)} />;
+      return <MeetupFacts eventId={e.id} />;
     case 'fests':
       return <FestFacts eventId={e.id} />;
     default:
@@ -58,7 +57,7 @@ function ShowFacts({ eventId }: { eventId: string }) {
   if (!s) return null;
   return (
     <>
-      <Section title="The show" />
+      <Section top={SECTION} title="The show" />
       <FactCard>
         <Fact label="Runs" value={s.runtime} />
         <Fact label="In" value={s.language} />
@@ -74,7 +73,7 @@ function JamFacts({ eventId }: { eventId: string }) {
   if (!j) return null;
   return (
     <>
-      <Section title="The jam" />
+      <Section top={SECTION} title="The jam" />
       <FactCard>
         <Fact label="Playing" value={j.style} />
         <Fact label="Bring" value={j.bring} />
@@ -96,7 +95,7 @@ function HackathonFacts({ eventId, past }: { eventId: string; past: boolean }) {
     <>
       {past && h.winners && (
         <>
-          <Section title="Winners" />
+          <Section top={SECTION} title="Winners" />
           <FactCard>
             {h.winners.map((w) => (
               <Fact key={w.place} label={w.place} value={`${w.project} by ${w.team}`} note={`${w.line} · ${w.members}`} />
@@ -104,26 +103,26 @@ function HackathonFacts({ eventId, past }: { eventId: string; past: boolean }) {
           </FactCard>
         </>
       )}
-      <Section title="How it works" />
+      <Section top={SECTION} title="How it works" />
       <FactCard>
         <Fact label="Teams" value={`${min} to ${max} people`} note={past ? `${h.teams} teams took part` : `${h.teams} teams in so far`} />
         {h.rounds.map((r, i) => (
           <Fact key={r.name} label={`Round ${i + 1}`} value={r.name} note={r.when} />
         ))}
       </FactCard>
-      <Section title="Tracks" />
+      <Section top={SECTION} title="Tracks" />
       <FactCard>
         {h.tracks.map((t) => (
           <Fact key={t.name} value={t.name} note={t.brief} />
         ))}
       </FactCard>
-      <Section title="Prizes" />
+      <Section top={SECTION} title="Prizes" />
       <FactCard>
         {h.prizes.map((p) => (
           <Fact key={p.place} label={p.place} value={p.prize} />
         ))}
       </FactCard>
-      <Section title="Judged on" />
+      <Section top={SECTION} title="Judged on" />
       <FactCard>
         {h.criteria.map((c) => (
           <Fact key={c.name} label={`${c.weight}%`} value={c.name} />
@@ -133,27 +132,20 @@ function HackathonFacts({ eventId, past }: { eventId: string; past: boolean }) {
   );
 }
 
-// The room's open from the start until a week after (about three hours for the meetup, then 7 days; inRoom 7).
-const isRoomOpen = (startsAt: string) => now < Date.parse(startsAt) + 3 * 3_600_000 + 7 * 86_400_000;
-
-// One line about the room (inRoom 15): no names or counts here. Once you were let in, the room opens from here and from
-// Home's Thanks for coming (inRoom 3: you tap to join; nobody's in it till they do).
-function MeetupFacts({ eventId, canJoin }: { eventId: string; canJoin: boolean }) {
+// One line about the room (inRoom 15): no names or counts here. Once you were let in, the room opens from Orbit's Thanks
+// for coming, on Home and on the event page (inRoom 3: you tap to join; nobody's in it till they do); its Open the room
+// pill here moved into that bubble with the event page's Take 1 (19 Nov 2026).
+function MeetupFacts({ eventId }: { eventId: string }) {
   if (!meetups[eventId]?.inRoom) return null;
   return (
     <>
-      <Section title="Meet people here" />
+      <Section top={SECTION} title="Meet people here" />
       <FactCard>
         <Fact
           label="inRoom"
           value="See who’s here once you’re checked in"
           note="Join the room once you’re in and swap ways to reach each other. It stays open for a week after."
         />
-        {canJoin && (
-          <View style={styles.join}>
-            <Pill label="Open the room" size="small" onPress={() => router.push(`/room/${eventId}`)} />
-          </View>
-        )}
       </FactCard>
     </>
   );
@@ -167,7 +159,7 @@ function FestFacts({ eventId }: { eventId: string }) {
   const items = festItems[eventId] ?? [];
   return (
     <>
-      <Section title="The fest" />
+      <Section top={SECTION} title="The fest" />
       <FactCard>
         <Fact label="Kind of fest" value={f.type} />
         <Fact label="When" value={f.days} />
@@ -176,7 +168,7 @@ function FestFacts({ eventId }: { eventId: string }) {
       </FactCard>
       {items.length > 0 && (
         <>
-          <Section title="Inside the fest" />
+          <Section top={SECTION} title="Inside the fest" />
           <FactCard>
             {items.map((it) => (
               <Fact
@@ -195,7 +187,7 @@ function FestFacts({ eventId }: { eventId: string }) {
 }
 
 const styles = StyleSheet.create({
-  with: { marginTop: 2, fontFamily: font.medium, fontSize: 15, color: color.secondary, textAlign: 'center' },
+  // Under the title, left like the page's head since its Take 1 (19 Nov 2026).
+  with: { marginTop: 4, fontFamily: font.medium, fontSize: 14, lineHeight: 20, color: color.secondary },
   act: { color: color.text },
-  join: { alignItems: 'flex-start' },
 });

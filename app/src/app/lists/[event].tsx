@@ -7,16 +7,19 @@
 // A full glass modal like the location's ("fix that modal"): the short sheet it was cut its lists off, and New list
 // opened a second modal over it, so a new list's name is typed right here.
 import { router, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AccessibilityInfo, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Field, Group, Pill, Row, TONE } from '../../account/kit';
 import { MAX_LISTS, TOO_MANY, byTouched } from '../../account/saves';
 import { Icon } from '../../icons';
-import { events } from '../../mock';
+import { events, now } from '../../mock';
+import { OrbitSays } from '../../orbitSays';
+import { offerPush, PushAsk } from '../../push';
 import { CloseButton, GlassFill } from '../../rows';
 import { newList, removeSaves, tickList, useSaved, useSession } from '../../session';
+import { eventStatus } from '../../status';
 import { color, font, space } from '../../theme';
 
 const TONES = Object.values(TONE); // each list's icon a colour in turn, as in Account › Saved
@@ -35,6 +38,11 @@ export default function ListModal() {
   const [name, setName] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
   const e = events.find((x) => x.id === event); // only events that can be opened are saved: a made-up link adds nothing
+  // Saving an event whose booking hasn't opened yet may ask for push (Notifications doc; src/push.tsx).
+  const opensLater = !!e && eventStatus(e, now).kind === 'opensSoon';
+  useEffect(() => {
+    if (saved && opensLater) void offerPush(`save:${event}`);
+  }, [saved, opensLater, event]);
 
   const fail = (p: string | null) => {
     setProblem(p);
@@ -82,6 +90,7 @@ export default function ListModal() {
           keyboardDismissMode="on-drag"
           automaticallyAdjustKeyboardInsets
           showsVerticalScrollIndicator={false}>
+          <PushAsk moment={`save:${event}`} line={`Hear when ${e.pricePaise ? 'booking opens' : 'registrations open'}?`} top={0} />
           {naming && (
             <View style={styles.naming}>
               <View style={styles.inset}>
@@ -101,7 +110,8 @@ export default function ListModal() {
               <Pill label="Make list" size="wide" disabled={!name.trim()} onPress={make} />
             </View>
           )}
-          {problem && <Text style={styles.problem}>{problem}</Text>}
+          {/* Said by Orbit (the detail pages' Take 7, owner, 19 Nov 2026), as the push ask above it is. */}
+          {problem && <OrbitSays top={space.small} text={problem} />}
           <Group title="Lists">
             {!naming && <Row icon="listPlus" label="New list" onPress={startNaming} />}
             {lists.map((l, i) => {
@@ -139,6 +149,5 @@ const styles = StyleSheet.create({
   event: { marginTop: 2, fontFamily: font.medium, fontSize: 14, color: color.secondary },
   naming: { marginTop: space.big, gap: space.small },
   inset: { marginHorizontal: 20 },
-  problem: { marginTop: space.small, marginHorizontal: 20, fontFamily: font.medium, fontSize: 14, color: color.secondary },
   foot: { paddingTop: space.small },
 });

@@ -28,7 +28,7 @@ export default function Account() {
   const viewer = useViewer(); // signed in or out on this phone (src/session.ts)
   const { width } = useWindowDimensions();
   const due = useSession()?.me.deletionDue; // set to be deleted: Keep my account in place of Delete account
-  const following = useFollows().count; // the profile's count, read here so it's ready when the profile opens
+  useFollows(); // the profile's Following count, read here so it's ready when the profile opens
   const logOut = () =>
     Alert.alert('Log out of Orbit?', 'You’ll sign back in on this phone with a code or your passkey.', [
       { text: 'Cancel', style: 'cancel' },
@@ -50,7 +50,7 @@ export default function Account() {
       <Panel>
         {viewer.signedIn ? (
           // View profile opens it (owner, 19 Nov 2026: "replace swipe down, and change to button").
-          <ProfileHead onOpen={openProfile} following={following} />
+          <ProfileHead pill="View profile" onPress={openProfile} />
         ) : (
           // Signed out, only what works without an account; Sign in opens the sign-in sheet (src/app/login.tsx).
           <View style={styles.head}>

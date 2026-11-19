@@ -35,8 +35,6 @@ const DAY = 86_400_000;
 const MAX_SLIDES = 6; // owner, 15 Nov 2026: "around 6"
 const MAX_ORBIT = 3;
 const MAX_HOSTS = 4; // two rows of two host cards
-const MAX_KINDS = 3; // sections by interest
-const MAX_PER_KIND = 3;
 const MAX_PLACES = 3;
 
 
@@ -76,18 +74,6 @@ export function planHome<E extends PlanEvent, H extends PlanHost>(
       ? null
       : 'nothingNear';
   const shown = new Set([...tickets.map((e) => e.id), ...orbit.map((e) => e.id)]);
-
-  // A section for each kind of event you picked (owner, 19 Nov 2026: interest cards, "all four"), in the order picked,
-  // up to MAX_KINDS with something on: near you when you're somewhere with events, else everywhere. Their events leave
-  // the list below, as tickets and your orbit do.
-  const byInterest = (viewer.signedIn ? (viewer.interests ?? []) : [])
-    .map((category) => ({
-      category,
-      events: upcoming.filter((e) => e.category === category && !shown.has(e.id) && (notice || isNear(e.area))).slice(0, MAX_PER_KIND),
-    }))
-    .filter((k) => k.events.length > 0)
-    .slice(0, MAX_KINDS);
-  for (const k of byInterest) for (const e of k.events) shown.add(e.id);
   const rest = upcoming.filter((e) => !shown.has(e.id));
 
   // Nothing near or no location: everything upcoming. Otherwise this week near you, and under four of
@@ -99,9 +85,15 @@ export function planHome<E extends PlanEvent, H extends PlanHost>(
     const week = near.filter((e) => Date.parse(e.startsAt) < now + 7 * DAY);
     list = week.length >= 4 ? { title: 'Near you this week', events: week } : { title: 'Coming up', events: near };
   }
+  // The kinds of event you picked (Account › Interests, or Home's ask) lead the list, each part still soonest first.
+  // They were a section each ("Gaming near you"; owner, 19 Nov 2026: interest cards, "all four") until the owner merged
+  // them: "merge all near you's into Near you this week".
+  const liked = new Set(viewer.signedIn ? (viewer.interests ?? []) : []);
+  const likes = (e: E) => !!e.category && liked.has(e.category);
+  list.events = [...list.events.filter(likes), ...list.events.filter((e) => !likes(e))];
 
   // Places to play, booked by the hour (owner, 19 Nov 2026: "Add to Home too"): near you, or everywhere while Home shows
-  // a notice, as the interest sections. They have their own section, so they stay out of Hosts near you.
+  // a notice, as the list. They have their own section, so they stay out of Hosts near you.
   const places = hosts.filter((h) => h.tile && (notice || isNear(h.area))).slice(0, MAX_PLACES);
 
   // Promoted events with a 4:3 poster, near you while anything is, not ones you've booked: the first leads the carousel,
@@ -109,7 +101,7 @@ export function planHome<E extends PlanEvent, H extends PlanHost>(
   // home"), so neither shows twice up there.
   const boosts = upcoming.filter((e) => e.wide && promoted(e) && !booked.has(e.id) && (notice || isNear(e.area)));
   const lead = boosts[0];
-  // The banner is the next one no section above already shows (your orbit, your interests); the screen keeps it out of
+  // The banner is the next one no section above already shows (your orbit); the screen keeps it out of
   // the list under them. It stays in `list` here, so "All events" still knows when the list is everything.
   const ad = boosts.slice(1).find((e) => !shown.has(e.id));
 
@@ -120,8 +112,7 @@ export function planHome<E extends PlanEvent, H extends PlanHost>(
   return {
     tickets,
     orbit,
-    byInterest,
-    near: notice === null, // whether the interest sections are near you
+    near: notice === null, // whether Places to play is near you
     // Home asks once, signed in, until interests are picked or skipped.
     askInterests: viewer.signedIn && viewer.interests === undefined,
     notice,

@@ -1,3 +1,4 @@
+import { palette } from '@orbit/tokens';
 import { router } from 'expo-router';
 import { type ComponentRef, useEffect, useRef, useState } from 'react';
 import {
@@ -14,7 +15,7 @@ import {
 } from 'react-native';
 import Svg, { Defs, Image as SvgImage, LinearGradient, Mask, Rect, Stop } from 'react-native-svg';
 
-import { Glass, useAccessibility } from '../glass';
+import { DARK_TINT, Glass, useAccessibility } from '../glass';
 import type { AppRatio } from '../media';
 import { around, color, font, radius, rim, space, stoneAt } from '../theme';
 
@@ -42,18 +43,20 @@ const FADE = 90; // how far into the poster the blur hands over to the sharp ima
 // event that has no 4:3 poster. They pass `extend` off and `top` 0: the poster starts at the top of the screen, sharp,
 // with no blurred extension above it and no wash over it (owner, 15 Nov 2026: "posters in detail pages top is blurred,
 // disturbing the poster content", then "remove the poster top blur, instead start poster from top").
+// `dark` (Home, owner 19 Nov 2026: "Both", the Capsule take): the pill and Promoted on the tab bar's dark glass, and the
+// running dot filling Sage to Moss like the open tab's icon.
 export function Carousel({
   slides,
   top,
   ratio = '4:3',
   extend = true,
-  onActive,
+  dark = false,
 }: {
   slides: CarouselSlide[];
   top: number;
   ratio?: AppRatio;
   extend?: boolean;
-  onActive?: (i: number) => void; // the slide showing, as it changes (Home's header inks to its edge)
+  dark?: boolean;
 }) {
   const { width } = useWindowDimensions();
   const posterHeight = ratio === '3:4' ? (width * 4) / 3 : (width * 3) / 4;
@@ -69,7 +72,6 @@ export function Carousel({
   const screenReader = useAccessibility('screenReaderChanged');
   const auto = slides.length > 1 && !reduceMotion && !screenReader;
   const active = Math.min(index, Math.max(0, slides.length - 1));
-  useEffect(() => onActive?.(active), [active, onActive]);
 
   // One timer per slide: fill the active dot, then page on. Swipes and this both move `index` through onScroll.
   useEffect(() => {
@@ -217,14 +219,14 @@ export function Carousel({
               onPress={() => router.push(slides[active].href!)}
               accessibilityRole={slides[active].href ? 'button' : undefined}
               hitSlop={6}>
-              <Glass style={styles.pillGlass}>
+              <Glass style={styles.pillGlass} tint={dark ? DARK_TINT : undefined}>
                 <Text style={styles.pillText}>{slides[active].action}</Text>
               </Glass>
             </Pressable>
           )}
           {/* A paid slide says so, small on the glass at the bottom left, level with the pill (owner, 19 Nov 2026). */}
           {slides[active].mark && (
-            <Glass style={styles.mark}>
+            <Glass style={styles.mark} tint={dark ? DARK_TINT : undefined}>
               <Text style={styles.markText}>{slides[active].mark}</Text>
             </Glass>
           )}
@@ -236,7 +238,19 @@ export function Carousel({
           {slides.map((s, i) =>
             i === active ? (
               <View key={s.key} style={styles.active}>
-                <Animated.View style={[styles.fill, auto && { transform: [{ scaleX: progress }] }]} />
+                <Animated.View style={[styles.fill, auto && { transform: [{ scaleX: progress }] }]}>
+                  {dark && (
+                    <Svg width={18} height={6}>
+                      <Defs>
+                        <LinearGradient id="dotFill" x1="0" y1="0" x2="1" y2="0">
+                          <Stop offset={0} stopColor={palette.sage} />
+                          <Stop offset={1} stopColor={palette.moss} />
+                        </LinearGradient>
+                      </Defs>
+                      <Rect width={18} height={6} fill="url(#dotFill)" />
+                    </Svg>
+                  )}
+                </Animated.View>
               </View>
             ) : (
               <View key={s.key} style={styles.dot} />

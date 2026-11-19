@@ -38,6 +38,8 @@ export type Session = {
   asked?: readonly string[]; // `${event}|${person}`: people you asked to connect with in a room
   payWith?: PayWith; // the way you like to pay (Account › Payment methods); never a card or bank detail
   upiIds?: readonly UpiId[]; // UPI IDs you added once Razorpay found whose they are (owner, 19 Nov 2026)
+  read?: readonly string[]; // inbox messages opened on this phone (src/app/inbox.tsx)
+  hostsOff?: readonly string[]; // followed hosts set to Off: their new events reach only your inbox
   me: Account;
 } & saves.Saves;
 
@@ -140,7 +142,9 @@ export const useInterested = (eventId: string) => useSession()?.interested?.incl
 export const useFollowing = (hostId: string) => useSession()?.follows.includes(hostId) ?? false;
 
 const turn = (list: readonly string[], id: string, on: boolean) => (on ? [...new Set([...list, id])] : list.filter((x) => x !== id));
-export const setFollowing = (hostId: string, on: boolean) => current && set({ ...current, follows: turn(current.follows, hostId, on) });
+// Unfollowing forgets the host's Off, so following again starts at All (Notifications decision 3).
+export const setFollowing = (hostId: string, on: boolean) =>
+  current && set({ ...current, follows: turn(current.follows, hostId, on), hostsOff: on ? current.hostsOff : current.hostsOff?.filter((x) => x !== hostId) });
 // The way you like to pay, ready at checkout (owner, 19 Nov 2026: Payment methods); on this phone only.
 export const usePayWith = () => useSession()?.payWith;
 export const setPayWith = (p: PayWith) => current && set({ ...current, payWith: p });
@@ -176,6 +180,17 @@ export const useAsked = (eventId: string, personId: string) => useSession()?.ask
 export const askToConnect = (eventId: string, personId: string) =>
   current && set({ ...current, asked: turn(current.asked ?? [], `${eventId}|${personId}`, true) });
 export const setInterested = (eventId: string, on: boolean) => current && set({ ...current, interested: turn(current.interested ?? [], eventId, on) });
+// The inbox (Notifications doc): read state per message, and All or Off per followed host (decision 3; Off stops the
+// push and the email, the inbox copy still lands).
+// ponytail: on this phone only, like follows; the API's inbox carries read state and the host switches.
+const noRead: readonly string[] = [];
+export const useRead = () => useSession()?.read ?? noRead;
+export function markRead(ids: readonly string[]) {
+  const fresh = current ? ids.filter((id) => !current!.read?.includes(id)) : [];
+  if (current && fresh.length) set({ ...current, read: [...(current.read ?? []), ...fresh] });
+}
+export const useHostOff = (hostId: string) => useSession()?.hostsOff?.includes(hostId) ?? false;
+export const setHostOff = (hostId: string, off: boolean) => current && set({ ...current, hostsOff: turn(current.hostsOff ?? [], hostId, off) });
 
 // Anything that needs an account: done at once when signed in; otherwise the sign-in sheet opens over the screen and
 // `action` runs once it closes signed in. Every way into the sheet comes through here, so a sheet closed without
@@ -291,7 +306,7 @@ export function signIn(done: Extract<AuthStep, { step: 'signedIn' }>, via: Way) 
   api.start(done);
   const kept = current ? { saved: current.saved, lists: current.lists } : saves.normalise({ saved: savedMock, lists: listsMock }, Date.now());
   // What's kept on this phone carries over, follows to Loved it, as saves do.
-  const mine = current && { interests: current.interests, interested: current.interested, loved: current.loved, rooms: current.rooms, asked: current.asked, payWith: current.payWith, upiIds: current.upiIds };
+  const mine = current && { interests: current.interests, interested: current.interested, loved: current.loved, rooms: current.rooms, asked: current.asked, payWith: current.payWith, upiIds: current.upiIds, read: current.read, hostsOff: current.hostsOff };
   set({ via, ...kept, ...mine, follows: current?.follows ?? viewer.follows, me: done.me });
 }
 

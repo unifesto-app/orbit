@@ -141,6 +141,31 @@ export function ticketMax(
   return (qty[i] ?? 0) + Math.max(Math.min(byCount, bySeats), 0);
 }
 
+/**
+ * A hackathon's team tickets (one booking is one team): whether ticket `i` fits at all, not sold out and its team's
+ * seats within the seats left, and which to start on: the biggest team that fits (the first of equals), -1 if none does.
+ */
+export const teamFits = (tiers: readonly { seats?: number; soldOut?: boolean }[], i: number, limits: { age?: '18+' | '21+'; left?: number }) =>
+  ticketMax(tiers, tiers.map(() => 0), i, limits) > 0;
+export function firstTeam(tiers: readonly { seats?: number; soldOut?: boolean }[], limits: { age?: '18+' | '21+'; left?: number }): number {
+  let best = -1;
+  tiers.forEach((t, i) => {
+    if (teamFits(tiers, i, limits) && (best < 0 || (t.seats ?? 1) > (tiers[best]!.seats ?? 1))) best = i;
+  });
+  return best;
+}
+
+/** Whether every required question has an answer: a choice, Yes or No, or text that isn't blank (kinds.ts `questions`). */
+export const answered = (asks: readonly { id: string; required: boolean }[], answers: Readonly<Record<string, string>>) =>
+  asks.every((q) => !q.required || !!answers[q.id]?.trim());
+
+/** A hackathon team's name: 1 to 40 letters once trimmed (Running hackathons; that no other team has it, the API checks). */
+export const TEAM_NAME = 40;
+export const teamNameOk = (name: string) => {
+  const n = name.trim();
+  return n.length > 0 && n.length <= TEAM_NAME;
+};
+
 /** What's left of a hold, in ms (0 once it's run out). */
 export const holdLeft = (heldAt: number, now: number) => Math.max(HOLD_MS - (now - heldAt), 0);
 /** "9:05". */

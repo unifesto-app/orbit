@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { bookingDays, freeAt, holdLeft, maxGuests, maxTickets, mmss, slotLine, slotPrice, startTimes, ticketMax } from './booking.ts';
+import { answered, bookingDays, firstTeam, freeAt, holdLeft, teamFits, teamNameOk, maxGuests, maxTickets, mmss, slotLine, slotPrice, startTimes, ticketMax } from './booking.ts';
 import { venues } from './kinds.ts';
 
 const NOW = Date.parse('2026-11-20T09:00:00+05:30'); // a Friday morning in India
@@ -85,4 +85,32 @@ test('a ticket type can take no more than the booking limit and the seats left; 
   assert.equal(ticketMax(tiers, [0, 5, 0], 2, { left: 8 }), 0); // 3 seats left: no team fits
   assert.equal(ticketMax(tiers, [0, 0, 1], 1, { left: 8 }), 4); // a team took 4
   assert.equal(ticketMax(tiers, [0, 0, 0], 1, { age: '18+', left: 8 }), 1); // 18+: one each
+});
+
+test('a booking goes on once every required question is answered, blank text not counting', () => {
+  const asks = [
+    { id: 'building', required: true },
+    { id: 'stage', required: true },
+    { id: 'note', required: false },
+  ];
+  assert.equal(answered(asks, {}), false);
+  assert.equal(answered(asks, { building: '  ', stage: 'Building' }), false);
+  assert.equal(answered(asks, { building: 'A payroll app', stage: 'Building' }), true);
+  assert.equal(answered([], {}), true);
+});
+
+test('a team name is 1 to 40 letters once trimmed', () => {
+  assert.equal(teamNameOk('  '), false);
+  assert.equal(teamNameOk(' Null Pointers '), true);
+  assert.equal(teamNameOk('x'.repeat(40)), true);
+  assert.equal(teamNameOk('x'.repeat(41)), false);
+});
+
+test('a hackathon starts on the biggest team that fits, and on none when nothing does', () => {
+  const tiers = [{ soldOut: true }, { seats: 2 }, { seats: 4 }]; // one gone, a team of 2, a team of 4
+  assert.equal(firstTeam(tiers, { left: 8 }), 2);
+  assert.equal(firstTeam(tiers, { left: 3 }), 1); // four seats don't fit in three, two do
+  assert.equal(teamFits(tiers, 2, { left: 3 }), false);
+  assert.equal(firstTeam(tiers, { left: 0 }), -1);
+  assert.equal(firstTeam([{ soldOut: true }], {}), -1);
 });
