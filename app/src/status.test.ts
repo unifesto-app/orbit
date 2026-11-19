@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { eventStatus, indiaWhen, isNews, seatsLine, type StatusEvent } from './status.ts';
+import { bookAction, eventStatus, indiaWhen, isNews, rowTag, seatsLine, type StatusEvent } from './status.ts';
 
 const NOW = Date.parse('2026-11-20T09:00:00+05:30');
 const base: StatusEvent = { startsAt: '2026-11-25T18:00:00+05:30', announced: '2026-11-01T10:00:00+05:30', pricePaise: 29900 };
@@ -13,16 +13,26 @@ test('one status, the first that holds', () => {
   assert.equal(label({ announced: '2026-11-18T10:00:00+05:30' }), 'Just announced');
   assert.equal(label({ capacity: 100, left: 40 }), 'Filling fast'); // 60% booked
   assert.equal(label({ capacity: 100, left: 41 }), 'Booking open');
-  assert.equal(label({ capacity: 60, left: 9 }), 'Almost full'); // 10 or fewer, most booked
+  assert.equal(label({ capacity: 60, left: 9 }), 'Almost full'); // 10 or fewer, three quarters booked
+  assert.equal(label({ capacity: 20, left: 5 }), 'Almost full'); // exactly 75% booked
+  assert.equal(label({ capacity: 20, left: 6 }), 'Filling fast'); // 70%: a small room can fill fast too
+  assert.equal(label({ capacity: 20, left: 10 }), 'Booking open'); // half free isn't almost full
   assert.equal(label({ capacity: 10, left: 6 }), 'Booking open'); // a small class, mostly free
   assert.equal(label({ capacity: 400, left: 40 }), 'Almost full'); // a tenth of a big room
   assert.equal(label({ capacity: 60, left: 9, announced: '2026-11-19T10:00:00+05:30' }), 'Almost full'); // seats beat news
   assert.equal(label({ capacity: 20, left: 0 }), 'Sold out');
   assert.equal(label({ capacity: 20, left: 0, waitlist: true }), 'Waitlist open');
+  assert.equal(label({ capacity: 20, left: -2 }), 'Sold out'); // oversold
+  assert.equal(label({ tiers: [{ soldOut: true }, { soldOut: true }] }), 'Sold out'); // every ticket type gone
+  assert.equal(label({ tiers: [{ soldOut: true }, {}] }), 'Booking open');
+  assert.equal(label({ left: 3 }), 'Booking open'); // seats left but no capacity to judge by
+  assert.equal(label({ capacity: 20, left: 0, waitlist: true, salesClose: '2026-11-20T08:00:00+05:30' }), 'Booking closed'); // closed beats the waitlist
   assert.equal(label({ salesClose: '2026-11-20T08:00:00+05:30' }), 'Booking closed');
   assert.equal(label({ salesOpen: '2026-11-21T18:00:00+05:30', capacity: 20, left: 0 }), 'Booking opens Sat 21 Nov · 6:00 PM');
   assert.equal(label({ pricePaise: 0, salesOpen: '2026-11-21T18:00:00+05:30' }), 'Registration opens Sat 21 Nov · 6:00 PM');
   assert.equal(label({ startsAt: '2026-11-20T08:00:00+05:30' }), 'On now');
+  assert.equal(label({ startsAt: '2026-11-20T09:00:00+05:30' }), 'On now'); // from the start
+  assert.equal(label({ startsAt: '2026-11-20T06:00:01+05:30' }), 'On now'); // a second short of three hours
   assert.equal(label({ startsAt: '2026-11-20T06:00:00+05:30' }), 'Ended'); // three hours on
   assert.equal(label({ cancelled: true, capacity: 60, left: 9 }), 'Cancelled');
 });
@@ -45,12 +55,37 @@ test('news is anything but the everyday open and ended', () => {
   assert.equal(isNews(eventStatus({ ...base, capacity: 20, left: 0 }, NOW)), true);
 });
 
-test('the seats line shows only once 10 or fewer are left', () => {
-  assert.equal(seatsLine({ ...base, capacity: 60, left: 9 }), '9 seats left');
-  assert.equal(seatsLine({ ...base, capacity: 60, left: 1 }), '1 seat left');
-  assert.equal(seatsLine({ ...base, capacity: 60, left: 11 }), undefined);
-  assert.equal(seatsLine({ ...base, capacity: 60, left: 0 }), undefined);
-  assert.equal(seatsLine(base), undefined);
+test('the seats line shows only while booking is open and 10 or fewer are left', () => {
+  const line = (e: Partial<StatusEvent>) => seatsLine({ ...base, ...e }, eventStatus({ ...base, ...e }, NOW));
+  assert.equal(line({ capacity: 60, left: 9 }), '9 seats left');
+  assert.equal(line({ capacity: 60, left: 1 }), '1 seat left');
+  assert.equal(line({ capacity: 60, left: 11 }), undefined);
+  assert.equal(line({ capacity: 60, left: 0 }), undefined);
+  assert.equal(line({}), undefined);
+  assert.equal(line({ capacity: 60, left: 9, salesClose: '2026-11-20T08:00:00+05:30' }), undefined); // closed
+  assert.equal(line({ capacity: 60, left: 9, salesOpen: '2026-11-21T18:00:00+05:30' }), undefined); // not open yet
+});
+
+test("a row's tag: given, then news, then the repeat; a row not for booking only says Cancelled", () => {
+  const st = (e: Partial<StatusEvent>) => eventStatus({ ...base, ...e }, NOW);
+  assert.equal(rowTag(st({ capacity: 60, left: 9 }), 'Every Friday', true), 'Almost full');
+  assert.equal(rowTag(st({ capacity: 60, left: 9 }), 'Every Friday', true, 'Refund asked'), 'Refund asked');
+  assert.equal(rowTag(st({ capacity: 60, left: 9 }), 'Every Friday', false), 'Every Friday'); // your own ticket
+  assert.equal(rowTag(st({ capacity: 20, left: 0 }), undefined, false), undefined);
+  assert.equal(rowTag(st({ cancelled: true }), 'Every Friday', false), 'Cancelled');
+  assert.equal(rowTag(st({}), 'Every Friday', true), 'Every Friday');
+});
+
+test('the booking button follows the status', () => {
+  const act = (e: Partial<StatusEvent>) => bookAction(eventStatus({ ...base, ...e }, NOW), !({ ...base, ...e }.pricePaise));
+  assert.deepEqual(act({}), { label: 'Book ticket', can: true });
+  assert.deepEqual(act({ pricePaise: 0 }), { label: 'Register', can: true });
+  assert.deepEqual(act({ capacity: 60, left: 9 }), { label: 'Book ticket', can: true });
+  assert.deepEqual(act({ capacity: 20, left: 0, waitlist: true }), { label: 'Join waitlist', can: true });
+  assert.deepEqual(act({ capacity: 20, left: 0 }), { label: 'Sold out', can: false });
+  assert.deepEqual(act({ salesOpen: '2026-11-21T18:00:00+05:30' }), { label: 'Not open yet', can: false });
+  assert.deepEqual(act({ salesClose: '2026-11-20T08:00:00+05:30' }), { label: 'Closed', can: false });
+  assert.deepEqual(act({ cancelled: true }), { label: 'Closed', can: false });
 });
 
 test('India time, as the app writes it', () => {

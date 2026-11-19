@@ -19,8 +19,8 @@ import { Carousel } from '../../home/Carousel';
 import { Icon } from '../../icons';
 import { type Event, events, hosts, interestedBase, now, people, type Person, vibes } from '../../mock';
 import { BackBar, FaceWash, LoveButton, MenuButton, Monogram, NotFound, SaveButton, Section, shareLink, StatusDot, Tag, Verified } from '../../rows';
-import { eventStatus, seatsLine, type StatusKind } from '../../status';
-import { addToList, needsAccount, setFollowing, setInterested, useInterested, useViewer } from '../../session';
+import { bookAction, eventStatus, seatsLine } from '../../status';
+import { addToList, needsAccount, setFollowing, setInterested, useInterested, useSaved, useViewer } from '../../session';
 import { around, color, font, radius, rim, space } from '../../theme';
 
 // This page's cards have more room than the app's usual 8 (owner, 15 Nov 2026: "add padding for card in event"), and
@@ -50,12 +50,17 @@ export default function EventPage() {
   const e = events.find((x) => x.id === slug);
   const host = e && hosts.find((h) => h.id === e.hostId);
   const viewer = useViewer(); // signed out, no tickets and no follows (src/session.ts)
+  const saved = useSaved(e?.id ?? '');
   if (!e || !host) return <NotFound what="event" />;
 
   const past = Date.parse(e.startsAt) < now;
   const status = eventStatus(e, now); // the line at the top (src/status.ts)
   const booked = viewer.signedIn && !!viewer.tickets?.some((t) => t.eventId === e.id);
   const went = viewer.signedIn && history.some((h) => h.eventId === e.id && h.status === 'Went');
+  const book = bookAction(status, !e.pricePaise);
+  // The ticket bar: a ticket holder keeps View ticket until the event has ended, while it's on and if it's cancelled;
+  // anyone else sees it until the start, never on a cancelled event.
+  const showBar = booked ? status.kind !== 'ended' : !past && status.kind !== 'cancelled';
   const following = viewer.signedIn && viewer.follows.includes(host.id);
   const openHost = () => router.push(`/host/${host.id}`);
   const price = barPrice(e);
@@ -67,7 +72,7 @@ export default function EventPage() {
         showsVerticalScrollIndicator={false}
         scrollEventThrottle={16}
         onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })}
-        contentContainerStyle={{ paddingBottom: past ? insets.bottom + space.big : bar }}>
+        contentContainerStyle={{ paddingBottom: showBar ? bar : insets.bottom + space.big }}>
         {/* From the top of the screen, under the status bar and the back button. */}
         <Carousel
           top={0}
@@ -104,7 +109,7 @@ export default function EventPage() {
           </View>
         </Glass>
 
-        {!past && <InterestedCard event={e} />}
+        {!past && status.kind !== 'cancelled' && <InterestedCard event={e} />}
 
         <Section title="About" />
         <Text style={styles.prose}>{e.about}</Text>
@@ -175,12 +180,12 @@ export default function EventPage() {
         </Pressable>
       </Animated.ScrollView>
 
-      {!past && status.kind !== 'cancelled' && (
+      {showBar && (
         <TicketBar
           price={formatPrice(price.paise)}
           from={price.from}
-          note={seatsLine(e)}
-          action={booked ? 'View ticket' : (SHUT[status.kind] ?? (status.kind === 'waitlist' ? 'Join waitlist' : e.pricePaise ? 'Book ticket' : 'Register'))}
+          note={booked ? undefined : seatsLine(e, status)}
+          action={booked ? 'View ticket' : book.label}
           // A booking opens its ticket (src/app/ticket/[id].tsx, keyed by booking id). Signed out, Book and Register open
           // the sign-in sheet over this page and come back to it (Booking doc, step 2); booking itself isn't built yet.
           onAction={
@@ -189,7 +194,7 @@ export default function EventPage() {
                   const t = ticketFor(e.id);
                   if (t) router.push(`/ticket/${t.id}`);
                 }
-              : status.kind in SHUT || viewer.signedIn
+              : !book.can || viewer.signedIn
                 ? undefined
                 : () => needsAccount()
           }
@@ -201,10 +206,12 @@ export default function EventPage() {
           Signed out, Save asks to sign in first, then saves; so does Add to a list, which saves first if it isn't
           (Saved events and lists doc). Copy link, Add to calendar and Report aren't built yet. */}
       <BackBar scrollY={scrollY}>
-        {past ? went && <LoveButton event={e} bar /> : <SaveButton event={e} bar />}
+        {/* Once it's started, Save goes: only a saved one keeps its filled star, to manage or remove it. */}
+        {past && went && <LoveButton event={e} bar />}
+        {(!past || saved) && <SaveButton event={e} bar />}
         <MenuButton
           actions={[
-            { label: 'Add to a list', icon: 'listPlus', onPress: () => addToList(e.id) },
+            ...(past ? [] : [{ label: 'Add to a list', icon: 'listPlus' as const, onPress: () => addToList(e.id) }]),
             {
               label: 'Share',
               icon: 'share',
@@ -297,14 +304,6 @@ function PersonRow({ person: p }: { person: Person }) {
 const BAR_PAD = space.small;
 const BUTTON = 44;
 // With more than one ticket type, the cheapest leads with "Starting from" (`from`).
-// The ticket bar's button when its status says there's nothing to book yet or any more; with a waitlist it's the way
-// on (owner, 19 Nov 2026: "need various status"). Anything else books or registers.
-const SHUT: Partial<Record<StatusKind, string>> = {
-  opensSoon: 'Not open yet',
-  soldOut: 'Sold out',
-  closed: 'Closed',
-};
-
 function TicketBar({
   price,
   from,

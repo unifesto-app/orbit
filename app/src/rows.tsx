@@ -25,8 +25,8 @@ import { BarGlass, Glass } from './glass';
 import { Icon, type IconName } from './icons';
 import { Media, type MediaItem } from './media';
 import { type Event, type Host, now } from './mock';
-import { setLoved, tapSave, useLoved, useSaved } from './session';
-import { eventStatus, isNews, seatsLine, type Status } from './status';
+import { needsAccount, setLoved, tapSave, useLoved, useSaved } from './session';
+import { eventStatus, rowTag, seatsLine, type Status } from './status';
 import { around, color, font, radius, rim, space, stoneAt } from './theme';
 
 export const SEAT = 48; // the 1:1 square on a seat card's top rim
@@ -37,8 +37,9 @@ const RIM = around(FACE, rim);
 
 // A plain row (no card), so it keeps its Save star, on the app's frosted glass (owner, 15 Nov 2026). The poster and
 // text open the event page; the star stays a target of its own. Its tag is the event's status when that's news (Sold
-// out, Almost full, Just announced; src/status.ts), else its repeat; `tag` takes their place (a person's role on their
-// sheet); a `past` row drops the price and the star, and an event you `went` to gets Loved it's heart in its
+// out, Almost full, Just announced; rowTag in src/status.ts), else its repeat; `tag` takes their place (a person's
+// role on their sheet, a refund); a row that isn't for booking only ever says Cancelled. A cancelled event drops its
+// price; a `past` row drops the price and the star, and an event you `went` to gets Loved it's heart in its
 // place. `onPress` replaces opening the event the usual way.
 // `menu` adds a ⋯ after the star, as saved rows have (Saved events and lists doc: Add to a list, Remove from saved).
 export function EventRow({
@@ -59,7 +60,7 @@ export function EventRow({
   onPress?: () => void;
 }) {
   const st = eventStatus(e, now);
-  const shown = tag ?? (isNews(st) ? st.short : e.repeats);
+  const shown = rowTag(st, e.repeats, !past, tag);
   return (
     <View style={styles.row}>
       <Pressable onPress={onPress} accessibilityRole="button" style={({ pressed }) => [styles.grow, styles.rowLink, pressed && styles.pressed]}>
@@ -71,7 +72,7 @@ export function EventRow({
           </View>
           <Text style={styles.rowTitle}>{e.title}</Text>
           <Text style={styles.meta} numberOfLines={1}>{host.name} · {e.area}</Text>
-          {!past && <Price event={e} />}
+          {!past && st.kind !== 'cancelled' && <Price event={e} status={st} />}
         </View>
       </Pressable>
       {past ? went && <LoveButton event={e} /> : <SaveButton event={e} />}
@@ -80,11 +81,12 @@ export function EventRow({
   );
 }
 
-function Price({ event: e }: { event: Event }) {
+function Price({ event: e, status }: { event: Event; status: Status }) {
+  const seats = seatsLine(e, status);
   return (
     <View style={styles.priceRow}>
       <Text style={styles.price}>{formatPrice(e.pricePaise)}</Text>
-      {seatsLine(e) && <Text style={styles.small}>{seatsLine(e)}</Text>}
+      {seats && <Text style={styles.small}>{seats}</Text>}
     </View>
   );
 }
@@ -281,11 +283,12 @@ export function SaveButton({ event: e, bar = false }: { event: Pick<Event, 'id' 
 
 // "Loved it", the heart, on an event you went to, once it's over (owner, 19 Nov 2026: "replace the love with loved
 // it"): on its History row and in place of Save on its page. A tap says you loved it, red; another takes it back.
+// Signed out, it asks to sign in first.
 export function LoveButton({ event: e, bar = false }: { event: Pick<Event, 'id' | 'title'>; bar?: boolean }) {
   const loved = useLoved(e.id);
   return (
     <Pressable
-      onPress={() => setLoved(e.id, !loved)}
+      onPress={() => needsAccount(() => setLoved(e.id, !loved))}
       style={bar ? undefined : styles.rowCircle}
       hitSlop={bar ? 4 : 0}
       accessibilityRole="button"

@@ -247,3 +247,23 @@ test('interests: a section per picked kind near you, in the order picked, and it
   assert.equal(planHome({ ...signedOut, interests: ['comedy'] }, events, [], NOW).byInterest.length, 0);
   assert.equal(planHome(signedOut, events, [], NOW).askInterests, false);
 });
+
+test('interests: at most three kinds and three events each; tickets and the orbit stay out; no place means everywhere', () => {
+  const kind = (e: ReturnType<typeof ev>, category: string) => ({ ...e, category });
+  const events = [
+    ...['a', 'b', 'c', 'd'].map((id, i) => kind(ev(`c${id}`, 'h1', NEAR, 16 + i, 3), 'comedy')),
+    kind(ev('m1', 'h2', NEAR, 18, 3), 'music'),
+    kind(ev('s1', 'h2', NEAR, 18, 3), 'sports'),
+    kind(ev('g1', 'h3', NEAR, 19, 3), 'gaming'),
+    kind(ev('gFar', 'h3', FAR, 19, 3), 'gaming'),
+  ];
+  const viewer = { signedIn: true, follows: ['h2'], place, interests: ['comedy', 'music', 'sports', 'gaming'], tickets: [{ eventId: 'ca', label: '1 ticket' }] };
+  const plan = planHome(viewer, events, [], NOW);
+  // ca is a ticket and m1 is h2's next date (your orbit), so neither repeats; music then has nothing left.
+  assert.deepEqual(plan.byInterest.map((k) => [k.category, ids(k.events)]), [['comedy', ['cb', 'cc', 'cd']], ['sports', ['s1']], ['gaming', ['g1']]]);
+  assert.equal(plan.near, true);
+  // No location: from everywhere, and the sections say "coming up".
+  const away = planHome({ ...viewer, place: null, interests: ['gaming'] }, events, [], NOW);
+  assert.equal(away.near, false);
+  assert.deepEqual(away.byInterest.map((k) => [k.category, ids(k.events)]), [['gaming', ['g1', 'gFar']]]);
+});

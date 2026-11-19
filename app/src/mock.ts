@@ -26,7 +26,7 @@ export type Host = PlanHost & {
 };
 // Seats, sale dates, a waitlist or a cancellation give the event its status (src/status.ts).
 export type Event = PlanEvent &
-  Omit<StatusEvent, 'startsAt' | 'announced' | 'pricePaise'> & {
+  Omit<StatusEvent, 'startsAt' | 'announced' | 'pricePaise' | 'tiers'> & {
   title: string;
   category: CategorySlug; // one per event (Discover decision 12)
   when: string; // pre-formatted in India time until real timestamps reach the UI

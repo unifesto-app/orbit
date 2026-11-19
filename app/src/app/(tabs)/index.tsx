@@ -21,7 +21,7 @@ import { Icon } from '../../icons';
 import { type Event, type Host, events, hosts, now } from '../../mock';
 import { refreshPlace, usePlace } from '../../place';
 import { EventRow, Monogram, Poster, SEAT, SeatCard, Section, StatusDot, Tag } from '../../rows';
-import { eventStatus, isNews } from '../../status';
+import { bookAction, eventStatus, isNews } from '../../status';
 import { needsAccount, setFollowing, skipInterests, useViewer } from '../../session';
 import { around, color, darkInkOn, font, groundAt, radius, rim, space } from '../../theme';
 
@@ -73,7 +73,7 @@ export default function Home() {
   const card = (width - 40 - space.big) / 2; // All events and host cards: two columns on the 20px margins, a big gap apart
   const slides: CarouselSlide[] = plan.slides.map((s) =>
     s.kind === 'event'
-      ? { key: `e:${s.event.id}`, image: s.event.wide!.source, edge: s.event.wide!.edge, label: `Poster for ${s.event.title}`, action: 'Book ticket', href: `/event/${s.event.id}` }
+      ? { key: `e:${s.event.id}`, image: s.event.wide!.source, edge: s.event.wide!.edge, label: `Poster for ${s.event.title}`, action: slideAction(s.event), href: `/event/${s.event.id}` }
       : { key: `h:${s.host.id}`, image: s.host.banner!.source, edge: s.host.banner!.edge, label: `Banner for ${s.host.name}`, action: 'View events', href: `/host/${s.host.id}` },
   );
 
@@ -438,6 +438,12 @@ function HostCard({ host, width, following }: { host: Host; width: number; follo
 
 // Home asks once what you like, signed in (owner, 19 Nov 2026: "add interest cards for events", all four): Pick
 // interests opens Account › Interests; Not now stops the asking, and Interests stays on Account for later.
+// An event slide's pill follows its status: Book ticket or Register while open, Join waitlist, else View event.
+function slideAction(e: Event) {
+  const book = bookAction(eventStatus(e, now), !e.pricePaise);
+  return book.can ? book.label : 'View event';
+}
+
 function AskInterests() {
   return (
     <View style={[styles.card, styles.notice, styles.ask]}>

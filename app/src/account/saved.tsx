@@ -21,16 +21,13 @@ function menuFor(e: Event, list?: List): MenuAction[] {
   return actions;
 }
 
-// The row's status tag where one applies (doc: Sold out, Rescheduled, Cancelled, Registrations open), else the series.
-// ponytail: only Sold out can be told from the mock (every ticket type sold out); the others come with the API's event
-// status.
-const statusTag = (e: Event) => (e.tiers?.length && e.tiers.every((t) => t.soldOut) ? 'Sold out' : e.repeats);
 
 export function SavedRows({ events, list }: { events: readonly Event[]; list?: List }) {
   return (
     <>
       {events.map((e) => (
-        <EventRow key={e.id} event={e} host={hostOf(e.hostId)} tag={statusTag(e)} menu={menuFor(e, list)} />
+        // Its tag is the event's status where that's news (doc: Sold out, Cancelled…; src/status.ts), else the series.
+        <EventRow key={e.id} event={e} host={hostOf(e.hostId)} menu={menuFor(e, list)} />
       ))}
     </>
   );
