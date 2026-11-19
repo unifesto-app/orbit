@@ -1,164 +1,170 @@
-// Run with `pnpm --filter @orbit/app test`. Keeps the splash's motion from drifting: rest states,
-// the loader's rules, a few of GSAP's own values, and where each physics throw lands.
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 import {
-  BOX,
+  BODIES,
   EXIT_END,
-  FPS,
-  I,
   INTRO_END,
-  INTRO_PROPS,
-  LETTERS,
-  MARK_H,
-  MARK_W,
-  SWAP_LEN,
+  LAP,
+  POINTS,
+  along,
+  bodyFrame,
+  glowOpacity,
   groundOpacity,
-  introPropFrame,
   letterFrame,
-  nextSwap,
-  O_ZOOM_TO,
-  physics,
-  splashLayout,
-  swapPropFrame,
-  WALLPAPER_DIM,
-  wallpaperFrame,
+  ringDrawn,
+  ringsOpacity,
+  scene,
+  travelled,
 } from './motion.ts';
 
-const REST = [0, 0, 1, 1, 0, 1];
-const IDLE = -1;
-const near = (a: number, b: number, d: number, what: string) => assert.ok(Math.abs(a - b) <= d, `${what}: ${a} not within ${d} of ${b}`);
-const rest = (v: number[], what: string) => v.forEach((x, k) => near(x, REST[k], 0.01, `${what}[${k}]`));
-const shows = (v: number[]) => v[2] * v[5]; // scale × opacity
+const near = (a: number, b: number, tol = 1e-6) => assert.ok(Math.abs(a - b) < tol, `${a} ≉ ${b}`);
+const PHONES = [
+  [320, 568],
+  [375, 812],
+  [430, 932],
+];
+const S = scene(375, 812);
+const speed = (k: number, t: number, h = 1e-4) => (travelled(S, k, t + h) - travelled(S, k, t - h)) / (2 * h);
 
-test('frame one is the bare ground: no letter or prop shows', () => {
-  LETTERS.forEach((_, i) => assert.equal(letterFrame(i, 0, IDLE, 0)[5], 0));
-  INTRO_PROPS.forEach((_, k) => assert.equal(shows(introPropFrame(k, 0)), 0));
+test('the word sits centred and inside the screen, its letters left to right', () => {
+  for (const [w, h] of PHONES) {
+    const s = scene(w, h);
+    near(s.word.left + s.word.width / 2, w / 2);
+    assert.ok(s.word.left >= 20 && s.word.left + s.word.width <= w - 20);
+    for (let i = 1; i < s.letters.length; i++) assert.ok(s.letters[i].cx > s.letters[i - 1].cx);
+    // The O's counter is inside the O's canvas, the zoom's pivot.
+    assert.ok(s.o.originX > 0 && s.o.originX < s.letters[0].width && s.o.originY > 0 && s.o.originY < s.letters[0].height);
+  }
 });
 
-test('every letter is at rest and every prop gone when the intro ends', () => {
-  LETTERS.forEach((l, i) => rest(letterFrame(i, INTRO_END, IDLE, 0), l));
-  INTRO_PROPS.forEach((p, k) => near(shows(introPropFrame(k, INTRO_END)), 0, 0.001, p.art));
+test('each ring is one closed loop, drawn as a closed path, nearest at depth 1 and furthest at 0', () => {
+  for (const g of S.rings) {
+    assert.equal(g.x[0], g.x[POINTS]); // the last point is the first: no seam
+    assert.equal(g.y[0], g.y[POINTS]);
+    assert.ok(g.d.endsWith('Z'));
+    assert.ok(g.length > 600);
+    near(Math.max(...g.depth), 1, 1e-3);
+    near(Math.min(...g.depth), 0, 1e-3);
+  }
 });
 
-test('letters match GSAP at sampled moments (same tracks as Unifesto)', () => {
-  near(letterFrame(0, 0.95, IDLE, 0)[1], 1.968, 0.01, 'O (u), power3.out'); // Unifesto's spec value
-  near(letterFrame(1, 0.95, IDLE, 0)[3], 1.138, 0.01, 'R (n), back.out(2.2)');
+test('each ring closes exactly on its own start, as its body glides back through it', () => {
+  for (let r = 0; r < S.rings.length; r++) {
+    const k = BODIES.findIndex((b) => b.ring === r);
+    const b = BODIES[k];
+    const L = S.rings[r].length;
+    const end = b.at + b.for;
+    near(travelled(S, k, end), L, 1e-6); // a whole lap, no more, no less
+    near(ringDrawn(S, r, end), L, 1e-6);
+    assert.ok(ringDrawn(S, r, end - 0.05) < L); // not closed early
+    const p = along(S, r, travelled(S, k, end));
+    near(p[0], S.rings[r].x[0], 1e-6); // the body is at the ring's start
+    near(p[1], S.rings[r].y[0], 1e-6);
+    near(speed(k, end), L / LAP, 1e-2); // gliding through at cruising speed, not stopped
+    assert.ok(end <= INTRO_END); // every ring closed by the end of the intro
+  }
 });
 
-test('physics follows GSAP: exact without friction, stepped and settling with it', () => {
-  near(physics(1, 100, 0, 0), 100, 1e-9, 'constant velocity');
-  near(physics(0.5, 0, 400, 0), 50, 1e-9, 'gravity: ½gt²');
-  // With friction a throw slows to a stop at velocity/FPS × keep/friction (GSAP steps 30 a second).
-  assert.equal(FPS, 30);
-  near(physics(5, 600, 0, 0.1), (600 / FPS) * (0.9 / 0.1), 1e-3, 'friction settles');
-  assert.ok(physics(0.25, 600, 0, 0.1) < 600 * 0.25, 'friction slows it');
-});
-
-test('a friction throw never jumps back between steps', () => {
-  // At 1ms samples a forward throw only ever moves forward, by less than its launch speed allows.
-  for (const [velocity, acceleration] of [[374.35, 0], [600, 400], [-201.18, 0]]) {
-    const dir = Math.sign(velocity);
-    let prev = 0;
-    for (let ms = 1; ms <= 1500; ms++) {
-      const x = physics(ms / 1000, velocity, acceleration, 0.15);
-      const step = (x - prev) * dir;
-      assert.ok(step >= -1e-9, `backwards at ${ms}ms: ${step}`);
-      assert.ok(step <= (Math.abs(velocity) + Math.abs(acceleration)) / 1000 + 1e-9, `jumps at ${ms}ms: ${step}`);
-      prev = x;
+test('smooth: a body never stops, and its speed never jumps', () => {
+  for (let k = 0; k < BODIES.length; k++) {
+    const b = BODIES[k];
+    const L = S.rings[b.ring].length;
+    const cruise = L / LAP;
+    const swell = (2 * (b.lap * L - cruise * b.for)) / b.for;
+    const most = (swell * Math.PI) / b.for; // the swell's steepest change of speed, pt/s²
+    near(speed(k, b.at + 1e-3), cruise, 0.5); // sets off at cruising speed, from where it is shown
+    near(speed(k, b.at + b.for + 1e-3), cruise, 0.5); // and is back to it as the sweep ends
+    let last = speed(k, b.at + 1e-3);
+    for (let t = b.at + 0.01; t < b.at + b.for + 2; t += 0.01) {
+      const v = speed(k, t);
+      assert.ok(v >= cruise - 1e-6, 'slowed below cruising');
+      assert.ok(Math.abs(v - last) <= most * 0.01 * 1.05 + 1e-3, `speed jumped at ${t.toFixed(2)}`);
+      last = v;
     }
   }
 });
 
-test('each throw lands where its comment says', () => {
-  const flower = introPropFrame(0, 0.55); // its peak, 0.3s after launch
-  near(flower[0], 0, 0.5, 'flower x at peak');
-  near(flower[1], 0, 0.5, 'flower y at peak');
-  const bolt = introPropFrame(4, 1.55); // settled, just before it shrinks away
-  near(bolt[0], 0, 1.5, 'bolt x');
-  near(bolt[1], 0, 1.5, 'bolt y');
-  near(bolt[4], 0, 1, 'bolt spin');
-  INTRO_PROPS.slice(1, 4).forEach((p, k) => assert.ok(introPropFrame(k + 1, p.at + 0.15)[1] < -10, `reel ${k} hops up`));
+test('the heart follows the spark round its drawn ring and ends opposite it', () => {
+  const spark = BODIES.findIndex((b) => b.art === 'spark');
+  const heart = BODIES.findIndex((b) => b.art === 'heartSmall');
+  assert.equal(BODIES[heart].ring, BODIES[spark].ring);
+  for (let t = BODIES[heart].at; t < INTRO_END + 4; t += 0.02) assert.ok(travelled(S, heart, t) <= ringDrawn(S, BODIES[spark].ring, t) + 1e-6);
+  const L = S.rings[BODIES[spark].ring].length;
+  near(travelled(S, spark, INTRO_END + 2) - travelled(S, heart, INTRO_END + 2), L / 2, 1e-6);
 });
 
-test('the loader: a random letter each time, never the I, never the one that just went', () => {
-  let last = -1;
-  for (let n = 0; n < 500; n++) {
-    const next = nextSwap(last);
-    assert.notEqual(next, I);
-    assert.notEqual(next, last);
-    assert.ok(next >= 0 && next < LETTERS.length);
-    last = next;
-  }
-  assert.ok(letterFrame(1, INTRO_END, 0.1, 0)[5] < 1, 'lifting out');
-  assert.equal(letterFrame(1, INTRO_END, 0.4, 0)[5], 0, 'out, its prop in its place');
-  rest(letterFrame(1, INTRO_END, SWAP_LEN, 0), 'a finished clock is idle');
-  assert.equal(swapPropFrame(0.1)[0], 0);
-  near(swapPropFrame(0.5)[0], 1, 0.01, 'prop shows while its letter is out');
-  near(swapPropFrame(0.8)[0], 0, 0.001, 'prop gone as its letter drops back');
-  assert.equal(swapPropFrame(IDLE)[0], 0);
-  assert.equal(swapPropFrame(SWAP_LEN)[0], 0);
+test('nothing shows before it arrives', () => {
+  for (let k = 0; k < BODIES.length; k++) near(bodyFrame(S, k, 0, 0)[3], 0);
+  for (let r = 0; r < S.rings.length; r++) near(ringDrawn(S, r, 0), 0);
+  for (let i = 0; i < 5; i++) near(letterFrame(S, i, 0, 0)[3], 0);
+  near(glowOpacity(0, 0), 0);
 });
 
-test('a letter still landing from a swap settles before the collapse', () => {
-  near(letterFrame(2, INTRO_END, 0.4, 0.12)[5], 1, 0.01, 'B back in view');
-});
-
-test('the word collapses into a centred O, which zooms out past the screen over Home', () => {
-  // [x, y, scale, scaleY, rotate, opacity]
-  const o = letterFrame(0, INTRO_END, IDLE, 0.8);
-  near(o[0], MARK_W / 2 - (BOX[0].x + 0.494 * BOX[0].w), 0.1, "O's counter to the mark's centre");
-  near(o[1], MARK_H / 2 - (BOX[0].y + 0.499 * BOX[0].h), 0.1, "O's counter level with the mark's centre");
-  LETTERS.forEach((l, i) => i && assert.equal(letterFrame(i, INTRO_END, IDLE, 0.66)[5], 0, `${l} gone by the collapse's end`));
-  let prev = 0;
-  for (let out = 0.8; out <= EXIT_END; out += 0.01) {
-    const scale = letterFrame(0, INTRO_END, IDLE, out)[2];
-    assert.ok(scale >= prev - 1e-9, `the O only grows: shrank at ${out.toFixed(2)}`);
-    prev = scale;
-  }
-  assert.equal(letterFrame(0, INTRO_END, IDLE, 1.1)[5], 1, 'the O shows while it zooms');
-  const end = letterFrame(0, INTRO_END, IDLE, EXIT_END);
-  near(end[2], O_ZOOM_TO, 0.01, 'zoomed out past the screen');
-  near(end[5], 0, 1e-6, 'the O is gone at the end');
-  // Its counter (from assets/splash/letter-o.svg: 364 of the O's 1149 units across) is wider than the widest phone.
-  assert.ok((364 / 1149) * BOX[0].w * O_ZOOM_TO > 440, "the counter clears a phone's width");
-  assert.equal(groundOpacity(EXIT_END), 0);
-  near(wallpaperFrame(INTRO_END, EXIT_END)[1], 1.6, 0.01, 'wallpaper rushes past with the O');
-});
-
-test('the wallpaper settles in during the intro', () => {
-  assert.equal(wallpaperFrame(0, 0)[0], 0);
-  near(wallpaperFrame(1.5, 0)[0], WALLPAPER_DIM, 0.01, 'dimmed over the ground');
-  near(wallpaperFrame(1.5, 0)[1], 1, 0.01, 'settled from 1.04');
-});
-
-test('splash SVGs use only elements react-native-svg draws', () => {
-  const dir = new URL('../../assets/splash/', import.meta.url);
-  const allowed = new Set(['svg', 'g', 'path', 'circle', 'ellipse', 'rect', 'polygon', 'polyline', 'line', 'defs', 'clipPath', 'linearGradient', 'radialGradient', 'stop', 'use', 'symbol']);
-  const files = readdirSync(dir).filter((f) => f.endsWith('.svg'));
-  assert.ok(files.length >= 11, 'letters and props are all there');
-  for (const f of files) {
-    const tags = [...readFileSync(new URL(f, dir), 'utf8').matchAll(/<([a-zA-Z][\w:-]*)/g)].map((m) => m[1]);
-    const bad = tags.filter((t) => !allowed.has(t));
-    assert.deepEqual(bad, [], `${f} has ${bad.join(', ')}`);
+test('by the end of the intro the word has landed, every ring is drawn and no body rests on a letter', () => {
+  for (const [w, h] of PHONES) {
+    const s = scene(w, h);
+    for (let i = 0; i < 5; i++) {
+      const [x, y, sc, a] = letterFrame(s, i, INTRO_END, 0);
+      near(x, 0);
+      near(y, 0);
+      near(sc, 1);
+      near(a, 1);
+    }
+    for (let r = 0; r < s.rings.length; r++) near(ringDrawn(s, r, INTRO_END), s.rings[r].length);
+    const word = s.word;
+    for (let k = 0; k < BODIES.length; k++) {
+      const [x, y, , a] = bodyFrame(s, k, INTRO_END, 0);
+      assert.ok(a > 0.5, `${BODIES[k].art} not shown`);
+      const r = BODIES[k].size * 20; // the symbol inside its padded canvas
+      const onWord = x + r > word.left && x - r < word.left + word.width && y + r > word.top && y - r < word.top + word.height;
+      assert.ok(!onWord, `${BODIES[k].art} rests on the word at ${w}`);
+    }
   }
 });
 
-test('the wallpaper covers the screen', () => {
-  // [width, height] in pt
-  const screens: Record<string, [number, number]> = {
-    'iPhone SE': [375, 667],
-    'iPhone 15': [393, 852],
-    'iPad mini': [744, 1133],
-    'iPad 10.2': [810, 1080],
-    'iPad 13': [1032, 1376],
-    'iPad 13 landscape': [1376, 1032],
-  };
-  for (const [name, [w, h]] of Object.entries(screens)) {
-    const { wallpaper } = splashLayout(w, h);
-    assert.ok(wallpaper.width >= w - 0.01 && wallpaper.height >= h - 0.01, `${name}: wallpaper covers the screen`);
-    near(wallpaper.left + wallpaper.width / 2, w / 2, 0.01, `${name}: wallpaper centred`);
+test('while loading the bodies keep riding their rings', () => {
+  for (let k = 0; k < BODIES.length; k++) {
+    const a = bodyFrame(S, k, INTRO_END, 0);
+    const b = bodyFrame(S, k, INTRO_END + 4, 0);
+    assert.ok(Math.hypot(a[0] - b[0], a[1] - b[1]) > 20, `${BODIES[k].art} stayed put`);
   }
+});
+
+test('the exit: everything into the O, which comes to rest at the centre, then zooms out through its counter', () => {
+  const run = INTRO_END + 3;
+  for (let k = 0; k < BODIES.length; k++) {
+    const f = bodyFrame(S, k, run, EXIT_END);
+    near(f[0], S.o.x);
+    near(f[1], S.o.y);
+    near(f[3], 0);
+    assert.equal(bodyFrame(S, k, run, 0.2)[4], 1); // pulled in behind the letters
+  }
+  for (let i = 1; i < 5; i++) near(letterFrame(S, i, run, 1)[3], 0);
+  const o = letterFrame(S, 0, run, 1.2);
+  near(S.o.x + o[0], 375 / 2); // the O's counter at the screen's centre
+  near(S.o.y + o[1], 812 / 2);
+  near(o[2], 1.6);
+  near(o[4], 1); // the shadowless O has taken over
+  // The zoom sets off from rest: barely grown just after it starts.
+  assert.ok(letterFrame(S, 0, run, 1.25)[2] - 1.6 < 0.01);
+  const end = letterFrame(S, 0, run, EXIT_END);
+  assert.ok(end[2] > 40);
+  near(end[3], 0);
+  near(glowOpacity(run, EXIT_END), 0);
+  near(groundOpacity(EXIT_END), 0);
+});
+
+test('the rings are gone before the ground starts to lift', () => {
+  let lift = 0;
+  while (groundOpacity(lift) === 1) lift += 0.01;
+  near(ringsOpacity(lift - 0.01), 0);
+});
+
+test('every constant comes before the worklets, which copy constants to the UI thread where they are defined', () => {
+  const src = readFileSync(new URL('./motion.ts', import.meta.url), 'utf8');
+  const first = src.indexOf("'worklet'");
+  assert.ok(src.lastIndexOf('\nexport const ') < first, 'an exported constant is declared below a worklet');
+  assert.ok(src.lastIndexOf('\nconst ') < first, 'a constant is declared below a worklet');
 });
