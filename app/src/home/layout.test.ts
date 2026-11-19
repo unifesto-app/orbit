@@ -67,6 +67,14 @@ test('hosts near you: 3 unfollowed, then followed near hosts, 4 total, far never
   assert.deepEqual(ids(planHome({ ...signedOut, follows: ['f1', 'f2', 'f3'] }, [], hosts, NOW).hosts), ['u1', 'u2', 'u3']);
 });
 
+test('places to play: near you in their own section, out of Hosts near you; everywhere with no location', () => {
+  const hosts = [host('h1', NEAR, 1), { ...host('turf', NEAR, 2), tile: 'sports' }, { ...host('farTurf', FAR, 3), tile: 'sports' }];
+  const p = planHome(signedOut, [ev('e', 'h1', NEAR, 16, 1)], hosts, NOW);
+  assert.deepEqual(ids(p.places), ['turf']);
+  assert.deepEqual(ids(p.hosts), ['h1']);
+  assert.deepEqual(ids(planHome({ ...signedOut, place: null }, [], hosts, NOW).places), ['turf', 'farTurf']);
+});
+
 test('signed out ignores follows; slides near only, newest first, hosts included', () => {
   const events = [ev('a', 'h1', NEAR, 16, 3, true), ev('b', 'h1', NEAR, 17, 9, true), ev('far', 'h1', FAR, 17, 14, true)];
   const hosts = [host('hn', NEAR, 20, true), host('hf', FAR, 28, true), host('ho', NEAR, 10, true)];

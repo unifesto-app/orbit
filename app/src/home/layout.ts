@@ -28,7 +28,7 @@ export type Viewer = {
   interests?: readonly string[]; // category slugs picked on Account › Interests; unset until picked or skipped
 };
 export type PlanEvent = { id: string; hostId: string; area: string; startsAt: string; announced: string; category?: string; wide?: unknown };
-export type PlanHost = { id: string; area: string; joined: string; banner?: unknown };
+export type PlanHost = { id: string; area: string; joined: string; banner?: unknown; tile?: string }; // tile: a place to play's
 export type Slide<E, H> = { kind: 'event'; event: E } | { kind: 'host'; host: H };
 
 const DAY = 86_400_000;
@@ -37,6 +37,7 @@ const MAX_ORBIT = 3;
 const MAX_HOSTS = 4; // two rows of two host cards
 const MAX_KINDS = 3; // sections by interest
 const MAX_PER_KIND = 3;
+const MAX_PLACES = 3;
 
 
 export function planHome<E extends PlanEvent, H extends PlanHost>(
@@ -96,8 +97,12 @@ export function planHome<E extends PlanEvent, H extends PlanHost>(
     list = week.length >= 4 ? { title: 'Near you this week', events: week } : { title: 'Coming up', events: near };
   }
 
+  // Places to play, booked by the hour (owner, 19 Nov 2026: "Add to Home too"): near you, or everywhere while Home shows
+  // a notice, as the interest sections. They have their own section, so they stay out of Hosts near you.
+  const places = hosts.filter((h) => h.tile && (notice || isNear(h.area))).slice(0, MAX_PLACES);
+
   // Hosts near you: up to three to follow, then ones the viewer already follows (owner, 15 Nov 2026), four at most.
-  const near = hosts.filter((h) => isNear(h.area));
+  const near = hosts.filter((h) => !h.tile && isNear(h.area));
   const nearHosts = [...near.filter((h) => !followed.has(h.id)).slice(0, 3), ...near.filter((h) => followed.has(h.id))].slice(0, MAX_HOSTS);
 
   return {
@@ -109,6 +114,7 @@ export function planHome<E extends PlanEvent, H extends PlanHost>(
     askInterests: viewer.signedIn && viewer.interests === undefined,
     notice,
     list,
+    places,
     hosts: nearHosts,
     hostsFirst: !following, // "Start your orbit" leads until the viewer follows someone
     // The end of Home (owner, 15 Nov 2026): every upcoming event, everywhere. Skipped when the list above already is that.

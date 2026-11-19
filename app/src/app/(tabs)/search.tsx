@@ -22,6 +22,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BarGlass, Glass } from '../../glass';
 import { type Host, events, hosts, now } from '../../mock';
 import { CategoryGrid } from '../../categories';
+import { tileFor } from '../../kinds';
 import { EventRow, Glow, Monogram, SEARCH_BOX, SearchBox } from '../../rows';
 import { countLine, MAX_QUERY, search, WHEN, type When } from '../../search';
 import { color, font, space } from '../../theme';
@@ -36,7 +37,9 @@ export default function Search() {
   // ponytail: filters the mock list on every key, kept smooth by React; the doc's "short pause" (a debounce) comes
   // with the API.
   const filters = { q: useDeferredValue(q), when, free, category };
-  const found = search(filters, events, hosts, now);
+  // Places to play sit under their tile: turfs and courts in Sports, gaming cafés in Gaming.
+  const findable = hosts.map((h) => ({ ...h, tile: tileFor(h.id) }));
+  const found = search(filters, events, findable, now);
   const hostOf = (id: string) => hosts.find((h) => h.id === id) as Host;
   const nothing = found.events.length === 0 && found.hosts.length === 0;
   // Nothing typed or picked: the categories to explore, then everything coming up. Otherwise the results.
@@ -97,7 +100,7 @@ export default function Search() {
             </Text>
             {found.hosts.length > 0 ? (
               <>
-                <CenteredHeading title="Hosts" />
+                <CenteredHeading title={filters.q.trim() ? 'Hosts' : 'Places to play'} />
                 <View style={styles.hosts}>
                   {found.hosts.map((h) => (
                     <HostRow key={h.id} host={h} />
