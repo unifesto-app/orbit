@@ -141,6 +141,10 @@
     align-items: start;
     column-gap: 72px;
     grid-template-rows: auto 1fr; /* the form's extra height goes below Who it's for, not between it and the line */
+    /* Centred by its own margins, not by stretching: a stretched hero's 1fr row would take the spare height and leave
+       it all under the section on a tall screen. */
+    flex: none;
+    margin-block: auto;
   }
 
   .panel {
