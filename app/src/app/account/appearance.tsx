@@ -2,10 +2,11 @@
 // no flow asks for a light theme, so Dark is the one choice. Two of the phone's accessibility settings change how Orbit
 // looks, and Orbit follows them: Reduce Transparency swaps the glass for a solid fill (src/glass.tsx), Reduce Motion
 // stops the Home carousel (src/home/Carousel.tsx). Titles only, no descriptions (owner, 15 Nov 2026).
-// The app icon: the main one or an alternate (owner, 16 Nov 2026: Ticket and Hologram approved).
+// The app icon: the main one or an alternate (owner, 16 Nov 2026: Ticket and Hologram approved; 19 Nov 2026: In orbit,
+// Heart and Glass added, Ticket redrawn green).
 import { requireOptionalNativeModule } from 'expo';
 import { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Image, StyleSheet, View } from 'react-native';
 
 import { Group, Page, Row } from '../../account/kit';
 import { useAccessibility } from '../../glass';
@@ -20,11 +21,15 @@ type IconModule = {
 };
 const native = requireOptionalNativeModule<IconModule>('ExpoAlternateAppIcons');
 const icons = native?.supportsAlternateIcons ? native : null;
-// null is the main icon. The other names are app.json's expo-alternate-app-icons entry (art: scripts/app-icon.cjs).
+// null is the main icon. The other names are app.json's expo-alternate-app-icons entry. Each row shows the icon itself
+// (owner, 19 Nov 2026: "allow to see in appearance screen"); scripts/app-icon.cjs draws the art and these previews.
 const ICONS = [
-  { name: null, label: 'Orbit' },
-  { name: 'Ticket', label: 'Ticket' },
-  { name: 'Hologram', label: 'Hologram' },
+  { name: null, label: 'Orbit', thumb: require('../../../assets/icons/orbit-thumb.png') },
+  { name: 'InOrbit', label: 'In orbit', thumb: require('../../../assets/icons/inorbit-thumb.png') },
+  { name: 'Heart', label: 'Heart', thumb: require('../../../assets/icons/heart-thumb.png') },
+  { name: 'Glass', label: 'Glass', thumb: require('../../../assets/icons/glass-thumb.png') },
+  { name: 'Ticket', label: 'Ticket', thumb: require('../../../assets/icons/ticket-thumb.png') },
+  { name: 'Hologram', label: 'Hologram', thumb: require('../../../assets/icons/hologram-thumb.png') },
 ] as const;
 
 export default function Appearance() {
@@ -51,6 +56,7 @@ export default function Appearance() {
           {ICONS.map((i) => (
             <Row
               key={i.label}
+              lead={<Image source={i.thumb} style={styles.thumb} accessibilityIgnoresInvertColors />}
               label={i.label}
               right={i.name === icon ? selected : undefined}
               onPress={i.name === icon ? undefined : () => pick(i.name)}
@@ -70,4 +76,6 @@ export default function Appearance() {
 const styles = StyleSheet.create({
   // The pick, as on Search's chips: the accent on a dot, never on text.
   dot: { width: 8, height: 8, borderRadius: 4, marginRight: 4, backgroundColor: color.accent },
+  // The icon as the home screen rounds it, with the card's outline so the Charcoal ones keep their edge.
+  thumb: { width: 40, height: 40, borderRadius: 9, borderCurve: 'continuous', borderWidth: 1, borderColor: color.border, marginRight: 4 },
 });
