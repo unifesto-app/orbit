@@ -78,7 +78,7 @@ const styles = StyleSheet.create({
   meta: { fontFamily: font.text, fontSize: 13, lineHeight: 18, color: color.secondary },
   title: { fontFamily: font.title, fontSize: 17, lineHeight: 22, color: color.text },
   // How much is sold, in the accent: an element, never text.
-  track: { marginTop: 4, height: 6, borderRadius: 3, backgroundColor: color.raised, overflow: 'hidden' },
+  track: { marginTop: 4, height: 6, borderRadius: 3, backgroundColor: color.track, overflow: 'hidden' },
   fill: { height: 6, borderRadius: 3, backgroundColor: color.accent },
   firstLine: { marginTop: PAD }, // the head sits a full padding above the first hairline
 });

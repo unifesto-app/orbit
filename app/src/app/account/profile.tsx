@@ -1,13 +1,11 @@
 // Your profile, its own screen (owner, 16 Nov 2026: "the profile should be a seperate screen"; User doc, decision 6:
 // kept): photo, name, member since, going and been counts, Edit profile, and the hosts you follow. Only you see it.
-// Opened from Account by pulling its panel down or tapping the chevrons. Its top is Account's glass panel fully grown,
-// REVEAL taller than at rest with the head grown, so as it fades in (src/app/_layout.tsx) it carries on from the panel
-// you pulled. The back circle returns to Account, as on every Account screen.
+// Opened from Account's View profile. Its top is Account's glass panel grown, REVEAL taller with the head grown, fading
+// in over Account (src/app/_layout.tsx). The back circle returns to Account, as on every Account screen.
 // The account is the API's (/me, src/session.ts); the hosts you follow are the Following screen's (useFollows). Going
 // and Been still count the mock's tickets and past bookings until bookings reach the API.
 import { type Href, router } from 'expo-router';
-import { useState } from 'react';
-import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Note, Page, Panel, Pill, REVEAL, SignInNote } from '../../account/kit';
 import { ProfileHead, useFollows } from '../../account/profile';
@@ -23,7 +21,6 @@ export default function Profile() {
     ...(data ?? []).map((h) => ({ id: h.id, to: `/host/${h.slug}` as Href, mark: markOf(h), name: h.name, verified: h.verified })),
     ...mock.map((h) => ({ id: h.id, to: `/host/${h.id}` as Href, mark: h, name: h.name, verified: h.verified })),
   ];
-  const [grown] = useState(() => new Animated.Value(1).interpolate({ inputRange: [0, 1], outputRange: [0, 1] }));
   // Signed out while here (on another device, or the session ended): nothing of the account stays on screen.
   if (!signedIn)
     return (
@@ -33,8 +30,8 @@ export default function Profile() {
     );
   return (
     <Page>
-      <Panel extra={REVEAL} settled>
-        <ProfileHead p={grown} following={count} />
+      <Panel extra={REVEAL}>
+        <ProfileHead grown following={count} />
       </Panel>
       {/* Moved here from Account's head (owner, 15 Nov 2026: "move edit to profile screen"). */}
       <View style={styles.edit}>

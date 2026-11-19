@@ -1,4 +1,4 @@
-import { formatPrice } from '@orbit/contract';
+import { categories, formatPrice } from '@orbit/contract';
 import { type ReactNode, useEffect, useState } from 'react';
 import { Animated, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import Reanimated, {
@@ -13,15 +13,17 @@ import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ticketFor } from '../../account/data';
+import { Pill } from '../../account/kit';
 import { Carousel, type CarouselSlide } from '../../home/Carousel';
 import { BarGlass, Glass } from '../../glass';
-import { justAnnounced, planHome, type Viewer } from '../../home/layout';
+import { planHome, type Viewer } from '../../home/layout';
 import { Icon } from '../../icons';
 import { type Event, type Host, events, hosts, now } from '../../mock';
 import { refreshPlace, usePlace } from '../../place';
-import { EventRow, Monogram, Poster, SEAT, SeatCard, Section, Tag } from '../../rows';
-import { needsAccount, setFollowing, useViewer } from '../../session';
-import { around, color, font, radius, rim, space } from '../../theme';
+import { EventRow, Monogram, Poster, SEAT, SeatCard, Section, StatusDot, Tag } from '../../rows';
+import { bookAction, eventStatus, isNews } from '../../status';
+import { needsAccount, setFollowing, skipInterests, useViewer } from '../../session';
+import { around, color, darkInkOn, font, groundAt, radius, rim, space } from '../../theme';
 
 const HEADER = 44;
 const FRAME = rim; // the thin frosted rim around cards
@@ -43,6 +45,10 @@ const CARD_INSET = space.small; // padding inside every card, around its content
 // Padding", then "apply to all cards"): with a 6px corner and 8px padding the face is 14, the frosted rim 16.
 const FACE = around(radius.sm, CARD_INSET);
 const RIM = around(FACE, FRAME);
+// What do you like? gets the room every text card has, Account's and the event page's (owner, 15 Nov 2026: "add proper
+// spacing and padding to cards"; 19 Nov: "add proper padding to pick interests card"): 16 inside, 16 from the words to
+// the buttons, corner 6 + 16. The location notice keeps its own 8 ("keep location notice as it was").
+const ASK_PAD = 16;
 
 // Home B ("Orbit"), picked by the owner on 15 Nov 2026: the boards are on the Orbit canvas. Which blocks show
 // comes from planHome (src/home/layout.ts); the state to look at is `viewer` in src/mock.ts.
@@ -67,12 +73,16 @@ export default function Home() {
   const card = (width - 40 - space.big) / 2; // All events and host cards: two columns on the 20px margins, a big gap apart
   const slides: CarouselSlide[] = plan.slides.map((s) =>
     s.kind === 'event'
-      ? { key: `e:${s.event.id}`, image: s.event.wide!.source, edge: s.event.wide!.edge, label: `Poster for ${s.event.title}`, action: 'Book ticket', href: `/event/${s.event.id}` }
+      ? { key: `e:${s.event.id}`, image: s.event.wide!.source, edge: s.event.wide!.edge, label: `Poster for ${s.event.title}`, action: slideAction(s.event), href: `/event/${s.event.id}` }
       : { key: `h:${s.host.id}`, image: s.host.banner!.source, edge: s.host.banner!.edge, label: `Banner for ${s.host.name}`, action: 'View events', href: `/host/${s.host.id}` },
   );
 
   // Drives the glass behind the pinned header (BarGlass in src/glass.tsx).
   const [scrollY] = useState(() => new Animated.Value(0));
+  // The header's location reads in Charcoal over a light poster, Stone over a dark one, switching with the slide.
+  const [active, setActive] = useState(0);
+  const slide = slides[Math.min(active, slides.length - 1)];
+  const darkInk = !!slide && darkInkOn(slide.edge, HEADER_WASH);
 
   // The ticket stack opens to show every ticket (owner, 15 Nov 2026: "need option to see the other tickets").
   const [ticketsOpen, setTicketsOpen] = useState(false);
@@ -97,7 +107,7 @@ export default function Home() {
         scrollEventThrottle={16}
         onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })}>
         {/* The header is pinned over the page (below); the carousel still starts at the top, under it. */}
-        {slides.length ? <Carousel slides={slides} top={posterTop} /> : <View style={{ height: headerTop + HEADER }} />}
+        {slides.length ? <Carousel slides={slides} top={posterTop} onActive={setActive} /> : <View style={{ height: headerTop + HEADER }} />}
 
         {plan.tickets.length > 0 && (
           <>
@@ -139,6 +149,18 @@ export default function Home() {
           </>
         )}
 
+        {plan.askInterests && <AskInterests />}
+
+        {/* A section per kind of event you picked (Account › Interests), its events out of the list below. */}
+        {plan.byInterest.map((k) => (
+          <View key={k.category}>
+            <Section title={`${categories.find((c) => c.slug === k.category)?.label ?? k.category} ${plan.near ? 'near you' : 'coming up'}`} />
+            {k.events.map((e) => (
+              <EventRow key={e.id} event={e} host={hostOf(e.hostId)} />
+            ))}
+          </View>
+        ))}
+
         {plan.notice && <Notice kind={plan.notice} area={v.place?.area} />}
 
         {plan.list.events.length > 0 && (
@@ -169,29 +191,58 @@ export default function Home() {
           same in home"); it replaced a ground strip under the clock. The gaps let taps through. */}
       <View style={[styles.bar, { paddingTop: headerTop }]}>
         <BarGlass scrollY={scrollY} />
-        <Header viewer={v} />
+        <Header viewer={v} dark={darkInk} scrollY={scrollY} />
       </View>
     </View>
   );
 }
 
-function Header({ viewer: v }: { viewer: Viewer }) {
+// The carousel's wash where the location sits: the ground at 50% at the top of the screen, 30% at the header's foot.
+const HEADER_WASH = 0.4;
+
+// The pin, area and city in one ink.
+function Place({ viewer: v, text, soft, pin }: { viewer: Viewer; text: string; soft: string; pin: string }) {
+  return (
+    <View style={styles.place}>
+      <Icon name="pin" size={22} color={pin} />
+      <View>
+        <View style={styles.areaRow}>
+          <Text style={[styles.area, { color: text }]}>{v.place?.area ?? 'Set location'}</Text>
+          <Icon name="caretDown" size={14} color={soft} />
+        </View>
+        <Text style={[styles.city, { color: soft }]}>{v.place?.city ?? 'Showing everywhere'}</Text>
+      </View>
+    </View>
+  );
+}
+
+// The location in two inks laid one on the other (owner, 19 Nov 2026: "the location text should adapt the bg and switch
+// colors"): Stone, and Charcoal for a light poster's edge, cross-faded as the slides change. Once the page scrolls
+// under the header's dark glass (BarGlass, over its first 16pt) it's Stone again. Opacity only, so it runs on the
+// native driver with the scroll.
+function Header({ viewer: v, dark, scrollY }: { viewer: Viewer; dark: boolean; scrollY: Animated.Value }) {
+  const [shade] = useState(() => new Animated.Value(dark ? 1 : 0));
+  useEffect(() => {
+    Animated.timing(shade, { toValue: dark ? 1 : 0, duration: 300, useNativeDriver: true }).start();
+  }, [dark, shade]);
+  const [ink] = useState(() => {
+    const onPoster = scrollY.interpolate({ inputRange: [0, 16], outputRange: [1, 0], extrapolate: 'clamp' });
+    const charcoal = Animated.multiply(shade, onPoster);
+    return { charcoal, stone: charcoal.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }) };
+  });
   return (
     <View style={styles.header}>
       <Pressable
         onPress={() => router.push('/location')}
-        style={styles.place}
         accessibilityRole="button"
         accessibilityLabel={v.place ? `Location: ${[v.place.area, v.place.city].filter(Boolean).join(', ')}. Change location` : 'Set location'}
       >
-        <Icon name="pin" size={22} color={color.accent} />
-        <View>
-          <View style={styles.areaRow}>
-            <Text style={styles.area}>{v.place?.area ?? 'Set location'}</Text>
-            <Icon name="caretDown" size={14} color={color.secondary} />
-          </View>
-          <Text style={styles.city}>{v.place?.city ?? 'Showing everywhere'}</Text>
-        </View>
+        <Animated.View style={{ opacity: ink.stone }}>
+          <Place viewer={v} text={color.text} soft={color.secondary} pin={color.accent} />
+        </Animated.View>
+        <Animated.View style={[styles.inkOver, { opacity: ink.charcoal }]} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+          <Place viewer={v} text={color.ground} soft={groundAt(0.64)} pin={color.ground} />
+        </Animated.View>
       </Pressable>
       {/* A thin frosted rim round the profile circle (owner, 15 Nov 2026: "add rim to profile"). It opens Account
           (src/app/account), signed out too, where only what works without an account shows. */}
@@ -338,6 +389,7 @@ function TicketCard({ event: e, host, label }: { event: Event; host: Host; label
 // spacing and typography"): the host is a small grey label, the title leads, the date follows. Not a card, but kept
 // icon-free like one.
 function FeedRow({ event: e, host }: { event: Event; host: Host }) {
+  const st = eventStatus(e, now); // news (Just announced, Almost full…) beats the repeat tag
   return (
     <Pressable
       onPress={() => router.push(`/event/${e.id}`)}
@@ -347,10 +399,10 @@ function FeedRow({ event: e, host }: { event: Event; host: Host }) {
       <View style={[styles.grow, styles.feedText]}>
         <View style={styles.feedHead}>
           <Text style={styles.feedHost} numberOfLines={1}>{host.name}</Text>
-          {justAnnounced(e, now) ? (
+          {isNews(st) ? (
             <View style={styles.announced}>
-              <View style={styles.dot} />
-              <Text style={styles.small}>Just announced</Text>
+              <StatusDot tone={st.tone} />
+              <Text style={styles.small}>{st.short}</Text>
             </View>
           ) : (
             e.repeats && <Tag text={e.repeats} />
@@ -381,6 +433,27 @@ function HostCard({ host, width, following }: { host: Host; width: number; follo
         </Pressable>
       </SeatCard>
     </Pressable>
+  );
+}
+
+// Home asks once what you like, signed in (owner, 19 Nov 2026: "add interest cards for events", all four): Pick
+// interests opens Account › Interests; Not now stops the asking, and Interests stays on Account for later.
+// An event slide's pill follows its status: Book ticket or Register while open, Join waitlist, else View event.
+function slideAction(e: Event) {
+  const book = bookAction(eventStatus(e, now), !e.pricePaise);
+  return book.can ? book.label : 'View event';
+}
+
+function AskInterests() {
+  return (
+    <View style={[styles.card, styles.notice, styles.ask]}>
+      <Text style={styles.noticeTitle}>What do you like?</Text>
+      <Text style={styles.noticeText}>Pick a few kinds of event and Home shows more of them.</Text>
+      <View style={styles.askButtons}>
+        <Pill label="Pick interests" onPress={() => router.push('/account/interests')} />
+        <Pill label="Not now" muted onPress={skipInterests} />
+      </View>
+    </View>
   );
 }
 
@@ -444,11 +517,12 @@ const styles = StyleSheet.create({
 
   header: { height: HEADER, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   place: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  inkOver: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
   areaRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  area: { fontFamily: font.headline, fontSize: 17, color: color.text },
-  city: { fontFamily: font.text, fontSize: 13, color: color.secondary },
+  area: { fontFamily: font.headline, fontSize: 17 },
+  city: { fontFamily: font.text, fontSize: 13 },
   profileRim: { width: 44, height: 44, borderRadius: 22, padding: FRAME },
-  round: { flex: 1, borderRadius: 22 - FRAME, backgroundColor: color.raised, alignItems: 'center', justifyContent: 'center' },
+  round: { flex: 1, borderRadius: 22 - FRAME, backgroundColor: color.fill, alignItems: 'center', justifyContent: 'center' },
   initial: { fontFamily: font.headline, fontSize: 17, color: color.text },
 
   stackToggle: { alignSelf: 'center', marginTop: 10 },
@@ -476,7 +550,6 @@ const styles = StyleSheet.create({
   feedTitle: { fontFamily: font.title, fontSize: 15, lineHeight: 20, color: color.text },
   feedWhen: { fontFamily: font.text, fontSize: 13, color: color.secondary },
   announced: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: color.accent },
 
 
   hostCardName: { fontFamily: font.title, fontSize: 14, color: color.text, textAlign: 'center' },
@@ -487,8 +560,10 @@ const styles = StyleSheet.create({
   followSmallText: { fontFamily: font.title, fontSize: 13, color: color.text },
   followingText: { color: color.secondary },
 
-  notice: { marginTop: space.big, borderRadius: FACE, padding: CARD_INSET, gap: 4 },
+  notice: { marginTop: space.big, borderRadius: FACE, borderWidth: 1, borderColor: color.border, padding: CARD_INSET, gap: 4 }, // no rim, so an outline
+  ask: { borderRadius: around(radius.sm, ASK_PAD), padding: ASK_PAD },
   noticeTitle: { fontFamily: font.title, fontSize: 16, color: color.text },
+  askButtons: { marginTop: ASK_PAD - 4, flexDirection: 'row', gap: space.small }, // 16 from the words, the 4 gap included
   noticeText: { fontFamily: font.text, fontSize: 14, lineHeight: 20, color: color.secondary },
   wideButton: { marginTop: space.small, height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center' },
 

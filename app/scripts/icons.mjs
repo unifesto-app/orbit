@@ -24,8 +24,10 @@ const icons = {
   film: "film-slate-duotone",
   startup: "rocket-launch-duotone",
   gaming: "game-controller-duotone",
-  heart: "heart-duotone",
-  heartFill: "heart-fill", // a saved event's heart, in red (owner, 16 Nov 2026: "for saved events add love red")
+  heart: "heart-duotone", // "Loved it" on an event you went to (owner, 19 Nov 2026: "replace the love with loved it")
+  heartFill: "heart-fill", // loved, in the love red
+  star: "star-duotone", // Save (owner, 19 Nov 2026: "saved love with star")
+  starFill: "star-fill", // saved
   back: "arrow-left-duotone", // same key as web/scripts/icons.mjs
   verified: "seal-check-fill", // filled, not duotone (owner, 15 Nov 2026: "use filled verifed")
   apple: "apple-logo-fill", // Continue with Apple on the sign-in sheet, white, as Apple's own button draws it
@@ -38,7 +40,7 @@ const icons = {
   copy: "copy-duotone", // the venue sheet's copy, and its tick once copied
   check: "check-duotone",
   chevron: "caret-right-bold", // the ">" on the event page's tappable facts
-  chevronDown: "caret-down-bold", // Account's "drag to view profile" hint, two stacked (owner, 15 Nov 2026: "V V")
+  chevronDown: "caret-down-bold", // an open list in Account › Saved
   // Account's rows, each in its own colour (owner, 15 Nov 2026: "add icon on left", "should have various acents").
   ticket: "ticket-duotone",
   following: "user-check-duotone",
@@ -55,9 +57,10 @@ const icons = {
   help: "question-duotone",
   terms: "file-text-duotone",
   privacy: "lock-duotone",
+  interests: "sparkle-duotone", // Account › Interests: the brand's spark (owner, 19 Nov 2026)
   sliders: "sliders-horizontal-duotone", // Galaxy's Platform, a circle at the right of its dashboard's header (owner, 16 Nov 2026)
   // Saved lists (Saved doc, 16 Nov 2026): the ⋯ menus’ Add to a list, Rename list and Take out of a list.
-  list: "list-heart-duotone", // a list in Account › Saved
+  list: "list-star-duotone", // a list in Account › Saved, starred like a save
   listPlus: "list-plus-duotone",
   rename: "pencil-simple-duotone",
   takeOut: "minus-circle-duotone",

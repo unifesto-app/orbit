@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Glass } from './glass';
 import { CloseButton, GlassFill, SearchBox } from './rows';
-import { color, font, space } from './theme';
+import { color, font, space, stoneAt } from './theme';
 
 // Every city A to Z under its first letter, as the list's sections.
 const byLetter = [
@@ -133,7 +133,7 @@ const styles = StyleSheet.create({
     color: color.secondary,
   },
   row: { minHeight: 44, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', gap: space.small },
-  pressed: { backgroundColor: color.card },
+  pressed: { backgroundColor: stoneAt(0.08) }, // as a menu row's
   rowName: { flexShrink: 0, fontFamily: font.medium, fontSize: 15, color: color.text },
   rowState: { flex: 1, minWidth: 0, fontFamily: font.text, fontSize: 13, color: color.secondary },
   // The chosen city: the accent goes on a dot, never on text.

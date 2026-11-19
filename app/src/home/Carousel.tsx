@@ -46,11 +46,13 @@ export function Carousel({
   top,
   ratio = '4:3',
   extend = true,
+  onActive,
 }: {
   slides: CarouselSlide[];
   top: number;
   ratio?: AppRatio;
   extend?: boolean;
+  onActive?: (i: number) => void; // the slide showing, as it changes (Home's header inks to its edge)
 }) {
   const { width } = useWindowDimensions();
   const posterHeight = ratio === '3:4' ? (width * 4) / 3 : (width * 3) / 4;
@@ -66,6 +68,7 @@ export function Carousel({
   const screenReader = useAccessibility('screenReaderChanged');
   const auto = slides.length > 1 && !reduceMotion && !screenReader;
   const active = Math.min(index, Math.max(0, slides.length - 1));
+  useEffect(() => onActive?.(active), [active, onActive]);
 
   // One timer per slide: fill the active dot, then page on. Swipes and this both move `index` through onScroll.
   useEffect(() => {

@@ -9,13 +9,11 @@
 // inside. On an orbit ("like in an orbit sliding b/w them, center will be the current one so the switched one comes
 // center", "make the orbit attached perfectly", "hide the orbit back of other two"): the current mode in front at the
 // centre, the others round the back, smaller and higher, on a faint ring through every card's centre. On opening the
-// others come out from behind the current card ("into should be same coming out from back of current one"), and the
-// splash photo's fine dots gather across the page in waves, each wave sweeping in round the centre along ellipses
-// shaped like the cards' orbit ("out should be accumulating the space dots same as splash screen photo", "the
-// accumulate should be in orbit path only", "why dots on orbit. should spread across page").
+// others come out from behind the current card ("into should be same coming out from back of current one"). No space
+// dots (owner, 19 Nov 2026: "remove space dots, completely").
 // Picking one turns the orbit slowly ("make the animation slow") until it's at the centre; then, as the splash's O does
 // ("animation should be like launch and zoom out the card same as o zooms out in splash"), the others are pulled into
-// it and it zooms out past the screen while the dots rush out and the backdrop lifts off the new mode, which has
+// it and it zooms out past the screen while the backdrop lifts off the new mode, which has
 // been put underneath. The motion is src/switchMotion.ts. With Reduce Motion on, it just fades to the new mode.
 // Home always stays at the bottom of the stack: a mode sits on top of it, so back from a mode lands on Home.
 import { router, useLocalSearchParams, useNavigation } from 'expo-router';
@@ -30,8 +28,7 @@ import { Glass } from '../glass';
 import { type Mode, type Third, modesFor } from '../modes';
 import { ScriptTitle, SeatCard } from '../rows';
 import { useMe } from '../session';
-import { StarLayer } from '../stars';
-import { EXIT, OPEN_END, SLIDE, STEP, backdropOpacity, cardFrame, dustFrame, ringOpacity, starLayers } from '../switchMotion';
+import { EXIT, OPEN_END, SLIDE, STEP, backdropOpacity, cardFrame, ringOpacity } from '../switchMotion';
 import { color, font, space } from '../theme';
 import { Wordmark } from '../wordmark';
 
@@ -70,7 +67,7 @@ const AnimatedEllipse = Animated.createAnimatedComponent(Ellipse);
 export default function Switch() {
   const { from = 'home' } = useLocalSearchParams<{ from?: Mode }>();
   const navigation = useNavigation();
-  const { width, height } = useWindowDimensions();
+  const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const reduced = useReducedMotion();
   const modes = modesFor(useMe()); // signed out: Home, Host an event and Saved, each asking to sign in where it needs to
@@ -99,12 +96,9 @@ export default function Switch() {
   // and runs through every card's centre, so the cards sit on it.
   const lift = Math.round(card * 0.85);
   const tall = card / 2 + 2 + ((card - 4) * 3) / 4 + 4; // SeatCard's height at this width
-  // The orbit's path in its box: every card's centre rides this ellipse. Its centre is the screen's, which the dots'
-  // orbits share, squashed alike (`flat`, height over width).
+  // The orbit's path in its box: every card's centre rides this ellipse.
   const cx = width / 2;
   const cy = lift / 2 + tall / 2;
-  const flat = lift / 2 / orbit;
-  const [stars] = useState(() => starLayers(width, height));
 
   // The new mode goes in under this screen, with Home kept at the bottom, so the exit reveals it; then this screen goes.
   const putUnder = (route: string) => {
@@ -143,10 +137,6 @@ export default function Switch() {
   };
 
   const backdrop = useAnimatedStyle(() => ({ opacity: backdropOpacity(out.value) }));
-  const dustStyle = useAnimatedStyle(() => {
-    const [o, s] = dustFrame(out.value);
-    return { opacity: o, transform: [{ scale: s }] };
-  });
   const ring = useAnimatedProps(() => ({ strokeOpacity: ringOpacity(out.value) }));
 
   return (
@@ -155,11 +145,6 @@ export default function Switch() {
       <Animated.View style={[StyleSheet.absoluteFill, backdrop]} pointerEvents="none">
         <Glass style={StyleSheet.absoluteFill} />
         <View style={[StyleSheet.absoluteFill, styles.shade]} />
-      </Animated.View>
-      <Animated.View style={[StyleSheet.absoluteFill, dustStyle]} pointerEvents="none">
-        {stars.map((layer, k) => (
-          <StarLayer key={k} layer={k} dots={layer} open={open} flat={flat} />
-        ))}
       </Animated.View>
       {/* No close button (owner: "no need of a close button"): a tap anywhere off the cards, or on the centre one, goes
           back where you were; so does Android's back. */}

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-import { CARDS_AT, CARDS_FOR, EXIT, OPEN_END, STAR_EACH, STAR_LAYERS, ZOOM_TO, backdropOpacity, cardFrame, dustFrame, ringOpacity, starLayerOpacity, starLayerTurn, starLayers } from './switchMotion.ts';
+import { CARDS_AT, CARDS_FOR, EXIT, OPEN_END, ZOOM_TO, backdropOpacity, cardFrame, ringOpacity } from './switchMotion.ts';
 
 const near = (a: number, b: number) => assert.ok(Math.abs(a - b) < 1e-9, `${a} ≉ ${b}`);
 
@@ -27,15 +27,13 @@ test('opening: the other cards start behind the current one and come out to thei
   assert.ok(later[0] > 50);
 });
 
-test('the cards coming out and the dots gathering start and settle together', () => {
+test('the cards come out over the opening window and settle at its end', () => {
   const settled = (open: number) => cardFrame(1, 0, -1, 0, 100, 80, open, 0);
-  // Both still moving just before the end, both settled at it.
+  // Still moving just before the end, settled at it.
   assert.ok(Math.abs(settled(OPEN_END - 0.05)[0] - settled(OPEN_END)[0]) > 0);
-  assert.ok(starLayerTurn(STAR_LAYERS - 1, OPEN_END - 0.05) < 0);
-  near(starLayerTurn(STAR_LAYERS - 1, OPEN_END), 0);
-  // Both untouched before the start.
+  near(settled(OPEN_END)[0], settled(OPEN_END + 1)[0]);
+  // Untouched before the start.
   near(settled(0.1)[0], 0);
-  near(starLayerOpacity(0, 0.1), 0);
 });
 
 test('cards move only along the orbit, the short way round', () => {
@@ -61,24 +59,8 @@ test('the exit: the picked card zooms out and fades, the others are pulled into 
   near(other[3], 0);
   assert.ok(other[4] < picked[4]); // behind the picked card
   near(ringOpacity(EXIT), 0);
-  near(dustFrame(EXIT)[0], 0);
   near(backdropOpacity(0), 1);
   near(backdropOpacity(EXIT), 0);
-});
-
-test('the dots gather layer by layer across the page, sweeping in round their orbits, the same every time', () => {
-  near(starLayerOpacity(0, 0), 0);
-  near(starLayerOpacity(STAR_LAYERS - 1, OPEN_END), 1);
-  assert.ok(starLayerOpacity(0, 0.8) > starLayerOpacity(STAR_LAYERS - 1, 0.8));
-  assert.ok(starLayerTurn(0, 0) < -90); // still well round its orbits
-  near(starLayerTurn(STAR_LAYERS - 1, OPEN_END), 0); // settled in place by the end of the opening clock
-  const a = starLayers(390, 844);
-  assert.equal(a.length, STAR_LAYERS);
-  assert.equal(a[0].length, STAR_EACH);
-  assert.deepEqual(a, starLayers(390, 844));
-  for (const d of a.flat()) assert.ok(d.x >= 0 && d.x <= 390 && d.y >= 0 && d.y <= 844);
-  // A taller field (Account's panel) asks for more dots per layer, to keep the density.
-  for (const layer of starLayers(390, 1300, 7, 40)) assert.equal(layer.length, 40);
 });
 
 test('every constant comes before the worklets, which copy constants to the UI thread where they are defined', () => {

@@ -34,7 +34,7 @@ const styles = StyleSheet.create({
   when: { fontFamily: font.text, fontSize: 14, color: color.secondary },
   count: { marginTop: space.small, fontFamily: font.headline, fontSize: 28, lineHeight: 34, color: color.text },
   // The share let in, in the accent: an element, never text.
-  track: { height: 6, borderRadius: 3, backgroundColor: color.raised, overflow: 'hidden' },
+  track: { height: 6, borderRadius: 3, backgroundColor: color.track, overflow: 'hidden' },
   fill: { height: 6, borderRadius: 3, backgroundColor: color.accent },
   actions: { marginTop: space.small, flexDirection: 'row', gap: space.small },
 });

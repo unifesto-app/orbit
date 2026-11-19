@@ -10,66 +10,23 @@ import { type CategorySlug, categories } from '@orbit/contract';
 import { useDeferredValue, useState } from 'react';
 import {
   Animated,
-  Image,
-  type ImageSourcePropType,
   Platform,
   Pressable,
   StyleSheet,
   Text,
   View,
-  useWindowDimensions,
 } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BarGlass, Glass } from '../../glass';
 import { type Host, events, hosts, now } from '../../mock';
-import { EventRow, Glow, Monogram, SEARCH_BOX, SearchBox, SeatCard } from '../../rows';
+import { CategoryGrid } from '../../categories';
+import { EventRow, Glow, Monogram, SEARCH_BOX, SearchBox } from '../../rows';
 import { countLine, MAX_QUERY, search, WHEN, type When } from '../../search';
 import { color, font, space } from '../../theme';
 
 const BAR_BOTTOM = 12; // the glass bar's padding under the chips
-// Each category's own colour (owner, 15 Nov 2026: "bring various accents to each explore", "also based on category
-// give the accent"), for its 3D prop (src/props.tsx) and its card's glow: a terminal's cyan for hackathons, the
-// spotlight's yellow for comedy, the pitch's green for sports, a screen's blue for film, and so on. Open Color's 8
-// shades plus the brand blue.
-const CATEGORY_COLOR: Record<CategorySlug, string> = {
-  hackathons: '#1098AD', // terminal cyan: a bulb with code in it
-  comedy: '#FCC419', // spotlight yellow: a laughing face
-  music: '#D6336C', // pink: two notes
-  meetups: '#E8590C', // warm orange: three people
-  workshops: '#099268', // mint: a laptop
-  fests: '#E03131', // red: a string of lights
-  sports: '#2F9E44', // pitch green: a football and a cricket bat
-  film: '#295EFF', // a screen's blue: a reel and a camera. Its own colour, like the others: the drawing is baked blue, and the brand accent is Sage since 18 Nov 2026
-  startups: '#7048E8', // violet: a rocket on a growth line
-  gaming: '#AE3EC9', // neon grape: a controller
-};
-// The approved drawings, done one by one (owner, 15 Nov 2026: "lets do one by one", "get approval and changes after
-// going to next", "film approved"): Canva AI line art in the style of the owner's bulb, shaded ("add shade on it"),
-// downloaded by the owner as SVG ("use svg's only"). Only the background around it is cleared; the drawing stays
-// filled ("i dont want transparent b/w the image i need filled one same"), recoloured in its category's colour (deep
-// lines, a light tint running from near white top left to stronger bottom right, as the props) and baked into the PNG
-// ("add the same tint to the svg"). Every category has one, so the 3D props they replaced are gone.
-const CATEGORY_ART: Record<CategorySlug, ImageSourcePropType> = {
-  hackathons: require('../../../assets/explore/hackathons.png'),
-  comedy: require('../../../assets/explore/comedy.png'),
-  music: require('../../../assets/explore/music.png'),
-  meetups: require('../../../assets/explore/meetups.png'),
-  workshops: require('../../../assets/explore/workshops.png'),
-  fests: require('../../../assets/explore/fests.png'),
-  sports: require('../../../assets/explore/sports.png'),
-  film: require('../../../assets/explore/film.png'),
-  startups: require('../../../assets/explore/startups.png'),
-  gaming: require('../../../assets/explore/gaming.png'),
-};
-// A lone shape fills its whole square where a scene doesn't, so it's drawn smaller ("music is large, make little
-// small"), and Fests, wide and short, a little bigger ("increase its size little"); scaled about the centre, so the
-// card and its seat keep their size.
-const ART_SCALE: Partial<Record<CategorySlug, number>> = { music: 0.85, fests: 1.15 };
-// Explore's rows: three, three, then four (owner, 15 Nov 2026: "Explore Three Three Four"); the last row takes the rest.
-const exploreRows = [categories.slice(0, 3), categories.slice(3, 6), categories.slice(6)];
-
 export default function Search() {
   const insets = useSafeAreaInsets();
   const [q, setQ] = useState('');
@@ -85,7 +42,6 @@ export default function Search() {
   // Nothing typed or picked: the categories to explore, then everything coming up. Otherwise the results.
   const browsing = !filters.q.trim() && !when && !free && !category;
   const picked = categories.find((c) => c.slug === category);
-  const { width } = useWindowDimensions();
   // The bar's height, first a guess (box, chips, padding) until it's measured; it grows when a category adds a line.
   const [bar, setBar] = useState(() => insets.top + space.small + SEARCH_BOX + 16 + 32 + BAR_BOTTOM);
   const [scrollY] = useState(() => new Animated.Value(0));
@@ -116,22 +72,7 @@ export default function Search() {
         {browsing ? (
           <View>
             <CenteredHeading title="Explore" script />
-            <View style={styles.grid}>
-              {exploreRows.map((row) => (
-                <View key={row[0].slug} style={styles.gridRow}>
-                  {row.map((c) => (
-                    <CategoryCard
-                      key={c.slug}
-                      slug={c.slug}
-                      label={c.label}
-                      tint={CATEGORY_COLOR[c.slug]}
-                      width={(width - 40 - (row.length - 1) * space.small) / row.length}
-                      onPress={() => setCategory(c.slug)}
-                    />
-                  ))}
-                </View>
-              ))}
-            </View>
+            <CategoryGrid onPress={setCategory} />
             <CenteredHeading title="Coming up" />
             {found.events.map((e) => (
               <EventRow key={e.id} event={e} host={hostOf(e.hostId)} />
@@ -252,43 +193,6 @@ function Chip({ label, on, onPress }: { label: string; on: boolean; onPress: () 
   );
 }
 
-// A category as a box like Home's host cards (owner, 15 Nov 2026: "add the Types in boxes same as hosts in home"): its
-// prop on the top rim where a host's logo sits, and its name, nothing else (owner: "from 1 event from card"). Tapping
-// it picks the category.
-// Sized to its box, since a row of four is narrow: the prop is about 46% of the width.
-function CategoryCard({
-  slug,
-  label,
-  tint,
-  width,
-  onPress,
-}: {
-  slug: CategorySlug;
-  label: string;
-  tint: string;
-  width: number;
-  onPress: () => void;
-}) {
-  const size = Math.round(width * 0.62);
-  return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={label}>
-      <SeatCard
-        width={width}
-        size={size}
-        tint={tint}
-        dome={false}
-        seat={<Image source={CATEGORY_ART[slug]} style={{ width: size, height: size, transform: [{ scale: ART_SCALE[slug] ?? 1 }] }} />}
-      >
-        <View style={styles.categoryText}>
-          <Text style={styles.categoryName} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
-            {label}
-          </Text>
-        </View>
-      </SeatCard>
-    </Pressable>
-  );
-}
-
 // A host that matches; it opens the host page (Discover doc).
 function HostRow({ host }: { host: Host }) {
   return (
@@ -341,13 +245,6 @@ const styles = StyleSheet.create({
   },
   scriptCopy: { position: 'absolute', top: 0.8, left: 0, right: 0 },
   centered: { marginTop: 40, marginBottom: space.big, marginHorizontal: 20, fontFamily: font.headline, fontSize: 18, color: color.text, textAlign: 'center' },
-  // 8 between boxes so three and four fit across; 16 between rows, room for each monogram poking over the edge.
-  grid: { marginHorizontal: 20, gap: 16 },
-  gridRow: { flexDirection: 'row', gap: space.small },
-  // Centred in the face below the monogram, since a category card has no button at the bottom.
-  categoryText: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: space.small },
-  // Home's host card name, shrinking a little in the narrow row of four.
-  categoryName: { fontFamily: font.title, fontSize: 14, color: color.text, textAlign: 'center' },
   hostRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   pressed: { opacity: 0.7 },
   hostName: { fontFamily: font.title, fontSize: 15, lineHeight: 20, color: color.text },

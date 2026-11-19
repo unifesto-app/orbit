@@ -12,11 +12,10 @@
 // Cards hold text only. Log out confirms first; Delete account opens its own screen with what goes and what blocks it.
 import Constants from 'expo-constants';
 import { type Href, router } from 'expo-router';
-import { useState } from 'react';
-import { Alert, Animated, Linking, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, StyleSheet, Text, View } from 'react-native';
 
 import { past, refunds } from '../../account/data';
-import { Group, Page, Panel, Pill, REVEAL, Row, TONE } from '../../account/kit';
+import { Group, Page, Panel, Pill, Row, TONE } from '../../account/kit';
 import { ProfileHead, useFollows } from '../../account/profile';
 import { day, isOpen } from '../../account/rules';
 import { split } from '../../account/saves';
@@ -31,10 +30,11 @@ const go = (href: Href) => () => router.push(href);
 export default function Account() {
   const viewer = useViewer(); // signed in or out on this phone (src/session.ts)
   const due = useSession()?.me.deletionDue; // set to be deleted: Keep my account in place of Delete account
-  const following = useFollows().count; // the profile's count, so the head reads the same as it grows into it
+  const following = useFollows().count; // the profile's count, read here so it's ready when the profile opens
   // Saved counts upcoming events only (Saved events and lists doc).
   const saved = split((useSession()?.saved ?? []).map((x) => x.id), events, now).upcoming;
   const place = usePlace(viewer.place);
+  const interests = useSession()?.interests ?? [];
   const open = refunds.filter((r) => isOpen(r.status)).length;
   const logOut = () =>
     Alert.alert('Log out of Orbit?', 'You’ll sign back in on this phone with a code or your passkey.', [
@@ -50,27 +50,14 @@ export default function Account() {
       },
     ]);
 
-  // The panel grows toward your profile as you pull (owner, 15 Nov 2026: "drag transition is needed", "not just simple
-  // pull", then picked "Panel grows into profile"; 16 Nov: "the profile should be a seperate screen"). Pulled past its
-  // top, the page brings the panel down with the finger while its glass stretches above, and the head moves up half as
-  // far, so it stays centred in the taller panel as it grows (`grow`, full at REVEAL). Let go past PULL, or tap the
-  // chevrons, and the profile screen fades in over it, its top the panel fully grown; short of that, the panel shrinks
-  // back with the bounce.
-  // ponytail: the drag reads iOS's bounce, so on Android the tap is the way in.
-  const [scrollY] = useState(() => new Animated.Value(0)); // negative while the page is pulled past its top
-  const [{ grow, centre }] = useState(() => ({
-    grow: scrollY.interpolate({ inputRange: [-REVEAL, 0], outputRange: [1, 0], extrapolate: 'clamp' }),
-    centre: scrollY.interpolate({ inputRange: [-4 * REVEAL, 0], outputRange: [-2 * REVEAL, 0], extrapolate: 'clamp' }),
-  }));
   const openProfile = go('/account/profile');
 
   return (
-    <Page onPull={viewer.signedIn ? openProfile : undefined} scrollY={scrollY}>
+    <Page>
       <Panel>
         {viewer.signedIn ? (
-          <Animated.View style={{ transform: [{ translateY: centre }] }}>
-            <ProfileHead p={grow} onChevrons={openProfile} following={following} />
-          </Animated.View>
+          // View profile opens it (owner, 19 Nov 2026: "replace swipe down, and change to button").
+          <ProfileHead onOpen={openProfile} following={following} />
         ) : (
           // Signed out, only what works without an account; Sign in opens the sign-in sheet (src/app/login.tsx).
           <View style={styles.head}>
@@ -88,7 +75,7 @@ export default function Account() {
         <>
           <Group title="Your events">
             <Row icon="ticket" tone={TONE.orange} label="Tickets" value={`${viewer.tickets?.length ?? 0} upcoming`} onPress={go('/account/tickets')} />
-            <Row icon="heart" tone={TONE.pink} label="Saved" value={`${saved.length} upcoming`} onPress={go('/account/saved')} />
+            <Row icon="star" tone={TONE.yellow} label="Saved" value={`${saved.length} upcoming`} onPress={go('/account/saved')} />
             <Row icon="following" tone={TONE.violet} label="Following" value={`${following} hosts`} onPress={go('/account/following')} />
             <Row icon="history" tone={TONE.cyan} label="History" value={`${past.length}`} onPress={go('/account/history')} />
           </Group>
@@ -103,6 +90,9 @@ export default function Account() {
 
       <Group title="Settings">
         {viewer.signedIn && <Row icon="bell" tone={TONE.red} label="Notifications" onPress={go('/account/notifications')} />}
+        {viewer.signedIn && (
+          <Row icon="interests" tone={TONE.orange} label="Interests" value={interests.length ? `${interests.length} picked` : 'None'} onPress={go('/account/interests')} />
+        )}
         <Row icon="pin" tone={TONE.blue} label="Location" value={place?.area ?? 'Not set'} onPress={go('/location')} />
         <Row icon="moon" tone={TONE.grape} label="Appearance" value="Dark" onPress={go('/account/appearance')} />
         <Row icon="shield" tone={TONE.green} label="Permissions" onPress={go('/account/permissions')} />

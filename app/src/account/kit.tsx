@@ -4,7 +4,6 @@
 // white labels, never squared; a chip's pick is an accent dot, never accent text.
 import { Children, Fragment, type ReactNode, isValidElement, useEffect, useState } from 'react';
 import { Animated, Pressable, StyleSheet, Switch, Text, TextInput, type TextInputProps, View, useWindowDimensions } from 'react-native';
-import { Easing, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Glass } from '../glass';
@@ -12,8 +11,6 @@ import { Icon, type IconName } from '../icons';
 import { BackBar, FaceWash, Glow, Section, TOP } from '../rows';
 import { needsAccount } from '../session';
 import type { Contact } from '../signin';
-import { StarLayer } from '../stars';
-import { OPEN_END, STAR_EACH, starLayers } from '../switchMotion';
 import { around, color, font, radius, space, stoneAt } from '../theme';
 
 // Room in every card (owner, 15 Nov 2026: "add proper spacing and padding to cards"): 16 inside and 16 between rows,
@@ -28,8 +25,7 @@ const SLOP = { top: PAD / 2, bottom: PAD / 2 };
 const ICON = 22; // a row's icon
 const ICON_GAP = 12; // from the icon to its label
 
-export const PULL = 80; // how far past the top a pull goes before letting go fires `onPull`
-export const REVEAL = PULL * 1.5; // the pull at which Account's panel has grown into the profile's head
+export const REVEAL = 120; // how much taller the profile's panel is than Account's, its head grown
 export const TINT = 0.5; // the accent's glow at the panel's bottom centre; Explore's boxes are 0.75
 
 // Each row's icon in its own colour (owner, 15 Nov 2026: "should have various acents"): Search's Explore colours, Open
@@ -47,28 +43,20 @@ export const TONE = {
   grape: '#AE3EC9',
 } as const;
 
-// A screen pushed over the tabs: its title, then the content; the frosted back circle pinned on top. `onPull` fires when
-// the page is pulled down past its top and let go, as pull to refresh does.
-// ponytail: it reads iOS's bounce; Android's scroll view doesn't go past the top, so give Android a tap as well.
-// `scrollY`, when given, is driven by the page's scroll (negative while pulled past the top), for pull animations.
+// A screen pushed over the tabs: its title, then the content; the frosted back circle pinned on top.
 export function Page({
   title,
-  onPull,
-  scrollY: given,
   tint,
   bar,
   children,
 }: {
   title?: string;
-  onPull?: () => void;
-  scrollY?: Animated.Value;
   tint?: string; // a colour glowing from the top, as a host's own pages have (Galaxy's host page)
   bar?: ReactNode; // at the back bar's right, as a saved list's ⋯ menu
   children: ReactNode;
 }) {
   const insets = useSafeAreaInsets();
-  const [own] = useState(() => new Animated.Value(0));
-  const scrollY = given ?? own;
+  const [scrollY] = useState(() => new Animated.Value(0));
   return (
     <View style={styles.screen}>
       {tint && <Glow tint={tint} />}
@@ -78,7 +66,6 @@ export function Page({
         automaticallyAdjustKeyboardInsets // iOS: the keyboard never covers a field or the button under it
         scrollEventThrottle={16}
         onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })}
-        onScrollEndDrag={onPull && ((e) => e.nativeEvent.contentOffset.y < -PULL && onPull())}
         contentContainerStyle={{ paddingTop: insets.top + TOP, paddingBottom: insets.bottom + space.big }}>
         {title && (
           <Text style={styles.title} accessibilityRole="header">
@@ -96,39 +83,19 @@ export function Page({
 // page", "add radial orbit kind tint to the card of app accent"): edge to edge from the top of the screen, 4:3 plus
 // `extra`, its contents centred under the back bar, the accent glowing up from its bottom centre in a 4:3 box. Native
 // glass rounds every corner alike, so the glass runs STRETCH above the screen, where its top corners can't be seen even
-// while the page is pulled down; its bottom corners are the cards'. Put it first in a Page.
-// The switch screen's space dots sit on the glass (owner, 17 Nov 2026: "apply space dots to glass card in account
-// section"): the switcher's dots at its density, clipped to the glass, in a field centred on the 4:3 panel and reaching
-// the glass's top even on the profile's grown panel (rest/2 + REVEAL + STRETCH each way), so no pull shows bare glass.
-// It hangs from the panel's bottom, so Account pulled down by REVEAL and the profile's grown panel show the same dots.
-// They gather once as Account opens, as on Galaxy's lock; `settled` (the profile, fading in over Account) shows them
-// already there.
+// as the page bounces; its bottom corners are the cards'. Put it first in a Page. No space dots (owner, 19 Nov 2026:
+// "remove space dots, completely").
 const STRETCH = 400;
-const FLAT = 0.45; // the dots' orbits, height over width, as on Galaxy's lock
-export function Panel({ extra = 0, settled = false, children }: { extra?: number; settled?: boolean; children: ReactNode }) {
+export function Panel({ extra = 0, children }: { extra?: number; children: ReactNode }) {
   const insets = useSafeAreaInsets();
-  const { width, height } = useWindowDimensions();
+  const { width } = useWindowDimensions();
   const rest = (width * 3) / 4;
   const lift = insets.top + TOP; // how far down Page starts its content; the panel starts above that, at the top
-  const field = rest + 2 * (REVEAL + STRETCH);
-  const [stars] = useState(() => starLayers(width, field, 7, Math.round((STAR_EACH * field) / height)));
-  const still = useReducedMotion() || settled;
-  const open = useSharedValue(still ? OPEN_END : 0);
-  useEffect(() => {
-    if (!still) open.value = withTiming(OPEN_END, { duration: OPEN_END * 1000, easing: Easing.linear });
-  }, [open, still]);
   return (
     <View style={[styles.panel, { height: rest + extra, marginTop: -lift, paddingTop: lift }]}>
       <Glass style={styles.panelGlass} />
       <View style={[styles.panelGlow, { height: rest }]}>
         <FaceWash tint={color.accent} opacity={TINT} corner={RIM} />
-      </View>
-      <View style={styles.panelDots} pointerEvents="none">
-        <View style={[styles.panelField, { height: field, bottom: (rest - field) / 2 }]}>
-          {stars.map((dots, k) => (
-            <StarLayer key={k} layer={k} dots={dots} open={open} flat={FLAT} />
-          ))}
-        </View>
       </View>
       {children}
     </View>
@@ -143,7 +110,7 @@ export function Group({ title, bare = false, children }: { title?: string; bare?
   // With icons, the hairline starts where the text does, as in iOS Settings.
   const indent = rows.some((r) => isValidElement<{ icon?: IconName }>(r) && !!r.props.icon) ? ICON + ICON_GAP : 0;
   const face = (
-    <View style={styles.face}>
+    <View style={[styles.face, bare && styles.outline]}>
       {rows.map((row, i) => (
         <Fragment key={i}>
           {i > 0 && <View style={[styles.hairline, { marginLeft: indent }]} />}
@@ -232,8 +199,8 @@ export function Toggle({ value, onChange, label }: { value: boolean; onChange: (
       value={value}
       onValueChange={onChange}
       accessibilityLabel={label}
-      trackColor={{ true: color.accent, false: color.raised }}
-      ios_backgroundColor={color.raised}
+      trackColor={{ true: color.accent, false: color.track }}
+      ios_backgroundColor={color.track}
       thumbColor={value ? color.onAccent : color.text}
     />
   );
@@ -395,13 +362,12 @@ export const styles = StyleSheet.create({
   panel: { justifyContent: 'center' },
   panelGlass: { position: 'absolute', top: -STRETCH, left: 0, right: 0, bottom: 0, borderRadius: RIM },
   panelGlow: { position: 'absolute', left: 0, right: 0, bottom: 0 },
-  panelDots: { position: 'absolute', top: -STRETCH, left: 0, right: 0, bottom: 0, borderRadius: RIM, overflow: 'hidden' },
-  panelField: { position: 'absolute', left: 0, right: 0 },
 
   rim: { marginHorizontal: 20, padding: EDGE, borderRadius: RIM },
   bare: { marginHorizontal: 20 },
   spaced: { marginTop: space.big },
   face: { borderRadius: FACE, backgroundColor: color.card, padding: PAD },
+  outline: { borderWidth: 1, borderColor: color.border }, // a bare group has no rim
   // Inside the card's padding on both sides (owner: "right side make it full hairline", then "dont use full hairline").
   hairline: { height: StyleSheet.hairlineWidth, marginVertical: PAD / 2, backgroundColor: stoneAt(0.12) },
   row: { minHeight: ROW, flexDirection: 'row', alignItems: 'center', gap: space.small },

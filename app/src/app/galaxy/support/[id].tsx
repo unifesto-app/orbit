@@ -93,7 +93,7 @@ const styles = StyleSheet.create({
   theirs: { alignSelf: 'flex-start' },
   mine: { alignSelf: 'flex-end' },
   bubble: { borderRadius: 18, padding: 12, gap: 4, backgroundColor: color.card },
-  mineFace: { backgroundColor: color.raised },
+  mineFace: { backgroundColor: color.fill },
   who: { fontFamily: font.title, fontSize: 13, lineHeight: 18, color: color.text },
   when: { fontFamily: font.text, color: color.secondary },
   text: { fontFamily: font.text, fontSize: 15, lineHeight: 21, color: color.text },
