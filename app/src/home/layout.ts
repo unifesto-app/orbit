@@ -1,20 +1,22 @@
 // What Home shows, from who is looking and what's on. Pure, so it runs on Node in layout.test.ts;
 // src/app/index.tsx only draws what this returns. Rules: the Discover flow doc and the picked
 // Home B boards on the Orbit canvas (owner, 15 Nov 2026).
+import { isServed } from '@orbit/contract';
 
 // source: "gps" when found from the phone's position, "pick" when chosen from the city list (src/app/location.tsx).
-export type Place = { area: string; city: string; nearAreas: readonly string[]; source?: 'gps' | 'pick' };
+// `state` is a picked city's state or the geocoder's region; places saved before it existed work it out (stateOf).
+export type Place = { area: string; city: string; state?: string; nearAreas: readonly string[]; source?: 'gps' | 'pick' };
 // The fields of expo-location's LocationGeocodedAddress this reads.
 export type Address = { district: string | null; city: string | null; subregion: string | null; region: string | null };
 
 // What the phone's geocoder calls a spot, as Home's two lines: the neighbourhood over its city ("Gachibowli",
 // "Hyderabad"). With no neighbourhood the city leads over its state, the same shape as a picked city. Never the same
 // name twice: "Hyderabad, Hyderabad" reads as a bug (the web's rule too).
-export function placeName(a: Address): { area: string; city: string } | null {
+export function placeName(a: Address): { area: string; city: string; state?: string } | null {
   const city = a.city || a.subregion || '';
   const area = a.district || city;
   if (!area) return null;
-  return { area, city: [city, a.region].find((name) => name && name !== area) ?? '' };
+  return { area, city: [city, a.region].find((name) => name && name !== area) ?? '', ...(a.region && { state: a.region }) };
 }
 
 export type Viewer = {
@@ -60,9 +62,13 @@ export function planHome<E extends PlanEvent, H extends PlanHost>(
     .filter((e) => followed.has(e.hostId) && !booked.has(e.id) && !seen.has(e.hostId) && seen.add(e.hostId))
     .slice(0, MAX_ORBIT);
 
-  const notice: 'noLocation' | 'nothingNear' | null = !viewer.place
+  // Outside Telangana and Andhra Pradesh Orbit isn't open yet: Coming soon, and everything on where it is (owner, 19 Nov
+  // 2026: "only ap & telangana. other than it unserviceable. or coming soon").
+  const notice: 'noLocation' | 'comingSoon' | 'nothingNear' | null = !viewer.place
     ? 'noLocation'
-    : upcoming.some((e) => isNear(e.area))
+    : !isServed(viewer.place)
+      ? 'comingSoon'
+      : upcoming.some((e) => isNear(e.area))
       ? null
       : 'nothingNear';
   const shown = new Set([...tickets.map((e) => e.id), ...orbit.map((e) => e.id)]);

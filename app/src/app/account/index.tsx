@@ -12,30 +12,20 @@
 // Cards hold text only. Log out confirms first; Delete account opens its own screen with what goes and what blocks it.
 import Constants from 'expo-constants';
 import { type Href, router } from 'expo-router';
-import { Alert, Linking, StyleSheet, Text, View } from 'react-native';
+import { Alert, StyleSheet, Text, View } from 'react-native';
 
-import { past, refunds } from '../../account/data';
 import { Group, Page, Panel, Pill, Row, TONE } from '../../account/kit';
 import { ProfileHead, useFollows } from '../../account/profile';
-import { day, isOpen } from '../../account/rules';
-import { split } from '../../account/saves';
-import { events, now } from '../../mock';
-import { usePlace } from '../../place';
+import { day } from '../../account/rules';
 import { keepAccount, needsAccount, signOut, useSession, useViewer } from '../../session';
 import { color, font, space } from '../../theme';
 import { Wordmark } from '../../wordmark';
 
-const WWW = 'https://www.unifesto.app'; // the legal pages, as the web's footer links them
 const go = (href: Href) => () => router.push(href);
 export default function Account() {
   const viewer = useViewer(); // signed in or out on this phone (src/session.ts)
   const due = useSession()?.me.deletionDue; // set to be deleted: Keep my account in place of Delete account
   const following = useFollows().count; // the profile's count, read here so it's ready when the profile opens
-  // Saved counts upcoming events only (Saved events and lists doc).
-  const saved = split((useSession()?.saved ?? []).map((x) => x.id), events, now).upcoming;
-  const place = usePlace(viewer.place);
-  const interests = useSession()?.interests ?? [];
-  const open = refunds.filter((r) => isOpen(r.status)).length;
   const logOut = () =>
     Alert.alert('Log out of Orbit?', 'You’ll sign back in on this phone with a code or your passkey.', [
       { text: 'Cancel', style: 'cancel' },
@@ -74,47 +64,47 @@ export default function Account() {
       {viewer.signedIn && (
         <>
           <Group title="Your events">
-            <Row icon="ticket" tone={TONE.orange} label="Tickets" value={`${viewer.tickets?.length ?? 0} upcoming`} onPress={go('/account/tickets')} />
-            <Row icon="star" tone={TONE.yellow} label="Saved" value={`${saved.length} upcoming`} onPress={go('/account/saved')} />
-            <Row icon="following" tone={TONE.violet} label="Following" value={`${following} hosts`} onPress={go('/account/following')} />
-            <Row icon="history" tone={TONE.cyan} label="History" value={`${past.length}`} onPress={go('/account/history')} />
+            <Row icon="ticket" tone={TONE.orange} label="Tickets" chevron onPress={go('/account/tickets')} />
+            <Row icon="star" tone={TONE.yellow} label="Saved" chevron onPress={go('/account/saved')} />
+            <Row icon="following" tone={TONE.violet} label="Following" chevron onPress={go('/account/following')} />
+            <Row icon="history" tone={TONE.cyan} label="History" chevron onPress={go('/account/history')} />
           </Group>
 
           <Group title="Money">
-            <Row icon="receipt" tone={TONE.green} label="Transactions" onPress={go('/account/transactions')} />
-            <Row icon="refund" tone={TONE.yellow} label="Refunds" value={open ? `${open} open` : undefined} onPress={go('/account/refunds')} />
-            <Row icon="card" tone={TONE.mint} label="Payment methods" onPress={go('/account/payment')} />
+            <Row icon="receipt" tone={TONE.green} label="Transactions" chevron onPress={go('/account/transactions')} />
+            <Row icon="refund" tone={TONE.yellow} label="Refunds" chevron onPress={go('/account/refunds')} />
+            <Row icon="card" tone={TONE.mint} label="Payment methods" chevron onPress={go('/account/payment')} />
           </Group>
         </>
       )}
 
       <Group title="Settings">
-        {viewer.signedIn && <Row icon="bell" tone={TONE.red} label="Notifications" onPress={go('/account/notifications')} />}
+        {viewer.signedIn && <Row icon="bell" tone={TONE.red} label="Notifications" chevron onPress={go('/account/notifications')} />}
         {viewer.signedIn && (
-          <Row icon="interests" tone={TONE.orange} label="Interests" value={interests.length ? `${interests.length} picked` : 'None'} onPress={go('/account/interests')} />
+          <Row icon="interests" tone={TONE.orange} label="Interests" chevron onPress={go('/account/interests')} />
         )}
-        <Row icon="pin" tone={TONE.blue} label="Location" value={place?.area ?? 'Not set'} onPress={go('/location')} />
-        <Row icon="moon" tone={TONE.grape} label="Appearance" value="Dark" onPress={go('/account/appearance')} />
-        <Row icon="shield" tone={TONE.green} label="Permissions" onPress={go('/account/permissions')} />
+        <Row icon="pin" tone={TONE.blue} label="Location" chevron onPress={go('/location')} />
+        <Row icon="moon" tone={TONE.grape} label="Appearance" chevron onPress={go('/account/appearance')} />
+        <Row icon="shield" tone={TONE.green} label="Permissions" chevron onPress={go('/account/permissions')} />
       </Group>
 
       {/* No Hosting group (owner, 16 Nov 2026: "even remove the hosting"): starting a host is the mode sheet's
           Host an event card, which opens the Event Request (src/app/account/host.tsx); a host's team uses the Console. */}
       {viewer.signedIn && (
         <Group title="Account">
-          <Row icon="key" tone={TONE.yellow} label="Sign-in and security" onPress={go('/account/security')} />
+          <Row icon="key" tone={TONE.yellow} label="Sign-in and security" chevron onPress={go('/account/security')} />
           {due ? (
             <Row icon="trash" tone={TONE.red} label={`Deleted on ${day(due)}`} right={<Pill label="Keep my account" size="small" onPress={() => void keepAccount().then((m) => m && Alert.alert(m))} />} />
           ) : (
-            <Row icon="trash" tone={TONE.red} label="Delete account" onPress={go('/account/delete')} />
+            <Row icon="trash" tone={TONE.red} label="Delete account" chevron onPress={go('/account/delete')} />
           )}
         </Group>
       )}
 
       <Group title="Help">
-        <Row icon="help" tone={TONE.blue} label="Help and support" onPress={go('/account/help')} />
-        <Row icon="terms" tone={TONE.cyan} label="Terms of service" onPress={() => Linking.openURL(`${WWW}/terms`)} />
-        <Row icon="privacy" tone={TONE.violet} label="Privacy policy" onPress={() => Linking.openURL(`${WWW}/privacy`)} />
+        <Row icon="help" tone={TONE.blue} label="Help and support" chevron onPress={go('/account/help')} />
+        {/* One Legal row in place of a row per page (owner, 19 Nov 2026: "add Legal Modal instead of many"). */}
+        <Row icon="terms" tone={TONE.cyan} label="Legal" chevron onPress={go('/legal')} />
       </Group>
 
       {viewer.signedIn && (

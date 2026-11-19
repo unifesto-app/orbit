@@ -67,3 +67,14 @@ test('the count says what is showing', () => {
   assert.equal(countLine(4, { q: 'jam', free: false, category: 'music' }), '4 events for “jam” in Music');
   assert.equal(countLine(2, { q: '', free: true, when: 'weekend' }), '2 free events this weekend');
 });
+
+test("hosts match by their one line too, so a kind of place finds it", () => {
+  const places = [
+    { id: 'kickoff-arena', name: 'Kickoff Arena', area: 'Gachibowli', about: 'Turf and box cricket · Gachibowli' },
+    { id: 'respawn-zone', name: 'Respawn Zone', area: 'Gachibowli', about: 'Gaming café · Gachibowli' },
+  ];
+  const find = (q: string) => search({ ...none, q }, [], places, NOW).hosts.map((h) => h.id);
+  assert.deepEqual(find('turf'), ['kickoff-arena']);
+  assert.deepEqual(find('GAMING'), ['respawn-zone']);
+  assert.deepEqual(find('chess'), []);
+});

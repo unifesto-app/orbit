@@ -5,9 +5,9 @@ import { test } from 'node:test';
 import { planHome } from './layout.ts';
 
 const NOW = Date.parse('2026-11-15T10:00:00+05:30');
-const NEAR = 'Indiranagar';
-const FAR = 'Whitefield';
-const place = { area: NEAR, city: 'Bengaluru', nearAreas: [NEAR, 'Koramangala'] };
+const NEAR = 'Gachibowli';
+const FAR = 'Uppal';
+const place = { area: NEAR, city: 'Hyderabad', nearAreas: [NEAR, 'Kondapur'] };
 
 const ev = (id: string, hostId: string, area: string, day: number, ann: number, wide?: boolean) => ({
   id,
@@ -266,4 +266,17 @@ test('interests: at most three kinds and three events each; tickets and the orbi
   const away = planHome({ ...viewer, place: null, interests: ['gaming'] }, events, [], NOW);
   assert.equal(away.near, false);
   assert.deepEqual(away.byInterest.map((k) => [k.category, ids(k.events)]), [['gaming', ['g1', 'gFar']]]);
+});
+
+test('outside Telangana and Andhra Pradesh: Coming soon, with everything on there', () => {
+  const events = [ev('a', 'h1', NEAR, 16, 3, true), ev('b', 'h1', FAR, 17, 5)];
+  const bengaluru = { area: 'Koramangala', city: 'Bengaluru', state: 'Karnataka', nearAreas: ['Koramangala'] };
+  const plan = planHome({ signedIn: false, follows: [], place: bengaluru }, events, [], NOW);
+  assert.equal(plan.notice, 'comingSoon');
+  assert.equal(plan.list.title, 'Coming up');
+  assert.deepEqual(ids(plan.list.events), ['a', 'b']);
+  assert.equal(plan.near, false);
+  // A place saved before places carried a state is worked out from its city.
+  assert.equal(planHome({ signedIn: false, follows: [], place: { area: 'Koramangala', city: 'Bengaluru', nearAreas: [] } }, events, [], NOW).notice, 'comingSoon');
+  assert.equal(planHome({ signedIn: false, follows: [], place: { ...place, state: 'Telangana' } }, events, [], NOW).notice, null);
 });

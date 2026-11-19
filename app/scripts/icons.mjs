@@ -41,6 +41,7 @@ const icons = {
   check: "check-duotone",
   chevron: "caret-right-bold", // the ">" on the event page's tappable facts
   chevronDown: "caret-down-bold", // an open list in Account › Saved
+  external: "arrow-up-right-bold", // a row that opens the web, in place of the > (owner, 19 Nov 2026)
   // Account's rows, each in its own colour (owner, 15 Nov 2026: "add icon on left", "should have various acents").
   ticket: "ticket-duotone",
   following: "user-check-duotone",

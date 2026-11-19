@@ -45,10 +45,12 @@ const CARD_INSET = space.small; // padding inside every card, around its content
 // Padding", then "apply to all cards"): with a 6px corner and 8px padding the face is 14, the frosted rim 16.
 const FACE = around(radius.sm, CARD_INSET);
 const RIM = around(FACE, FRAME);
-// What do you like? gets the room every text card has, Account's and the event page's (owner, 15 Nov 2026: "add proper
-// spacing and padding to cards"; 19 Nov: "add proper padding to pick interests card"): 16 inside, 16 from the words to
-// the buttons, corner 6 + 16. The location notice keeps its own 8 ("keep location notice as it was").
-const ASK_PAD = 16;
+// Home's text cards (What do you like?, See what's near you, Coming soon, Nothing near) get the room every text card
+// has, Account's and the event page's (owner, 15 Nov 2026: "add proper spacing and padding to cards"; 19 Nov: "add
+// proper padding to pick interests card", then "remember for cards add proper padding … for Nothing near yet. similar
+// to that all", "but not tickets and all events cards"): 16 inside, 16 from the words to the buttons, corner 6 + 16.
+// Ticket and All events cards keep CARD_INSET, their posters' 8.
+const TEXT_PAD = 16;
 
 // Home B ("Orbit"), picked by the owner on 15 Nov 2026: the boards are on the Orbit canvas. Which blocks show
 // comes from planHome (src/home/layout.ts); the state to look at is `viewer` in src/mock.ts.
@@ -446,7 +448,7 @@ function slideAction(e: Event) {
 
 function AskInterests() {
   return (
-    <View style={[styles.card, styles.notice, styles.ask]}>
+    <View style={[styles.card, styles.notice]}>
       <Text style={styles.noticeTitle}>What do you like?</Text>
       <Text style={styles.noticeText}>Pick a few kinds of event and Home shows more of them.</Text>
       <View style={styles.askButtons}>
@@ -457,20 +459,25 @@ function AskInterests() {
   );
 }
 
-function Notice({ kind, area }: { kind: 'noLocation' | 'nothingNear'; area?: string }) {
+// Coming soon (owner, 19 Nov 2026: "only ap & telangana. other than it unserviceable. or coming soon"): somewhere
+// outside Telangana and Andhra Pradesh, Home says so and shows what's on there, with Pick a city to look around one.
+function Notice({ kind, area }: { kind: 'noLocation' | 'comingSoon' | 'nothingNear'; area?: string }) {
   const noLocation = kind === 'noLocation';
+  const soon = kind === 'comingSoon';
   return (
     <View style={[styles.card, styles.notice]}>
-      <Text style={styles.noticeTitle}>{noLocation ? 'See what’s near you' : `Nothing near ${area} yet`}</Text>
+      <Text style={styles.noticeTitle}>{noLocation ? 'See what’s near you' : soon ? `Coming soon to ${area}` : `Nothing near ${area} yet`}</Text>
       <Text style={styles.noticeText}>
         {noLocation
           ? 'Set your location and Orbit shows what’s within 25 km. Until then, here’s everything coming up.'
-          : 'Here’s everything coming up on Orbit instead, soonest first.'}
+          : soon
+            ? 'Orbit is in Telangana and Andhra Pradesh for now. Here’s what’s on there, soonest first.'
+            : 'Here’s everything coming up on Orbit instead, soonest first.'}
       </Text>
-      {noLocation && (
+      {(noLocation || soon) && (
         <Pressable onPress={() => router.push('/location')} accessibilityRole="button">
           <Glass style={styles.wideButton}>
-            <Text style={styles.buttonText}>Set location</Text>
+            <Text style={styles.buttonText}>{soon ? 'Pick a city' : 'Set location'}</Text>
           </Glass>
         </Pressable>
       )}
@@ -560,12 +567,11 @@ const styles = StyleSheet.create({
   followSmallText: { fontFamily: font.title, fontSize: 13, color: color.text },
   followingText: { color: color.secondary },
 
-  notice: { marginTop: space.big, borderRadius: FACE, borderWidth: 1, borderColor: color.border, padding: CARD_INSET, gap: 4 }, // no rim, so an outline
-  ask: { borderRadius: around(radius.sm, ASK_PAD), padding: ASK_PAD },
+  notice: { marginTop: space.big, borderRadius: around(radius.sm, TEXT_PAD), borderWidth: 1, borderColor: color.border, padding: TEXT_PAD, gap: 4 }, // no rim, so an outline
   noticeTitle: { fontFamily: font.title, fontSize: 16, color: color.text },
-  askButtons: { marginTop: ASK_PAD - 4, flexDirection: 'row', gap: space.small }, // 16 from the words, the 4 gap included
+  askButtons: { marginTop: TEXT_PAD - 4, flexDirection: 'row', gap: space.small }, // 16 from the words, the 4 gap included
   noticeText: { fontFamily: font.text, fontSize: 14, lineHeight: 20, color: color.secondary },
-  wideButton: { marginTop: space.small, height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center' },
+  wideButton: { marginTop: TEXT_PAD - 4, height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center' },
 
   small: { fontFamily: font.text, fontSize: 12, color: color.secondary },
 

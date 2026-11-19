@@ -1,11 +1,29 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { allCities, popularCities, searchCities } from "./cities.ts";
+import { allCities, isServed, isServedState, popularCities, searchCities, stateOf } from "./cities.ts";
 
 test("every popular city is in the list (find would throw otherwise)", () => {
   assert.equal(popularCities.length, 12);
   assert.equal(popularCities[0]?.name, "Hyderabad");
   assert.ok(popularCities.every((c) => c && c.state));
+  assert.ok(popularCities.every((c) => isServedState(c.state)), "popular cities are all where Orbit is open");
+});
+
+test("Orbit is open in Telangana and Andhra Pradesh only; a place it can't put in a state counts as open", () => {
+  assert.equal(isServedState("Telangana"), true);
+  assert.equal(isServedState("andhra pradesh"), true);
+  assert.equal(isServedState("TG"), true);
+  assert.equal(isServedState("AP"), true);
+  assert.equal(isServedState("Karnataka"), false);
+  // A picked city carries its state; a found place may carry the geocoder's region; older saved places carry neither.
+  assert.equal(isServed({ area: "Warangal", city: "Telangana", state: "Telangana" }), true);
+  assert.equal(isServed({ area: "Bengaluru", city: "Karnataka", state: "Karnataka" }), false);
+  assert.equal(isServed({ area: "Gachibowli", city: "Hyderabad", state: "TS" }), true);
+  assert.equal(isServed({ area: "Koramangala", city: "Bengaluru" }), false); // by the city's name
+  assert.equal(isServed({ area: "Gachibowli", city: "Hyderabad" }), true);
+  assert.equal(isServed({ area: "Tirupati", city: "Andhra Pradesh" }), true);
+  assert.equal(stateOf({ area: "Somewhere", city: "Kerala" }), "Kerala"); // a city named as its state
+  assert.equal(isServed({ area: "Nowhere", city: "Unknown" }), true);
 });
 
 test("the list is A to Z with no duplicate city-state pairs", () => {
