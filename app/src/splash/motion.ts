@@ -1,64 +1,144 @@
 /**
- * The launch splash's motion as pure functions of three clocks, in seconds:
- * `t` the intro, `swap` a letter's loader swap, `out` the exit.
+ * "ORBIT, in orbit": the launch splash's motion as pure functions of two clocks, `run` (intro, then the ride while
+ * loading) and `out` (the exit), in seconds, over a scene laid out for one screen.
  *
- * Ported from Unifesto's splash (mobile/src/screens/splashMotion.ts), which the owner approved on
- * 13 Nov 2026 from a GSAP prototype: the eases are GSAP's formulas and the letter tracks are its
- * timeline segments, number for number. Unifesto's eight letters map onto ORBIT's five:
- * O takes the u (the others collapse into it at the exit), R the n, B the e, I the i and T the t.
+ * Owner, 19 Nov 2026: "redesign the entire splash, bring symbols and orbits", then "Redesign it completely new and
+ * unique. a perfect splash."; of the two takes previewed, "Take A, round" (the rings sweeping round the word and off
+ * the screen's sides; Take B stood them upright). Then "make it slow, smooth and check the orbit meeting its end
+ * perfectly": everything slower, every body's speed continuous (no stop and start), and each ring closing exactly on
+ * its own start as its body glides through it. Then "some lag and stuck there": the tails' 64 dot views went, and the
+ * splash waits on a still frame until Home has mounted under it (Splash.tsx). It replaced the kit's symbols-in-orbit
+ * board, which had replaced the
+ * Horizon walker wallpaper, thrown props and letter swaps.
  *
- * The props no longer follow tweened paths: they move by GSAP's physics plugins (owner, 15 Nov),
- * Physics2D for position (velocity, angle, gravity, friction) and PhysicsProps for spin.
+ * The 3D wordmark rises in on Charcoal over a soft Sage glow. A pearl, a spark and a star set off round tilted orbits
+ * round the word, each drawing its ring as it goes; a small heart follows the spark. The
+ * rings pass behind the letters; a body goes behind the word round the back of its ring and in front round the near
+ * side, larger and brighter. They ride on while the app loads. At the exit they're pulled into the O, R B I T collapse
+ * into it, and the O zooms out through its counter onto Home.
  *
- * Everything is a worklet, so the splash runs on the UI thread: a busy JS thread can delay when it
- * starts or leaves, never how it moves. No React Native imports, so `node --test` can check it.
+ * Every constant comes before the first worklet (a worklet copies constants where it's defined).
  */
 
-/** ORBIT's letters; each is an SVG cut from the wordmark (assets/splash/letter-*.svg). */
-export const LETTERS = ['o', 'r', 'b', 'i', 't'] as const;
-export const MARK_W = 240;
-export const MARK_H = 30.47;
-/** Each letter's box in pt inside the 240-wide mark, from web/public/orbit-wordmark.svg. */
-export const BOX = [
-  { x: 0, y: 0, w: 51.34, h: 30.47 },
-  { x: 57.33, y: 0, w: 53.67, h: 30.47 },
-  { x: 115.06, y: 0, w: 50.09, h: 30.47 },
-  { x: 171.68, y: 0, w: 17.74, h: 30.47 },
-  { x: 194.47, y: 0, w: 45.53, h: 30.47 },
-];
-/** Pivots: the O zooms about its counter, the R unfolds from its foot, the T pops from its middle. */
-export const ORIGIN = ['49.4% 49.9%', '50% 100%', '50% 50%', '50% 50%', '50% 60%'];
-/** The I never swaps in the loader (Unifesto's i didn't either). */
-export const I = 3;
+/** Seconds: the intro (every ring closed by then), and the exit. RUN_MAX bounds the run clock, past the cap. */
+export const INTRO_END = 3.75; // the last ring closes at 3.6; the still rings take over after
+export const EXIT_END = 1.9;
+export const RUN_MAX = 60;
 
-/** Seconds: the intro settles by INTRO_END (the loader starts then); the exit lasts EXIT_END. */
-export const INTRO_END = 2.3;
-export const EXIT_END = 1.4;
-/** The loader: a swap starts every LOOP_EVERY seconds and lasts SWAP_LEN (so two overlap briefly). */
-export const LOOP_EVERY = 0.9;
-export const SWAP_LEN = 1.08;
+/** The mark's own units (web/src/app/brand.tsx Wordmark): letters' x extents, all from y -682 to 0. */
+export const MARK = { x: 36, w: 5371, h: 682 };
+export const LETTERS = [
+  { name: 'o', x0: 36, x1: 1185 },
+  { name: 'r', x0: 1319, x1: 2520 },
+  { name: 'b', x0: 2611, x1: 3732 },
+  { name: 'i', x0: 3878, x1: 4275 },
+  { name: 't', x0: 4388, x1: 5407 },
+] as const;
+/** Each letter's PNG has PAD mark units round its box, for its shadow. */
+export const PAD = 260;
+/** The O's counter, where everything is pulled in and the zoom goes through. */
+export const O_CENTRE = { x: 36 + 0.494 * 1149, y: -682 + 0.499 * 682 };
 
-// State vector indices: translateX, translateY, scale, scaleY (on top of scale), rotate (deg), opacity.
-const X = 0;
-const Y = 1;
-const S = 2;
-const SY = 3;
-const R = 4;
-const A = 5;
+/**
+ * Rings: circles of radius `r` (x the screen's width) tilted away by `tilt` degrees (90 is edge on) and turned `turn`
+ * degrees on screen; `from` is where its first body sets off (degrees round, 90 the nearest point), placed so no body
+ * rests on a letter; `way` its direction. Crossing, never concentric-looking: three sizes, tilts and turns.
+ */
+export const RINGS = [
+  { r: 0.62, tilt: 74, turn: -12, from: 105, way: 1, opacity: 0.45 },
+  { r: 0.5, tilt: 58, turn: 24, from: 250, way: -1, opacity: 0.55 },
+  { r: 0.78, tilt: 76, turn: -28, from: 118, way: 1, opacity: 0.35 },
+] as const;
+/**
+ * The symbols riding them, each from its ring's start: when it sets off (`at`), and how far round (`lap`) it has gone
+ * when its sweep of `for` seconds ends. The first body on a ring draws it, a whole lap, so its ring closes on its own
+ * start just as the sweep ends. `size` is pt per kit board unit, as the symbol PNGs are drawn (`half` units each side).
+ */
+export const BODIES = [
+  { art: 'pearl', ring: 0, at: 0.5, lap: 1, for: 2.7, size: 0.62, half: 38 },
+  { art: 'spark', ring: 1, at: 0.7, lap: 1, for: 2.7, size: 0.6, half: 42 },
+  { art: 'star', ring: 2, at: 0.9, lap: 1, for: 2.7, size: 0.6, half: 42 },
+  // Follows the spark round its drawn ring, ending its sweep with the spark's, half a lap behind: opposite it.
+  { art: 'heartSmall', ring: 1, at: 1.6, lap: 0.5, for: 1.8, size: 0.55, half: 50 },
+] as const;
+/** Seconds a lap at cruising speed: how a body sets off, ends its sweep and rides while the app loads. */
+export const LAP = 24;
+export const POINTS = 240;
+/** Round the back a body is BACK_SCALE / BACK_OPACITY of its near self. */
+export const BACK_SCALE = 0.76;
+export const BACK_OPACITY = 0.55;
+export const O_ZOOM_TO = 45;
 
-// GSAP eases. A segment names one by kind (and back's overshoot / elastic's period in `c`).
-const NONE = 0;
-const P1O = 1; // power1.out, GSAP's default
-const P2O = 2;
-const P3O = 3;
-const P1I = 4;
-const P2I = 5;
-const P3I = 6;
-const P2IO = 7;
-const P3IO = 8;
-const BACK = 9; // back.out(c)
+/** GSAP's eases (power1 = quad, power2 = cubic, power3 = quart) and back.out(c). */
+export const P1O = 1;
+export const P2O = 2;
+export const P3O = 3;
+export const P1I = 4;
+export const P2I = 5;
+export const P3I = 6;
+export const P3IO = 8;
+export const BACK = 9;
 
-/** GSAP's ease formulas (its powerN is one degree up: power3 = quart). */
+/** Where everything goes on a width x height screen (pt). Pure, run once per layout, not a worklet. */
+export function scene(width: number, height: number) {
+  const markW = Math.min(width - 56, 340);
+  const m = markW / MARK.w; // pt per mark unit
+  const markH = MARK.h * m;
+  const cx = width / 2;
+  const cy = height * 0.46;
+  const word = { left: cx - markW / 2, top: cy - markH / 2, width: markW, height: markH };
+  const at = (x: number, y: number) => [word.left + (x - MARK.x) * m, word.top + (y + MARK.h) * m];
+  const letters = LETTERS.map((l) => {
+    const [left, top] = at(l.x0 - PAD, -MARK.h - PAD);
+    const w = (l.x1 - l.x0 + 2 * PAD) * m;
+    const h = (MARK.h + 2 * PAD) * m;
+    const centre = at((l.x0 + l.x1) / 2, -MARK.h / 2);
+    return { name: l.name, left, top, width: w, height: h, cx: centre[0], cy: centre[1] };
+  });
+  const [ox, oy] = at(O_CENTRE.x, O_CENTRE.y);
+  const o = { x: ox, y: oy, originX: ox - letters[0].left, originY: oy - letters[0].top };
+  // Each ring in pt round (cx, cy), from its first body's start, the way it travels; the last point is the first again.
+  const loops = RINGS.map((g) => {
+    const R = g.r * width;
+    const cosT = Math.cos((g.tilt * Math.PI) / 180);
+    const turn = (g.turn * Math.PI) / 180;
+    const x: number[] = [];
+    const y: number[] = [];
+    const depth: number[] = [];
+    for (let i = 0; i <= POINTS; i++) {
+      const a = ((g.from + (g.way * 360 * (i % POINTS)) / POINTS) * Math.PI) / 180;
+      const px = R * Math.cos(a);
+      const py = R * cosT * Math.sin(a);
+      x.push(cx + px * Math.cos(turn) - py * Math.sin(turn));
+      y.push(cy + px * Math.sin(turn) + py * Math.cos(turn));
+      depth.push((1 + Math.sin(a)) / 2); // 1 at the nearest point, 0 at the back
+    }
+    const cum = [0];
+    for (let i = 1; i <= POINTS; i++) cum.push(cum[i - 1] + Math.hypot(x[i] - x[i - 1], y[i] - y[i - 1]));
+    return { x, y, depth, cum, length: cum[POINTS], opacity: g.opacity };
+  });
+  // The rings' drawing only covers where they are on screen, so a redraw paints as little as it can.
+  const xs = loops.flatMap((l) => l.x);
+  const ys = loops.flatMap((l) => l.y);
+  const left = Math.max(Math.floor(Math.min(...xs)) - 2, 0);
+  const top = Math.max(Math.floor(Math.min(...ys)) - 2, 0);
+  const box = { left, top, width: Math.min(Math.ceil(Math.max(...xs)) + 2, width) - left, height: Math.min(Math.ceil(Math.max(...ys)) + 2, height) - top };
+  // Closed with Z, so where a drawn ring meets its own start the line joins, with no seam.
+  const rings = loops.map((l) => ({
+    ...l,
+    d: `${l.x
+      .slice(0, POINTS)
+      .map((px, i) => `${i ? 'L' : 'M'}${(px - box.left).toFixed(2)} ${(l.y[i] - box.top).toFixed(2)}`)
+      .join(' ')} Z`,
+  }));
+  return { width, height, cx, cy, m, word, letters, o, rings, box };
+}
+export type Scene = ReturnType<typeof scene>;
+
+const LETTER_IN_AT = 0.2;
+const LETTER_IN_STEP = 0.12;
+
+/** GSAP's ease formulas. */
 export function ease(kind: number, c: number, p: number): number {
   'worklet';
   switch (kind) {
@@ -74,8 +154,6 @@ export function ease(kind: number, c: number, p: number): number {
       return p * p * p;
     case P3I:
       return p * p * p * p;
-    case P2IO:
-      return p < 0.5 ? Math.pow(2 * p, 3) / 2 : 1 - Math.pow(2 * (1 - p), 3) / 2;
     case P3IO:
       return p < 0.5 ? Math.pow(2 * p, 4) / 2 : 1 - Math.pow(2 * (1 - p), 4) / 2;
     case BACK: {
@@ -94,283 +172,118 @@ export function phase(t: number, at: number, dur: number): number {
   return Math.min(Math.max((t - at) / dur, 0), 1);
 }
 
-/** [property, from, to, at, duration, ease kind, ease param]. */
-type Seg = [number, number, number, number, number, number, number];
-/** A timeline track: the start state and its segments, in time order per property. */
-type Track = { i: number[]; s: Seg[] };
-
-/** The state at clock `t`: every segment that has started sets its property; the latest wins. */
-export function evalTrack(track: Track, t: number): number[] {
-  'worklet';
-  const v = track.i.slice();
-  for (let k = 0; k < track.s.length; k++) {
-    const g = track.s[k];
-    if (t >= g[3]) v[g[0]] = g[1] + (g[2] - g[1]) * ease(g[5], g[6], phase(t, g[3], g[4]));
-  }
-  return v;
-}
-
 /**
- * GSAP's physics, one axis: how far something has moved `t` seconds after launch.
- * velocity in pt/s, acceleration in pt/s². Without friction it is the exact formula, as in GSAP.
- * With friction GSAP steps 30 times a second (Physics2DPlugin and PhysicsPropsPlugin both set
- * sps = 30): each step the velocity gains the acceleration, keeps 1 - friction of itself, and moves
- * the value. Between steps this blends straight towards the next step's position, so it never jumps
- * back (GSAP's own blend leaves out the acceleration, a sub-point difference).
+ * How far (pt) body `k` has gone round its ring. Its speed is cruising (a lap in LAP) plus a swell, sin² over its
+ * sweep, sized so it has gone exactly `lap` round when the sweep ends: it sets off, speeds up, and eases back to
+ * cruising as it passes its start again, with no stop and no jolt (speed and its change both continuous).
  */
-export const FPS = 30;
-export function physics(t: number, velocity: number, acceleration: number, friction: number): number {
+export function travelled(s: Scene, k: number, run: number): number {
   'worklet';
-  if (t <= 0) return 0;
-  if (!friction) return velocity * t + 0.5 * acceleration * t * t;
-  const keep = 1 - friction;
-  const a = acceleration / (FPS * FPS);
-  const steps = t * FPS;
-  let v = velocity / FPS;
-  let x = 0;
-  for (let n = Math.floor(steps); n > 0; n--) {
-    v = (v + a) * keep;
-    x += v;
+  const b = BODIES[k];
+  const L = s.rings[b.ring].length;
+  const v = L / LAP;
+  const t = Math.max(run - b.at, 0);
+  const D = b.for;
+  const swell = (2 * (b.lap * L - v * D)) / D;
+  const u = Math.min(t, D);
+  return v * t + swell * (u / 2 - (D / (4 * Math.PI)) * Math.sin((2 * Math.PI * u) / D));
+}
+
+/** A point `d` pt along ring `r` (wraps): [x, y, depth]. */
+export function along(s: Scene, r: number, d: number): number[] {
+  'worklet';
+  const g = s.rings[r];
+  const u = ((d % g.length) + g.length) % g.length;
+  let lo = 0;
+  let hi = POINTS;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (g.cum[mid] <= u) lo = mid;
+    else hi = mid;
   }
-  return x + (v + a) * keep * (steps % 1);
+  const p = (u - g.cum[lo]) / Math.max(g.cum[hi] - g.cum[lo], 1e-6);
+  return [g.x[lo] + (g.x[hi] - g.x[lo]) * p, g.y[lo] + (g.y[hi] - g.y[lo]) * p, g.depth[lo] + (g.depth[hi] - g.depth[lo]) * p];
 }
 
-/** GSAP's Physics2D: launched at `velocity` along `angle` (deg; 0 is right, 90 is down), gravity pulls down. */
-export function physics2D(t: number, velocity: number, angle: number, gravity: number, friction: number): number[] {
+/** How much of ring `r` is drawn (pt): as far as its first body has gone, until it closes. */
+export function ringDrawn(s: Scene, r: number, run: number): number {
   'worklet';
-  const r = (angle * Math.PI) / 180;
-  return [physics(t, velocity * Math.cos(r), 0, friction), physics(t, velocity * Math.sin(r), gravity, friction)];
+  let k = 0;
+  while (BODIES[k].ring !== r) k++;
+  return Math.min(travelled(s, k, run), s.rings[r].length);
 }
 
-const REST = [0, 0, 1, 1, 0, 1];
-
-/** The intro, per letter (O R B I T): Unifesto's u, n, e, i and t tracks. */
-const LETTER_INTRO: Track[] = [
-  // O (the u): rises, dips back, rises again to rest.
-  { i: [0, 34, 1, 1, 0, 0], s: [[A, 0, 1, 0.15, 0.18, NONE, 0], [Y, 34, 0, 0.15, 0.3, P3O, 0], [Y, 0, 12, 0.5, 0.25, P2IO, 0], [Y, 12, 0, 0.75, 0.55, P3O, 0]] },
-  // R (the n): unfolds up from its foot once the flower has flown off.
-  { i: [0, 0, 1, 0, 0, 0], s: [[A, 0, 1, 0.72, 0.05, NONE, 0], [SY, 0, 1, 0.72, 0.5, BACK, 2.2]] },
-  // B (the e): rises in after the reel.
-  { i: [0, 30, 1, 1, 0, 0], s: [[A, 0, 1, 1.05, 0.18, NONE, 0], [Y, 30, 0, 1.05, 0.55, BACK, 1.4]] },
-  // I (the i): drops from above and overshoots its seat.
-  { i: [0, -34, 1, 1, 0, 0], s: [[A, 0, 1, 0.5, 0.18, NONE, 0], [Y, -34, 0, 0.5, 0.6, BACK, 1.8]] },
-  // T (the t): pops out of nothing as the bolt shrinks away.
-  { i: [0, 0, 0, 1, 0, 0], s: [[A, 0, 1, 1.78, 0.05, NONE, 0], [S, 0, 1, 1.78, 0.45, BACK, 2.4]] },
-];
-
-/** A prop's artwork: assets/splash/prop-<name>.svg. */
-export type PropArt = 'flower' | 'dot' | 'sparkle' | 'bolt' | 'arch' | 'squiggle';
-
-/**
- * An intro prop, thrown with GSAP physics. It sits centred in its host letter's box, offset by
- * (x0, y0) at launch; `look` animates its scale, opacity and extra rotation on top of the throw.
- */
-export type PhysicsProp = {
-  host: number;
-  art: PropArt;
-  w: number;
-  h: number;
-  /** Launch time on the intro clock, and where it starts relative to its host's centre (pt). */
-  at: number;
-  x0: number;
-  y0: number;
-  /** Physics2D: pt/s along angle (deg), gravity pt/s², friction 0–1. */
-  velocity: number;
-  angle: number;
-  gravity: number;
-  friction: number;
-  /** PhysicsProps on rotation: start angle (deg), deg/s, friction 0–1. */
-  spin: [number, number, number];
-  look: Track;
-};
-
-// A reel item hops out of the B and falls back in: up ~24pt in 0.15s, so 320pt/s against 2133pt/s².
-const reel = (k: number, art: PropArt, size: number, angle: number): PhysicsProp => {
-  const at = 0.55 + k * 0.16;
-  return {
-    host: 2,
-    art,
-    w: size,
-    h: size,
-    at,
-    x0: 0,
-    y0: 8,
-    velocity: 320,
-    angle,
-    gravity: 2133,
-    friction: 0,
-    spin: [0, (angle + 90) * 12, 0],
-    look: {
-      i: [0, 0, 0.4, 1, 0, 0],
-      s: [[S, 0.4, 1, at, 0.12, P2O, 0], [A, 0, 1, at, 0.12, P2O, 0], [S, 1, 0.4, at + 0.18, 0.14, P2I, 0], [A, 1, 0, at + 0.18, 0.14, P2I, 0]],
-    },
-  };
-};
-
-/** The intro's props: the flower arcs over the R, the reel hops through the B, the bolt skids onto the T. */
-export const INTRO_PROPS: PhysicsProp[] = [
-  // Tossed from below-left, it peaks on the R's centre 0.3s later and falls away spinning as the R unfolds.
-  // Peak 60pt up in 0.3s: 400pt/s up and 1333pt/s² of gravity; 40pt across: 133pt/s.
-  {
-    host: 1, art: 'flower', w: 24, h: 24, at: 0.25, x0: -40, y0: 60,
-    velocity: 421.6, angle: -71.6, gravity: 1333, friction: 0, spin: [-90, 540, 0.04],
-    look: { i: [0, 0, 0, 1, 0, 1], s: [[S, 0, 1, 0.25, 0.3, BACK, 2], [S, 1, 0, 0.62, 0.2, P2I, 0]] },
-  },
-  reel(0, 'dot', 14, -101),
-  reel(1, 'sparkle', 22, -90),
-  reel(2, 'dot', 14, -79),
-  // Thrown in from the right, friction skids it to a stop on the T's centre: with 0.15 friction it
-  // covers velocity/30 × 0.85/0.15 pt, so 374.35pt/s along 171.87° travels the 70.71pt from (70, -10)
-  // and has settled within 1pt by the time it shrinks away (0.95s, 28 steps). Its spin settles from
-  // 38° to 0 the same way: 201.18°/s.
-  {
-    host: 4, art: 'bolt', w: 20, h: 34, at: 0.65, x0: 70, y0: -10,
-    velocity: 374.35, angle: 171.87, gravity: 0, friction: 0.15, spin: [38, -201.18, 0.15],
-    look: { i: [0, 0, 0, 1, 0, 1], s: [[S, 0, 1, 0.65, 0.45, BACK, 2.5], [S, 1, 0, 1.6, 0.25, P2I, 0], [R, 0, 20, 1.6, 0.25, P2I, 0]] },
-  },
-];
-
-/** Intro prop `k` at clock `t`: [x, y, scale, scaleY, rotate, opacity]. */
-export function introPropFrame(k: number, t: number): number[] {
+/** The rings' opacity: they fade as everything is pulled into the O. */
+export function ringsOpacity(out: number): number {
   'worklet';
-  const p = INTRO_PROPS[k];
-  const v = evalTrack(p.look, t);
-  const local = t - p.at;
-  const xy = physics2D(local, p.velocity, p.angle, p.gravity, p.friction);
-  v[X] = p.x0 + xy[0];
-  v[Y] = p.y0 + xy[1];
-  v[R] += p.spin[0] + physics(local, p.spin[1], 0, p.spin[2]);
-  return v;
+  return 1 - ease(P1I, 0, phase(out, 0, 0.7));
 }
 
-/** The loader's prop for each letter (O R B I T; the I never swaps, so it has none). */
-export const SWAP_PROPS: ({ art: PropArt; w: number; h: number } | null)[] = [
-  { art: 'flower', w: 22, h: 22 },
-  { art: 'arch', w: 26, h: 19 },
-  { art: 'sparkle', w: 24, h: 24 },
-  null,
-  { art: 'squiggle', w: 26, h: 16 },
-];
-
-const cx = (i: number) => BOX[i].x + BOX[i].w / 2;
-// The O's counter: it lands on the mark's centre, and the O zooms out through it.
-const O_CX = BOX[0].x + 0.494 * BOX[0].w;
-const O_CY = BOX[0].y + 0.499 * BOX[0].h;
-/** The O zooms from its centred 1.6× to O_ZOOM_TO, from O_ZOOM on the exit clock to its end: by then its counter is wider than a phone. */
-const O_ZOOM = 0.8;
-export const O_ZOOM_TO = 45;
-
-/**
- * The exit, per letter: the others are pulled into the O, and the O takes the centre (Unifesto's
- * timing). Then the O zooms out past the screen through its counter, fading as it goes, while the
- * ground lifts off Home (owner, 15 Nov: "in splash remove the rings and just o zoom out"; two orbit
- * rings used to burst out of it here).
- */
-const LETTER_EXIT: Track[] = LETTERS.map((_, i) => {
-  if (i === 0) {
-    return {
-      i: REST,
-      s: [
-        [X, 0, MARK_W / 2 - O_CX, 0.35, 0.45, P3IO, 0], [Y, 0, MARK_H / 2 - O_CY, 0.35, 0.45, P3IO, 0], [S, 1, 1.6, 0.35, 0.45, P3IO, 0],
-        [S, 1.6, O_ZOOM_TO, O_ZOOM, EXIT_END - O_ZOOM, P3I, 0],
-        [A, 1, 0, EXIT_END - 0.25, 0.25, P1I, 0],
-      ] as Seg[],
-    };
-  }
-  const at = 0.1 + (i - 1) * 0.03;
-  return { i: REST, s: [[X, 0, O_CX - cx(i), at, 0.36, P3I, 0], [S, 1, 0.2, at, 0.36, P3I, 0], [A, 1, 0, at, 0.36, P3I, 0]] as Seg[] };
-});
-
-const GROUND_EXIT: Track = { i: REST, s: [[A, 1, 0, 0.95, 0.35, P1I, 0]] };
-// The Horizon walker wallpaper takes Unifesto's glass sheet's part: it settles in, then rushes past
-// with the O's zoom. It tops out at WALLPAPER_DIM over the dark ground, so it sits back (owner, 15 Nov).
-export const WALLPAPER_DIM = 0.7;
-
-/** The wallpaper (assets/splash/wallpaper.jpg) in px. */
-export const WALLPAPER_W = 860;
-export const WALLPAPER_H = 1720;
-
-/**
- * Where the wallpaper goes on a width × height screen (pt): it covers it, anchored to the bottom, so a
- * shorter screen loses sky from the top and never the artist's credit at its foot.
- */
-export function splashLayout(width: number, height: number) {
-  const fit = Math.max(width / WALLPAPER_W, height / WALLPAPER_H);
-  return { wallpaper: { width: WALLPAPER_W * fit, height: WALLPAPER_H * fit, left: (width - WALLPAPER_W * fit) / 2, bottom: 0 } };
-}
-const PANE: Track = { i: [0, 0, 1.04, 1, 0, 0], s: [[A, 0, WALLPAPER_DIM, 0.1, 1.4, P2O, 0], [S, 1.04, 1, 0.1, 1.4, P2O, 0]] };
-const PANE_EXIT: Track = { i: REST, s: [[S, 1, 1.6, O_ZOOM, EXIT_END - O_ZOOM, P3I, 0]] };
-
-/** The wallpaper: [opacity, scale]. It sits in the ground's layer, so it lifts off Home with it. */
-export function wallpaperFrame(t: number, out: number): number[] {
+/** Body `k` appearing as it sets off. */
+function shown(k: number, run: number): number {
   'worklet';
-  const p = evalTrack(PANE, t);
-  return [p[A], p[S] * evalTrack(PANE_EXIT, out)[S]];
+  return ease(P1O, 0, phase(run, BODIES[k].at, 0.5));
 }
 
-/** The loader's next letter: a random one each time, never the I, never the one that just went. */
-export function nextSwap(last: number, random: () => number = Math.random): number {
-  const choices = [0, 1, 2, 4].filter((k) => k !== last);
-  return choices[Math.floor(random() * choices.length)];
-}
-
-/**
- * A letter during its swap, `local` seconds in (idle below 0 or from SWAP_LEN): [translateY, opacity].
- * It lifts out, waits for its prop, drops back in.
- */
-function swapLetter(local: number): number[] {
+/** Body `k`: [x, y (pt, its centre), scale, opacity, zIndex]. Round the back it's behind the word (z 1), else in front (3). */
+export function bodyFrame(s: Scene, k: number, run: number, out: number): number[] {
   'worklet';
-  if (local < 0 || local >= SWAP_LEN) return [0, 1];
-  if (local < 0.2) {
-    const p = ease(P2I, 0, local / 0.2);
-    return [-16 * p, 1 - p];
-  }
-  if (local < 0.68) return [-16, 0];
-  const p = ease(BACK, 1.6, (local - 0.68) / 0.4);
-  return [16 - 16 * p, Math.min(Math.max(p, 0), 1)];
-}
-
-/** A swap prop, `local` seconds into its letter's swap: [scale, rotate]. */
-export function swapPropFrame(local: number): number[] {
-  'worklet';
-  if (local < 0.15 || local >= SWAP_LEN) return [0, -60];
-  if (local < 0.45) {
-    const p = ease(BACK, 2.2, (local - 0.15) / 0.3);
-    return [p, -60 + 60 * p];
-  }
-  if (local < 0.6) return [1, 0];
-  const p = ease(P2I, 0, phase(local, 0.6, 0.16));
-  return [1 - p, 60 * p];
-}
-
-/**
- * Letter `i` at its clocks: the intro `t`, its own swap clock `swap` (seconds into its current
- * swap; idle below 0), and the exit `out`. Returns [x, y, scale, scaleY, rotate, opacity].
- */
-export function letterFrame(i: number, t: number, swap: number, out: number): number[] {
-  'worklet';
-  const v = evalTrack(LETTER_INTRO[i], t);
-  if (swap >= 0) {
-    const w = swapLetter(swap);
-    v[Y] = w[0];
-    v[A] = w[1];
-  }
+  const b = BODIES[k];
+  const p = along(s, b.ring, travelled(s, k, run));
+  let x = p[0];
+  let y = p[1];
+  let sc = (BACK_SCALE + (1 - BACK_SCALE) * p[2]) * (0.6 + 0.4 * ease(P3O, 0, phase(run, b.at, 0.7)));
+  let a = (BACK_OPACITY + (1 - BACK_OPACITY) * p[2]) * shown(k, run);
+  let z = p[2] < 0.5 ? 1 : 3;
   if (out > 0) {
-    // A letter still landing settles first (the loader winds down before the exit, so this is a safety net).
-    const settle = ease(P1O, 0, phase(out, 0, 0.12));
-    v[Y] = v[Y] * (1 - settle);
-    v[A] = v[A] + (1 - v[A]) * settle;
-    const e = evalTrack(LETTER_EXIT[i], out);
-    v[X] += e[X];
-    v[Y] += e[Y];
-    v[S] *= e[S];
-    v[A] *= e[A];
+    // Pulled into the O while still riding round, so it curves in rather than turning.
+    const pull = ease(P3I, 0, phase(out, 0.04 * k, 0.8));
+    x += (s.o.x - x) * pull;
+    y += (s.o.y - y) * pull;
+    sc *= 1 - 0.85 * pull;
+    a *= 1 - ease(P1I, 0, phase(out, 0.55 + 0.04 * k, 0.25));
+    z = 1;
   }
-  return v;
+  return [x, y, Math.max(sc, 0.001), Math.min(Math.max(a, 0), 1), z];
 }
 
-/** The ground's opacity: it lifts off Home as the O zooms out. */
+/** Letter `i`: [translateX, translateY, scale, opacity, zoom layer's opacity (the O only)]. */
+export function letterFrame(s: Scene, i: number, run: number, out: number): number[] {
+  'worklet';
+  const at = LETTER_IN_AT + LETTER_IN_STEP * i;
+  let x = 0;
+  let y = 22 * (1 - ease(BACK, 1.1, phase(run, at, 1)));
+  let sc = 0.94 + 0.06 * ease(P3O, 0, phase(run, at, 1));
+  let a = ease(P1O, 0, phase(run, at, 0.45));
+  let zoom = 0;
+  if (out > 0) {
+    y *= 1 - phase(out, 0, 0.15); // still landing: settle first
+    if (i === 0) {
+      // To the screen's centre at 1.6x, coming to rest there; then the zoom sets off from rest.
+      const p = ease(P3IO, 0, phase(out, 0.6, 0.6));
+      x = (s.width / 2 - s.o.x) * p;
+      y = (s.height / 2 - s.o.y) * p;
+      sc = 1 + 0.6 * p + (O_ZOOM_TO - 1.6) * ease(P3I, 0, phase(out, 1.2, EXIT_END - 1.2));
+      a *= 1 - ease(P1I, 0, phase(out, EXIT_END - 0.3, 0.3));
+      zoom = phase(out, 0.6, 0.6); // the shadowless O takes over as it comes forward
+    } else {
+      const p = ease(P3I, 0, phase(out, 0.2 + (i - 1) * 0.05, 0.6));
+      x = (s.o.x - s.letters[i].cx) * p;
+      sc *= 1 - 0.8 * p;
+      a *= 1 - p;
+    }
+  }
+  return [x, y, Math.max(sc, 0.001), Math.min(Math.max(a, 0), 1), zoom];
+}
+
+/** The Sage glow behind the word: its opacity. */
+export function glowOpacity(run: number, out: number): number {
+  'worklet';
+  return ease(P2O, 0, phase(run, 0, 1.4)) * (1 - phase(out, 0.5, 0.7));
+}
+
+/** The ground: it lifts off Home as the O zooms out. */
 export function groundOpacity(out: number): number {
   'worklet';
-  return evalTrack(GROUND_EXIT, out)[A];
+  return 1 - ease(P1I, 0, phase(out, 1.4, EXIT_END - 1.4));
 }
