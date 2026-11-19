@@ -28,6 +28,7 @@ import { acts } from './kinds';
 import { type Event, type Host, hosts, now } from './mock';
 import { showNote } from './note';
 import { followsNow, needsAccount, setFollowing, setLoved, tapSave, useLoved, useSaved } from './session';
+import { eventLabel } from './labels';
 import { eventStatus, rowTag, seatsLine, type Status } from './status';
 import { around, color, font, radius, rim, space, stoneAt } from './theme';
 
@@ -44,12 +45,15 @@ const RIM = around(FACE, rim);
 // price; a `past` row drops the price and the star, and an event you `went` to gets Loved it's heart in its
 // place. `onPress` replaces opening the event the usual way.
 // `menu` adds a ⋯ after the star, as saved rows have (Saved events and lists doc: Add to a list, Remove from saved).
+// `labelled` adds its label (Promoted, People’s choice, New on Orbit; src/labels.ts) as a second tag: only where events
+// are found (Home, Search), never on your tickets, history or saved lists.
 export function EventRow({
   event: e,
   host,
   tag,
   past = false,
   went = false,
+  labelled = false,
   menu,
   onPress = () => router.push(`/event/${e.id}`),
 }: {
@@ -58,11 +62,13 @@ export function EventRow({
   tag?: string;
   past?: boolean;
   went?: boolean;
+  labelled?: boolean;
   menu?: MenuAction[];
   onPress?: () => void;
 }) {
   const st = eventStatus(e, now);
   const shown = rowTag(st, e.repeats, !past, tag);
+  const label = labelled && !past ? eventLabel(e, host, st, now) : undefined;
   return (
     <View style={styles.row}>
       <Pressable onPress={onPress} accessibilityRole="button" style={({ pressed }) => [styles.grow, styles.rowLink, pressed && styles.pressed]}>
@@ -71,6 +77,7 @@ export function EventRow({
           <View style={styles.whenRow}>
             <Text style={styles.meta}>{e.when}</Text>
             {shown && <Tag text={shown} />}
+            {label && <Tag text={label} />}
           </View>
           <Text style={styles.rowTitle}>{e.title}</Text>
           <Text style={styles.meta} numberOfLines={1}>{host.name} · {e.area}</Text>
@@ -82,6 +89,10 @@ export function EventRow({
     </View>
   );
 }
+
+/** An event's label right now (src/labels.ts), and whether it's Promoted, so a list can move it up (promoteOne). */
+export const labelOf = (e: Event, host: Host) => eventLabel(e, host, eventStatus(e, now), now);
+export const isPromoted = (e: Event, host: Host) => labelOf(e, host) === 'Promoted';
 
 function Price({ event: e, status }: { event: Event; status: Status }) {
   const seats = seatsLine(e, status);

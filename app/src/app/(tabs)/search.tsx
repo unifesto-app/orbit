@@ -15,21 +15,25 @@ import {
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BarGlass, Glass } from '../../glass';
-import { type Host, events, hosts, now } from '../../mock';
+import { type Event, type Host, events, hosts, now, orbitAds } from '../../mock';
+import { OrbitAdStrip } from '../../orbitAd';
 import { CategoryGrid } from '../../categories';
 import { tileFor } from '../../kinds';
-import { EventRow, Glow, Monogram, SEARCH_BOX, SearchBox } from '../../rows';
-import { countLine, MAX_QUERY, search, WHEN, type When } from '../../search';
+import { isNewHost, promoteOne } from '../../labels';
+import { EventRow, Glow, isPromoted, labelOf, Monogram, SEARCH_BOX, SearchBox } from '../../rows';
+import { countLine, firstUnseen, MAX_QUERY, search, WHEN, type When } from '../../search';
 import { color, font, space } from '../../theme';
 
 const BAR_BOTTOM = 12; // the glass bar's padding under the chips
 export default function Search() {
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const [q, setQ] = useState('');
   const [when, setWhen] = useState<When>();
   const [free, setFree] = useState(false);
@@ -39,11 +43,28 @@ export default function Search() {
   const filters = { q: useDeferredValue(q), when, free, category };
   // Places to play sit under their tile: turfs and courts in Sports, gaming cafés in Gaming.
   const findable = hosts.map((h) => ({ ...h, tile: tileFor(h.id) }));
-  const found = search(filters, events, findable, now);
   const hostOf = (id: string) => hosts.find((h) => h.id === id) as Host;
+  const result = search(filters, events, findable, now);
+  // One promoted event leads what's found (Boost), only if it matched; nothing is added.
+  const found = { ...result, events: promoteOne(result.events, (e) => isPromoted(e, hostOf(e.hostId))) };
   const nothing = found.events.length === 0 && found.hosts.length === 0;
   // Nothing typed or picked: the categories to explore, then everything coming up. Otherwise the results.
   const browsing = !filters.q.trim() && !when && !free && !category;
+  // While browsing, sections between Explore and Coming up (owner, 19 Nov 2026: "add more sections in search screen"):
+  // up to three events each, none repeated in a later section; places to play; hosts new on Orbit. Coming up keeps
+  // everything.
+  const everything = { q: '', free: false };
+  const [choice, weekend, freeOnes] = browsing
+    ? firstUnseen([
+        found.events.filter((e) => labelOf(e, hostOf(e.hostId)) === 'People’s choice'),
+        search({ ...everything, when: 'weekend' }, events, findable, now).events,
+        search({ ...everything, free: true }, events, findable, now).events,
+      ])
+    : [[], [], []];
+  const places = browsing ? findable.filter((h) => h.tile) : [];
+  const newHosts = browsing
+    ? hosts.filter((h) => !tileFor(h.id) && isNewHost(h, now)).sort((a, b) => Date.parse(b.joined) - Date.parse(a.joined)).slice(0, 4)
+    : [];
   const picked = categories.find((c) => c.slug === category);
   // The bar's height, first a guess (box, chips, padding) until it's measured; it grows when a category adds a line.
   const [bar, setBar] = useState(() => insets.top + space.small + SEARCH_BOX + 16 + 32 + BAR_BOTTOM);
@@ -76,9 +97,37 @@ export default function Search() {
           <View>
             <CenteredHeading title="Explore" script />
             <CategoryGrid onPress={setCategory} />
+            <EventSection title="People’s choice" events={choice} hostOf={hostOf} />
+            <EventSection title="This weekend" events={weekend} hostOf={hostOf} onMore={() => setWhen('weekend')} />
+            {/* One of Orbit's own ads, before the places to play (owner, 19 Nov 2026: "add one strip in search"). */}
+            {/* A link to Search itself goes nowhere from here, so the strip is only read. */}
+            {orbitAds[1] && (
+              <OrbitAdStrip ad={{ ...orbitAds[1], href: orbitAds[1].href === '/search' ? undefined : orbitAds[1].href }} width={width - 40} />
+            )}
+            {places.length > 0 && (
+              <>
+                <CenteredHeading title="Places to play" />
+                <View style={styles.hosts}>
+                  {places.map((h) => (
+                    <HostRow key={h.id} host={h} />
+                  ))}
+                </View>
+              </>
+            )}
+            <EventSection title="Free" events={freeOnes} hostOf={hostOf} onMore={() => setFree(true)} />
+            {newHosts.length > 0 && (
+              <>
+                <CenteredHeading title="New on Orbit" />
+                <View style={styles.hosts}>
+                  {newHosts.map((h) => (
+                    <HostRow key={h.id} host={h} />
+                  ))}
+                </View>
+              </>
+            )}
             <CenteredHeading title="Coming up" />
             {found.events.map((e) => (
-              <EventRow key={e.id} event={e} host={hostOf(e.hostId)} />
+              <EventRow key={e.id} event={e} host={hostOf(e.hostId)} labelled />
             ))}
           </View>
         ) : nothing ? (
@@ -112,7 +161,7 @@ export default function Search() {
               <View style={styles.rowsTop} />
             )}
             {found.events.map((e) => (
-              <EventRow key={e.id} event={e} host={hostOf(e.hostId)} />
+              <EventRow key={e.id} event={e} host={hostOf(e.hostId)} labelled />
             ))}
           </View>
         )}
@@ -183,6 +232,25 @@ function CenteredHeading({ title, script = false }: { title: string; script?: bo
   );
 }
 
+// A browsing section of event rows under a centred heading; nothing when it's empty. `onMore` adds a See all under it
+// that turns on the matching chip.
+function EventSection({ title, events: list, hostOf, onMore }: { title: string; events: Event[]; hostOf: (id: string) => Host; onMore?: () => void }) {
+  if (list.length === 0) return null;
+  return (
+    <>
+      <CenteredHeading title={title} />
+      {list.map((e) => (
+        <EventRow key={e.id} event={e} host={hostOf(e.hostId)} labelled />
+      ))}
+      {onMore && (
+        <View style={styles.more}>
+          <Chip label="See all" on={false} onPress={onMore} />
+        </View>
+      )}
+    </>
+  );
+}
+
 // A filter: frosted glass like every button, the accent on a dot when it's picked, never on the text (as the location
 // screen's chips).
 function Chip({ label, on, onPress }: { label: string; on: boolean; onPress: () => void }) {
@@ -232,6 +300,7 @@ const styles = StyleSheet.create({
   dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: color.accent },
 
   hosts: { marginHorizontal: 20, gap: 16 },
+  more: { alignItems: 'center' },
   // 40 above each section and 24 under its heading (owner: "add space after explore and coming up and sections gap
   // also add").
   // Sacramento is thin and small for its size, so it runs larger.

@@ -64,6 +64,16 @@ export function search<E extends Findable, H extends FindableHost>(f: Filters, e
   return { events: found, hosts: foundHosts };
 }
 
+/** Search's opening sections: from each list in turn, its first `n` not already in a section above. */
+export function firstUnseen<T extends { id: string }>(lists: readonly (readonly T[])[], n = 3): T[][] {
+  const seen = new Set<string>();
+  return lists.map((list) => {
+    const picked = list.filter((x) => !seen.has(x.id)).slice(0, n);
+    for (const x of picked) seen.add(x.id);
+    return picked;
+  });
+}
+
 // The one-line count over the events: "4 events for “jam” in Music", "2 free events this weekend".
 export function countLine(n: number, f: Filters) {
   const q = f.q.trim().slice(0, MAX_QUERY);
