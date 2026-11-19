@@ -1,9 +1,10 @@
 "use client";
 
 import { AD_COLOURS, AD_LINKS, AD_PLACES, type Ad, type AdColour, type AdPlace, adLive, type ContentKey, type HelpAnswer } from "@orbit/contract";
-import { type ReactNode, useActionState, useMemo, useState } from "react";
+import { type ReactNode, startTransition, useActionState, useMemo, useState } from "react";
 import { Badge, ui } from "../../ui";
 import act from "../act.module.css";
+import { fromBox, toBox } from "../../../ist";
 import { saveList } from "./actions";
 import styles from "./content.module.css";
 
@@ -45,7 +46,16 @@ function ListEditor<T>({
   const Noun = noun[0]!.toUpperCase() + noun.slice(1);
 
   return (
-    <form action={submit} className={styles.list}>
+    // Sent by hand, never as the form's action: React resets a form once its action finishes, which put a box ticked
+    // since the page loaded back to unticked while the list (and the save) kept it ticked.
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        const f = new FormData(e.currentTarget);
+        startTransition(() => submit(f));
+      }}
+      className={styles.list}
+    >
       <input type="hidden" name="value" value={value} />
       <input type="hidden" name="at" value={state.at ?? read ?? ""} />
       {rows.length === 0 && <p className={ui.secondary}>None. The app shows nothing here.</p>}
@@ -115,23 +125,26 @@ function Strip({ ad }: { ad: Ad }) {
 
 const PLACES = Object.entries(AD_PLACES) as [AdPlace, string][];
 
-// Staff are in India, so a date-and-time box shows and takes India's time (a fixed UTC+5:30), and the ad keeps the
-// moment with its offset: "2026-11-30T21:00" in the box is "2026-11-30T21:00:00+05:30".
-const IST = 330 * 60_000;
-const toBox = (iso?: string) => (iso ? new Date(Date.parse(iso) + IST).toISOString().slice(0, 16) : "");
-const fromBox = (v: string) => (v ? `${v}:00+05:30` : undefined);
 const when = (iso: string) =>
   new Date(iso).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" });
 
-// Whether the ad is on phones right now (as of opening the page), and until or from when.
+// Whether the ad is on phones right now (as of opening the page, by the server's clock), and until or from when. The
+// server's Node and the browser may spell a time differently ("pm", "PM"), so the words may differ when the page comes
+// alive; the browser's win.
 function Timing({ ad, now }: { ad: Ad; now: number }) {
-  if (adLive(ad, now)) return <Badge tone="success">{ad.ends ? `Live until ${when(ad.ends)}` : "Live"}</Badge>;
-  if (ad.starts && Date.parse(ad.starts) > now) return <Badge tone="info">Starts {when(ad.starts)}</Badge>;
-  return <Badge tone="neutral">Ended {ad.ends && when(ad.ends)}</Badge>;
+  const [tone, text] = adLive(ad, now)
+    ? (["success", ad.ends ? `Live until ${when(ad.ends)}` : "Live"] as const)
+    : ad.starts && Date.parse(ad.starts) > now
+      ? (["info", `Starts ${when(ad.starts)}`] as const)
+      : (["neutral", `Ended${ad.ends ? ` ${when(ad.ends)}` : ""}`] as const);
+  return (
+    <Badge tone={tone}>
+      <span suppressHydrationWarning>{text}</span>
+    </Badge>
+  );
 }
 
-export function AdsEditor({ initial, at }: { initial: Ad[]; at: string | null }) {
-  const [now] = useState(Date.now);
+export function AdsEditor({ initial, at, now }: { initial: Ad[]; at: string | null; now: number }) {
   return (
     <>
       <datalist id="ad-links">

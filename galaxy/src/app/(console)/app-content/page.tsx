@@ -39,6 +39,8 @@ async function Load() {
   const r = await read<ContentAdmin>("/galaxy/app-content");
   if (!r.ok) return <Alert>{r.error.message}</Alert>;
   const { content, saved } = r.data;
+  // The server's clock, once per request after the signed-in read, so the ad badges agree when the page comes alive.
+  const now = new Date().getTime();
   return (
     <>
       <Container title="Ad strips" count={content.ads.length}>
@@ -47,7 +49,7 @@ async function Load() {
           Search and Account show the first live one marked for each. An ad is live from its start to its end, by the phone’s clock.
         </p>
         <LastSaved s={saved.ads} />
-        <AdsEditor initial={content.ads} at={saved.ads?.at ?? null} />
+        <AdsEditor initial={content.ads} at={saved.ads?.at ?? null} now={now} />
       </Container>
 
       <Container title="Help answers" count={content.help.length}>

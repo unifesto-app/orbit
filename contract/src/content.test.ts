@@ -51,6 +51,10 @@ test("a list that isn't a list falls back; unreadable items are left out one by 
   assert.deepEqual(got.help, DEFAULT_CONTENT.help);
   assert.deepEqual(got.ads, [DEFAULT_CONTENT.ads[1]]);
   assert.deepEqual(readContent(null), DEFAULT_CONTENT);
+  // Longer than this build allows (a later API raised the limit): the first ones, never the defaults.
+  const ad = (n: number) => ({ ...DEFAULT_CONTENT.ads[1]!, kicker: `Ad ${n}` });
+  assert.deepEqual(readContent({ ads: Array.from({ length: 11 }, (_, n) => ad(n)) }).ads.map((a) => a.kicker), Array.from({ length: 10 }, (_, n) => `Ad ${n}`));
+  assert.equal(readContent({ asks: ["a", "b", "c", "d", "e", "f", "g"] }).asks.length, 6);
 });
 
 test("ads open only app screens", () => {

@@ -64,10 +64,11 @@ export type HelpAnswer = z.infer<typeof HelpAnswer>;
 // The app keys rows by their words, so two questions or chips can't be the same.
 const unique = (words: string[]) => new Set(words.map((w) => w.toLowerCase())).size === words.length;
 const ITEMS = { ads: Ad, help: HelpAnswer, asks: Text(1, 40) };
+const MAX = { ads: 10, help: 20, asks: 6 };
 export const CONTENT = {
-  ads: z.array(ITEMS.ads).max(10),
-  help: z.array(ITEMS.help).max(20).refine((a) => unique(a.map((h) => h.q)), "Two questions are the same"),
-  asks: z.array(ITEMS.asks).max(6).refine(unique, "Two chips are the same"),
+  ads: z.array(ITEMS.ads).max(MAX.ads),
+  help: z.array(ITEMS.help).max(MAX.help).refine((a) => unique(a.map((h) => h.q)), "Two questions are the same"),
+  asks: z.array(ITEMS.asks).max(MAX.asks).refine(unique, "Two chips are the same"),
 };
 export type ContentKey = keyof typeof CONTENT;
 export const CONTENT_KEYS = Object.keys(CONTENT) as ContentKey[];
@@ -94,14 +95,15 @@ export const DEFAULT_CONTENT: AppContent = {
 
 /**
  * Each list read on its own: one that's missing, or isn't a list, is the default. Inside a list, items this build can't
- * read (a link, colour or place added since) are left out one by one, so an older app keeps the rest.
+ * read (a link, colour or place added since) are left out one by one, and a list longer than this build allows keeps
+ * its first items, so an older app shows what staff published, never the made-up defaults.
  */
 export function readContent(raw: unknown): AppContent {
   const o = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const read = <K extends ContentKey>(k: K): AppContent[K] => {
     const list = o[k];
     if (!Array.isArray(list)) return DEFAULT_CONTENT[k];
-    const r = CONTENT[k].safeParse(list.filter((i) => ITEMS[k].safeParse(i).success));
+    const r = CONTENT[k].safeParse(list.filter((i) => ITEMS[k].safeParse(i).success).slice(0, MAX[k]));
     return r.success ? (r.data as AppContent[K]) : DEFAULT_CONTENT[k];
   };
   return { ads: read("ads"), help: read("help"), asks: read("asks") };
