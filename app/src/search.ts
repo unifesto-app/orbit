@@ -1,5 +1,6 @@
 // What the Search tab finds (Discover flow doc, Search, 15 Nov 2026). One box matches upcoming events by title, host,
-// area or category, case-insensitively, up to 100 characters; the app also finds hosts, by name or area. Chips narrow
+// area or category, case-insensitively, up to 100 characters; the app also finds hosts, by name, area or their one
+// line (so "turf", "badminton" or "gaming" finds the places to play; owner, 19 Nov 2026). Chips narrow
 // the events by When (counted in India time), Free and one category. Soonest first.
 // ponytail: an event counts as upcoming while its start is ahead, and When matches its start; both move to "until it
 // ends" and overlap once events carry an end time. Link-only, cancelled and sub-events are the API's to leave out.
@@ -14,7 +15,7 @@ export type When = (typeof WHEN)[number]['id'];
 
 export type Filters = { q: string; when?: When; free: boolean; category?: CategorySlug };
 type Findable = { hostId: string; title: string; area: string; category: CategorySlug; startsAt: string; pricePaise: number };
-type FindableHost = { id: string; name: string; area: string };
+type FindableHost = { id: string; name: string; area: string; about?: string };
 
 export const MAX_QUERY = 100;
 const DAY = 86_400_000;
@@ -49,7 +50,7 @@ export function search<E extends Findable, H extends FindableHost>(f: Filters, e
       );
     })
     .sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt));
-  return { events: found, hosts: needle ? hosts.filter((h) => has(h.name) || has(h.area)) : [] };
+  return { events: found, hosts: needle ? hosts.filter((h) => has(h.name) || has(h.area) || (!!h.about && has(h.about))) : [] };
 }
 
 // The one-line count over the events: "4 events for “jam” in Music", "2 free events this weekend".

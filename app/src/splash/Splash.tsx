@@ -5,7 +5,6 @@ import Svg, { Defs, Path, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { scheduleOnRN } from 'react-native-worklets';
 
 import { color } from '../theme';
-import { loadWordmark } from '../wordmark';
 import {
   BODIES,
   EXIT_END,
@@ -153,7 +152,6 @@ export function Splash({ ready, onLeave, onDone }: { ready: boolean; onLeave: ()
     const l = live.current;
     l.alive = true; // (again, after React's dev-only StrictMode unmount and remount)
     later(START_CAP_MS, start);
-    loadWordmark().catch(() => {}); // warmed here, so Account and the switcher open with ORBIT drawn
     later(HOLD_MS, () => {
       l.held = true;
       tick();

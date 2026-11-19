@@ -5,7 +5,7 @@
 // The poster runs full width like Home's carousel (owner, 15 Nov 2026: "apply 4:3/ 3:4 poster full", "same like home
 // page carousel"), from the very top of the screen ("remove the poster top blur, instead start poster from top"): the
 // 4:3 poster when the event has one, else the 3:4.
-// Not here yet: picking a ticket type and quantity, agenda, prizes and FAQ.
+// Each kind adds its own sections (src/kindSections.tsx). Not here yet: picking a ticket type and quantity.
 import { categories, formatPrice } from '@orbit/contract';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
@@ -14,9 +14,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { past as history, ticketFor } from '../../account/data';
 import { barPrice, cast } from '../../detail';
+import { BookBar } from '../../bookBar';
+import { Fact } from '../../fact';
 import { Glass } from '../../glass';
+import { KindSections, WithActs } from '../../kindSections';
 import { Carousel } from '../../home/Carousel';
-import { Icon } from '../../icons';
 import { type Event, events, hosts, interestedBase, now, people, type Person, vibes } from '../../mock';
 import { BackBar, FaceWash, LoveButton, MenuButton, Monogram, NotFound, SaveButton, Section, shareLink, StatusDot, Tag, Verified } from '../../rows';
 import { bookAction, eventStatus, seatsLine } from '../../status';
@@ -91,6 +93,7 @@ export default function EventPage() {
           <Pressable onPress={openHost} accessibilityRole="button" hitSlop={8}>
             <Text style={styles.by}>by {host.name}</Text>
           </Pressable>
+          <WithActs eventId={e.id} />
         </View>
 
         {/* When and where: a card, so text and a pill only. Times are India time (the event's own zone). */}
@@ -121,6 +124,9 @@ export default function EventPage() {
             <Tag key={t} text={t} />
           ))}
         </View>
+
+        {/* Its kind's own sections: the show, the jam, how a hackathon works, the room, the fest (src/kindSections.tsx). */}
+        <KindSections event={e} past={past} went={went} />
 
         {cast(e.people).map((g) => (
           <View key={g.title}>
@@ -181,7 +187,7 @@ export default function EventPage() {
       </Animated.ScrollView>
 
       {showBar && (
-        <TicketBar
+        <BookBar
           price={formatPrice(price.paise)}
           from={price.from}
           note={booked ? undefined : seatsLine(e, status)}
@@ -194,9 +200,9 @@ export default function EventPage() {
                   const t = ticketFor(e.id);
                   if (t) router.push(`/ticket/${t.id}`);
                 }
-              : !book.can || viewer.signedIn
+              : !book.can
                 ? undefined
-                : () => needsAccount()
+                : () => needsAccount(() => router.push(`/book/${e.id}`)) // signed out, sign in first, then on to it
           }
           onHeight={setBar}
         />
@@ -256,24 +262,6 @@ function InterestedCard({ event: e }: { event: Event }) {
   );
 }
 
-function Fact({ label, value, note, onPress }: { label: string; value: string; note?: string; onPress?: () => void }) {
-  const lines = (
-    <View style={[styles.grow, styles.factLines]}>
-      <Text style={styles.label}>{label}</Text>
-      <Text style={styles.value}>{value}</Text>
-      {note && <Text style={styles.meta}>{note}</Text>}
-    </View>
-  );
-  return onPress ? (
-    <Pressable onPress={onPress} accessibilityRole="button" style={({ pressed }) => [styles.factRow, pressed && styles.pressed]}>
-      {lines}
-      <Icon name="chevron" size={16} color={color.secondary} />
-    </Pressable>
-  ) : (
-    lines
-  );
-}
-
 // One person on the event, a plain row like Search's hosts: their 1:1 photo (a circle, as your own; the monogram until
 // photos exist), name and one line. Tapping opens the person sheet.
 function PersonRow({ person: p }: { person: Person }) {
@@ -295,52 +283,6 @@ function PersonRow({ person: p }: { person: Person }) {
   );
 }
 
-// Tickets, pinned to the bottom: the price and seats line on the left, one pill on the right (Book ticket, Register
-// when free, View ticket once booked). It floats, never attached to the screen's edges (owner, 15 Nov 2026: "bottom
-// cta should not be attached"): a frosted pill on the page margins, held off the bottom, darkened like the top bar so
-// its white text reads over any poster. Its corners nest round the button's (22 + the small gap = 30, half its
-// height). View ticket opens the ticket; Book ticket and Register aren't buttons until booking exists (`onAction`).
-// `onHeight` gets the room it takes, gap below included.
-const BAR_PAD = space.small;
-const BUTTON = 44;
-// With more than one ticket type, the cheapest leads with "Starting from" (`from`).
-function TicketBar({
-  price,
-  from,
-  note,
-  action,
-  onAction,
-  onHeight,
-}: {
-  price: string;
-  from: boolean;
-  note?: string;
-  action: string;
-  onAction?: () => void;
-  onHeight: (h: number) => void;
-}) {
-  const insets = useSafeAreaInsets();
-  const bottom = Math.max(insets.bottom, space.big);
-  return (
-    <View style={[styles.ticketBar, { bottom }]} onLayout={(ev) => onHeight(ev.nativeEvent.layout.height + bottom + space.big)}>
-      <Glass style={styles.ticketGlass} />
-      <View style={styles.ticketShade} />
-      <View style={[styles.grow, styles.ticketText]}>
-        <Text style={styles.price}>
-          {from && <Text style={styles.from}>Starting from </Text>}
-          {price}
-        </Text>
-        {note && <Text style={styles.small}>{note}</Text>}
-      </View>
-      <Pressable onPress={onAction} disabled={!onAction} accessibilityRole="button">
-        <Glass style={styles.button}>
-          <Text style={styles.buttonText}>{action}</Text>
-        </Glass>
-      </Pressable>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: color.ground },
   grow: { flex: 1, minWidth: 0 },
@@ -358,10 +300,6 @@ const styles = StyleSheet.create({
   infoRim: { marginHorizontal: 20, marginTop: space.big, padding: rim, borderRadius: INFO_RIM },
   infoCard: { borderRadius: INFO_FACE, backgroundColor: color.card, padding: INFO_PAD, gap: INFO_PAD },
   bareCard: { marginHorizontal: 20, marginTop: space.big, borderWidth: 1, borderColor: color.border }, // no rim, so an outline
-  factLines: { gap: 2 }, // line spacing between a fact's label, value and note
-  factRow: { flexDirection: 'row', alignItems: 'center', gap: space.small },
-  label: { fontFamily: font.medium, fontSize: 12, color: color.secondary },
-  value: { fontFamily: font.title, fontSize: 15, lineHeight: 20, color: color.text },
   meta: { fontFamily: font.text, fontSize: 13, lineHeight: 18, color: color.secondary },
 
   prose: { marginHorizontal: 20, fontFamily: font.text, fontSize: 15, lineHeight: 22, color: color.secondary },
@@ -381,23 +319,4 @@ const styles = StyleSheet.create({
   followText: { fontFamily: font.title, fontSize: 13, color: color.text },
   followingText: { color: color.secondary },
 
-  ticketBar: {
-    position: 'absolute',
-    left: 20,
-    right: 20,
-    padding: BAR_PAD,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.small,
-  },
-  ticketGlass: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: BUTTON / 2 + BAR_PAD },
-  ticketShade: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: BUTTON / 2 + BAR_PAD, backgroundColor: `${color.ground}80` },
-  // In from the pill's round end, so the price sits clear of the curve.
-  ticketText: { paddingLeft: 12 },
-  price: { fontFamily: font.price, fontSize: 18, color: color.text },
-  from: { fontFamily: font.text, fontSize: 13, color: color.secondary },
-  small: { fontFamily: font.text, fontSize: 12, color: color.secondary },
-  // View ticket's size (owner: "rounded view ticket and view events and book ticket").
-  button: { height: BUTTON, paddingHorizontal: 24, borderRadius: BUTTON / 2, justifyContent: 'center' },
-  buttonText: { fontFamily: font.title, fontSize: 15, color: color.text },
 });

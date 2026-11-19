@@ -1,6 +1,8 @@
 // The pieces every Account screen is built from. A page is the pushed-page back bar over a scroll; settings sit in
 // cards like every other card in the app (6px contents, 8 padding, face 14, frosted rim 16), and a card holds text
-// only: no leading icons, no chevrons (owner, 15 Nov 2026: "never use icons in card"). Buttons are frosted pills with
+// only: no leading icons (owner, 15 Nov 2026: "never use icons in card"), except Account's own rows, which have their
+// coloured icon and, on the Account screen, a > in place of a value (owner, 19 Nov 2026: "in account screen cards
+// remove right side text and add > icon"), or a ↗ when it opens the web ("if external then top right direction arrow"). Buttons are frosted pills with
 // white labels, never squared; a chip's pick is an accent dot, never accent text.
 import { Children, Fragment, type ReactNode, isValidElement, useEffect, useState } from 'react';
 import { Animated, Pressable, StyleSheet, Switch, Text, TextInput, type TextInputProps, View, useWindowDimensions } from 'react-native';
@@ -105,7 +107,8 @@ export function Panel({ extra = 0, children }: { extra?: number; children: React
 // A card of rows, under a section heading when it has one. A hairline between rows, in the middle of the gap (owner,
 // 15 Nov 2026: "add hairline"). `bare` drops the frosted rim, leaving the face alone (owner, 17 Nov 2026: "in Delete
 // Account, remove the rim of all cards").
-export function Group({ title, bare = false, children }: { title?: string; bare?: boolean; children: ReactNode }) {
+// `flush` drops the card's own margins, for one inside a sheet, which keeps the page's margin already.
+export function Group({ title, bare = false, flush = false, children }: { title?: string; bare?: boolean; flush?: boolean; children: ReactNode }) {
   const rows = Children.toArray(children); // drops the false and null of rows shown only sometimes
   // With icons, the hairline starts where the text does, as in iOS Settings.
   const indent = rows.some((r) => isValidElement<{ icon?: IconName }>(r) && !!r.props.icon) ? ICON + ICON_GAP : 0;
@@ -123,9 +126,9 @@ export function Group({ title, bare = false, children }: { title?: string; bare?
     <>
       {title && <Section title={title} />}
       {bare ? (
-        <View style={[styles.bare, !title && styles.spaced]}>{face}</View>
+        <View style={[styles.bare, !title && !flush && styles.spaced, flush && styles.flush]}>{face}</View>
       ) : (
-        <Glass style={[styles.rim, !title && styles.spaced]}>{face}</Glass>
+        <Glass style={[styles.rim, !title && !flush && styles.spaced, flush && styles.flush]}>{face}</Glass>
       )}
     </>
   );
@@ -142,6 +145,8 @@ export function Row({
   note,
   value,
   right,
+  chevron = false,
+  external = false,
   checked,
   disabled = false,
   onPress,
@@ -153,6 +158,8 @@ export function Row({
   note?: string;
   value?: string;
   right?: ReactNode;
+  chevron?: boolean; // a > at the right, saying it opens a screen
+  external?: boolean; // a ↗ there instead: it opens the web
   checked?: boolean; // a row that ticks, as a list in the heart's modal: a checkbox to screen readers
   disabled?: boolean; // faded and not pressable while a request is out, as the sign-in sheet's ways in
   onPress?: () => void;
@@ -175,6 +182,7 @@ export function Row({
         </Text>
       )}
       {right}
+      {(chevron || external) && <Icon name={external ? 'external' : 'chevron'} size={14} color={color.secondary} />}
     </>
   );
   return onPress ? (
@@ -366,6 +374,7 @@ export const styles = StyleSheet.create({
   rim: { marginHorizontal: 20, padding: EDGE, borderRadius: RIM },
   bare: { marginHorizontal: 20 },
   spaced: { marginTop: space.big },
+  flush: { marginHorizontal: 0 },
   face: { borderRadius: FACE, backgroundColor: color.card, padding: PAD },
   outline: { borderWidth: 1, borderColor: color.border }, // a bare group has no rim
   // Inside the card's padding on both sides (owner: "right side make it full hairline", then "dont use full hairline").

@@ -24,8 +24,10 @@ import Svg, { Defs, LinearGradient, RadialGradient, Rect, Stop } from 'react-nat
 import { BarGlass, Glass } from './glass';
 import { Icon, type IconName } from './icons';
 import { Media, type MediaItem } from './media';
-import { type Event, type Host, now } from './mock';
-import { needsAccount, setLoved, tapSave, useLoved, useSaved } from './session';
+import { acts } from './kinds';
+import { type Event, type Host, hosts, now } from './mock';
+import { showNote } from './note';
+import { followsNow, needsAccount, setFollowing, setLoved, tapSave, useLoved, useSaved } from './session';
 import { eventStatus, rowTag, seatsLine, type Status } from './status';
 import { around, color, font, radius, rim, space, stoneAt } from './theme';
 
@@ -281,6 +283,23 @@ export function SaveButton({ event: e, bar = false }: { event: Pick<Event, 'id' 
   );
 }
 
+// Loved it, or taking it back; signed out, sign in first. After a love, one tap follows the acts on the bill you don't
+// follow yet (Performer 10: the ticket offers Follow for each act), as a note at the bottom.
+export function loveIt(eventId: string, on: boolean) {
+  needsAccount(() => {
+    setLoved(eventId, on);
+    const unfollowed = on ? (acts[eventId] ?? []).filter((id) => !followsNow().includes(id)) : [];
+    const names = unfollowed.map((id) => hosts.find((h) => h.id === id)?.name).filter(Boolean);
+    if (names.length) {
+      showNote({
+        text: `Loved it. Follow ${names.length > 2 ? `${names.slice(0, 2).join(', ')} and ${names.length - 2} more` : names.join(' and ')}?`,
+        action: { label: 'Follow', run: () => unfollowed.forEach((id) => setFollowing(id, true)) },
+        ms: 6000,
+      });
+    }
+  });
+}
+
 // "Loved it", the heart, on an event you went to, once it's over (owner, 19 Nov 2026: "replace the love with loved
 // it"): on its History row and in place of Save on its page. A tap says you loved it, red; another takes it back.
 // Signed out, it asks to sign in first.
@@ -288,7 +307,7 @@ export function LoveButton({ event: e, bar = false }: { event: Pick<Event, 'id' 
   const loved = useLoved(e.id);
   return (
     <Pressable
-      onPress={() => needsAccount(() => setLoved(e.id, !loved))}
+      onPress={() => loveIt(e.id, !loved)}
       style={bar ? undefined : styles.rowCircle}
       hitSlop={bar ? 4 : 0}
       accessibilityRole="button"

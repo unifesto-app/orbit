@@ -43,7 +43,8 @@ export function appearances<E extends Dated>(personId: string, events: readonly 
 }
 
 // A ticket type on an event, such as Early bird or Team of 4.
-export type Tier = { name: string; pricePaise: number; soldOut?: boolean };
+// `seats`: how many places one ticket takes, for a team ticket (a hackathon's Team of 4 takes 4); one when absent.
+export type Tier = { name: string; pricePaise: number; soldOut?: boolean; seats?: number };
 
 // The ticket bar's price: the event's one price, or with more than one ticket type on sale, the cheapest of them, read
 // as "Starting from" (owner, 15 Nov 2026: "in bottom cta if multiple tickets use starting from"). A free type among

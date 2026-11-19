@@ -5,9 +5,9 @@ import { test } from 'node:test';
 import { planHome } from './layout.ts';
 
 const NOW = Date.parse('2026-11-15T10:00:00+05:30');
-const NEAR = 'Indiranagar';
-const FAR = 'Whitefield';
-const place = { area: NEAR, city: 'Bengaluru', nearAreas: [NEAR, 'Koramangala'] };
+const NEAR = 'Gachibowli';
+const FAR = 'Uppal';
+const place = { area: NEAR, city: 'Hyderabad', nearAreas: [NEAR, 'Kondapur'] };
 
 const ev = (id: string, hostId: string, area: string, day: number, ann: number, wide?: boolean) => ({
   id,
@@ -234,12 +234,12 @@ test('interests: a section per picked kind near you, in the order picked, and it
     kind(ev('c1', 'h1', NEAR, 16, 3), 'comedy'),
     kind(ev('c2', 'h1', NEAR, 17, 3), 'comedy'),
     kind(ev('cFar', 'h1', FAR, 17, 3), 'comedy'),
-    kind(ev('m1', 'h2', NEAR, 18, 3), 'music'),
+    kind(ev('m1', 'h2', NEAR, 18, 3), 'jams'),
     kind(ev('s1', 'h2', NEAR, 18, 3), 'sports'),
   ];
-  const viewer = { signedIn: true, follows: [], place, interests: ['music', 'gaming', 'comedy'] };
+  const viewer = { signedIn: true, follows: [], place, interests: ['jams', 'gaming', 'comedy'] };
   const plan = planHome(viewer, events, [], NOW);
-  assert.deepEqual(plan.byInterest.map((k) => [k.category, ids(k.events)]), [['music', ['m1']], ['comedy', ['c1', 'c2']]]);
+  assert.deepEqual(plan.byInterest.map((k) => [k.category, ids(k.events)]), [['jams', ['m1']], ['comedy', ['c1', 'c2']]]);
   assert.deepEqual(ids(plan.list.events), ['s1']); // shown once only
   assert.equal(plan.askInterests, false);
   // Signed in with none picked yet: asked once, no sections. Signed out: neither.
@@ -252,12 +252,12 @@ test('interests: at most three kinds and three events each; tickets and the orbi
   const kind = (e: ReturnType<typeof ev>, category: string) => ({ ...e, category });
   const events = [
     ...['a', 'b', 'c', 'd'].map((id, i) => kind(ev(`c${id}`, 'h1', NEAR, 16 + i, 3), 'comedy')),
-    kind(ev('m1', 'h2', NEAR, 18, 3), 'music'),
+    kind(ev('m1', 'h2', NEAR, 18, 3), 'jams'),
     kind(ev('s1', 'h2', NEAR, 18, 3), 'sports'),
     kind(ev('g1', 'h3', NEAR, 19, 3), 'gaming'),
     kind(ev('gFar', 'h3', FAR, 19, 3), 'gaming'),
   ];
-  const viewer = { signedIn: true, follows: ['h2'], place, interests: ['comedy', 'music', 'sports', 'gaming'], tickets: [{ eventId: 'ca', label: '1 ticket' }] };
+  const viewer = { signedIn: true, follows: ['h2'], place, interests: ['comedy', 'jams', 'sports', 'gaming'], tickets: [{ eventId: 'ca', label: '1 ticket' }] };
   const plan = planHome(viewer, events, [], NOW);
   // ca is a ticket and m1 is h2's next date (your orbit), so neither repeats; music then has nothing left.
   assert.deepEqual(plan.byInterest.map((k) => [k.category, ids(k.events)]), [['comedy', ['cb', 'cc', 'cd']], ['sports', ['s1']], ['gaming', ['g1']]]);
@@ -266,4 +266,17 @@ test('interests: at most three kinds and three events each; tickets and the orbi
   const away = planHome({ ...viewer, place: null, interests: ['gaming'] }, events, [], NOW);
   assert.equal(away.near, false);
   assert.deepEqual(away.byInterest.map((k) => [k.category, ids(k.events)]), [['gaming', ['g1', 'gFar']]]);
+});
+
+test('outside Telangana and Andhra Pradesh: Coming soon, with everything on there', () => {
+  const events = [ev('a', 'h1', NEAR, 16, 3, true), ev('b', 'h1', FAR, 17, 5)];
+  const bengaluru = { area: 'Koramangala', city: 'Bengaluru', state: 'Karnataka', nearAreas: ['Koramangala'] };
+  const plan = planHome({ signedIn: false, follows: [], place: bengaluru }, events, [], NOW);
+  assert.equal(plan.notice, 'comingSoon');
+  assert.equal(plan.list.title, 'Coming up');
+  assert.deepEqual(ids(plan.list.events), ['a', 'b']);
+  assert.equal(plan.near, false);
+  // A place saved before places carried a state is worked out from its city.
+  assert.equal(planHome({ signedIn: false, follows: [], place: { area: 'Koramangala', city: 'Bengaluru', nearAreas: [] } }, events, [], NOW).notice, 'comingSoon');
+  assert.equal(planHome({ signedIn: false, follows: [], place: { ...place, state: 'Telangana' } }, events, [], NOW).notice, null);
 });

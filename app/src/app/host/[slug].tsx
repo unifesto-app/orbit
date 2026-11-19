@@ -6,16 +6,19 @@
 // A host on the API (any link that isn't a mock host's) reads GET /public/hosts/:slug, with "Part of [college]" and its
 // clubs; its events come with the API's events, so it says "No upcoming events" until then.
 // ponytail: real logos and banners wait for uploads, so a real host draws as its monogram over its colour's glow.
-import type { PublicHost } from '@orbit/contract';
+import { formatPrice, type PublicHost } from '@orbit/contract';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Alert, Animated, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { BookBar } from '../../bookBar';
 import { followersLine, hostEvents } from '../../detail';
+import { Fact, FactCard } from '../../fact';
 import { Glass } from '../../glass';
 import { Carousel } from '../../home/Carousel';
 import { hostsApi, kindLabel, markOf } from '../../hosts';
+import { countLine, fromPricePaise, perHour, startsLine, type Venue, venues } from '../../kinds';
 import { useLoad } from '../../load';
 import { type Host, events, hosts, now } from '../../mock';
 import { BackBar, EventRow, Failed, Glow, MenuButton, Monogram, NotFound, Section, shareLink, Tag, TOP, Verified, Waiting } from '../../rows';
@@ -38,6 +41,9 @@ function MockHost({ host }: { host: Host }) {
 
   const { upcoming, past } = hostEvents(host.id, events, now);
   const followers = followersLine(host.followers);
+  // A place to play (Play: a Venue host with stations) adds what you can book, its hours, and the Book a slot bar.
+  const venue = venues[host.id];
+  const [bar, setBar] = useState(insets.bottom + 108); // room for the bar, a guess until measured
 
   return (
     <View style={styles.screen}>
@@ -49,7 +55,7 @@ function MockHost({ host }: { host: Host }) {
         // Clear of the home indicator; pushed over the tabs, so no tab bar here.
         contentContainerStyle={{
           paddingTop: host.banner ? 0 : insets.top + TOP,
-          paddingBottom: (Platform.OS === 'ios' ? insets.bottom : 0) + space.big,
+          paddingBottom: venue ? bar : (Platform.OS === 'ios' ? insets.bottom : 0) + space.big,
         }}>
         {/* From the top of the screen, under the status bar and the back button. */}
         {host.banner && (
@@ -89,6 +95,8 @@ function MockHost({ host }: { host: Host }) {
         <Section title="About" />
         <Text style={styles.prose}>{host.bio}</Text>
 
+        {venue && <VenueFacts venue={venue} />}
+
         {/* Every upcoming event, soonest first; an empty list says so plainly (Discover doc). */}
         <Section title="Coming up" />
         {upcoming.length > 0 ? (
@@ -106,6 +114,17 @@ function MockHost({ host }: { host: Host }) {
           </>
         )}
       </Animated.ScrollView>
+      {/* Book a slot over "Starting from", the cheapest hour (Play doc): the slot picker (src/app/slot/[venue].tsx), after
+          signing in when signed out. */}
+      {venue && (
+        <BookBar
+          price={perHour(fromPricePaise(venue))}
+          from
+          action="Book a slot"
+          onAction={() => needsAccount(() => router.push(`/slot/${host.id}`))}
+          onHeight={setBar}
+        />
+      )}
       {/* The menu (Discover doc: Share, Copy link and Report). No Save: a host is followed. Copy link and Report aren't
           built yet. */}
       <BackBar scrollY={scrollY}>
@@ -118,6 +137,37 @@ function MockHost({ host }: { host: Host }) {
         />
       </BackBar>
     </View>
+  );
+}
+
+// What a place to play has (Play 7, 8, 19): each kind of station in its own card, how many, the hour's price, its one
+// off-peak window, a co-op price and the games where there are any; then how a booking starts, the hours and the address.
+// A card, so text only.
+function VenueFacts({ venue }: { venue: Venue }) {
+  return (
+    <>
+      <Section title="Book by the hour" />
+      <View style={styles.stations}>
+        {venue.stations.map((s) => (
+          <FactCard key={s.name}>
+            <Fact label={countLine(s)} value={s.name} note={s.note} />
+            <Fact
+              label="An hour"
+              value={formatPrice(s.pricePaise)}
+              note={s.offPeak && `${formatPrice(s.offPeak.pricePaise)} ${s.offPeak.when}`}
+            />
+            {s.coopPaise && <Fact label="Two playing" value={`${formatPrice(s.coopPaise)} an hour`} />}
+            {s.games && <Fact label="Games" value={s.games} />}
+          </FactCard>
+        ))}
+      </View>
+      <Text style={[styles.prose, styles.rule]}>{startsLine(venue)}</Text>
+      <Section title="Hours and place" />
+      <FactCard>
+        <Fact label="Open" value={venue.hours} />
+        <Fact label="Where" value={venue.address} />
+      </FactCard>
+    </>
   );
 }
 
@@ -249,4 +299,6 @@ const styles = StyleSheet.create({
   followText: { fontFamily: font.title, fontSize: 15, color: color.text },
   followingText: { color: color.secondary },
   prose: { marginHorizontal: 20, fontFamily: font.text, fontSize: 15, lineHeight: 22, color: color.secondary },
+  stations: { gap: space.big }, // a big gap between cards
+  rule: { marginTop: space.small, fontSize: 13, lineHeight: 18 },
 });

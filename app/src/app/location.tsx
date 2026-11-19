@@ -19,7 +19,7 @@ export default function LocationScreen() {
   const place = usePlace(viewer.place);
   const [status, setStatus] = useState<Status>('idle');
 
-  function choose(name: { area: string; city: string }, source: 'gps' | 'pick') {
+  function choose(name: { area: string; city: string; state?: string }, source: 'gps' | 'pick') {
     setPlace({ ...name, source, nearAreas: nearAreasFor(name) });
     if (router.canGoBack()) router.back(); // not if it was swiped away while locating
   }
@@ -37,7 +37,7 @@ export default function LocationScreen() {
     <CitySheet
       title="Your location"
       chosen={(c: City) => place?.source === 'pick' && place.area === c.name && place.city === c.state}
-      onPick={(c) => choose({ area: c.name, city: c.state }, 'pick')}
+      onPick={(c) => choose({ area: c.name, city: c.state, state: c.state }, 'pick')}
     >
       <Pressable onPress={useCurrent} disabled={status === 'locating'} accessibilityRole="button">
         <Glass style={styles.current}>

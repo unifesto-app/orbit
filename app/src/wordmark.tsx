@@ -1,47 +1,34 @@
-// The ORBIT wordmark, drawn from the splash's letters (assets/splash/letter-*.svg), so there is one source for the
-// logo. Used at the foot of Account and of the mode switcher (owner, 16 Nov 2026: "add orbit logo at bottom").
-import { useEffect, useState } from 'react';
-import { View } from 'react-native';
-import { SvgXml } from 'react-native-svg';
-import { loadLocalRawResource } from 'react-native-svg/css';
+// The ORBIT wordmark in 3D, the splash's own letters (assets/splash/mark-*.png: the kit's lighter body, raw gloss and
+// Night shadow, rendered from web/src/app/brand.tsx), laid out by the kit's letter positions (LETTERS in
+// src/splash/motion.ts), so there is one source for the logo. At the foot of Account and the mode switcher (owner, 16
+// Nov 2026: "add orbit logo at bottom"; 19 Nov: "in bottom orbit wordmark update it", from the flat letters) and over
+// the sign-in sheet's title. The splash loads these images first, so they're ready by the time anything shows them.
+import { Image, View } from 'react-native';
 
-// The letters share one coordinate space, so drawn together they are the whole mark, MARK_BOX wide and tall.
-const LETTERS = [
-  require('../assets/splash/letter-o.svg'),
-  require('../assets/splash/letter-r.svg'),
-  require('../assets/splash/letter-b.svg'),
-  require('../assets/splash/letter-i.svg'),
-  require('../assets/splash/letter-t.svg'),
+import { LETTERS, MARK, PAD } from './splash/motion';
+
+const ART = [
+  require('../assets/splash/mark-o.png'),
+  require('../assets/splash/mark-r.png'),
+  require('../assets/splash/mark-b.png'),
+  require('../assets/splash/mark-i.png'),
+  require('../assets/splash/mark-t.png'),
 ];
-const MARK_BOX = '36 -682 5371 682'; // x, y, width, height in the letters' space
 
-// Read once per launch, not on every mount: the files are async reads (over the network from Metro in a dev build), so
-// reading per mount made the mark pop in each time Account or the switcher opened. Splash warms it at launch.
-let cached: string | null = null;
-let pending: Promise<string> | null = null;
-export function loadWordmark(): Promise<string> {
-  pending ??= Promise.all(LETTERS.map((f) => loadLocalRawResource(f)))
-    .then((files) => {
-      // Android release builds resolve null for a file they couldn't read; f.match then throws, which lands below.
-      const paths = files.map((f) => f.match(/<path[^>]*\/>/)?.[0] ?? '').join('');
-      return (cached = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${MARK_BOX}">${paths}</svg>`);
-    })
-    .catch((e) => {
-      pending = null; // not cached, so the next mount tries again
-      throw e;
-    });
-  return pending;
-}
-
+// `width` is the word's, shadows aside: each letter's image runs PAD mark units past its box for its shadow, so the
+// word overhangs its box a little on every side without moving anything round it.
 export function Wordmark({ width }: { width: number }) {
-  const [xml, setXml] = useState(cached);
-  useEffect(() => {
-    if (!xml) loadWordmark().then(setXml, () => {}); // a file that fails to load leaves the space empty, as on the splash
-  }, [xml]);
-  const height = (width * 682) / 5371;
+  const m = width / MARK.w; // pt per mark unit
   return (
-    <View style={{ width, height }} accessible accessibilityRole="image" accessibilityLabel="Orbit">
-      {xml && <SvgXml xml={xml} width={width} height={height} />}
+    <View style={{ width, height: MARK.h * m }} accessible accessibilityRole="image" accessibilityLabel="Orbit">
+      {LETTERS.map((l, i) => (
+        <Image
+          key={l.name}
+          source={ART[i]}
+          style={{ position: 'absolute', left: (l.x0 - PAD - MARK.x) * m, top: -PAD * m, width: (l.x1 - l.x0 + 2 * PAD) * m, height: (MARK.h + 2 * PAD) * m }}
+          accessibilityIgnoresInvertColors
+        />
+      ))}
     </View>
   );
 }

@@ -34,6 +34,8 @@ export type Session = {
   interests?: readonly CategorySlug[];
   interested?: readonly string[];
   loved?: readonly string[];
+  rooms?: readonly string[]; // meetups whose inRoom you joined
+  asked?: readonly string[]; // `${event}|${person}`: people you asked to connect with in a room
   me: Account;
 } & saves.Saves;
 
@@ -131,6 +133,8 @@ export const useFollowing = (hostId: string) => useSession()?.follows.includes(h
 
 const turn = (list: readonly string[], id: string, on: boolean) => (on ? [...new Set([...list, id])] : list.filter((x) => x !== id));
 export const setFollowing = (hostId: string, on: boolean) => current && set({ ...current, follows: turn(current.follows, hostId, on) });
+// Who you follow right now, outside a component (a tap's follow-up).
+export const followsNow = () => current?.follows ?? [];
 // "Loved it" on an event you went to (owner, 19 Nov 2026: "replace the love with loved it"; Booking doc: after the
 // show, only people scanned in). A tap turns it on or off.
 // ponytail: on this phone only, like follows; the API's Loved it (counting toward the performer or host) replaces it.
@@ -142,6 +146,13 @@ export const setLoved = (eventId: string, on: boolean) => current && set({ ...cu
 export const setInterest = (slug: CategorySlug, on: boolean) =>
   current && set({ ...current, interests: turn(current.interests ?? [], slug, on) as CategorySlug[] });
 export const skipInterests = () => current && set({ ...current, interests: current.interests ?? [] });
+// inRoom (inRoom flow): joining a meetup's room after you were let in, and asking someone there to connect.
+// ponytail: on this phone only; the API's room, its swaps of ways to reach and blocking come with inRoom (P16).
+export const useInRoom = (eventId: string) => useSession()?.rooms?.includes(eventId) ?? false;
+export const setInRoom = (eventId: string, on: boolean) => current && set({ ...current, rooms: turn(current.rooms ?? [], eventId, on) });
+export const useAsked = (eventId: string, personId: string) => useSession()?.asked?.includes(`${eventId}|${personId}`) ?? false;
+export const askToConnect = (eventId: string, personId: string) =>
+  current && set({ ...current, asked: turn(current.asked ?? [], `${eventId}|${personId}`, true) });
 export const setInterested = (eventId: string, on: boolean) => current && set({ ...current, interested: turn(current.interested ?? [], eventId, on) });
 
 // Anything that needs an account: done at once when signed in; otherwise the sign-in sheet opens over the screen and
@@ -258,7 +269,7 @@ export function signIn(done: Extract<AuthStep, { step: 'signedIn' }>, via: Way) 
   api.start(done);
   const kept = current ? { saved: current.saved, lists: current.lists } : saves.normalise({ saved: savedMock, lists: listsMock }, Date.now());
   // What's kept on this phone carries over, follows to Loved it, as saves do.
-  const mine = current && { interests: current.interests, interested: current.interested, loved: current.loved };
+  const mine = current && { interests: current.interests, interested: current.interested, loved: current.loved, rooms: current.rooms, asked: current.asked };
   set({ via, ...kept, ...mine, follows: current?.follows ?? viewer.follows, me: done.me });
 }
 

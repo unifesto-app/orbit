@@ -12,7 +12,7 @@ import Reanimated, {
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ticketFor } from '../../account/data';
+import { past as history, ticketFor } from '../../account/data';
 import { Pill } from '../../account/kit';
 import { Carousel, type CarouselSlide } from '../../home/Carousel';
 import { BarGlass, Glass } from '../../glass';
@@ -20,9 +20,10 @@ import { planHome, type Viewer } from '../../home/layout';
 import { Icon } from '../../icons';
 import { type Event, type Host, events, hosts, now } from '../../mock';
 import { refreshPlace, usePlace } from '../../place';
-import { EventRow, Monogram, Poster, SEAT, SeatCard, Section, StatusDot, Tag } from '../../rows';
+import { meetups } from '../../kinds';
+import { EventRow, loveIt, Monogram, Poster, SEAT, SeatCard, Section, StatusDot, Tag } from '../../rows';
 import { bookAction, eventStatus, isNews } from '../../status';
-import { needsAccount, setFollowing, skipInterests, useViewer } from '../../session';
+import { needsAccount, setFollowing, skipInterests, useLoved, useViewer } from '../../session';
 import { around, color, darkInkOn, font, groundAt, radius, rim, space } from '../../theme';
 
 const HEADER = 44;
@@ -45,10 +46,12 @@ const CARD_INSET = space.small; // padding inside every card, around its content
 // Padding", then "apply to all cards"): with a 6px corner and 8px padding the face is 14, the frosted rim 16.
 const FACE = around(radius.sm, CARD_INSET);
 const RIM = around(FACE, FRAME);
-// What do you like? gets the room every text card has, Account's and the event page's (owner, 15 Nov 2026: "add proper
-// spacing and padding to cards"; 19 Nov: "add proper padding to pick interests card"): 16 inside, 16 from the words to
-// the buttons, corner 6 + 16. The location notice keeps its own 8 ("keep location notice as it was").
-const ASK_PAD = 16;
+// Home's text cards (What do you like?, See what's near you, Coming soon, Nothing near) get the room every text card
+// has, Account's and the event page's (owner, 15 Nov 2026: "add proper spacing and padding to cards"; 19 Nov: "add
+// proper padding to pick interests card", then "remember for cards add proper padding … for Nothing near yet. similar
+// to that all", "but not tickets and all events cards"): 16 inside, 16 from the words to the buttons, corner 6 + 16.
+// Ticket and All events cards keep CARD_INSET, their posters' 8.
+const TEXT_PAD = 16;
 
 // Home B ("Orbit"), picked by the owner on 15 Nov 2026: the boards are on the Orbit canvas. Which blocks show
 // comes from planHome (src/home/layout.ts); the state to look at is `viewer` in src/mock.ts.
@@ -130,6 +133,10 @@ export default function Home() {
             )}
           </>
         )}
+
+        {/* Thanks for coming, for each event you were let in at in the last week, newest first (two at most). */}
+        {v.signedIn &&
+          thanksFor(now).map((e) => <Thanks key={e.id} event={e} host={hostOf(e.hostId)} />)}
 
         {plan.orbit.length > 0 && (
           <>
@@ -444,9 +451,41 @@ function slideAction(e: Event) {
   return book.can ? book.label : 'View event';
 }
 
+// Thanks for coming (owner, 19 Nov 2026: "After-check-in bits"; Performer and inRoom docs): after an event you were let
+// in at, for a week. A meetup's card opens its room, to see who was there (inRoom 12); any other offers Loved it, and a
+// love offers to follow the acts (Performer 10). A text card, so words and a pill only.
+const WEEK = 3 * 3_600_000 + 7 * 86_400_000; // the event (about three hours), then a week
+function thanksFor(at: number): Event[] {
+  return history
+    .filter((h) => h.status === 'Went')
+    .map((h) => events.find((e) => e.id === h.eventId))
+    .filter((e): e is Event => !!e && at >= Date.parse(e.startsAt) && at < Date.parse(e.startsAt) + WEEK)
+    .sort((a, b) => Date.parse(b.startsAt) - Date.parse(a.startsAt))
+    .slice(0, 2);
+}
+function Thanks({ event: e, host }: { event: Event; host: Host }) {
+  const loved = useLoved(e.id);
+  const room = meetups[e.id]?.inRoom;
+  return (
+    <View style={[styles.card, styles.notice]}>
+      <Text style={styles.noticeTitle}>Thanks for coming to {e.title}</Text>
+      <Text style={styles.noticeText}>
+        {room ? 'See who was there, and connect. The room’s open for a week after.' : loved ? `You loved it. ${host.name} will hear.` : `Loved it? Let ${host.name} know.`}
+      </Text>
+      <View style={styles.askButtons}>
+        {room ? (
+          <Pill label="See who was there" onPress={() => router.push(`/room/${e.id}`)} />
+        ) : (
+          <Pill label={loved ? 'You loved it' : 'Loved it'} muted={loved} onPress={() => loveIt(e.id, !loved)} />
+        )}
+      </View>
+    </View>
+  );
+}
+
 function AskInterests() {
   return (
-    <View style={[styles.card, styles.notice, styles.ask]}>
+    <View style={[styles.card, styles.notice]}>
       <Text style={styles.noticeTitle}>What do you like?</Text>
       <Text style={styles.noticeText}>Pick a few kinds of event and Home shows more of them.</Text>
       <View style={styles.askButtons}>
@@ -457,20 +496,25 @@ function AskInterests() {
   );
 }
 
-function Notice({ kind, area }: { kind: 'noLocation' | 'nothingNear'; area?: string }) {
+// Coming soon (owner, 19 Nov 2026: "only ap & telangana. other than it unserviceable. or coming soon"): somewhere
+// outside Telangana and Andhra Pradesh, Home says so and shows what's on there, with Pick a city to look around one.
+function Notice({ kind, area }: { kind: 'noLocation' | 'comingSoon' | 'nothingNear'; area?: string }) {
   const noLocation = kind === 'noLocation';
+  const soon = kind === 'comingSoon';
   return (
     <View style={[styles.card, styles.notice]}>
-      <Text style={styles.noticeTitle}>{noLocation ? 'See what’s near you' : `Nothing near ${area} yet`}</Text>
+      <Text style={styles.noticeTitle}>{noLocation ? 'See what’s near you' : soon ? `Coming soon to ${area}` : `Nothing near ${area} yet`}</Text>
       <Text style={styles.noticeText}>
         {noLocation
           ? 'Set your location and Orbit shows what’s within 25 km. Until then, here’s everything coming up.'
-          : 'Here’s everything coming up on Orbit instead, soonest first.'}
+          : soon
+            ? 'Orbit is in Telangana and Andhra Pradesh for now. Here’s what’s on there, soonest first.'
+            : 'Here’s everything coming up on Orbit instead, soonest first.'}
       </Text>
-      {noLocation && (
+      {(noLocation || soon) && (
         <Pressable onPress={() => router.push('/location')} accessibilityRole="button">
           <Glass style={styles.wideButton}>
-            <Text style={styles.buttonText}>Set location</Text>
+            <Text style={styles.buttonText}>{soon ? 'Pick a city' : 'Set location'}</Text>
           </Glass>
         </Pressable>
       )}
@@ -560,12 +604,11 @@ const styles = StyleSheet.create({
   followSmallText: { fontFamily: font.title, fontSize: 13, color: color.text },
   followingText: { color: color.secondary },
 
-  notice: { marginTop: space.big, borderRadius: FACE, borderWidth: 1, borderColor: color.border, padding: CARD_INSET, gap: 4 }, // no rim, so an outline
-  ask: { borderRadius: around(radius.sm, ASK_PAD), padding: ASK_PAD },
+  notice: { marginTop: space.big, borderRadius: around(radius.sm, TEXT_PAD), borderWidth: 1, borderColor: color.border, padding: TEXT_PAD, gap: 4 }, // no rim, so an outline
   noticeTitle: { fontFamily: font.title, fontSize: 16, color: color.text },
-  askButtons: { marginTop: ASK_PAD - 4, flexDirection: 'row', gap: space.small }, // 16 from the words, the 4 gap included
+  askButtons: { marginTop: TEXT_PAD - 4, flexDirection: 'row', gap: space.small }, // 16 from the words, the 4 gap included
   noticeText: { fontFamily: font.text, fontSize: 14, lineHeight: 20, color: color.secondary },
-  wideButton: { marginTop: space.small, height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center' },
+  wideButton: { marginTop: TEXT_PAD - 4, height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center' },
 
   small: { fontFamily: font.text, fontSize: 12, color: color.secondary },
 

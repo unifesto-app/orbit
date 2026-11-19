@@ -36,7 +36,7 @@ import { ADULT, ageOn, type Contact, readContact, readDob, sentTo, toOf, typeDob
 import { color, font } from '../theme';
 import { addPasskey, appleHere, appleProof, type Got, googleProof, passkeyAnswer, passkeysHere } from '../ways';
 
-const WWW = 'https://www.unifesto.app'; // the legal pages, as Account links them
+const WWW = 'https://heyorbit.in'; // Orbit's own terms and privacy pages (web/src/app/(legal)), as Account links them
 
 type Step =
   | { at: 'start' }
