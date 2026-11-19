@@ -1,8 +1,9 @@
 // The ways to pay (owner, 19 Nov 2026: "bring the payment methods screen from unifesto but with orbit's ui"), from
 // Unifesto's pay-method sheet (mobile/src/components/registration/Steps.tsx, PayMethodsSheet): UPI apps (the big three
-// first, four showing and the rest under Show more), a typed UPI ID, card, wallets and netbanking, and Apple Pay on
-// iPhones. Every payment goes through Razorpay at checkout (Booking doc, Paying); Orbit keeps no card or bank detail,
-// only which way you like to pay, on this phone (src/session.ts). Pure, so pay.test.ts runs it on Node.
+// first, four showing and the rest under Show more), your UPI IDs (checked with Razorpay, then added), card, wallets and
+// Apple Pay on iPhones; no netbanking (owner, 19 Nov 2026: "remove netbanking"). Every payment goes through Razorpay at
+// checkout (Booking doc, Paying); Orbit keeps no card or bank detail, only which way you like to pay and the UPI IDs you
+// added, on this phone (src/session.ts). Pure, so pay.test.ts runs it on Node.
 // ponytail: fixed lists until the API reads our Razorpay account's own (Unifesto's /v1/methods, cached) and the phone's
 // installed UPI apps (Razorpay's SDK finds them; that's a native module and a rebuild).
 
@@ -11,7 +12,6 @@ export type PayWith =
   | { kind: 'vpa'; vpa: string }
   | { kind: 'card' }
   | { kind: 'wallet'; code: string }
-  | { kind: 'netbanking'; bank: string }
   | { kind: 'applePay' };
 
 export const UPI_APPS = [
@@ -34,27 +34,43 @@ export const WALLETS = [
   { code: 'airtelmoney', name: 'Airtel Money' },
 ] as const;
 
-// Razorpay's bank codes, the biggest first.
-export const BANKS = [
-  { code: 'SBIN', name: 'State Bank of India' },
-  { code: 'HDFC', name: 'HDFC Bank' },
-  { code: 'ICIC', name: 'ICICI Bank' },
-  { code: 'UTIB', name: 'Axis Bank' },
-  { code: 'KKBK', name: 'Kotak Mahindra Bank' },
-  { code: 'PUNB', name: 'Punjab National Bank' },
-  { code: 'BARB', name: 'Bank of Baroda' },
-  { code: 'UBIN', name: 'Union Bank of India' },
-  { code: 'CNRB', name: 'Canara Bank' },
-  { code: 'IDFB', name: 'IDFC FIRST Bank' },
-  { code: 'INDB', name: 'IndusInd Bank' },
-  { code: 'YESB', name: 'Yes Bank' },
-] as const;
-
 /** How many of a long list show before Show more (Unifesto shows four UPI apps). */
 export const SHOWN = 4;
 
 /** name@bank: a UPI ID worth sending to Razorpay, which checks it's real (Unifesto's isVpa). */
 export const isVpa = (v: string) => /^[\w.-]{2,256}@[a-zA-Z][a-zA-Z0-9]{1,63}$/.test(v.trim());
+
+/** A UPI ID you added, with the name Razorpay found on it. */
+export type UpiId = { vpa: string; name: string };
+
+// Our Razorpay account's public key id (rzp_live_… or rzp_test_…), the one its checkout shows anyone; never the secret.
+// Set as EXPO_PUBLIC_RAZORPAY_KEY_ID (eas.json, or .env when running locally). Without it no UPI ID can be checked.
+const RAZORPAY_KEY = process.env.EXPO_PUBLIC_RAZORPAY_KEY_ID ?? '';
+
+/** Whose UPI ID it is, asked of Razorpay as its checkout does (Unifesto's verifyUpiId): the holder's name, 'invalid'
+ * when there's no such ID, or null when it couldn't say (no key, offline, slower than 8 seconds). */
+export async function verifyUpiId(vpa: string, keyId = RAZORPAY_KEY): Promise<{ name: string } | 'invalid' | null> {
+  if (!keyId) return null;
+  const ask = fetch(`https://api.razorpay.com/v1/payments/validate/account?key_id=${encodeURIComponent(keyId)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `entity=vpa&value=${encodeURIComponent(vpa.trim())}`,
+  })
+    .then((res) => res.json())
+    .then((body): { name: string } | 'invalid' | null => {
+      if (body?.success === true) return { name: String(body.customer_name ?? '').trim() };
+      // No such ID: 200 with success false. Not a UPI ID at all: 400 invalid_vpa.
+      return body?.success === false || body?.error?.reason === 'invalid_vpa' ? 'invalid' : null;
+    })
+    .catch(() => null);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const slow = new Promise<null>((resolve) => (timer = setTimeout(() => resolve(null), 8000)));
+  try {
+    return await Promise.race([ask, slow]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /** One key per choice, to tell which row is picked; a typed UPI ID ticks its row whatever's typed. */
 export function payKey(p: PayWith): string {
@@ -63,14 +79,12 @@ export function payKey(p: PayWith): string {
       return `upi:${p.id}`;
     case 'wallet':
       return `wallet:${p.code}`;
-    case 'netbanking':
-      return `bank:${p.bank}`;
     default:
       return p.kind;
   }
 }
 
-/** A pick's name on its own, as the Pay with line shows it: "Google Pay", "ravi@ybl", "HDFC Bank". */
+/** A pick's name on its own, as the Pay with line shows it: "Google Pay", "ravi@ybl", "MobiKwik wallet". */
 export function payName(p: PayWith): string {
   switch (p.kind) {
     case 'upiApp':
@@ -81,8 +95,6 @@ export function payName(p: PayWith): string {
       return 'Credit or debit card';
     case 'wallet':
       return `${WALLETS.find((w) => w.code === p.code)?.name ?? 'Your'} wallet`;
-    case 'netbanking':
-      return BANKS.find((b) => b.code === p.bank)?.name ?? 'Your bank';
     case 'applePay':
       return 'Apple Pay';
   }

@@ -1,7 +1,15 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { isVpa, payKey, payLabel, payName, payReady, UPI_APPS } from './pay.ts';
+import { readdirSync } from 'node:fs';
+
+import { isVpa, payKey, payLabel, payName, payReady, UPI_APPS, verifyUpiId, WALLETS } from './pay.ts';
+
+test('every UPI app and wallet has its logo file in assets/pay', () => {
+  const have = new Set(readdirSync(new URL('../assets/pay', import.meta.url)).map((f) => f.replace(/\.\w+$/, '')));
+  const ids = [...UPI_APPS.map((a) => a.id), ...WALLETS.map((w) => w.code)];
+  assert.deepEqual(ids.filter((id) => !have.has(id)), []);
+});
 
 test('a UPI ID is name@bank', () => {
   assert.equal(isVpa('ravi.k@okhdfcbank'), true);
@@ -18,7 +26,6 @@ test('the pay bar says what was picked, or asks', () => {
   assert.equal(payLabel({ kind: 'vpa', vpa: 'ravi' }), 'Add your UPI ID');
   assert.equal(payLabel({ kind: 'card' }), 'Pay with a card');
   assert.equal(payLabel({ kind: 'wallet', code: 'mobikwik' }), 'Pay with MobiKwik wallet');
-  assert.equal(payLabel({ kind: 'netbanking', bank: 'HDFC' }), 'Pay with HDFC Bank');
 });
 
 test('one key per choice; the big three UPI apps lead', () => {
@@ -32,6 +39,25 @@ test('a pick is ready to pay unless it is a UPI ID that is not one yet', () => {
   assert.equal(payReady({ kind: 'card' }), true);
   assert.equal(payReady({ kind: 'vpa', vpa: 'ravi' }), false);
   assert.equal(payReady({ kind: 'vpa', vpa: 'ravi@ybl' }), true);
-  assert.equal(payName({ kind: 'netbanking', bank: 'SBIN' }), 'State Bank of India');
   assert.equal(payName({ kind: 'wallet', code: 'payzapp' }), 'PayZapp wallet');
+});
+
+test('Razorpay says whose a UPI ID is, that there is none, or nothing', async () => {
+  const real = globalThis.fetch;
+  const answer = (body: unknown) => (globalThis.fetch = (async () => new Response(JSON.stringify(body))) as typeof fetch);
+  try {
+    answer({ success: true, customer_name: ' Ravi Kumar ' });
+    assert.deepEqual(await verifyUpiId('ravi@ybl', 'rzp_test_x'), { name: 'Ravi Kumar' });
+    answer({ success: false });
+    assert.equal(await verifyUpiId('nobody@ybl', 'rzp_test_x'), 'invalid');
+    answer({ error: { reason: 'invalid_vpa' } });
+    assert.equal(await verifyUpiId('ravi@1', 'rzp_test_x'), 'invalid');
+    answer({ error: { reason: 'server_error' } });
+    assert.equal(await verifyUpiId('ravi@ybl', 'rzp_test_x'), null); // couldn't say, so not "no such ID"
+    globalThis.fetch = (async () => { throw new Error('offline'); }) as typeof fetch;
+    assert.equal(await verifyUpiId('ravi@ybl', 'rzp_test_x'), null);
+    assert.equal(await verifyUpiId('ravi@ybl', ''), null); // no key yet
+  } finally {
+    globalThis.fetch = real;
+  }
 });
