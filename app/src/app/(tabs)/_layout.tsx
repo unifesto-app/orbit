@@ -8,7 +8,7 @@
 // Icons are Phosphor filled ("use filled instead of duotone"), the PNGs in assets/tabs made by scripts/icons.mjs: the
 // open tab's in a Sage to Moss gradient, the others in the text colour ("move other gradiant to active, for other use
 // text color"); the labels in DM Sans 600 ("add some font weight").
-import { role } from '@orbit/tokens';
+import { alpha, role } from '@orbit/tokens';
 import { router, useIsFocused } from 'expo-router';
 import { TabList, Tabs, TabSlot, TabTrigger, type TabTriggerSlotProps } from 'expo-router/ui';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -224,7 +224,7 @@ function OrbNudge({ tab, bottom, hidden }: { tab: string; bottom: number; hidden
       style={[styles.nudge, { bottom: bottom + BAR + 2, opacity: fade, transform: [{ translateY: fade.interpolate({ inputRange: [0, 1], outputRange: [6, 0] }) }] }]}
       accessibilityLiveRegion="polite"
     >
-      <Pressable onPress={() => router.push('/chat')} accessibilityRole="button" accessibilityHint="Opens the chat">
+      <Pressable onPress={() => router.push('/chat')} accessibilityRole="button" accessibilityHint="Opens the chat" style={[styles.shade, { borderRadius: NUDGE_ROUND }]}>
         <Glass tint={LIGHT} style={styles.nudgeBubble}>
           <Text style={styles.nudgeText}>{text}</Text>
           <View style={[styles.rim, styles.rimLight, { borderRadius: NUDGE_ROUND }]} pointerEvents="none" />
@@ -232,9 +232,11 @@ function OrbNudge({ tab, bottom, hidden }: { tab: string; bottom: number; hidden
       </Pressable>
       {/* Two glass dots, smaller toward the orb, pointing the bubble at it, centred over it. */}
       {[9, 5].map((d) => (
-        <Glass key={d} tint={LIGHT} style={[styles.nudgeDot, { width: d, height: d, borderRadius: d / 2, marginRight: BAR / 2 - d / 2 }]}>
-          <View style={[styles.rim, styles.rimLight, { borderRadius: d / 2 }]} pointerEvents="none" />
-        </Glass>
+        <View key={d} style={[styles.shade, { borderRadius: d / 2, marginRight: BAR / 2 - d / 2 }]}>
+          <Glass tint={LIGHT} style={[styles.nudgeDot, { width: d, height: d, borderRadius: d / 2 }]}>
+            <View style={[styles.rim, styles.rimLight, { borderRadius: d / 2 }]} pointerEvents="none" />
+          </Glass>
+        </View>
       ))}
     </Animated.View>
   );
@@ -279,11 +281,11 @@ const styles = StyleSheet.create({
     maxWidth: 240,
     alignItems: 'flex-end',
     gap: 3,
-    shadowColor: role.shadow,
-    shadowOpacity: 0.7,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 6 },
   },
+  // The soft Night shadow, on each glass shape. boxShadow follows the rounded corners and draws only outside them, so
+  // see-through glass needs no solid fill (a plain shadow on a see-through view is redrawn pixel by pixel, and React
+  // Native warns). Its blur is twice the old shadowRadius 14: iOS halves it.
+  shade: { boxShadow: [{ offsetX: 0, offsetY: 6, blurRadius: 28, color: alpha(role.shadow, 0.7) }] },
   nudgeBubble: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: NUDGE_ROUND },
   nudgeDot: { overflow: 'hidden' },
   // The glass's rim: Liquid Glass draws no border of its own.
