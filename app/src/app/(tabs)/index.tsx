@@ -1,6 +1,6 @@
 import { categories, formatPrice } from '@orbit/contract';
 import { type ReactNode, useEffect, useState } from 'react';
-import { Animated, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Animated, Image, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import Reanimated, {
   Easing,
   interpolate,
@@ -21,7 +21,8 @@ import { Icon } from '../../icons';
 import { type Event, type Host, events, hosts, now } from '../../mock';
 import { refreshPlace, usePlace } from '../../place';
 import { fromPricePaise, meetups, perHour, tileFor, venues } from '../../kinds';
-import { EventRow, loveIt, Monogram, Poster, SEAT, SeatCard, Section, StatusDot, Tag } from '../../rows';
+import { promoteOne } from '../../labels';
+import { EventRow, isPromoted, loveIt, Monogram, Poster, SEAT, SeatCard, Section, StatusDot, Tag } from '../../rows';
 import { bookAction, eventStatus, isNews } from '../../status';
 import { needsAccount, setFollowing, skipInterests, useLoved, useViewer } from '../../session';
 import { around, color, darkInkOn, font, groundAt, radius, rim, space } from '../../theme';
@@ -67,8 +68,9 @@ export default function Home() {
   useEffect(() => {
     refreshPlace(); // once a launch, only if location is already allowed (src/place.ts)
   }, []);
-  const plan = planHome(v, events, hosts.map((h) => ({ ...h, tile: tileFor(h.id) })), now);
   const hostOf = (id: string) => hosts.find((h) => h.id === id) as Host;
+  const boosted = (e: Event) => isPromoted(e, hostOf(e.hostId));
+  const plan = planHome(v, events, hosts.map((h) => ({ ...h, tile: tileFor(h.id) })), now, boosted);
   const ticketLabel = (id: string) => v.tickets?.find((t) => t.eventId === id)?.label ?? '';
 
   const headerTop = insets.top + 4;
@@ -76,7 +78,7 @@ export default function Home() {
   const card = (width - 40 - space.big) / 2; // All events and host cards: two columns on the 20px margins, a big gap apart
   const slides: CarouselSlide[] = plan.slides.map((s) =>
     s.kind === 'event'
-      ? { key: `e:${s.event.id}`, image: s.event.wide!.source, edge: s.event.wide!.edge, label: `Poster for ${s.event.title}`, action: slideAction(s.event), href: `/event/${s.event.id}` }
+      ? { key: `e:${s.event.id}`, image: s.event.wide!.source, edge: s.event.wide!.edge, label: `Poster for ${s.event.title}`, action: slideAction(s.event), href: `/event/${s.event.id}`, mark: boosted(s.event) ? 'Promoted' : undefined }
       : { key: `h:${s.host.id}`, image: s.host.banner!.source, edge: s.host.banner!.edge, label: `Banner for ${s.host.name}`, action: 'View events', href: `/host/${s.host.id}` },
   );
 
@@ -163,7 +165,7 @@ export default function Home() {
           <View key={k.category}>
             <Section title={`${categories.find((c) => c.slug === k.category)?.label ?? k.category} ${plan.near ? 'near you' : 'coming up'}`} />
             {k.events.map((e) => (
-              <EventRow key={e.id} event={e} host={hostOf(e.hostId)} />
+              <EventRow key={e.id} event={e} host={hostOf(e.hostId)} labelled />
             ))}
           </View>
         ))}
@@ -173,9 +175,14 @@ export default function Home() {
         {plan.list.events.length > 0 && (
           <>
             <Section title={plan.list.title} />
-            {plan.list.events.map((e) => <EventRow key={e.id} event={e} host={hostOf(e.hostId)} />)}
+            {/* One promoted event leads the list (Boost); it's still one of the list's own events, never an extra. */}
+            {promoteOne(plan.list.events, boosted).map((e) => (
+              <EventRow key={e.id} event={e} host={hostOf(e.hostId)} labelled />
+            ))}
           </>
         )}
+
+        {plan.ad && <AdBanner event={plan.ad} host={hostOf(plan.ad.hostId)} width={width - 40} />}
 
         {plan.places.length > 0 && (
           <>
@@ -559,6 +566,36 @@ function Notice({ kind, area }: { kind: 'noLocation' | 'comingSoon' | 'nothingNe
 // frosted rim, a card, "apply the rim to card", then "remove padding for poster"). The poster runs edge to edge across
 // the top of the card face, which rounds its top corners; only the text is padded. A card, so no icons and no heart.
 // The card face and rim use FACE and RIM, like every card.
+// The ad in the middle of Home (owner, 19 Nov 2026: "ad banners in middle of home"): a promoted event as one wide card,
+// its 4:3 poster with no words on it (as the carousel), then Promoted, the date, title, host and price under it. The
+// whole card opens the event. planHome picks it: the second promoted event, the first leading the carousel.
+function AdBanner({ event: e, host, width }: { event: Event; host: Host; width: number }) {
+  const inner = width - 2 * FRAME;
+  return (
+    <Pressable
+      onPress={() => router.push(`/event/${e.id}`)}
+      accessibilityRole="button"
+      accessibilityLabel={`Promoted. ${e.title}, ${e.when}, by ${host.name}`}
+      style={({ pressed }) => [styles.ad, pressed && styles.pressed]}>
+      <Glass style={[styles.gridRim, { width }]}>
+        <View style={styles.gridCard}>
+          <Image source={e.wide!.source} style={{ width: inner, height: (inner * 3) / 4 }} />
+          <View style={styles.adBody}>
+            <View style={styles.adHead}>
+              <Tag text="Promoted" />
+              <Text style={styles.feedWhen} numberOfLines={1}>{e.when}</Text>
+            </View>
+            <Text style={styles.feedTitle} numberOfLines={2}>{e.title}</Text>
+            <Text style={styles.feedWhen} numberOfLines={1}>
+              {host.name} · {formatPrice(e.pricePaise)}
+            </Text>
+          </View>
+        </View>
+      </Glass>
+    </Pressable>
+  );
+}
+
 function GridCard({ event: e, width }: { event: Event; width: number }) {
   return (
     <Pressable onPress={() => router.push(`/event/${e.id}`)} accessibilityRole="button">
@@ -649,6 +686,10 @@ const styles = StyleSheet.create({
   gridRim: { padding: FRAME, borderRadius: RIM },
   gridCard: { borderRadius: FACE, backgroundColor: color.card, overflow: 'hidden' },
   gridBody: { padding: CARD_INSET, gap: 2 }, // padded on its own; the 2px is line spacing within the text
+  // 40 above, as a section; the poster card's own padding (a poster card keeps 8, not the text cards' 16).
+  ad: { marginTop: 40, marginHorizontal: 20 },
+  adBody: { padding: CARD_INSET, gap: 4 },
+  adHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   gridMeta: { fontFamily: font.text, fontSize: 11, color: color.secondary },
   gridTitle: { fontFamily: font.title, fontSize: 13, lineHeight: 17, color: color.text },
   gridPrice: { fontFamily: font.price, fontSize: 13, color: color.text },

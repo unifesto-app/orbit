@@ -25,6 +25,7 @@ export type CarouselSlide = {
   label: string;
   action?: string; // the pill's label; no pill without one
   href?: string; // the event or host page the slide opens; a still poster without one
+  mark?: string; // "Promoted" on a paid slide: the one word allowed over a poster, so the boost is never hidden
 };
 
 // ponytail: the owner set no timing; 5 s, pause while touched, loop, off under Reduce Motion or a screen reader
@@ -221,6 +222,12 @@ export function Carousel({
               </Glass>
             </Pressable>
           )}
+          {/* A paid slide says so, small on the glass at the bottom left, level with the pill (owner, 19 Nov 2026). */}
+          {slides[active].mark && (
+            <Glass style={styles.mark}>
+              <Text style={styles.markText}>{slides[active].mark}</Text>
+            </Glass>
+          )}
         </View>
       </View>
 
@@ -278,6 +285,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   pillText: { fontFamily: font.title, fontSize: 13, color: color.text },
+  // Centred on the pill's height (34): 24 tall, 5 lower.
+  mark: { position: 'absolute', left: 20, bottom: space.small + 5, height: 24, paddingHorizontal: 10, borderRadius: 12, justifyContent: 'center', pointerEvents: 'none' },
+  markText: { fontFamily: font.medium, fontSize: 11, color: color.text },
   dots: {
     marginTop: space.small,
     flexDirection: 'row',

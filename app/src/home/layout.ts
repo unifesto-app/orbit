@@ -40,11 +40,14 @@ const MAX_PER_KIND = 3;
 const MAX_PLACES = 3;
 
 
+// `promoted` says which events are a paid boost that can show now (isPromoted in src/rows.tsx): one leads the carousel,
+// the next is the banner in the middle (`ad`).
 export function planHome<E extends PlanEvent, H extends PlanHost>(
   viewer: Viewer,
   events: readonly E[],
   hosts: readonly H[],
   now: number,
+  promoted: (e: E) => boolean = () => false,
 ) {
   // Compared as times, not strings, so mixed UTC offsets still sort right.
   const upcoming = events.filter((e) => Date.parse(e.startsAt) >= now).sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt));
@@ -101,6 +104,11 @@ export function planHome<E extends PlanEvent, H extends PlanHost>(
   // a notice, as the interest sections. They have their own section, so they stay out of Hosts near you.
   const places = hosts.filter((h) => h.tile && (notice || isNear(h.area))).slice(0, MAX_PLACES);
 
+  // Promoted events with a 4:3 poster, near you while anything is, not ones you've booked: the first leads the carousel,
+  // the second is the banner in the middle of Home (owner, 19 Nov 2026: "promotion banners", "ad banners in middle of
+  // home"), so neither shows twice up there.
+  const boosts = upcoming.filter((e) => e.wide && promoted(e) && !booked.has(e.id) && (notice || isNear(e.area)));
+
   // Hosts near you: up to three to follow, then ones the viewer already follows (owner, 15 Nov 2026), four at most.
   const near = hosts.filter((h) => !h.tile && isNear(h.area));
   const nearHosts = [...near.filter((h) => !followed.has(h.id)).slice(0, 3), ...near.filter((h) => followed.has(h.id))].slice(0, MAX_HOSTS);
@@ -120,7 +128,8 @@ export function planHome<E extends PlanEvent, H extends PlanHost>(
     // The end of Home (owner, 15 Nov 2026): every upcoming event, everywhere. Skipped when the list above already is that.
     // The list above is always a subset of `upcoming`, so the same length means the same events.
     all: notice || list.events.length === upcoming.length ? [] : upcoming,
-    slides: pickSlides(upcoming, hosts, followed, following, notice === null, isNear),
+    slides: pickSlides(upcoming.filter((e) => e !== boosts[1]), hosts, followed, following, notice === null, isNear, boosts[0]),
+    ad: boosts[1],
   };
 }
 
@@ -128,7 +137,22 @@ export function planHome<E extends PlanEvent, H extends PlanHost>(
 // banner ("View events"). Following hosts: their newest events, plus new hosts near you to follow (owner, 15 Nov 2026:
 // "add some view events"). Otherwise the newest events and hosts near you, or anywhere when nothing is near.
 // Newest = announced (events) or joined (hosts).
+// A promoted event leads (owner, 19 Nov 2026: "promotion banners", the promoted slide picked), following or not. One
+// at most, never twice, still six slides in all.
 function pickSlides<E extends PlanEvent, H extends PlanHost>(
+  upcoming: readonly E[],
+  hosts: readonly H[],
+  followed: ReadonlySet<string>,
+  following: boolean,
+  hasNear: boolean,
+  isNear: (area: string) => boolean,
+  lead: E | undefined,
+): Slide<E, H>[] {
+  const rest = pickRest(upcoming.filter((e) => e !== lead), hosts, followed, following, hasNear, isNear);
+  return lead ? [{ kind: 'event' as const, event: lead }, ...rest].slice(0, MAX_SLIDES) : rest;
+}
+
+function pickRest<E extends PlanEvent, H extends PlanHost>(
   upcoming: readonly E[],
   hosts: readonly H[],
   followed: ReadonlySet<string>,

@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { countLine, search, span } from './search.ts';
+import { countLine, firstUnseen, search, span } from './search.ts';
 
 const NOW = Date.parse('2026-11-20T09:00:00+05:30'); // a Friday morning in India
 const at = (iso: string) => `${iso}+05:30`;
@@ -59,6 +59,12 @@ test('a tile alone lists its places to play; every typed word must appear', () =
   assert.deepEqual(hostIds({ category: 'sports', free: true }), []); // no place to play is free
   assert.deepEqual(hostIds({ q: 'cricket turf' }), ['turf']);
   assert.deepEqual(hostIds({ q: 'cricket kbr' }), []);
+});
+
+test('opening sections take the first three of each list not shown in one above', () => {
+  const xs = (...ids: string[]) => ids.map((id) => ({ id }));
+  const out = firstUnseen([xs('a', 'b'), xs('a', 'c', 'd', 'e', 'f'), xs('b', 'c', 'g')]);
+  assert.deepEqual(out.map((l) => l.map((x) => x.id)), [['a', 'b'], ['c', 'd', 'e'], ['g']]);
 });
 
 test('this weekend is Saturday and Sunday in India time, or what is left of it', () => {
