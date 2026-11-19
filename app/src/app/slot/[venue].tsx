@@ -6,7 +6,7 @@
 // ponytail: payments (Razorpay) and the slots API aren't on yet, so Pay says so and charges nothing; free stations are a
 // made-up pattern until the API knows the bookings.
 import { formatPrice } from '@orbit/contract';
-import { useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 
@@ -16,8 +16,10 @@ import { bookingDays, freeAt, HOLD_MS, holdLeft, MAX_HOURS, mmss, slotLine, slot
 import { Fact, FactCard } from '../../fact';
 import { perHour, startsLine, venues } from '../../kinds';
 import { hosts, now } from '../../mock';
+import { payLabel, payName, payReady } from '../../pay';
 import { Chip, Stepper } from '../../pickers';
 import { NotFound, Sheet } from '../../rows';
+import { usePayWith } from '../../session';
 import { color, font, space } from '../../theme';
 
 
@@ -34,6 +36,7 @@ export default function SlotSheet() {
   const [heldAt, setHeldAt] = useState<number | null>(null);
   const [clock, setClock] = useState(() => Date.now());
   const [asked, setAsked] = useState(false);
+  const pay = usePayWith(); // the way you usually pay, changed from Pay with (src/app/pay.tsx)
   const [bar, setBar] = useState(140);
   // While held, the countdown ticks every second, and stops itself once the hold has run out.
   useEffect(() => {
@@ -131,7 +134,10 @@ export default function SlotSheet() {
                 )}
               </>
             ) : (
-              <Text style={styles.note}>Pay before the time’s up and it’s yours. You can cancel up to 2 hours before the start.</Text>
+              <>
+                <Fact label="Pay with" value={payReady(pay) ? payName(pay) : 'Choose how to pay'} onPress={() => router.push('/pay')} />
+                <Text style={styles.note}>Pay before the time’s up and it’s yours. You can cancel up to 2 hours before the start.</Text>
+              </>
             )}
           </FactCard>
         )}
@@ -141,7 +147,7 @@ export default function SlotSheet() {
         price={chosen !== null ? formatPrice(price) : perHour(Math.min(s.pricePaise, s.offPeak?.pricePaise ?? Infinity))}
         from={chosen === null}
         note={line ?? 'Pick a start time'}
-        action={heldAt === null ? 'Hold for 10 minutes' : lapsed ? 'Pick again' : `Pay ${formatPrice(price)}`}
+        action={heldAt === null ? 'Hold for 10 minutes' : lapsed ? 'Pick again' : payReady(pay) ? `Pay ${formatPrice(price)}` : payLabel(pay)}
         onAction={
           heldAt === null
             ? chosen === null
@@ -153,7 +159,9 @@ export default function SlotSheet() {
                 }
             : lapsed
               ? () => setHeldAt(null)
-              : () => Alert.alert('Payments aren’t on yet', 'Orbit isn’t taking payments yet, so nothing was charged.')
+              : payReady(pay)
+                ? () => Alert.alert('Payments aren’t on yet', 'Orbit isn’t taking payments yet, so nothing was charged.')
+                : () => router.push('/pay')
         }
         onHeight={setBar}
       />

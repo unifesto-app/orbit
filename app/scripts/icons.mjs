@@ -49,6 +49,11 @@ const icons = {
   receipt: "receipt-duotone",
   refund: "arrow-u-up-left-duotone",
   card: "credit-card-duotone",
+  // Account › Payment methods, a kind of payment each (owner, 19 Nov 2026).
+  upi: "device-mobile-duotone",
+  vpa: "at-duotone",
+  wallet: "wallet-duotone",
+  bank: "bank-duotone",
   bell: "bell-duotone",
   moon: "moon-duotone",
   shield: "shield-check-duotone",
