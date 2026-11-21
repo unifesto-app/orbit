@@ -60,7 +60,7 @@ export function Visit() {
     started = false;
     let visible = 0;
     let since = document.visibilityState === "visible" ? performance.now() : 0;
-    send({ kind: "view", id, path, ...pageFacts() });
+    send({ kind: "view", id, path: path.startsWith("/careers/") ? "/careers/[slug]" : path, ...pageFacts() });
     const leave = () => {
       if (since) visible += performance.now() - since;
       since = 0;

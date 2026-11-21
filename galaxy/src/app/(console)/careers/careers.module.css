@@ -1,0 +1,56 @@
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-m);
+  max-width: 880px;
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--space-s) var(--space-l);
+}
+
+.fields input,
+.fields select {
+  width: 100%;
+}
+
+.about {
+  min-height: 180px;
+}
+
+/* A wide table scrolls inside its container, never the page. */
+.scroll {
+  overflow-x: auto;
+}
+
+.nowrap,
+.link {
+  white-space: nowrap;
+}
+
+.link + .link {
+  margin-left: var(--space-s);
+}
+
+.note {
+  min-width: 240px;
+  max-width: 420px;
+  white-space: pre-wrap;
+}
+
+.confirm {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-xs);
+  max-width: 280px;
+  margin-top: var(--space-xs);
+}
+
+.error {
+  display: block;
+  margin-top: var(--space-xxs);
+  color: var(--color-text-status-error);
+}

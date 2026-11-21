@@ -6,6 +6,7 @@ import { readContact } from "@orbit/contract";
 import type { ProofConfig } from "./auth/proof.ts";
 import { memoryStore, redisStore } from "./auth/store.ts";
 import { sweepActivity } from "./analytics.ts";
+import { pruneApplications } from "./careers.ts";
 import { pruneVisits } from "./visits.ts";
 import { ways, type WaysConfig } from "./auth/ways.ts";
 import { connect, migrateDb } from "./db/index.ts";
@@ -149,6 +150,11 @@ setInterval(() => pruneVisits(db, Date.now()).catch((e) => console.error("[visit
 const sweep = () => sweepActivity(db, Date.now()).catch((e) => console.error("[activity]", e));
 void sweep();
 setInterval(sweep, 60 * 60 * 1000).unref();
+
+// Applications 12 months after their role closed (careers.ts), résumés first. On start, then hourly.
+const pruneCareers = () => pruneApplications(db, media, Date.now()).catch((e) => console.error("[careers]", e));
+void pruneCareers();
+setInterval(pruneCareers, 60 * 60 * 1000).unref();
 
 serve({ fetch: createApp({ db, store, send, notify, secret, codes, ways: waysConfig, media, proof, mail }).fetch, port }, (info) => {
   console.log(`orbit-api listening on :${info.port}`);

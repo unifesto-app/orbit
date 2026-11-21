@@ -58,6 +58,7 @@ export default function Home() {
         <nav>
           <Link href="/terms">Terms</Link>
           <Link href="/privacy">Privacy</Link>
+          <Link href="/careers">Careers</Link>
           {SOCIAL.map(([name, url]) => (
             <a key={name} href={url} target="_blank" rel="noopener noreferrer" aria-label={`Orbit on ${name}`}>
               {name}

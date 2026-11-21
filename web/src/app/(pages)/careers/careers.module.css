@@ -1,0 +1,224 @@
+/* Careers, inside the reading pages' column ((pages)/legal.module.css sets the h1, h2, p and lists). The form's fields
+   match the waitlist's (page.module.css). */
+
+.lead {
+  font-size: 18px;
+  line-height: 1.5;
+  color: var(--orbit-text-2);
+}
+
+.space {
+  min-height: 240px; /* held while the openings stream in, so the footer doesn't jump */
+}
+
+.note,
+.error {
+  padding: 10px 12px;
+  border-radius: var(--orbit-radius);
+  background: rgb(var(--orbit-stone-rgb) / 0.06);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.note {
+  margin-top: 32px;
+  color: var(--orbit-text-2);
+}
+
+.error {
+  font-weight: var(--orbit-weight-medium);
+}
+
+/* The open roles: a row each, title over its team, place and kind. */
+.list {
+  margin: 16px 0 0;
+  padding: 0 !important;
+  list-style: none;
+  border-top: 1px solid var(--orbit-hairline);
+}
+
+.list li {
+  margin: 0 !important;
+  border-bottom: 1px solid var(--orbit-hairline);
+}
+
+.row {
+  display: grid;
+  gap: 4px;
+  padding: 18px 0;
+  text-decoration: none;
+}
+
+.role {
+  font-family: var(--display);
+  font-weight: var(--orbit-weight-headline);
+  font-size: 19px;
+  letter-spacing: -0.01em;
+  transition: color 0.2s;
+}
+
+.row:hover .role {
+  color: var(--orbit-accent);
+}
+
+.meta,
+.facts {
+  font-size: 14px;
+  color: var(--orbit-text-2);
+}
+
+/* One opening */
+.back {
+  display: inline-block;
+  margin-bottom: 20px;
+  font-size: 14px;
+  color: var(--orbit-text-2);
+  text-decoration: none;
+}
+
+.back::before {
+  content: "← ";
+}
+
+.back:hover {
+  color: var(--orbit-text);
+}
+
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-top: 14px !important;
+}
+
+.pay {
+  color: var(--orbit-text);
+}
+
+.about {
+  line-height: 1.6;
+}
+
+.about:first-of-type {
+  margin-top: 28px !important;
+}
+
+/* Apply */
+.form {
+  display: grid;
+  gap: 16px;
+  max-width: 480px;
+  margin-top: 16px;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.field > span:first-child {
+  font-size: 14px;
+  font-weight: var(--orbit-weight-medium);
+  color: var(--orbit-text-2);
+}
+
+.field em {
+  margin-left: 6px;
+  font-style: normal;
+  font-weight: var(--orbit-weight-text);
+  color: rgb(var(--orbit-stone-rgb) / 0.4);
+}
+
+.field input,
+.field textarea {
+  width: 100%;
+  border: 1px solid var(--orbit-border);
+  border-radius: var(--orbit-radius);
+  background: var(--orbit-ground);
+  font-size: 16px; /* 16px or more, so phones don't zoom in */
+  transition: border-color 0.2s;
+}
+
+.field input {
+  height: 48px;
+  padding: 0 14px;
+}
+
+.field textarea {
+  padding: 12px 14px;
+  resize: vertical;
+  font: inherit;
+  font-size: 16px;
+}
+
+.field input.file {
+  height: auto;
+  padding: 12px 14px;
+  font-size: 14px;
+  color: var(--orbit-text-2);
+}
+
+.file::file-selector-button {
+  margin-right: 12px;
+  padding: 6px 14px;
+  border: 1px solid var(--orbit-border);
+  border-radius: var(--orbit-radius-pill);
+  background: none;
+  color: var(--orbit-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.field input:focus,
+.field textarea:focus {
+  outline: none;
+  border-color: var(--orbit-accent);
+}
+
+.field input::placeholder,
+.field textarea::placeholder {
+  color: rgb(var(--orbit-stone-rgb) / 0.32);
+}
+
+.agree {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--orbit-text-2);
+  cursor: pointer;
+}
+
+.agree input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 1px 0 0;
+  accent-color: var(--orbit-accent);
+  cursor: pointer;
+}
+
+.agree a {
+  color: var(--orbit-text);
+}
+
+.done {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid var(--orbit-border);
+  border-radius: var(--orbit-radius);
+}
+
+.done p {
+  margin: 0 !important;
+  color: var(--orbit-text-2);
+}
+
+.done .doneTitle {
+  margin-bottom: 6px !important;
+  font-family: var(--display);
+  font-weight: var(--orbit-weight-headline);
+  font-size: 19px;
+  color: var(--orbit-text);
+}

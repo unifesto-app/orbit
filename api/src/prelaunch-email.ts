@@ -41,37 +41,27 @@ const keepInline = (html: string) =>
   `<span class="gs" style="display:inline-block"><span class="gd" style="display:inline-block">${html}</span></span>`;
 
 // Everything a person typed goes into the HTML escaped.
-const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+export const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 // The greeting uses the first name only when it looks like a name (letters, with . ' ’ -), so a "name" that is a link
 // or a sentence can't ride our email to an address nobody proved; anything else gets "You’re in."
-const NAME = /^[\p{L}\p{M}][\p{L}\p{M}.'’-]{0,39}$/u;
+export const NAME = /^[\p{L}\p{M}][\p{L}\p{M}.'’-]{0,39}$/u;
 
-export function welcomeEmail(p: { name: string; features: Feature[] }, site = SITE) {
-  const token = p.name.trim().split(/\s+/)[0] ?? "";
-  const first = NAME.test(token) ? token : null;
-  const hello = first ? `You’re in, ${first}.` : "You’re in.";
-  const wants = p.features.map((f) => FEATURES[f]);
-  const subject = "You’re on the Orbit waitlist";
-  const lead = "You’re on the Orbit waitlist. We’ll let you know when Orbit opens.";
-  const why = `You’re getting this because you joined the Orbit waitlist at heyorbit.in. To leave it, write to ${WAITLIST_CONTACT}.`;
-
-  const chips = wants
-    .map(
-      (w) =>
-        // A Sage outline with light type, not a Sage fill: dark type on Sage can't be kept through Gmail's inversion.
-        `<span class="t1" style="display:inline-block;margin:0 6px 8px 0;padding:6px 12px;border:1px solid ${palette.sage};border-radius:${radius.pill}px;color:${text};font:500 13px/1.2 ${body}">${keepInline(esc(w))}</span>`,
-    )
-    .join(" "); // a space between, so clients that drop inline-block (Outlook on Windows) don't run the labels together
-
-  const html = `<!doctype html>
+// The frame every Orbit email shares (the welcome below, careers-email.ts): the wordmark, the symbols in orbit, a
+// heading, a line, anything in between, one button, then why they got it and the footer. `lead` and `middle` are HTML
+// the caller has made safe; the rest is escaped here.
+export function frame(
+  p: { subject: string; heading: string; lead: string; middle?: string; button: { href: string; label: string }; why: string },
+  site = SITE,
+) {
+  return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="dark">
 <meta name="supported-color-schemes" content="dark">
-<title>${subject}</title>
+<title>${esc(p.subject)}</title>
 <style>
 :root{color-scheme:dark;supported-color-schemes:dark}
 body{margin:0;padding:0;${bg(ground)}}
@@ -92,20 +82,15 @@ u + .body .gd{background:#000;mix-blend-mode:difference}
 <table role="presentation" class="b0" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${ground}" style="max-width:560px;${bg(ground)}">
 <tr><td class="px" style="padding:0 32px"><img src="${site}/email/wordmark.png" width="120" alt="Orbit" style="display:block;width:120px;height:auto;border:0"></td></tr>
 <tr><td style="padding:28px 16px 0"><img src="${site}/email/orbits.png" width="528" alt="" style="display:block;width:100%;max-width:528px;height:auto;border:0"></td></tr>
-<tr><td class="px" style="padding:8px 32px 0">${keep(`<h1 class="h1 t1" style="margin:0;color:${text};font:800 34px/1.3 ${display};letter-spacing:-0.03em">${esc(hello)}</h1>`)}</td></tr>
-<tr><td class="px" style="padding:14px 32px 0">${keep(`<p class="t2" style="margin:0;color:${text2};font:400 16px/1.6 ${body}">${lead}</p>`)}</td></tr>
-${
-  chips
-    ? `<tr><td class="px" style="padding:28px 32px 12px">${keep(`<p class="t2" style="margin:0;color:${text2};font:500 13px/1.4 ${body}">You’d love</p>`)}</td></tr>
-<tr><td class="px" style="padding:0 32px">${chips}</td></tr>`
-    : ""
-}
+<tr><td class="px" style="padding:8px 32px 0">${keep(`<h1 class="h1 t1" style="margin:0;color:${text};font:800 34px/1.3 ${display};letter-spacing:-0.03em">${esc(p.heading)}</h1>`)}</td></tr>
+<tr><td class="px" style="padding:14px 32px 0">${keep(`<p class="t2" style="margin:0;color:${text2};font:400 16px/1.6 ${body}">${p.lead}</p>`)}</td></tr>
+${p.middle ?? ""}
 <tr><td class="px" style="padding:28px 32px 0">
-<a class="t1 b1" href="https://www.instagram.com/heyorbit.in" style="display:inline-block;padding:12px 22px;border:1px solid ${glassBorder};border-radius:${radius.pill}px;${bg(glassFill)};color:${text};font:600 15px/1.2 ${display};text-decoration:none">${keepInline("Follow Orbit on Instagram")}</a>
+<a class="t1 b1" href="${esc(p.button.href)}" style="display:inline-block;padding:12px 22px;border:1px solid ${glassBorder};border-radius:${radius.pill}px;${bg(glassFill)};color:${text};font:600 15px/1.2 ${display};text-decoration:none">${keepInline(esc(p.button.label))}</a>
 </td></tr>
 <tr><td class="px" style="padding:40px 32px 0"><div style="height:1px;line-height:1px;font-size:0;${bg(hairline)}">&nbsp;</div></td></tr>
 <tr><td class="px" style="padding:20px 32px 0">${keep(`<p class="t2" style="margin:0;color:${text2};font:400 12px/1.6 ${body}">
-${why.replace(WAITLIST_CONTACT, `<a class="t2" href="mailto:${WAITLIST_CONTACT}" style="color:${text2}">${WAITLIST_CONTACT}</a>`)}<br>
+${esc(p.why).replace(WAITLIST_CONTACT, `<a class="t2" href="mailto:${WAITLIST_CONTACT}" style="color:${text2}">${WAITLIST_CONTACT}</a>`)}<br>
 <a class="t2" href="${site}/terms" style="color:${text2}">Terms</a> &middot; <a class="t2" href="${site}/privacy" style="color:${text2}">Privacy</a><br>
 © 2027 Orbit
 </p>`)}</td></tr>
@@ -114,6 +99,39 @@ ${why.replace(WAITLIST_CONTACT, `<a class="t2" href="mailto:${WAITLIST_CONTACT}"
 </table>
 </body>
 </html>`;
+}
+
+export function welcomeEmail(p: { name: string; features: Feature[] }, site = SITE) {
+  const token = p.name.trim().split(/\s+/)[0] ?? "";
+  const first = NAME.test(token) ? token : null;
+  const hello = first ? `You’re in, ${first}.` : "You’re in.";
+  const wants = p.features.map((f) => FEATURES[f]);
+  const subject = "You’re on the Orbit waitlist";
+  const lead = "You’re on the Orbit waitlist. We’ll let you know when Orbit opens.";
+  const why = `You’re getting this because you joined the Orbit waitlist at heyorbit.in. To leave it, write to ${WAITLIST_CONTACT}.`;
+
+  const chips = wants
+    .map(
+      (w) =>
+        // A Sage outline with light type, not a Sage fill: dark type on Sage can't be kept through Gmail's inversion.
+        `<span class="t1" style="display:inline-block;margin:0 6px 8px 0;padding:6px 12px;border:1px solid ${palette.sage};border-radius:${radius.pill}px;color:${text};font:500 13px/1.2 ${body}">${keepInline(esc(w))}</span>`,
+    )
+    .join(" "); // a space between, so clients that drop inline-block (Outlook on Windows) don't run the labels together
+
+  const html = frame(
+    {
+      subject,
+      heading: hello,
+      lead,
+      middle: chips
+        ? `<tr><td class="px" style="padding:28px 32px 12px">${keep(`<p class="t2" style="margin:0;color:${text2};font:500 13px/1.4 ${body}">You’d love</p>`)}</td></tr>
+<tr><td class="px" style="padding:0 32px">${chips}</td></tr>`
+        : "",
+      button: { href: "https://www.instagram.com/heyorbit.in", label: "Follow Orbit on Instagram" },
+      why,
+    },
+    site,
+  );
 
   const plain = [
     hello,

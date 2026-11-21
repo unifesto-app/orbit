@@ -495,3 +495,49 @@ export const activityDays = pgTable("activity_days", {
   web: integer("web").notNull(),
   app: integer("app").notNull(),
 });
+
+// Careers (contract/src/careers.ts; owner, 22 Nov 2026: "careers page at heyorbit.in/careers, link to galaxy", "Openings
+// + applications"). `slug` is made from the first title and never changes, so a shared link never breaks.
+export const openings = pgTable(
+  "openings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    slug: text("slug").notNull().unique(),
+    title: text("title").notNull(),
+    team: text("team").notNull(),
+    place: text("place").notNull(),
+    kind: text("kind", { enum: ["full", "intern", "part", "contract"] }).notNull(),
+    pay: text("pay"),
+    about: text("about").notNull(),
+    does: jsonb("does").$type<string[]>().notNull(),
+    needs: jsonb("needs").$type<string[]>().notNull(),
+    status: text("status", { enum: ["draft", "open", "closed"] }).notNull().default("draft"),
+    createdAt: at("created_at").notNull().defaultNow(),
+    updatedAt: at("updated_at").notNull().defaultNow(),
+    updatedBy: uuid("updated_by").references(() => users.id),
+  },
+  (t) => [index("openings_status_idx").on(t.status)],
+);
+
+// One per person per opening. No cascade: an opening is closed, never deleted, so applications are never lost with it.
+// The résumé is a private file (resumes/<opening>/<random>.pdf), never under /media; `ip` is kept for abuse only.
+export const applications = pgTable(
+  "applications",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    openingId: uuid("opening_id").notNull().references(() => openings.id),
+    name: text("name").notNull(),
+    email: text("email").notNull(), // lowercased
+    phone: text("phone"),
+    linkedin: text("linkedin"),
+    link: text("link"),
+    note: text("note"),
+    resumeKey: text("resume_key").notNull(),
+    status: text("status", { enum: ["new", "reviewing", "shortlisted", "rejected", "hired"] }).notNull().default("new"),
+    ip: text("ip"),
+    createdAt: at("created_at").notNull().defaultNow(),
+    updatedAt: at("updated_at").notNull().defaultNow(),
+    updatedBy: uuid("updated_by").references(() => users.id),
+  },
+  (t) => [unique("applications_opening_email_uq").on(t.openingId, t.email), index("applications_opening_idx").on(t.openingId, t.createdAt)],
+);
