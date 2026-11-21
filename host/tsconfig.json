@@ -1,0 +1,9 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "allowImportingTsExtensions": true
+  },
+  // Tests run on Node (`node --test`), not React Native, so they stay out of the app's type world.
+  "exclude": ["node_modules", "**/*.test.ts"]
+}
