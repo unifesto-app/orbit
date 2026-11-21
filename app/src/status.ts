@@ -2,19 +2,9 @@
 // 19 Nov 2026: "need various status", from "Just announced, Booking open soon, Booking open now, fast filling, almost
 // filled, sold out", rephrased and added to). Plain words that say what happens next (brand kit, Voice). The first
 // that holds wins:
-//   Cancelled · Ended · On now · Booking opens in January (while bookings are off) · Booking opens <when> ·
-//   Booking closed · Waitlist open · Sold out · Almost full · Filling fast · Just announced · Booking open
+//   Cancelled · Ended · On now · Booking opens <when> · Booking closed · Waitlist open · Sold out · Almost full ·
+//   Filling fast · Just announced · Booking open
 // A free event says Registration where a paid one says Booking. Pure, so status.test.ts runs it on Node.
-
-// Bookings are off until January 2027 (owner, 20 Nov 2026): the early version opens across India in the first week of
-// December for people to try, "No bookings will be happened till Jan". Every ticket, registration, waitlist and slot
-// button says so and opens nothing, and a booking sheet reached by a link says so too. The flows stay as they are:
-// true turns them back on (a device rebuild).
-export const BOOKINGS_OPEN = false;
-/** The booking button while bookings are off. */
-export const HELD = 'Opens in January';
-/** What a booking sheet says while bookings are off. */
-export const HELD_SAYS = 'Bookings open on Orbit in January. Nothing can be booked or paid for until then.';
 export type StatusEvent = {
   startsAt: string;
   announced: string;
@@ -32,7 +22,6 @@ export type StatusKind =
   | 'cancelled'
   | 'ended'
   | 'onNow'
-  | 'held'
   | 'opensSoon'
   | 'waitlist'
   | 'soldOut'
@@ -70,15 +59,13 @@ export function indiaDay(at: string): string {
   return `${DAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
 }
 
-// `open`: whether bookings are on (BOOKINGS_OPEN); tests pass it.
-export function eventStatus(e: StatusEvent, now: number, open = BOOKINGS_OPEN): Status {
+export function eventStatus(e: StatusEvent, now: number): Status {
   const start = Date.parse(e.startsAt);
   const book = e.pricePaise ? 'Booking' : 'Registration';
   const s = (kind: StatusKind, label: string, tone: Status['tone'], short = label): Status => ({ kind, label, short, tone });
   if (e.cancelled) return s('cancelled', 'Cancelled', 'closed');
   if (now >= start + LASTS) return s('ended', 'Ended', 'closed');
   if (now >= start) return s('onNow', 'On now', 'open');
-  if (!open) return s('held', `${book} opens in January`, 'soon');
   if (e.salesOpen && now < Date.parse(e.salesOpen)) return s('opensSoon', `${book} opens ${indiaWhen(e.salesOpen)}`, 'soon', `Opens ${indiaDay(e.salesOpen)}`);
   // Closed beats a waitlist: once sales close there's nothing to join.
   if (e.salesClose && now >= Date.parse(e.salesClose)) return s('closed', `${book} closed`, 'closed');
@@ -94,8 +81,8 @@ export function eventStatus(e: StatusEvent, now: number, open = BOOKINGS_OPEN): 
   return s('open', `${book} open`, 'open');
 }
 
-/** Whether a status is news worth a tag on a row: not the everyday Booking open, not Ended, not bookings being off. */
-export const isNews = (st: Status) => st.kind !== 'open' && st.kind !== 'ended' && st.kind !== 'held';
+/** Whether a status is news worth a tag on a row: not the everyday Booking open, and not Ended. */
+export const isNews = (st: Status) => st.kind !== 'open' && st.kind !== 'ended';
 
 /**
  * A row's tag: the one it's given wins (a role, a refund); then the status when it's news; then the repeat ("Every
@@ -107,15 +94,8 @@ export function rowTag(st: Status, repeats: string | undefined, forBooking: bool
   return repeats;
 }
 
-/**
- * Whether you can book now, and what the booking button says: Book ticket or Register, Join waitlist, or why not.
- * While bookings are off (`open`, BOOKINGS_OPEN), anything that would book says HELD instead, On now included.
- */
-export function bookAction(st: Status, free: boolean, open = BOOKINGS_OPEN): { label: string; can: boolean } {
-  const act = action(st, free);
-  return open || !act.can ? act : { label: HELD, can: false };
-}
-function action(st: Status, free: boolean): { label: string; can: boolean } {
+/** Whether you can book now, and what the booking button says: Book ticket or Register, Join waitlist, or why not. */
+export function bookAction(st: Status, free: boolean): { label: string; can: boolean } {
   switch (st.kind) {
     case 'opensSoon':
       return { label: 'Not open yet', can: false };

@@ -38,9 +38,8 @@ export default function ListModal() {
   const [name, setName] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
   const e = events.find((x) => x.id === event); // only events that can be opened are saved: a made-up link adds nothing
-  // Saving an event whose booking hasn't opened yet may ask for push (Notifications doc; src/push.tsx), any event
-  // while bookings are off till January (src/status.ts).
-  const opensLater = !!e && ['opensSoon', 'held'].includes(eventStatus(e, now).kind);
+  // Saving an event whose booking hasn't opened yet may ask for push (Notifications doc; src/push.tsx).
+  const opensLater = !!e && eventStatus(e, now).kind === 'opensSoon';
   useEffect(() => {
     if (saved && opensLater) void offerPush(`save:${event}`);
   }, [saved, opensLater, event]);

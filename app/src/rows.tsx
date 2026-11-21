@@ -31,7 +31,7 @@ import { followsNow, needsAccount, setFollowing, setLoved, tapSave, useFollowing
 import { usePromoted } from './content';
 import { eventLabel } from './labels';
 import { OrbitSays } from './orbitSays';
-import { BOOKINGS_OPEN, eventStatus, isNews, rowTag, seatsLine, type Status } from './status';
+import { eventStatus, isNews, rowTag, seatsLine, type Status } from './status';
 import { around, color, font, groundAt, radius, rim, space, stoneAt } from './theme';
 
 export const SEAT = 48; // the 1:1 square on a seat card's top rim
@@ -141,8 +141,7 @@ export function StatusLine({ event: e, status: st }: { event: Event; status: Sta
 export function HostRow({ host }: { host: Host }) {
   const venue = venues[host.id];
   const following = useViewer().follows.includes(host.id);
-  // While bookings are off (src/status.ts) a place to play offers Follow, as any host.
-  const action = venue && BOOKINGS_OPEN
+  const action = venue
     ? { label: 'Book', run: () => router.push(`/slot/${host.id}`) }
     : { label: following ? 'Following' : 'Follow', run: () => setFollowing(host.id, !following) };
   return (
@@ -161,7 +160,7 @@ export function HostRow({ host }: { host: Host }) {
       </Pressable>
       <Pressable onPress={() => needsAccount(action.run)} accessibilityRole="button" accessibilityLabel={`${action.label}, ${host.name}`} hitSlop={6}>
         <Glass style={styles.smallPill}>
-          <Text style={[styles.smallPillText, action.label === 'Following' && styles.mutedText]}>{action.label}</Text>
+          <Text style={[styles.smallPillText, following && !venue && styles.mutedText]}>{action.label}</Text>
         </Glass>
       </Pressable>
     </View>
