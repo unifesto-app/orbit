@@ -1,0 +1,32 @@
+{
+  "name": "@orbit/host",
+  "version": "0.0.0",
+  "private": true,
+  "main": "expo-router/entry",
+  "dependencies": {
+    "@expo-google-fonts/sacramento": "^0.4.1",
+    "@orbit/tokens": "workspace:*",
+    "expo": "~58.0.26",
+    "expo-application": "~58.1.2",
+    "expo-constants": "~58.0.16",
+    "expo-font": "~58.0.12",
+    "expo-linking": "~58.0.17",
+    "expo-router": "~58.0.32",
+    "expo-status-bar": "~58.0.5",
+    "react": "19.3.0",
+    "react-native": "0.88.1",
+    "react-native-safe-area-context": "~5.11.1",
+    "react-native-screens": "~4.30.1"
+  },
+  "devDependencies": {
+    "@types/react": "~19.3.0",
+    "typescript": "~6.0.3"
+  },
+  "scripts": {
+    "start": "APP_VARIANT=launch expo start --port 8082",
+    "ios:launch": "APP_VARIANT=launch expo prebuild --clean -p ios && APP_VARIANT=launch expo run:ios --device --port 8082",
+    "ios:station": "APP_VARIANT=station expo prebuild --clean -p ios && APP_VARIANT=station expo run:ios --device --port 8082",
+    "ios:crew": "APP_VARIANT=crew expo prebuild --clean -p ios && APP_VARIANT=crew expo run:ios --device --port 8082",
+    "typecheck": "tsc --noEmit"
+  }
+}

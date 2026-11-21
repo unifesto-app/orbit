@@ -1,0 +1,9 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "allowImportingTsExtensions": true
+  },
+  // The Expo config runs on Node, not React Native, so it stays out of the app's type world (Expo loads it itself).
+  "exclude": ["node_modules", "app.config.ts"]
+}
