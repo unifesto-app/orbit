@@ -1,6 +1,6 @@
-# Orbit by Unifesto
+# Orbit
 
-New app, API, website and contract for Orbit by Unifesto. Plan: see `docs/context/artifacts/orbit-rebuild-plan.md` (draft, not yet approved).
+New app, API, website and contract for Orbit. Plan: see `docs/context/artifacts/orbit-rebuild-plan.md` (draft, not yet approved).
 
 - `api/` - Node 24, Hono, Drizzle on Postgres
 - `app/` - Expo (TypeScript)
@@ -27,7 +27,7 @@ The API's tests need a Postgres: `createdb orbit_test` locally, or set `TEST_DAT
 
 - `api/Dockerfile`, `web/Dockerfile` and `galaxy/Dockerfile` build from the repo root.
 - CI (`.github/workflows/ci.yml`) runs typecheck, tests, build and both Docker builds on every push and PR.
-- `deploy/deploy.sh` copies the repo to Orbit's own server, `orbit-server` (ap-south-1, its own VPC, nothing shared with Unifesto), and builds and starts `deploy/docker-compose.yml` there: the API, web, Galaxy, Valkey and Caddy. Deploy from a worktree at `origin/main`. It needs `aws login --profile orbit` and `~/.ssh/orbit-key`; port 22 is closed and SSH goes through Session Manager.
+- `deploy/deploy.sh` copies the repo to Orbit's own server, `orbit-server` (ap-south-1, its own VPC, nothing shared), and builds and starts `deploy/docker-compose.yml` there: the API, web, Galaxy, Valkey and Caddy. Deploy from a worktree at `origin/main`. It needs `aws login --profile orbit` and `~/.ssh/orbit-key`; port 22 is closed and SSH goes through Session Manager.
 - Caddy (`deploy/Caddyfile`) serves heyorbit.in, www., api. and galaxy. behind Cloudflare (Full strict, Authenticated Origin Pulls) with the origin cert in `~/orbit/certs` on the server.
 - On the server, `~/orbit/api.env` holds `DATABASE_URL` (database `orbit`, login `orbit_app`, on Orbit's own RDS `orbit-db`), `AUTH_SECRET` and `REDIS_URL=redis://orbit-redis:6379`, Orbit's own Valkey container.
 - Sign-in codes (`api/src/auth/senders.ts`), each channel switched on by its own settings in `api.env`:
@@ -40,7 +40,7 @@ The API's tests need a Postgres: `createdb orbit_test` locally, or set `TEST_DAT
 
 ## PM board and Claude Code
 
-Galaxy's PM board (`/pm-board`, for staff with the Platform feature) and Claude Code share one board through the API (`api/src/pm`). Claude Code reaches it as the MCP server `orbit-pm` at `https://api.heyorbit.in/pm/mcp`, with the same tools as Unifesto's old `unifesto-pm`.
+Galaxy's PM board (`/pm-board`, for staff with the Platform feature) and Claude Code share one board through the API (`api/src/pm`). Claude Code reaches it as the MCP server `orbit-pm` at `https://api.heyorbit.in/pm/mcp`.
 
 - To connect a computer, the platform owner makes a token in Galaxy, PM board, Connect Claude, and runs the command shown there once:
 

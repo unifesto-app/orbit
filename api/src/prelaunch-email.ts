@@ -107,7 +107,7 @@ ${
 <tr><td class="px" style="padding:20px 32px 0">${keep(`<p class="t2" style="margin:0;color:${text2};font:400 12px/1.6 ${body}">
 ${why.replace(WAITLIST_CONTACT, `<a class="t2" href="mailto:${WAITLIST_CONTACT}" style="color:${text2}">${WAITLIST_CONTACT}</a>`)}<br>
 <a class="t2" href="${site}/terms" style="color:${text2}">Terms</a> &middot; <a class="t2" href="${site}/privacy" style="color:${text2}">Privacy</a><br>
-© 2027 Unifesto Private Limited
+© 2027 Orbit
 </p>`)}</td></tr>
 </table>
 </td></tr>
@@ -126,7 +126,7 @@ ${why.replace(WAITLIST_CONTACT, `<a class="t2" href="mailto:${WAITLIST_CONTACT}"
     "",
     why,
     `Terms: ${site}/terms · Privacy: ${site}/privacy`,
-    "© 2027 Unifesto Private Limited",
+    "© 2027 Orbit",
   ].join("\n");
 
   return { subject, html, text: plain, replyTo: WAITLIST_CONTACT };
