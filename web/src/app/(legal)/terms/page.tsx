@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { CONTACT, LEGAL_UPDATED, OPEN_GRAPH, OPERATOR, X_HANDLE } from "../../site";
+import { CONTACT, LEGAL_UPDATED, OPEN_GRAPH, X_HANDLE } from "../../site";
 import styles from "../legal.module.css";
 
 // The waitlist's terms. A draft for the waitlist only; a lawyer reviews it before launch (orbit-plan.md, open item 17). The app gets its own terms at launch.
@@ -20,8 +20,8 @@ export default function Terms() {
       <p className={styles.updated}>Last updated {LEGAL_UPDATED}</p>
 
       <p>
-        These terms cover the Orbit waitlist at heyorbit.in. Orbit is run by {OPERATOR}, India (“we”). By joining the
-        waitlist you agree to them and to the <Link href="/privacy">Privacy Policy</Link>.
+        These terms cover the Orbit waitlist at heyorbit.in (“Orbit”, “we”). By joining the waitlist you agree to them and
+        to the <Link href="/privacy">Privacy Policy</Link>.
       </p>
 
       <h2>What the waitlist is</h2>

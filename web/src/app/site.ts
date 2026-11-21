@@ -9,11 +9,9 @@ export const SITE = "https://heyorbit.in";
 export const DESCRIPTION =
   "Orbit is coming to Hyderabad. Join the waitlist for fests in one click, turf, courts and gaming by the hour, hackathons, meetups, and the comedians and bands you love.";
 
-// Who runs Orbit for the legal pages: Unifesto Private Limited, with Orbit as its second app (owner, 19 Nov 2026).
-export const OPERATOR = "Unifesto Private Limited";
 // One address with the welcome email (api/src/prelaunch-email.ts).
 export const CONTACT = WAITLIST_CONTACT;
-export const LEGAL_UPDATED = "19 November 2026";
+export const LEGAL_UPDATED = "21 November 2026";
 
 // Orbit's accounts, for the footers and the structured data (owner, 18 Nov 2026: "add X account to web"); the X handle
 // also marks link previews on X as Orbit's.

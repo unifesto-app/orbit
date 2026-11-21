@@ -13,7 +13,7 @@ const script = Sacramento({ variable: "--font-script", weight: "400", subsets: [
 
 export const metadata: Metadata = {
   title: { default: "Galaxy", template: "%s | Galaxy" },
-  description: "Platform admin for Orbit by Unifesto",
+  description: "Platform admin for Orbit",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

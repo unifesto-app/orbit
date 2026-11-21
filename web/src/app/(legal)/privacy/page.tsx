@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { CONTACT, LEGAL_UPDATED, OPEN_GRAPH, OPERATOR, X_HANDLE } from "../../site";
+import { CONTACT, LEGAL_UPDATED, OPEN_GRAPH, X_HANDLE } from "../../site";
 import styles from "../legal.module.css";
 
 // The waitlist's privacy policy: exactly what the page and the API keep (api/src/prelaunch.ts, contract
@@ -22,7 +22,7 @@ export default function Privacy() {
       <p className={styles.updated}>Last updated {LEGAL_UPDATED}</p>
 
       <p>
-        This policy covers the Orbit waitlist at heyorbit.in. Orbit is run by {OPERATOR}, India.
+        This policy covers the Orbit waitlist at heyorbit.in (“Orbit”, “we”).
       </p>
 
       <h2>What we keep</h2>
