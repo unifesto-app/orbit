@@ -1,15 +1,17 @@
-// The host apps' icons (owner, 21 Nov 2026: "design app icons for all host apps": small ORBIT, the app's name big under
-// it, all caps in Sofachrome, 3D type for all, Charcoal ground). Same 3D as the main icon (app/scripts/app-icon.cjs).
+// The host apps' icons (owner, 21 Nov 2026): small ORBIT and the app's name big, all caps in Sofachrome, 3D type, on a
+// glass pill ("just glass enough", picked over versions with symbols), Charcoal ground. Same 3D as the main icon
+// (app/scripts/app-icon.cjs); the glass is the app's Glass look (tokens' glass border, a Stone sheen on top).
 // Letters are Sofachrome Regular outlines (Typodermic desktop licence: images only, so the paths are inline and the
 // font file never enters the repo). Set with the font's kerning plus ORBIT's +46 tracking; x is each glyph's origin.
 // Run from the repo root: node host/scripts/app-icon.cjs [outDir] (outDir defaults to host/assets/icons), then prebuild
-// and rebuild each app. Sharp is borrowed from the people app, which already depends on it.
+// and rebuild each app. Writes <app>.png (iOS), <app>-android.png and <app>-android-mono.png (adaptive foreground and
+// themed monochrome; the background is Charcoal in app.config.ts). Sharp is borrowed from the people app.
 /* global __dirname, Buffer */
 const path = require('path');
 const root = path.join(__dirname, '..', '..');
 const sharp = require(require.resolve('sharp', { paths: [path.join(root, 'app')] }));
 const out = process.argv[2] ? path.resolve(process.argv[2]) : path.join(root, 'host', 'assets', 'icons');
-const { palette: P, depth } = require(path.join(root, 'tokens', 'tokens.json'));
+const { palette: P, depth, glass } = require(path.join(root, 'tokens', 'tokens.json'));
 
 const GLYPH = {
   O: 'M855 0C1052 0 1185 -149 1185 -341C1185 -536 1054 -682 855 -682H365C167 -682 36 -539 36 -341C36 -148 170 0 365 0ZM786 -300C786 -164 750 -118 668 -118H532C456 -118 422 -165 422 -300V-409C422 -530 453 -565 532 -565H668C755 -565 786 -532 786 -409Z',
@@ -52,32 +54,46 @@ const DEFS = `<radialGradient id="wmBody" cx="0.36" cy="0.3" r="0.85">${depth.wo
   <feMerge><feMergeNode in="shadow"/><feMergeNode in="SourceGraphic"/><feMergeNode in="gloss"/></feMerge>
 </filter>`;
 
-// `name` in 3D, its ink `w` wide, centred on x 512, cap top at `top`. Returns [svg, cap height in px].
-function word(name, w, top) {
+// `name` in 3D (or flat in `fill`), its ink `w` wide, centred on x 512, cap top at `top`.
+function word(name, w, top, fill) {
   const { ink, at } = WORDS[name];
   const k = w / (ink[1] - ink[0]);
-  const g = `<g transform="translate(${512 - w / 2} ${top + CAP * k}) scale(${k}) translate(${-ink[0]} 0)" fill="url(#wmBody)" filter="url(#wm3d)">${at.map(([c, x]) => `<path transform="translate(${x} 0)" d="${GLYPH[c]}"/>`).join('')}</g>`;
-  return [g, CAP * k];
+  const paint = fill ? `fill="${fill}"` : 'fill="url(#wmBody)" filter="url(#wm3d)"';
+  return `<g transform="translate(${512 - w / 2} ${top + CAP * k}) scale(${k}) translate(${-ink[0]} 0)" ${paint}>${at.map(([c, x]) => `<path transform="translate(${x} 0)" d="${GLYPH[c]}"/>`).join('')}</g>`;
 }
+const capOf = (name, w) => (CAP * w) / (WORDS[name].ink[1] - WORDS[name].ink[0]);
 
-// The lockup: ORBIT small and the same on all three; the app's name below it, every name the same width, so the
-// shorter the name, the taller its caps. Centred as a block.
-const ORBIT_W = 300;
-const NAME_W = 800;
-const GAP = 40;
-function icon(name) {
-  const orbitCap = (CAP * ORBIT_W) / (WORDS.ORBIT.ink[1] - WORDS.ORBIT.ink[0]);
-  const nameCap = (CAP * NAME_W) / (WORDS[name].ink[1] - WORDS[name].ink[0]);
-  const top = 512 - (orbitCap + GAP + nameCap) / 2;
-  const body = word('ORBIT', ORBIT_W, top)[0] + word(name, NAME_W, top + orbitCap + GAP)[0];
-  return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024"><defs>${DEFS}</defs><rect width="1024" height="1024" fill="${P.charcoal}"/>${body}</svg>`);
+// The glass pill, centred: a Charcoal body, the Stone sheen over its top half, the glass border as its rim. ORBIT small
+// and the name big on it; every name the same width, so the shorter the name, the taller its caps.
+const PILL = { x: 86, y: 378, w: 852, h: 268 };
+const pill = (paint) => `<rect x="${PILL.x}" y="${PILL.y}" width="${PILL.w}" height="${PILL.h}" rx="${PILL.h / 2}" ${paint}/>`;
+const ORBIT_W = 210;
+const NAME_W = 660;
+const GAP = 22;
+function lockup(name, fill) {
+  const [a, b] = [capOf('ORBIT', ORBIT_W), capOf(name, NAME_W)];
+  const top = 512 - (a + GAP + b) / 2 + 2;
+  return word('ORBIT', ORBIT_W, top, fill) + word(name, NAME_W, top + a + GAP, fill);
 }
+const art = (name) =>
+  pill(`fill="${P.charcoal}"`) + pill('fill="url(#sheen)"') + pill(`fill="none" stroke="${glass.border}" stroke-width="3"`) + lockup(name);
+// Android 13 themed icon: one flat colour the launcher tints; the pill becomes its outline.
+const mono = (name) => pill('fill="none" stroke="#ffffff" stroke-width="10"') + lockup(name, '#ffffff');
+
+const SHEEN = `<linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${P.stone}" stop-opacity=".14"/><stop offset=".45" stop-color="${P.stone}" stop-opacity="0"/></linearGradient>`;
+const svg = (body) => Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024"><defs>${DEFS}${SHEEN}</defs>${body}</svg>`);
+// Android keeps only a 66-unit circle of the 108-unit adaptive icon safe from every mask: radius 313 at 1024. The
+// pill's round ends reach half its width from the centre, so shrink it to 304 there.
+const ANDROID = 304 / (PILL.w / 2);
+const at = (s, body) => `<g transform="translate(512 512) scale(${s}) translate(-512 -512)">${body}</g>`;
 
 (async () => {
   require('fs').mkdirSync(out, { recursive: true });
   for (const [variant, name] of [['launch', 'LAUNCH'], ['crew', 'CREW'], ['station', 'STATION']]) {
-    const file = path.join(out, `${variant}.png`);
-    await sharp(icon(name)).flatten({ background: P.charcoal }).removeAlpha().png().toFile(file); // iOS: opaque, full bleed
-    console.log(`ok: ${variant}.png`);
+    const file = (suffix) => path.join(out, `${variant}${suffix}.png`);
+    await sharp(svg(`<rect width="1024" height="1024" fill="${P.charcoal}"/>${art(name)}`)).flatten({ background: P.charcoal }).removeAlpha().png().toFile(file('')); // iOS: opaque, full bleed
+    await sharp(svg(at(ANDROID, art(name)))).png().toFile(file('-android'));
+    await sharp(svg(at(ANDROID, mono(name)))).png().toFile(file('-android-mono'));
+    console.log(`ok: ${variant}.png, -android.png, -android-mono.png`);
   }
 })();
