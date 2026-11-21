@@ -25,7 +25,14 @@ const config: ExpoConfig = {
     appleTeamId: '9AH3Z5C5DH',
     infoPlist: { ITSAppUsesNonExemptEncryption: false },
   },
-  android: { package: v.id },
+  android: {
+    package: v.id,
+    adaptiveIcon: {
+      foregroundImage: `./assets/icons/${key}-android.png`,
+      monochromeImage: `./assets/icons/${key}-android-mono.png`,
+      backgroundColor: '#121215', // Charcoal
+    },
+  },
   plugins: ['expo-router', 'expo-font'],
   owner: 'unifesto-app',
 };
