@@ -32,6 +32,11 @@
   width: auto;
 }
 
+/* The wordmark is one light grey (#ececee), drawn for the dark top bar; on the light panel it turns to #131311. */
+:global(:root[data-theme="light"]) .logo img {
+  filter: invert(1);
+}
+
 .form {
   display: flex;
   flex-direction: column;
