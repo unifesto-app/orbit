@@ -61,7 +61,7 @@
 }
 
 
-/* heyorbit.in and the theme switch: links or buttons, all drawn as AWS's top bar links. */
+/* heyorbit.in, the theme switch and Sign out: links or buttons, all drawn as AWS's top bar links. */
 .topLink {
   display: flex;
   align-items: center;
@@ -79,6 +79,17 @@
 
 .topLink:hover {
   color: var(--color-text-interactive-hover);
+}
+
+.account {
+  display: flex;
+  align-items: center;
+  gap: var(--space-m);
+  flex: none;
+}
+
+.accountName {
+  color: var(--color-text-body-secondary);
 }
 
 /* The switch names the theme it goes to. */
@@ -296,6 +307,7 @@
   }
 
   .site,
+  .accountName,
   .headerTheme {
     display: none;
   }

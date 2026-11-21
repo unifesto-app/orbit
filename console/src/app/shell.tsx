@@ -10,13 +10,13 @@ import wordmark from "./orbit-wordmark.svg";
 import styles from "./shell.module.css";
 import ui from "./ui.module.css";
 
-// Galaxy's shell (galaxy/src/app/shell.tsx), copied rather than shared: the two part ways from here (this one has a
-// light theme, its own nav and, later, the app's sign-in). The account slot comes back with sign-in.
+// Galaxy's shell (galaxy/src/app/shell.tsx), copied rather than shared: the two part ways (this one has a light theme,
+// its own nav and the app's sign-in). `account`: who's signed in and Sign out, from (console)/layout.tsx.
 
 // Same breakpoint as the AWS console: below it the side nav is a drawer.
 const DESKTOP = "(min-width: 689px)";
 
-export function Shell({ children }: { children: ReactNode }) {
+export function Shell({ children, account }: { children: ReactNode; account: ReactNode }) {
   // Desktop always shows the side nav. Phones open it as a drawer over the
   // page: everything else goes inert, focus moves in, and returns on close.
   const [drawer, setDrawer] = useState(false);
@@ -60,6 +60,7 @@ export function Shell({ children }: { children: ReactNode }) {
           heyorbit.in <Icon name="external" />
         </a>
         <ThemeSwitch className={`${styles.topLink} ${styles.headerTheme}`} />
+        {account}
       </header>
 
       <div className={styles.toolbar} inert={drawer}>

@@ -5,7 +5,7 @@ set -euo pipefail
 # Nothing goes through a registry.
 #   ./deploy/deploy.sh
 #
-# Needs on the server, in ~/orbit: the env files (api.env, web.env, galaxy.env) and certs/ (origin.pem,
+# Needs on the server, in ~/orbit: the env files (api.env, web.env, galaxy.env; console.env is made empty if missing) and certs/ (origin.pem,
 # origin.key: the Cloudflare origin cert for heyorbit.in). Port 22 is closed: SSH goes through AWS Session
 # Manager with the `orbit` profile (`aws login --profile orbit`) and the key ~/.ssh/orbit-key.
 
@@ -40,6 +40,9 @@ fi
 echo "==> syncing source"
 rm -rf src && mkdir -p src && tar -C src -xzf -
 cp src/deploy/docker-compose.yml docker-compose.yml
+# The Console's env file (TURNSTILE_SITE_KEY) came after the first deploys: an empty one keeps compose from refusing the
+# whole stack before the owner fills it in.
+touch console.env
 cp src/deploy/Caddyfile Caddyfile.new
 echo "==> building and starting"
 changed=0

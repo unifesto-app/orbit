@@ -11,6 +11,13 @@ test("safeNext keeps paths on Galaxy and drops anything else", () => {
     ["/\\evil.example", "/"],
     ["/\t/evil.example", "/"], // a URL parser drops the tab: //evil.example
     ["/\n/evil.example", "/"],
+    // Dot segments fold to a path that starts "//" (found in the review of the Console's copy).
+    ["/.//evil.example", "/"],
+    ["/x/..//evil.example", "/"],
+    ["/%2e//evil.example", "/"],
+    ["/./\\evil.example", "/"],
+    ["//galaxy.invalid//evil.example", "/"],
+    ["/a/./b/../c?x=1", "/a/c?x=1"],
     ["https://evil.example/x", "/"],
     ["javascript:alert(1)", "/"],
     [null, "/"],

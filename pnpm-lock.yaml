@@ -192,6 +192,9 @@ importers:
 
   console:
     dependencies:
+      '@orbit/contract':
+        specifier: workspace:*
+        version: link:../contract
       '@orbit/tokens':
         specifier: workspace:*
         version: link:../tokens

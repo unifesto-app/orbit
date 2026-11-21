@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import ui from "./ui.module.css";
+import ui from "../ui.module.css";
 
 export const metadata: Metadata = { title: "Page not found" };
 

@@ -1,0 +1,124 @@
+/* AWS's sign-in: one flat panel centred on the page background */
+.page {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: var(--space-xl) var(--space-m);
+}
+
+.panel {
+  width: min(400px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-l);
+  padding: var(--space-xl);
+  background: var(--color-background-container-content);
+  border: var(--border-divider-section-width) solid var(--color-border-card);
+  border-radius: var(--border-radius-container);
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  color: var(--color-text-heading-default);
+  font-family: var(--font-family-heading);
+  font-size: var(--font-size-heading-s);
+  font-weight: var(--font-weight-bold);
+}
+
+.logo img {
+  height: 13px;
+  width: auto;
+}
+
+/* The wordmark is one light grey (#ececee), drawn for the dark top bar; on the light panel it turns to #131311. */
+:global(:root[data-theme="light"]) .logo img {
+  filter: invert(1);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-m);
+}
+
+.title {
+  color: var(--color-text-heading-default);
+  font-size: var(--font-size-heading-l);
+  line-height: var(--line-height-heading-l);
+  letter-spacing: var(--letter-spacing-heading-l);
+  font-weight: var(--font-weight-heading);
+}
+
+.label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xxs);
+  color: var(--color-text-form-label);
+  font-weight: var(--font-weight-form-label);
+}
+
+.input {
+  width: 100%;
+}
+
+.buttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.back {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-text-link-default);
+  font: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--color-text-link-decoration-default);
+  cursor: pointer;
+}
+
+.back:hover {
+  color: var(--color-text-link-hover);
+}
+
+.alert {
+  padding: var(--space-xs) var(--space-s);
+  border: var(--border-width-field) solid var(--color-border-status-error);
+  border-radius: var(--border-radius-input);
+  background: var(--color-background-status-indicator-error);
+  color: var(--color-text-status-error);
+}
+
+/* The Console's own, for the app's steps. */
+
+/* A line under a field or title: where the code went, the age, the terms. */
+.line {
+  color: var(--color-text-body-secondary);
+}
+
+/* The masked account on "Is this you?", as the app's card shows it. */
+.card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-xxxs);
+  padding: var(--space-m);
+  border: var(--border-divider-section-width) solid var(--color-border-card);
+  border-radius: var(--border-radius-container);
+  color: var(--color-text-heading-default);
+  font-family: var(--font-family-heading);
+  font-size: var(--font-size-heading-m);
+  font-weight: var(--font-weight-heading);
+}
+
+.card span {
+  color: var(--color-text-body-secondary);
+  font-family: var(--font-family-base);
+  font-size: var(--font-size-body-m);
+  font-weight: 400;
+}
