@@ -1,5 +1,7 @@
 /* AWS console frame: top nav, toolbar, side nav + content, footer.
-   Only the side nav and content scroll, as in the console. */
+   Only the side nav and content scroll, as in the console. The frame is pinned to the window, so nothing in it can make
+   the page scroll, and the two scrolling parts keep a scroll that reaches their end instead of passing it to the page
+   (which bounced the whole frame, footer included). */
 .shell {
   display: grid;
   grid-template:
@@ -8,7 +10,8 @@
     "side main" minmax(0, 1fr)
     "foot foot" var(--size-footer-height)
     / var(--size-side-navigation-width) minmax(0, 1fr);
-  height: 100dvh;
+  position: fixed;
+  inset: 0;
 }
 
 .skip {
@@ -157,6 +160,7 @@
 .side {
   grid-area: side;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding-bottom: var(--space-xl);
   background: var(--color-background-layout-panel-content);
   border-right: var(--border-divider-section-width) solid var(--color-border-layout);
@@ -253,6 +257,7 @@
 .main {
   grid-area: main;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: var(--space-l) var(--space-layout-content-horizontal) var(--space-layout-content-bottom);
 }
 
