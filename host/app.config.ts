@@ -13,7 +13,7 @@ const config: ExpoConfig = {
   version: '1.0.0',
   platforms: ['ios', 'android'],
   orientation: 'portrait',
-  icon: './assets/icon.png',
+  icon: `./assets/icons/${key}.png`, // drawn by scripts/app-icon.cjs
   userInterfaceStyle: 'dark',
   scheme: v.scheme,
   ios: {
