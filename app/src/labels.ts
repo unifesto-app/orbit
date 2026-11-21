@@ -13,7 +13,7 @@ export type Label = 'Promoted' | 'People’s choice' | 'New on Orbit';
 // ponytail: fixed numbers on mock love; People's choice moves to a share of the area's hosts once love is real.
 const CHOICE = 100;
 const NEW = 30 * 86_400_000;
-const LIVE: readonly Status['kind'][] = ['open', 'justAnnounced', 'fillingFast', 'almostFull', 'opensSoon'];
+const LIVE: readonly Status['kind'][] = ['open', 'justAnnounced', 'fillingFast', 'almostFull', 'opensSoon', 'held'];
 
 export function eventLabel(
   e: { promoted?: boolean },

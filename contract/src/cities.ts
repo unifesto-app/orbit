@@ -46,38 +46,9 @@ export const allCities: City[] = Object.entries(byState)
 
 const find = (name: string) => allCities.find((c) => c.name === name)!;
 
-// Orbit is open in Telangana and Andhra Pradesh only (owner, 19 Nov 2026: "only ap & telangana. other than it
-// unserviceable. or coming soon"). Every other city is listed, as Coming soon.
-export const servedStates = ["Telangana", "Andhra Pradesh"] as const;
-// A phone's geocoder may name the state short, or in another case.
-const SHORT: Record<string, string> = { TG: "Telangana", TS: "Telangana", AP: "Andhra Pradesh" };
-const fullState = (s: string) => SHORT[s.trim().toUpperCase()] ?? byStateName(s.trim()) ?? s.trim();
-const byStateName = (s: string) => Object.keys(byState).find((k) => k.toLowerCase() === s.toLowerCase());
-
-/** Whether Orbit is open in a state. */
-export const isServedState = (state: string) => (servedStates as readonly string[]).includes(fullState(state));
-
-/**
- * A place's state: its own when it names a state we know (a picked city's, or the phone's geocoder region in English or
- * short), else the state of a listed city by its area or city name, else its city when that names a state. A region we
- * can't read (a phone set to Telugu gives "తెలంగాణ") falls through to the city, as does a place saved before places
- * carried their state.
- */
-export function stateOf(place: { area: string; city: string; state?: string }): string | undefined {
-  const own = place.state?.trim() ? fullState(place.state) : undefined;
-  if (own && byStateName(own)) return own;
-  const named = (n: string) => allCities.find((c) => c.name === n)?.state ?? byStateName(n);
-  return named(place.area) ?? named(place.city);
-}
-
-/** Whether Orbit is open at a place. One it can't put in any state counts as open, so a gap in the list turns nobody away. */
-export function isServed(place: { area: string; city: string; state?: string }): boolean {
-  const state = stateOf(place);
-  return state === undefined || isServedState(state);
-}
-
-// Hyderabad first, then the biggest cities across Telangana and Andhra Pradesh, the only places Orbit is open.
-export const popularCities: City[] = ["Hyderabad", "Visakhapatnam", "Vijayawada", "Warangal", "Tirupati", "Guntur", "Nellore", "Karimnagar", "Kakinada", "Khammam", "Rajahmundry", "Nizamabad"].map(find);
+// Orbit is open across India (owner, 20 Nov 2026: "Making it available all over india. instead of restricting to HYD").
+// Hyderabad first, then the biggest cities. The first six are the Event Request form's city choices.
+export const popularCities: City[] = ["Hyderabad", "Mumbai", "Delhi", "Bengaluru", "Kolkata", "Chennai", "Ahmedabad", "Pune", "Surat", "Jaipur", "Lucknow", "Kanpur"].map(find);
 
 // Cities whose name or state contains the query; names that start with it come first.
 export function searchCities(query: string): City[] {

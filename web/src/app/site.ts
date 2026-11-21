@@ -5,9 +5,10 @@ import { WAITLIST_CONTACT } from "@orbit/contract";
 export const SITE = "https://heyorbit.in";
 
 // The search and link-preview description (owner, 18 Nov 2026: "make it seo friendly"). The page itself shows only the
-// line; this names what Orbit has, so search and AI answers can say what it is.
+// line; this names what Orbit has, so search and AI answers can say what it is. Across India since the owner's 20 Nov
+// 2026 call (was Hyderabad).
 export const DESCRIPTION =
-  "Orbit is coming to Hyderabad. Join the waitlist for fests in one click, turf, courts and gaming by the hour, hackathons, meetups, and the comedians and bands you love.";
+  "Orbit is opening across India. Join the waitlist for fests in one click, turf, courts and gaming by the hour, hackathons, meetups, and the comedians and bands you love.";
 
 // Who runs Orbit for the legal pages: Unifesto Private Limited, with Orbit as its second app (owner, 19 Nov 2026).
 export const OPERATOR = "Unifesto Private Limited";

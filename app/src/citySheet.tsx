@@ -1,9 +1,8 @@
 // The city pick two sheets share: the location screen (src/app/location.tsx) and Edit profile's city for new events
 // (src/app/account/city.tsx). A title and its X, the search, whatever the sheet adds under it (`children`), then Popular
 // cities and every city A to Z, from the one list in @orbit/contract. Only the cities scroll; the rest stays put.
-// Only cities in Telangana and Andhra Pradesh can be picked; the rest say Coming soon (owner, 19 Nov 2026: "only ap &
-// telangana. other than it unserviceable. or coming soon"). Popular cities are all open ones.
-import { allCities, type City, isServedState, popularCities, searchCities } from '@orbit/contract';
+// Every city can be picked: Orbit is open across India (owner, 20 Nov 2026).
+import { allCities, type City, popularCities, searchCities } from '@orbit/contract';
 import { type ReactNode, useState } from 'react';
 import { Platform, Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -50,8 +49,7 @@ export function CitySheet({
         value={query}
         onChangeText={setQuery}
         onSubmitEditing={() => {
-          const first = results.find((c) => isServedState(c.state));
-          if (first) onPick(first);
+          if (results[0]) onPick(results[0]);
         }}
         placeholder="Search for your city"
         accessibilityLabel="Search for your city"
@@ -96,27 +94,23 @@ export function CitySheet({
             </Text>
           ) : null
         }
-        renderItem={({ item: c }) => {
-          const open = isServedState(c.state);
-          return (
-            <Pressable
-              onPress={() => onPick(c)}
-              disabled={!open}
-              style={({ pressed }) => [styles.row, pressed && styles.pressed]}
-              accessibilityRole="button"
-              accessibilityLabel={`${c.name}, ${c.state}${open ? '' : ', coming soon'}`}
-              accessibilityState={{ selected: chosen(c), disabled: !open }}
-            >
-              <Text style={[styles.rowName, !open && styles.soonName]} numberOfLines={1}>
-                {c.name}
-              </Text>
-              <Text style={styles.rowState} numberOfLines={1}>
-                {c.state}
-              </Text>
-              {open ? chosen(c) && <View style={styles.dot} /> : <Text style={styles.soon}>Coming soon</Text>}
-            </Pressable>
-          );
-        }}
+        renderItem={({ item: c }) => (
+          <Pressable
+            onPress={() => onPick(c)}
+            style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+            accessibilityRole="button"
+            accessibilityLabel={`${c.name}, ${c.state}`}
+            accessibilityState={{ selected: chosen(c) }}
+          >
+            <Text style={styles.rowName} numberOfLines={1}>
+              {c.name}
+            </Text>
+            <Text style={styles.rowState} numberOfLines={1}>
+              {c.state}
+            </Text>
+            {chosen(c) && <View style={styles.dot} />}
+          </Pressable>
+        )}
       />
     </View>
   );
@@ -145,8 +139,6 @@ const styles = StyleSheet.create({
   pressed: { backgroundColor: stoneAt(0.08) }, // as a menu row's
   rowName: { flexShrink: 0, fontFamily: font.medium, fontSize: 15, color: color.text },
   rowState: { flex: 1, minWidth: 0, fontFamily: font.text, fontSize: 13, color: color.secondary },
-  soonName: { color: color.secondary }, // not open yet: grey, and it can't be picked
-  soon: { fontFamily: font.medium, fontSize: 12, color: color.secondary },
   // The chosen city: the accent goes on a dot, never on text.
   dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: color.accent },
   empty: { marginTop: space.big, marginHorizontal: 20, fontFamily: font.text, fontSize: 13, lineHeight: 18, color: color.secondary },

@@ -24,6 +24,7 @@ import { Chip, Stepper, Steps } from '../../pickers';
 import { answerPush } from '../../push';
 import { NotFound, Sheet, SheetSays } from '../../rows';
 import { usePayWith } from '../../session';
+import { BOOKINGS_OPEN, HELD, HELD_SAYS } from '../../status';
 import { color, font, space } from '../../theme';
 
 
@@ -57,6 +58,13 @@ export default function SlotSheet() {
     return () => clearInterval(t);
   }, [heldAt]);
   if (!v || !host) return <NotFound what="place to play" />;
+  if (!BOOKINGS_OPEN) {
+    return (
+      <Sheet title={HELD} note={host.name} full>
+        <SheetSays text={HELD_SAYS} />
+      </Sheet>
+    );
+  }
   const days = bookingDays(now); // the app's clock, read each time, so the days move with it
 
   const s = v.stations[si]!;

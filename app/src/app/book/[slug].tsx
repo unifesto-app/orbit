@@ -34,7 +34,7 @@ import { PayMark } from '../../payChoices';
 import { Chip, Stepper, Steps } from '../../pickers';
 import { NotFound, Sheet, SheetSays } from '../../rows';
 import { usePayWith, useSession } from '../../session';
-import { eventStatus } from '../../status';
+import { BOOKINGS_OPEN, eventStatus, HELD, HELD_SAYS } from '../../status';
 import { color, font, space, stoneAt } from '../../theme';
 
 type Step = 'pick' | 'team' | 'details' | 'review';
@@ -74,6 +74,13 @@ export default function Book() {
   const [bar, setBar] = useState(140);
   const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
   if (!e) return <NotFound what="event" />;
+  if (!BOOKINGS_OPEN) {
+    return (
+      <Sheet title={HELD} note={`${e.title} · ${e.when}`} full>
+        <SheetSays text={HELD_SAYS} />
+      </Sheet>
+    );
+  }
 
   // ponytail: only comedy shows carry an age in the mock (src/kinds.ts); the API's events carry their own.
   const age = shows[e.id]?.age;

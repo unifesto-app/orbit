@@ -32,6 +32,7 @@ import { showNote } from '../../note';
 import { offerPush, PushAsk } from '../../push';
 import { BackBar, EventRow, Failed, Glow, MenuButton, Monogram, NotFound, SECTION, Section, shareLink, Tag, TOP, Verified, Waiting } from '../../rows';
 import { api, needsAccount, setFollowing, setHostOff, useFollowing, useHostOff, useMe, useSignedIn } from '../../session';
+import { BOOKINGS_OPEN, HELD } from '../../status';
 import { around, color, font, radius, rim, space } from '../../theme';
 
 const LOGO = 80;
@@ -136,14 +137,14 @@ function MockHost({ host }: { host: Host }) {
         )}
       </ScrollView>
       {/* Book a slot over "Starting from", the cheapest hour (Play doc): the slot picker (src/app/slot/[venue].tsx), after
-          signing in when signed out. */}
+          signing in when signed out. While bookings are off (src/status.ts), it says so and opens nothing. */}
       {venue && (
         <BookBar
           dark
           price={perHour(fromPricePaise(venue))}
           from
-          action="Book a slot"
-          onAction={() => needsAccount(() => router.push(`/slot/${host.id}`))}
+          action={BOOKINGS_OPEN ? 'Book a slot' : HELD}
+          onAction={BOOKINGS_OPEN ? () => needsAccount(() => router.push(`/slot/${host.id}`)) : undefined}
           onHeight={setBar}
         />
       )}
