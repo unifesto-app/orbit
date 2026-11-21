@@ -59,3 +59,99 @@
   letter-spacing: 0;
   -webkit-text-stroke: 0.8px currentColor;
 }
+
+/* AWS's buttons and text field, as Galaxy draws them. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  height: var(--size-vertical-input);
+  padding: 0 var(--space-button-horizontal);
+  border: var(--border-width-button) solid var(--color-border-button-normal-default);
+  border-radius: var(--border-radius-button);
+  background: var(--color-background-button-normal-default);
+  color: var(--color-text-button-normal-default);
+  font: inherit;
+  font-family: var(--font-family-heading);
+  font-weight: var(--font-weight-button);
+  cursor: pointer;
+  transition:
+    background var(--motion-duration-responsive) var(--motion-easing-responsive),
+    border-color var(--motion-duration-responsive) var(--motion-easing-responsive);
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--color-background-button-normal-hover);
+  border-color: var(--color-border-button-normal-hover);
+  color: var(--color-text-button-normal-hover);
+}
+
+.btn:disabled {
+  background: var(--color-background-button-normal-disabled);
+  border-color: var(--color-border-button-normal-disabled);
+  color: var(--color-text-button-normal-disabled);
+  cursor: default;
+}
+
+.primary {
+  background: var(--color-background-button-primary-default);
+  border-color: var(--color-border-button-primary-default);
+  color: var(--color-text-button-primary-default);
+}
+
+.primary:hover:not(:disabled) {
+  background: var(--color-background-button-primary-hover);
+  border-color: var(--color-border-button-primary-hover);
+  color: var(--color-text-button-primary-default);
+}
+
+.primary:disabled {
+  background: var(--color-background-button-primary-disabled);
+  border-color: var(--color-border-button-primary-disabled);
+  color: var(--color-text-button-primary-disabled);
+}
+
+.btnLink {
+  height: var(--size-vertical-input);
+  padding: 0 var(--space-button-horizontal);
+  border: 0;
+  border-radius: var(--border-radius-button);
+  background: transparent;
+  color: var(--color-text-button-normal-default);
+  font: inherit;
+  font-family: var(--font-family-heading);
+  font-weight: var(--font-weight-button);
+  cursor: pointer;
+}
+
+.btnLink:hover {
+  background: var(--color-background-button-link-hover);
+}
+
+.input {
+  height: var(--size-vertical-input);
+  width: 240px;
+  padding: 0 var(--space-field-horizontal);
+  border: var(--border-width-field) solid var(--color-border-input-default);
+  border-radius: var(--border-radius-input);
+  background: var(--color-background-input-default);
+  color: var(--color-text-form-default);
+  font: inherit;
+}
+
+.input::placeholder {
+  color: var(--color-text-input-placeholder);
+  font-style: italic;
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--color-border-input-focused);
+  box-shadow: 0 0 0 1px var(--color-border-input-focused);
+}
+
+.input:disabled {
+  background: var(--color-background-input-disabled);
+  border-color: var(--color-border-input-disabled);
+  color: var(--color-text-input-disabled);
+}

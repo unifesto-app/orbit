@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { DM_Sans, Plus_Jakarta_Sans, Sacramento } from "next/font/google";
 import "@orbit/tokens/tokens.css";
 import "./globals.css";
-import { Shell } from "./shell";
 
 // Galaxy's type: Plus Jakarta Sans for headings, titles and buttons; DM Sans for text (latin-ext carries ₹, U+20B9);
 // Sacramento for the name "Console", as Galaxy's is drawn.
@@ -12,7 +11,7 @@ const script = Sacramento({ variable: "--font-script", weight: "400", subsets: [
 
 export const metadata: Metadata = {
   title: { default: "Console", template: "%s | Console" },
-  description: "Where hosts run their events on Orbit",
+  description: "Everything you run or help run on Orbit",
   // A tool behind sign-in, never a search result.
   robots: { index: false, follow: false },
 };
@@ -32,9 +31,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME }} />
       </head>
-      <body>
-        <Shell>{children}</Shell>
-      </body>
+      {/* The shell is (console)/layout.tsx's, so sign-in shows none of it. */}
+      <body>{children}</body>
     </html>
   );
 }

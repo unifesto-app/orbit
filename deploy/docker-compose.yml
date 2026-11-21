@@ -1,7 +1,7 @@
 # Orbit's stack on its own server, orbit-server (no tie to Unifesto's box, network or Caddy).
-# Caddy (deploy/Caddyfile) serves heyorbit.in, www., api., galaxy. and host. with the Cloudflare origin cert in ./certs.
+# Caddy (deploy/Caddyfile) serves heyorbit.in, www., api., galaxy. and console. with the Cloudflare origin cert in ./certs.
 # Built on the box from the source that deploy/deploy.sh copies to ~/orbit/src.
-# Runtime secrets live in env files on the server only (api.env, web.env, galaxy.env) and so does ./certs.
+# Runtime secrets live in env files on the server only (api.env, web.env, galaxy.env, console.env) and so does ./certs.
 # Never commit them.
 
 name: orbit
@@ -97,7 +97,8 @@ services:
       - "3000"
     networks: [edge]
 
-  # The Console at host.heyorbit.in. No env file and no API yet: both come with sign-in.
+  # The Console at console.heyorbit.in. console.env holds TURNSTILE_SITE_KEY (the same widget as web's and Galaxy's); deploy.sh
+  # makes it empty if it's missing, and production's API then refuses the Console's code sends until the key is in.
   orbit-console:
     build:
       <<: *repo
@@ -105,6 +106,11 @@ services:
     container_name: orbit-console
     restart: unless-stopped
     logging: *logging
+    env_file: ./console.env
+    environment:
+      # The Console's server calls the API directly on `edge`, not through Caddy, and passes on the visitor's address
+      # (console/src/session.ts).
+      ORBIT_API_URL: http://orbit-api:3000
     expose:
       - "3000"
     networks: [edge]
