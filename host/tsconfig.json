@@ -4,6 +4,6 @@
     "strict": true,
     "allowImportingTsExtensions": true
   },
-  // Tests run on Node (`node --test`), not React Native, so they stay out of the app's type world.
-  "exclude": ["node_modules", "**/*.test.ts"]
+  // The Expo config runs on Node, not React Native, so it stays out of the app's type world (Expo loads it itself).
+  "exclude": ["node_modules", "app.config.ts"]
 }

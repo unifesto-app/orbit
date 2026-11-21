@@ -3,8 +3,8 @@ import * as Application from 'expo-application';
 import { StyleSheet, Text, View } from 'react-native';
 import { variants } from '../../variants';
 
-// The native bundle id picks the screen: one Metro serves all three apps' JS, so Constants/expoConfig would be
-// whichever variant Metro started with.
+// The native bundle id picks the screen, never Constants.expoConfig: one Metro serves all three apps' JS, and once a dev
+// client is added the config comes from Metro, so it would be whichever variant Metro started with.
 const v = Object.values(variants).find((x) => x.id === Application.applicationId);
 
 export default function Index() {

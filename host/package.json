@@ -23,10 +23,10 @@
     "typescript": "~6.0.3"
   },
   "scripts": {
-    "start": "APP_VARIANT=launch expo start",
-    "ios:launch": "APP_VARIANT=launch expo prebuild --clean -p ios && APP_VARIANT=launch expo run:ios --device",
-    "ios:station": "APP_VARIANT=station expo prebuild --clean -p ios && APP_VARIANT=station expo run:ios --device",
-    "ios:crew": "APP_VARIANT=crew expo prebuild --clean -p ios && APP_VARIANT=crew expo run:ios --device",
+    "start": "APP_VARIANT=launch expo start --port 8082",
+    "ios:launch": "APP_VARIANT=launch expo prebuild --clean -p ios && APP_VARIANT=launch expo run:ios --device --port 8082",
+    "ios:station": "APP_VARIANT=station expo prebuild --clean -p ios && APP_VARIANT=station expo run:ios --device --port 8082",
+    "ios:crew": "APP_VARIANT=crew expo prebuild --clean -p ios && APP_VARIANT=crew expo run:ios --device --port 8082",
     "typecheck": "tsc --noEmit"
   }
 }
