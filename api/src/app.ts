@@ -9,6 +9,7 @@ import { mediaRoutes } from "./media.ts";
 import { pmRoutes } from "./pm/routes.ts";
 import { prelaunchRoutes } from "./prelaunch.ts";
 import { contentRoutes } from "./content.ts";
+import { careersRoutes } from "./careers.ts";
 import { analyticsRoutes } from "./analytics.ts";
 import { dashboardRoutes } from "./dashboard.ts";
 import { visitRoutes } from "./visits.ts";
@@ -38,6 +39,7 @@ export function createApp(deps?: Deps) {
     app.route("/", prelaunchRoutes(deps));
     app.route("/", visitRoutes(deps));
     app.route("/", contentRoutes(deps));
+    app.route("/", careersRoutes(deps));
     app.route("/", dashboardRoutes(deps));
     app.route("/", analyticsRoutes(deps));
   }

@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { DM_Sans, Plus_Jakarta_Sans, Sacramento } from "next/font/google";
 import { palette } from "@orbit/tokens";
 import "@orbit/tokens/tokens.css";
+import { Suspense } from "react";
 import "./globals.css";
 import { DESCRIPTION, OPEN_GRAPH, SITE, X_HANDLE } from "./site";
 import { Visit } from "./visit";
@@ -31,7 +32,11 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en-IN" className={`${display.variable} ${text.variable} ${script.variable}`}>
       <body>
-        <Visit />
+        {/* It reads the address (usePathname), which a page like /careers/[slug] only knows when asked for. It draws
+            nothing, so it waits in its own boundary instead of holding up the page. */}
+        <Suspense fallback={null}>
+          <Visit />
+        </Suspense>
         {children}
       </body>
     </html>

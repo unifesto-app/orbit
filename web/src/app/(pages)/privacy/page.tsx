@@ -22,7 +22,8 @@ export default function Privacy() {
       <p className={styles.updated}>Last updated {LEGAL_UPDATED}</p>
 
       <p>
-        This policy covers the Orbit waitlist at heyorbit.in (“Orbit”, “we”).
+        This policy covers the Orbit website at heyorbit.in (“Orbit”, “we”): its waitlist, and job applications sent from
+        its careers pages.
       </p>
 
       <h2>What we keep</h2>
@@ -56,6 +57,16 @@ export default function Privacy() {
         keep your IP address, name or number with these counts. To count a visitor once a day, we make a code from your
         network address and browser using a random key that changes every day; the key is deleted when its day ends, so
         the code can’t be made again afterwards. We keep these counts for up to 180 days.
+      </p>
+
+      <h2>If you apply for a job</h2>
+      <p>
+        When you apply for a role at heyorbit.in/careers, we keep what you send: your name and email address, your
+        résumé, and your phone number, LinkedIn, work link and note if you give them, with when you applied and your IP
+        address. We use it only to consider you for that role and to write to you about it. Only the Orbit staff who
+        handle hiring can see it, and every time they open it is recorded. We keep it while the role is open, and delete
+        it, résumé included, within 12 months of the role closing, or sooner if you ask by writing to {mail}. When
+        it’s in, we send you one email to say so.
       </p>
 
       <h2>Why we keep it</h2>

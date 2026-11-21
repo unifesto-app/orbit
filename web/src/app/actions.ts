@@ -3,7 +3,7 @@
 import { ADULT, ageOn, Dob, FEATURES, type Feature, Interest, InterestMeta, readPhone } from "@orbit/contract";
 import { refresh } from "next/cache";
 import { headers } from "next/headers";
-import { API_URL } from "./api";
+import { call } from "./call";
 
 // The waitlist in two steps (owner, 18 Nov 2026: "Name, Mobile, WhatsApp Otp, DoB", "very simple for user to
 // complete"): the details and the features they'd love, then the WhatsApp code. Checked here first so a code is never
@@ -74,23 +74,4 @@ export async function join(form: Details, data: FormData): Promise<Step> {
     return { at: "done", name: form.name.split(/\s+/)[0]!, email: form.email.toLowerCase() };
   }
   return r.code === "under18" ? { at: "details", form, error: r.error } : { at: "code", form, error: r.error };
-}
-
-// POSTs to the API with the browser's address (Caddy's X-Forwarded-For), so its limits are per visitor, not per site.
-async function call(path: string, body: unknown): Promise<{ ok: true } | { ok: false; code?: string; error: string }> {
-  const xff = (await headers()).get("x-forwarded-for");
-  const res = await fetch(`${API_URL}${path}`, {
-    method: "POST",
-    headers: { "content-type": "application/json", ...(xff ? { "x-forwarded-for": xff } : {}) },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(25_000), // past the API's own proof and WhatsApp waits
-  }).catch(() => null);
-  if (!res) return { ok: false, error: "Can't reach Orbit right now. Try again in a minute." };
-  if (res.ok) return { ok: true };
-  const e: { error?: unknown; message?: unknown } | null = await res.json().catch(() => null);
-  return {
-    ok: false,
-    code: typeof e?.error === "string" ? e.error : undefined,
-    error: typeof e?.message === "string" ? e.message : "Something went wrong on our side. Try again in a minute.",
-  };
 }

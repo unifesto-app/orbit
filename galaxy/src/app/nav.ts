@@ -31,6 +31,9 @@ export const sections: { title: string; items: NavItem[] }[] = [
       // The words Orbit itself writes in the app: ad strips, Help answers, Ask Orbit (owner, 19 Nov 2026: "build CMS
       // for Orbit App in galaxy web").
       { label: "App content", href: "/app-content" },
+      // heyorbit.in/careers' openings and who applied (owner, 22 Nov 2026: "careers page at heyorbit.in/careers, link
+      // to galaxy").
+      { label: "Careers", href: "/careers" },
       { label: "PM board", href: "/pm-board" },
     ],
   },

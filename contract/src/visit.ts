@@ -9,7 +9,8 @@ import { InterestMeta, type Tally } from "./prelaunch.ts";
 // link. Each visitor is a code over the address's network and browser, keyed by a salt that is random each day and
 // deleted after it, so a code can't be remade once its day is over.
 
-export const PAGES = ["/", "/terms", "/privacy"] as const;
+// Every opening's page counts as one, "/careers/[slug]" (web visit.tsx), so the list stays short.
+export const PAGES = ["/", "/terms", "/privacy", "/careers", "/careers/[slug]"] as const;
 
 const id = z.string().uuid();
 const ms = (max: number) => z.number().int().min(0).max(max);
