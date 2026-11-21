@@ -18,8 +18,8 @@
  * re-applies the dark colours inside it.
  *
  * Sage (Orbit's accent) on elements: fills, focus, selection, badge tints. The
- * primary scale is mixed from it: toward Stone for the light steps, toward
- * Charcoal for the dark ones. Sage text is too faint on either ground, so text
+ * primary scale is mixed from it: toward Stone for the light steps (toward
+ * white for 50 and 100 in light), toward Charcoal for the dark ones. Sage text is too faint on either ground, so text
  * in that colour (status info, Info links, active nav) takes 300/400 in dark
  * and 800 in light (about 6:1 on the light ground), and light's focus ring
  * takes 700.
@@ -318,6 +318,11 @@
 :root[data-theme="light"] {
   color-scheme: light;
 
+  /* The palest tints (selected rows, info and badge fills) mix Sage toward white here, not Stone: Stone's mix is greyer
+     than light's white surfaces, and info text on it falls under 4.5:1. */
+  --color-primary-50: color-mix(in srgb, var(--orbit-accent) 10%, #ffffff);
+  --color-primary-100: color-mix(in srgb, var(--orbit-accent) 20%, #ffffff);
+
   /* Backgrounds */
   --color-background-layout-main: var(--color-neutral-100);
   --color-background-layout-panel-content: var(--color-neutral-100);
@@ -412,7 +417,7 @@
   --color-text-status-warning: var(--color-warning-800);
   --color-text-status-inactive: var(--color-neutral-600);
 
-  --color-text-badge-blue: var(--color-primary-900); /* 800 is under 4.5:1 on the badge's own tint */
+  --color-text-badge-blue: var(--color-primary-800);
   --color-text-badge-green: var(--color-success-600);
   --color-text-badge-red: var(--color-error-700);
   --color-text-badge-yellow: var(--color-warning-800);
