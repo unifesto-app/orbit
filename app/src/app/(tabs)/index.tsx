@@ -520,24 +520,20 @@ function AskInterests() {
   );
 }
 
-// Coming soon (owner, 19 Nov 2026: "only ap & telangana. other than it unserviceable. or coming soon"): somewhere
-// outside Telangana and Andhra Pradesh, Home says so and shows what's on there, with Pick a city to look around one.
-// Orbit says it, as in the chat (the Orbit speaks take, 19 Nov).
-function Notice({ kind, area }: { kind: 'noLocation' | 'comingSoon' | 'nothingNear'; area?: string }) {
+// No location, or nothing near it: Home says so and shows everything coming up. Orbit says it, as in the chat (the
+// Orbit speaks take, 19 Nov).
+function Notice({ kind, area }: { kind: 'noLocation' | 'nothingNear'; area?: string }) {
   const noLocation = kind === 'noLocation';
-  const soon = kind === 'comingSoon';
   return (
     <OrbitSays
       top={SECTION}
-      title={noLocation ? 'See what’s near you' : soon ? `Coming soon to ${area}` : `Nothing near ${area} yet`}
+      title={noLocation ? 'See what’s near you' : `Nothing near ${area} yet`}
       text={
         noLocation
           ? 'Set your location and Orbit shows what’s within 25 km. Until then, here’s everything coming up.'
-          : soon
-            ? 'Orbit is in Telangana and Andhra Pradesh for now. Here’s what’s on there, soonest first.'
-            : 'Here’s everything coming up on Orbit instead, soonest first.'
+          : 'Here’s everything coming up on Orbit instead, soonest first.'
       }
-      answers={noLocation || soon ? [{ label: soon ? 'Pick a city' : 'Set location', onPress: () => router.push('/location') }] : []}
+      answers={noLocation ? [{ label: 'Set location', onPress: () => router.push('/location') }] : []}
     />
   );
 }

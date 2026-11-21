@@ -1,10 +1,10 @@
 // What Home shows, from who is looking and what's on. Pure, so it runs on Node in layout.test.ts;
 // src/app/index.tsx only draws what this returns. Rules: the Discover flow doc and the picked
 // Home B boards on the Orbit canvas (owner, 15 Nov 2026).
-import { isServed, type Slide as Featured } from '@orbit/contract';
+import type { Slide as Featured } from '@orbit/contract';
 
 // source: "gps" when found from the phone's position, "pick" when chosen from the city list (src/app/location.tsx).
-// `state` is a picked city's state or the geocoder's region; places saved before it existed work it out (stateOf).
+// `state` is a picked city's state or the geocoder's region; older saved places have none.
 export type Place = { area: string; city: string; state?: string; nearAreas: readonly string[]; source?: 'gps' | 'pick' };
 // The fields of expo-location's LocationGeocodedAddress this reads.
 export type Address = { district: string | null; city: string | null; subregion: string | null; region: string | null };
@@ -67,13 +67,10 @@ export function planHome<E extends PlanEvent, H extends PlanHost>(
     .filter((e) => followed.has(e.hostId) && !booked.has(e.id) && !seen.has(e.hostId) && seen.add(e.hostId))
     .slice(0, MAX_ORBIT);
 
-  // Outside Telangana and Andhra Pradesh Orbit isn't open yet: Coming soon, and everything on where it is (owner, 19 Nov
-  // 2026: "only ap & telangana. other than it unserviceable. or coming soon").
-  const notice: 'noLocation' | 'comingSoon' | 'nothingNear' | null = !viewer.place
+  // Orbit is open across India (owner, 20 Nov 2026), so anywhere with nothing near says so and shows everything coming up.
+  const notice: 'noLocation' | 'nothingNear' | null = !viewer.place
     ? 'noLocation'
-    : !isServed(viewer.place)
-      ? 'comingSoon'
-      : upcoming.some((e) => isNear(e.area))
+    : upcoming.some((e) => isNear(e.area))
       ? null
       : 'nothingNear';
   const shown = new Set([...tickets.map((e) => e.id), ...orbit.map((e) => e.id)]);

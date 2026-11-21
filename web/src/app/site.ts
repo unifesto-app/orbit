@@ -5,9 +5,10 @@ import { WAITLIST_CONTACT } from "@orbit/contract";
 export const SITE = "https://heyorbit.in";
 
 // The search and link-preview description (owner, 18 Nov 2026: "make it seo friendly"). The page itself shows only the
-// line; this names what Orbit has, so search and AI answers can say what it is.
+// line; this names what Orbit has, so search and AI answers can say what it is. It names no
+// place (owner, 21 Nov 2026: was "coming to Hyderabad").
 export const DESCRIPTION =
-  "Orbit is coming to Hyderabad. Join the waitlist for fests in one click, turf, courts and gaming by the hour, hackathons, meetups, and the comedians and bands you love.";
+  "Join the Orbit waitlist for fests in one click, turf, courts and gaming by the hour, hackathons, meetups, and the comedians and bands you love.";
 
 // One address with the welcome email (api/src/prelaunch-email.ts).
 export const CONTACT = WAITLIST_CONTACT;

@@ -135,9 +135,9 @@ test('the banner skips a promoted event already in your orbit; lead is the carou
   assert.equal(p.lead?.id, 'ad1');
   assert.equal(p.ad?.id, 'ad3');
   assert.ok(!slideIds(p.slides).includes('ad3'));
-  // Outside the served states there is no near: boosts come from everywhere, as the list does.
+  // Somewhere with nothing near there is no near: boosts come from everywhere, as the list does.
   const away = planHome({ ...signedOut, place: { area: 'Bengaluru', city: 'Bengaluru', state: 'Karnataka', nearAreas: [] } }, events, [], NOW, promoted);
-  assert.equal(away.notice, 'comingSoon');
+  assert.equal(away.notice, 'nothingNear');
   assert.equal(away.lead?.id, 'ad1');
   assert.equal(away.ad?.id, 'ad2');
 });
@@ -347,17 +347,16 @@ test('interests: tickets and the orbit stay out of the list; no place means ever
   assert.deepEqual(ids(away.list.events), ['cb', 'gFar', 'g1', 's1']);
 });
 
-test('outside Telangana and Andhra Pradesh: Coming soon, with everything on there', () => {
+test('open across India: anywhere with nothing near says so, with everything coming up', () => {
   const events = [ev('a', 'h1', NEAR, 16, 3, true), ev('b', 'h1', FAR, 17, 5)];
   const bengaluru = { area: 'Koramangala', city: 'Bengaluru', state: 'Karnataka', nearAreas: ['Koramangala'] };
   const plan = planHome({ signedIn: false, follows: [], place: bengaluru }, events, [], NOW);
-  assert.equal(plan.notice, 'comingSoon');
+  assert.equal(plan.notice, 'nothingNear');
   assert.equal(plan.list.title, 'Coming up');
   assert.deepEqual(ids(plan.list.events), ['a', 'b']);
   assert.equal(plan.near, false);
-  // A place saved before places carried a state is worked out from its city.
-  assert.equal(planHome({ signedIn: false, follows: [], place: { area: 'Koramangala', city: 'Bengaluru', nearAreas: [] } }, events, [], NOW).notice, 'comingSoon');
-  assert.equal(planHome({ signedIn: false, follows: [], place: { ...place, state: 'Telangana' } }, events, [], NOW).notice, null);
+  // Something on near it is near, whatever the state.
+  assert.equal(planHome({ signedIn: false, follows: [], place: bengaluru }, [...events, ev('k', 'h2', 'Koramangala', 18, 4)], [], NOW).notice, null);
 });
 
 test('a featured pick of the event that is the banner stays out of the slides, and the banner is still that event', () => {

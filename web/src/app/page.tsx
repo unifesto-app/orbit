@@ -89,7 +89,7 @@ const LD = {
       logo: `${SITE}/apple-icon.png`,
       slogan: "There’s more to live beyond the usual.",
       description: DESCRIPTION,
-      areaServed: { "@type": "City", name: "Hyderabad" },
+      areaServed: { "@type": "Country", name: "India" },
       sameAs: SOCIAL.map(([, url]) => url),
     },
     { "@type": "WebSite", "@id": `${SITE}/#site`, name: "Orbit", url: SITE, inLanguage: "en-IN", publisher: { "@id": `${SITE}/#org` } },

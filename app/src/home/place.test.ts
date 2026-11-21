@@ -9,7 +9,7 @@ const none = { district: null, city: null, subregion: null, region: null };
 test('a neighbourhood leads over its city', () => {
   assert.deepEqual(
     placeName({ district: 'Gachibowli', city: 'Hyderabad', subregion: 'Ranga Reddy', region: 'Telangana' }),
-    { area: 'Gachibowli', city: 'Hyderabad', state: 'Telangana' }, // the state rides along, for where Orbit is open
+    { area: 'Gachibowli', city: 'Hyderabad', state: 'Telangana' }, // the state rides along
   );
 });
 
