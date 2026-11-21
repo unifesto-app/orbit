@@ -43,3 +43,4 @@ jobs:
       - run: docker build -f api/Dockerfile -t orbit-api:ci .
       - run: docker build -f web/Dockerfile -t orbit-web:ci .
       - run: docker build -f galaxy/Dockerfile -t orbit-galaxy:ci .
+      - run: docker build -f console/Dockerfile -t orbit-console:ci .

@@ -88,6 +88,14 @@ galaxy.heyorbit.in {
 	}
 }
 
+# Console: where hosts run their events (console/).
+host.heyorbit.in {
+	import cf_tls
+	reverse_proxy orbit-console:3000 {
+		header_up X-Forwarded-For {client_ip}
+	}
+}
+
 # Any other name under the wildcard cert: the same client-cert check, then nothing. Without this block such a
 # name would complete TLS without Cloudflare's client cert (client_auth applies per configured site).
 *.heyorbit.in {

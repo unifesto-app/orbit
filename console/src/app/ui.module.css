@@ -1,0 +1,61 @@
+/* Galaxy's page pieces (galaxy/src/app/ui.module.css), only those the Console uses so far. */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-l);
+}
+
+.pageHeader {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xxs);
+}
+
+.h1 {
+  color: var(--color-text-heading-default);
+  font-size: var(--font-size-heading-xl);
+  line-height: var(--line-height-heading-xl);
+  letter-spacing: var(--letter-spacing-heading-xl);
+  font-weight: var(--font-weight-heading-xl);
+}
+
+.secondary {
+  color: var(--color-text-body-secondary);
+}
+
+/* AWS container: flat card, 1px border, header on the same surface */
+.container {
+  background: var(--color-background-container-content);
+  border: var(--border-divider-section-width) solid var(--color-border-card);
+  border-radius: var(--border-radius-container);
+  overflow-x: auto;
+}
+
+.containerHeader {
+  padding: var(--space-container-header-top) var(--space-container-horizontal) var(--space-container-header-bottom);
+  color: var(--color-text-heading-default);
+  font-size: var(--font-size-heading-m);
+  line-height: var(--line-height-heading-m);
+  letter-spacing: var(--letter-spacing-heading-m);
+  font-weight: var(--font-weight-heading);
+}
+
+.containerBody {
+  padding: var(--space-xxs) var(--space-container-horizontal) var(--space-container-content-vertical);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-m);
+}
+
+/* The name "console" in Sacramento (layout.tsx), all lower case (owner, 21 Nov 2026: "in console use small c"), drawn as
+   Galaxy's is: one thin weight, so a hairline stroke fills it out. No tight line-height: under its natural height the
+   ascenders clip. */
+.script {
+  font-family: var(--font-script), cursive;
+  font-size: 1.75em;
+  font-weight: 400;
+  line-height: 1.3;
+  letter-spacing: 0;
+  -webkit-text-stroke: 0.8px currentColor;
+}

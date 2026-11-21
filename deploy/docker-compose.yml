@@ -1,5 +1,5 @@
 # Orbit's stack on its own server, orbit-server (no tie to Unifesto's box, network or Caddy).
-# Caddy (deploy/Caddyfile) serves heyorbit.in, www., api. and galaxy. with the Cloudflare origin cert in ./certs.
+# Caddy (deploy/Caddyfile) serves heyorbit.in, www., api., galaxy. and host. with the Cloudflare origin cert in ./certs.
 # Built on the box from the source that deploy/deploy.sh copies to ~/orbit/src.
 # Runtime secrets live in env files on the server only (api.env, web.env, galaxy.env) and so does ./certs.
 # Never commit them.
@@ -12,7 +12,7 @@ x-logging: &logging
     max-size: "10m"
     max-file: "5"
 
-# The three Dockerfiles expect the whole repo as build context.
+# The Dockerfiles expect the whole repo as build context.
 x-build-context: &repo
   context: ./src
 
@@ -32,9 +32,9 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     networks: [edge]
-    depends_on: [orbit-api, orbit-web, orbit-galaxy]
+    depends_on: [orbit-api, orbit-web, orbit-galaxy, orbit-console]
 
-  # Container names are Caddy's upstreams (orbit-api, orbit-web, orbit-galaxy).
+  # Container names are Caddy's upstreams (orbit-api, orbit-web, orbit-galaxy, orbit-console).
   orbit-api:
     build:
       <<: *repo
@@ -93,6 +93,18 @@ services:
       # Galaxy's server calls the API directly on `edge`, not through Caddy, and passes on the visitor's address
       # (galaxy/src/session.ts).
       ORBIT_API_URL: http://orbit-api:3000
+    expose:
+      - "3000"
+    networks: [edge]
+
+  # The Console at host.heyorbit.in. No env file and no API yet: both come with sign-in.
+  orbit-console:
+    build:
+      <<: *repo
+      dockerfile: console/Dockerfile
+    container_name: orbit-console
+    restart: unless-stopped
+    logging: *logging
     expose:
       - "3000"
     networks: [edge]
