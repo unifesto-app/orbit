@@ -85,13 +85,20 @@ async function finish(step: AuthStep, next: string): Promise<Outcome> {
   return { questions, go: safeNext(next) };
 }
 
+// The questions after signing in post to /login, which the proxy never renews (sign-in has to work signed out). Past the
+// access token's 14.5 minutes they can't run, so they say so rather than send someone still signed in back to the start.
+const LATE: Outcome = { error: "This question timed out, but you're still signed in. Choose Not now to go on." };
+const late = async () => !(await cookies()).has(ACCESS);
+
 // "Add this email to your account?": signed in already, by the number.
 export async function addEmail(token: string): Promise<Outcome> {
+  if (await late()) return LATE;
   const r = await call("POST", "/me/email", { token });
   return r.ok ? {} : no(r);
 }
 
 export async function keepAccount(): Promise<Outcome> {
+  if (await late()) return LATE;
   const r = await call("POST", "/me/deletion/keep");
   return r.ok ? {} : no(r);
 }

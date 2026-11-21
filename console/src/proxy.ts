@@ -9,6 +9,15 @@ export async function proxy(req: NextRequest) {
   const refresh = req.cookies.get(REFRESH)?.value;
   const r = refresh ? await apiFetch<Tokens>("POST", "/auth/refresh", { body: { refresh }, xff: req.headers.get("x-forwarded-for") }) : null;
   if (!r?.ok) {
+    // A Server Action that can't be renewed (the API restarting, or the session ended) runs without a token rather than
+    // being sent to /login: replayed there, where its page's actions aren't, it would answer nothing, and Sign out would
+    // keep the cookies (review of the sign-in). It's safe: `call` (src/api.ts) still sends any signed-in work to sign-in,
+    // and Sign out needs no token to forget them.
+    if (req.method === "POST" && req.headers.has("next-action")) {
+      const res = NextResponse.next();
+      if (r && r.status !== 0 && r.status < 500) forget(res.cookies);
+      return res;
+    }
     const login = new URL("/login", req.url);
     if (req.nextUrl.pathname !== "/") login.searchParams.set("next", req.nextUrl.pathname + req.nextUrl.search);
     const res = NextResponse.redirect(login);

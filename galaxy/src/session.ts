@@ -72,12 +72,13 @@ export function forget(jar: Jar) {
 }
 
 // Where to go after signing in: a path on this site only. Parsed as the browser will parse it, since a URL parser drops
-// tabs and newlines ("/\t/evil.example" is another site).
+// tabs and newlines ("/\t/evil.example" is another site). Dot segments fold away too, so "/.//evil.example" parses on
+// this site but its path is "//evil.example", another site again: a path starting "//" is refused.
 export function safeNext(next: unknown) {
   if (typeof next !== "string") return "/";
   try {
     const u = new URL(next, "http://galaxy.invalid");
-    return u.origin === "http://galaxy.invalid" ? u.pathname + u.search : "/";
+    return u.origin === "http://galaxy.invalid" && !u.pathname.startsWith("//") ? u.pathname + u.search : "/";
   } catch {
     return "/";
   }
