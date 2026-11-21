@@ -57,7 +57,7 @@ REMOTE
 
 echo "==> packing the source"
 # macOS tar packs Finder xattrs and file flags the box's GNU tar can't read; leave them out.
-# The box builds api, web and galaxy only, so the app's generated native projects (hundreds of MB
+# The box builds api, web, galaxy and console only, so the app's generated native projects (hundreds of MB
 # with Pods) and local tooling stay behind too. `^` anchors a pattern at the root; without it bsdtar
 # would also drop, say, a web/src/app/docs route.
 # Packed to a file first: a tar that fails stops here (the box can't see its exit code through a pipe, and would

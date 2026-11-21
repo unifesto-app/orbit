@@ -5,6 +5,7 @@ packages:
   - web
   - app
   - galaxy
+  - console
 
 patchedDependencies:
   expo-modules-autolinking@58.1.0: patches/expo-modules-autolinking@58.1.0.patch
