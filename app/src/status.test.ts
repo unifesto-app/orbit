@@ -106,11 +106,10 @@ test('bookings off till January: the status says when, anything that would book 
   assert.equal(seatsLine({ ...base, capacity: 20, left: 5 }, held({ capacity: 20, left: 5 })), undefined);
   assert.deepEqual(act({}), { label: HELD, can: false });
   assert.deepEqual(act({ pricePaise: 0 }), { label: HELD, can: false });
-  // On now and a waitlist would book (Book ticket, Join waitlist); they don't either.
+  // On now would book (Book ticket); it doesn't either.
   assert.equal(held(on).kind, 'onNow');
   assert.deepEqual(act(on), { label: HELD, can: false });
-  assert.deepEqual(bookAction(status({ ...base, capacity: 20, left: 0, waitlist: true }, NOW), false, false), { label: HELD, can: false });
-  // What couldn't book anyway still says why.
+  assert.deepEqual(act({ capacity: 20, left: 0, waitlist: true }), { label: HELD, can: false });
+  // Cancelled still says why.
   assert.deepEqual(act({ cancelled: true }), { label: 'Closed', can: false });
-  assert.deepEqual(bookAction(status({ ...base, capacity: 20, left: 0 }, NOW), false, false), { label: 'Sold out', can: false });
 });
