@@ -164,7 +164,9 @@ function TypeCard({ t }: { t: StationType }) {
       <View style={styles.strip} onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
         {at.map((s) => {
           const n = taken(claims, t, s <= now && now < s + step ? now : s); // the step we're in reads as it is now
-          const cells = [...Array(n.booking).fill('booking'), ...Array(n.walkin).fill('walkin'), ...Array(n.block).fill('block'), ...Array(n.free).fill('free')];
+          // One cell a station while they fit the 64pt strip; more than 16, each kind as its share of the bar.
+          const parts = (['booking', 'walkin', 'block', 'free'] as const).map((k) => [k, n[k]] as const).filter(([, c]) => c > 0);
+          const cells = t.count > 16 ? parts : parts.flatMap(([k, c]) => Array.from({ length: c }, () => [k, 1] as const));
           return (
             <Pressable
               key={s}
@@ -173,8 +175,8 @@ function TypeCard({ t }: { t: StationType }) {
               accessibilityLabel={`${timeLabel(s)}: ${n.booking} booked, ${n.walkin} walk-in, ${n.block} blocked, ${n.free} free`}
               style={[styles.col, s + step <= now && styles.past, sel === s && styles.sel]}
             >
-              {cells.map((k, i) => (
-                <Cell key={i} kind={k} />
+              {cells.map(([k, c], i) => (
+                <Cell key={i} kind={k} style={{ flex: c }} />
               ))}
             </Pressable>
           );

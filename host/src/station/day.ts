@@ -28,6 +28,8 @@ export type StationType = {
   price: number; // paise an hour, for one
   // One cheaper window (Play 8): hours from-to (24h India time), on weekdays only or every day.
   offPeak?: { from: number; to: number; weekdays: boolean; price: number };
+  coop?: number; // paise an hour for two or three playing on one (gaming); it still counts once
+  games?: string; // what's on it, as plain text
 };
 export type Venue = {
   id: string;
@@ -226,4 +228,30 @@ export function seenRecently(seen: Map<string, number>, text: string, at: number
 export function byCode(claims: readonly Claim[], text: string): Claim | undefined {
   const code = text.toUpperCase().replace(/[^A-Z0-9]/g, '');
   return code.length < 8 ? undefined : claims.find((c) => c.kind === 'booking' && !!c.code && code.includes(c.code));
+}
+
+// Changing a venue's setup (Play, Setting up a venue): "Fewer stations, shorter hours or a closed day can't strand a
+// booking. The change is refused and names the bookings in the way, which the host cancels and refunds first."
+const live = (c: Claim, now: number) => c.kind === 'booking' && !c.released && !c.refunded && c.end > now;
+
+/** The bookings that wouldn't fit if `t` had only `count`: every one on a moment that needs more than that. */
+export function stranded(claims: readonly Claim[], t: StationType, count: number, now: number): Claim[] {
+  const mine = claims.filter((c) => c.type === t.id && live(c, now));
+  const out = new Set<Claim>();
+  for (const at of new Set([now, ...mine.map((c) => Math.max(c.start, now))])) {
+    const on = mine.filter((c) => c.start <= at && at < c.end);
+    if (on.reduce((n, c) => n + c.count, 0) > count) on.forEach((c) => out.add(c));
+  }
+  return [...out].sort((a, b) => a.start - b.start);
+}
+
+/**
+ * The bookings on the opening of `day` that new hours `open` (or none: closed) would leave outside.
+ * ponytail: it reads up to 6 AM the next morning, which is right while `claims` holds one opening; bound it by that
+ * opening's own close once the slots API sends more days.
+ */
+export function outside(claims: readonly Claim[], day: number, open: [number, number] | null, now: number): Claim[] {
+  const from = open ? day + open[0] * HOUR : Infinity;
+  const to = open ? day + open[1] * HOUR : -Infinity;
+  return claims.filter((c) => live(c, now) && c.start >= day && c.start < day + DAY + 6 * HOUR && (c.start < from || c.end > to)).sort((a, b) => a.start - b.start);
 }

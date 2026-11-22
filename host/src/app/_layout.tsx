@@ -35,6 +35,8 @@ export default function Layout() {
           {/* Money's, Admins only (take 3). */}
           <Stack.Screen name="payout" options={SHEET} />
           <Stack.Screen name="bank" options={SHEET} />
+          {/* Venue's edits, Admins only (take 4). */}
+          <Stack.Screen name="setup" options={SHEET} />
         </Stack.Protected>
         {/* Orbit Launch's own: in Station and Crew a link to them goes nowhere. */}
         <Stack.Protected guard={isLaunch}>

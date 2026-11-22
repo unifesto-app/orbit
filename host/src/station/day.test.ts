@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { type Claim, HOUR, MIN, admit, admitTo, byCode, dayLabel, door, freeOne, hourWord, hours, openingDay, scan, seenRecently, steps, taken, timeLabel, walkIn, walkInStart } from './day.ts';
+import { type Claim, HOUR, MIN, admit, admitTo, byCode, dayLabel, door, freeOne, hourWord, hours, openingDay, outside, scan, seenRecently, steps, stranded, taken, timeLabel, walkIn, walkInStart } from './day.ts';
 import { mockDay, venues } from './mock.ts';
 
 const [cafe, turf] = venues;
@@ -191,4 +191,24 @@ test('the same ticket is ignored for 2.5 seconds, each code on its own clock', (
   assert.equal(seenRecently(seen, 'B', t + 300), true);
   assert.equal(seenRecently(seen, 'A', t + 2000), true); // still in view: it stays ignored
   assert.equal(seenRecently(seen, 'A', t + 4600), false); // away 2.6 seconds: seen afresh
+});
+
+test('fewer stations or shorter hours are refused while bookings stand in the way, and name them', () => {
+  const claims: Claim[] = [
+    { id: 'a', type: 'pc', kind: 'booking', count: 8, start: at(19), end: at(21), who: 'Meera P.' },
+    { id: 'b', type: 'pc', kind: 'booking', count: 3, start: at(20), end: at(22), who: 'Rohit G.' },
+    { id: 'c', type: 'pc', kind: 'booking', count: 4, start: at(23), end: at(24), who: 'Sneha J.' },
+    { id: 'w', type: 'pc', kind: 'walkin', count: 4, start: at(20), end: at(21) }, // the desk can free a walk-in
+    { id: 'r', type: 'pc', kind: 'booking', count: 9, start: at(20), end: at(21), released: at(19) }, // gone
+  ];
+  const now = at(18, 20);
+  assert.deepEqual(stranded(claims, pc, 12, now).map((c) => c.id), []);
+  assert.deepEqual(stranded(claims, pc, 10, now).map((c) => c.id), ['a', 'b']); // 8 + 3 at 8 PM
+  assert.deepEqual(stranded(claims, pc, 3, now).map((c) => c.id), ['a', 'b', 'c']);
+  assert.deepEqual(stranded(claims, pc, 12, at(22, 30)).map((c) => c.id), []); // played already: nothing in the way
+  // Hours: closing at 11 PM strands the late booking; closed strands all three; the night past midnight counts too.
+  assert.deepEqual(outside(claims, day, [11, 23], now).map((c) => c.id), ['c']);
+  assert.deepEqual(outside(claims, day, null, now).map((c) => c.id), ['a', 'b', 'c']);
+  const late: Claim[] = [{ id: 'n', type: 'pc', kind: 'booking', count: 1, start: at(25), end: at(26) }];
+  assert.deepEqual(outside(late, day, [11, 25], now).map((c) => c.id), ['n']);
 });
