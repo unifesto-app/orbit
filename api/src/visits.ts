@@ -17,16 +17,21 @@ const DAY = 86_400_000;
 const BOT = /bot|crawl|spider|slurp|preview|headless|lighthouse|pingdom|monitor|curl|wget|python|go-http|java\//i;
 const PER_MINUTE = 120; // a page sends up to three hits; room for a shared Wi-Fi
 const KEEP = 12;
-const ist = (ms: number) => new Date(ms + 330 * 60_000).toISOString().slice(0, 10); // India's date (IST is a fixed UTC+5:30)
+export const ist = (ms: number) => new Date(ms + 330 * 60_000).toISOString().slice(0, 10); // India's date (IST is a fixed UTC+5:30)
 
-// Marks a step on a view made in the last day. Never throws: a log must not hold up a join.
-export async function markVisit(db: Db, id: string | undefined, step: "code" | "joined", now: number) {
+// Folds everything past the first KEEP rows into one "Others" row.
+export const top = <T extends { name: string }>(all: T[], sum: (rest: T[]) => Omit<T, "name">): T[] =>
+  all.length > KEEP ? [...all.slice(0, KEEP), { name: "Others", ...sum(all.slice(KEEP)) } as T] : all;
+
+// Marks a step on a view made in the last day. Never throws: a log must not hold up a join. "applied" only marks an
+// opening's page, the one the Apply form is on, so an applicant can't flag any other view of theirs.
+export async function markVisit(db: Db, id: string | undefined, step: "code" | "joined" | "applied", now: number) {
   if (!id) return;
   try {
     await db
       .update(visit)
       .set({ [step]: true })
-      .where(and(eq(visit.id, id), gte(visit.at, new Date(now - DAY))));
+      .where(and(eq(visit.id, id), gte(visit.at, new Date(now - DAY)), step === "applied" ? eq(visit.path, "/careers/[slug]") : undefined));
   } catch (e) {
     console.error(`[visit] ${step} not marked: ${e instanceof Error ? e.message : String(e)}`);
   }
@@ -105,8 +110,6 @@ export function visitRoutes({ db, store, secret, now = Date.now }: Deps) {
     // One row per visitor-day (the visitor code changes daily): their first view's source and the steps they reached.
     const perVisitor = sql`select (array_agg(source order by at))[1] as source, bool_or(started) as s, bool_or(code) as c, bool_or(joined) as j from visit where ${win} group by visitor`;
     const median = sql`round((percentile_cont(0.5) within group (order by ms) / 1000)::numeric, 1)::float`;
-    const top = <T extends { name: string }>(all: T[], sum: (rest: T[]) => Omit<T, "name">): T[] =>
-      all.length > KEEP ? [...all.slice(0, KEEP), { name: "Others", ...sum(all.slice(KEEP)) } as T] : all;
     // Distinct visitors per value of a column, most first.
     const tally = async (value: ReturnType<typeof sql>): Promise<Tally> =>
       top(

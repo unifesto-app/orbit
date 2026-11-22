@@ -73,16 +73,20 @@ function Columns({ data, label, series, height, interval }: { data: Tally; label
 }
 
 // A ranked list as horizontal bars, in the order given, with the count (and a share of `of`) at each bar's end, or a
-// row's own `value`. Long names are cut, whole on hover.
-export function Ranked({ data, of, label, series = "People" }: { data: (Tally[number] & { value?: string })[]; of?: number; label: string; series?: string }) {
+// row's own `value`. Long names are cut, whole on hover; `wide` gives names more room (job titles). The space after the
+// bars grows with the longest value, up to 160px, so "4 · 0 applied (0%)" stays on one line.
+export function Ranked({ data, of, label, series = "People", wide = false }: { data: (Tally[number] & { value?: string })[]; of?: number; label: string; series?: string; wide?: boolean }) {
   if (!data.length) return <p className={s.empty}>Nothing yet.</p>;
   const rows = data.map((d) => ({ ...d, value: d.value ?? (of ? `${d.count} · ${Math.round((d.count / of) * 100)}%` : String(d.count)) }));
+  // About 7px a character at 12px, between 72 and 160: wider would squeeze the bars on a narrow column (the whole value
+  // is in the tooltip too).
+  const right = Math.min(160, Math.max(72, Math.max(...rows.map((r) => r.value.length)) * 7 + 8));
   return (
     <figure className={s.chart} style={{ height: rows.length * 34 + 8 }} aria-label={label}>
       <ResponsiveContainer>
-      <BarChart layout="vertical" data={rows} margin={{ top: 0, right: 72, bottom: 0, left: 0 }} barCategoryGap={8} accessibilityLayer>
+      <BarChart layout="vertical" data={rows} margin={{ top: 0, right, bottom: 0, left: 0 }} barCategoryGap={8} accessibilityLayer>
         <XAxis type="number" hide allowDecimals={false} />
-        <YAxis type="category" dataKey="name" width={176} tickLine={false} axisLine={false} fontSize={12} tick={<Name />} />
+        <YAxis type="category" dataKey="name" width={wide ? 256 : 176} tickLine={false} axisLine={false} fontSize={12} tick={<Name max={wide ? 36 : 22} />} />
         <Tooltip {...tooltip} formatter={(_v, _n, p) => [p.payload.value, series]} />
         <Bar dataKey="count" name={series} radius={[0, 4, 4, 0]} maxBarSize={18} isAnimationActive={false}>
           <LabelList dataKey="value" position="right" />
@@ -94,9 +98,10 @@ export function Ranked({ data, of, label, series = "People" }: { data: (Tally[nu
 }
 
 // A category name on the left of a bar, cut to fit, whole in its title.
-function Name(props: { x?: number | string; y?: number | string; payload?: { value: string } }) {
+function Name(props: { x?: number | string; y?: number | string; payload?: { value: string }; max?: number }) {
   const name = props.payload?.value ?? "";
-  const cut = name.length > 22 ? `${name.slice(0, 21).trimEnd()}…` : name;
+  const max = props.max ?? 22;
+  const cut = name.length > max ? `${name.slice(0, max - 1).trimEnd()}…` : name;
   return (
     <text x={Number(props.x) - 8} y={props.y} dy={4} textAnchor="end" className={s.tick}>
       <title>{name}</title>

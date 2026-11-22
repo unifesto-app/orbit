@@ -36,7 +36,7 @@ test("a view stores a row with source, app and os, and no address", async () => 
   const r = (await row(id))!;
   assert.deepEqual([r.source, r.app, r.os, r.path, r.city], ["X", "Chrome", "Android", "/", "Pune"]);
   assert.equal(r.visitor.length, 22);
-  assert.deepEqual(Object.keys(r).sort(), ["app", "at", "city", "cls", "code", "country", "id", "inp", "joined", "lcp", "ms", "os", "path", "region", "source", "started", "ttfb", "visitor"]);
+  assert.deepEqual(Object.keys(r).sort(), ["app", "applied", "at", "city", "cls", "code", "country", "id", "inp", "joined", "lcp", "ms", "os", "path", "region", "source", "started", "ttfb", "visitor"]);
   const stored = JSON.stringify(r);
   for (const raw of ["198.51.100.10", "Mozilla", "t.co"]) assert.ok(!stored.includes(raw), raw); // no address, raw UA or referrer
   assert.equal(await total(), 1);

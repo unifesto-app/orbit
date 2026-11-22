@@ -4,7 +4,8 @@ import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { careersRoutes, pruneApplications } from "./careers.ts";
 import { testApp } from "./testkit.ts";
-import { applications, auditLog, openings, staffGrants } from "./db/schema.ts";
+import { applications, auditLog, openings, staffGrants, visit } from "./db/schema.ts";
+import { ist } from "./visits.ts";
 
 let t: Awaited<ReturnType<typeof testApp>>;
 before(async () => (t = await testApp()));
@@ -333,4 +334,141 @@ test("delete an opening", async () => {
   assert.equal((await people("GET", "/galaxy/openings")).body.openings.some((o: any) => o.id === gone.id), false);
   const log = (await t.db.select().from(auditLog)).find((a) => a.action === "careers.opening.delete");
   assert.deepEqual(log?.data, { id: gone.id, title: "Delete Me" });
+});
+
+test("careers stats", async () => {
+  const people = await staff("people");
+  const plain = await staff();
+  assert.equal((await plain("GET", "/galaxy/careers/stats")).status, 404);
+  assert.equal((await t.app.request("/galaxy/careers/stats")).status, 401);
+  await t.db.delete(applications);
+  await t.db.delete(openings);
+  await t.db.delete(visit);
+  const empty = await people("GET", "/galaxy/careers/stats");
+  assert.equal(empty.status, 200);
+  assert.deepEqual(empty.body.statuses.map((s: any) => s.name), ["New", "Reviewing", "Shortlisted", "Rejected", "Hired"]);
+  assert.equal(empty.body.total, 0);
+  assert.equal(empty.body.days.length, 30);
+  assert.equal((await t.db.select().from(auditLog).where(eq(auditLog.action, "careers.stats"))).length, 1, "a read is logged");
+
+  const now = t.now();
+  const mk = async (slug: string, title: string, place: string, status: "open" | "closed") =>
+    (await t.db.insert(openings).values({ slug, title, team: "T", place, kind: "full", about: "A", does: [], needs: [], status }).returning())[0]!.id;
+  const a = await mk("designer-pune", "Designer, Pune", "Pune, Maharashtra", "open");
+  const b = await mk("writer-mumbai", "Writer, Mumbai", "Mumbai", "open");
+  const c = await mk("engineer-pune", "Engineer, Pune", "Pune", "closed");
+  const ago = (days: number) => new Date(`${ist(now - days * DAY)}T12:00:00+05:30`);
+  let k = 0;
+  const put = (openingId: string, createdAt: Date, status: "new" | "reviewing" | "hired" = "new") =>
+    t.db.insert(applications).values({ openingId, name: "A", email: `s${++k}@example.com`, resumeKey: `resumes/x/${k}.pdf`, status, createdAt });
+  await put(a, new Date(now));
+  await put(a, ago(3), "reviewing");
+  await put(a, ago(10));
+  await put(b, ago(1), "hired");
+  await put(c, ago(40));
+
+  // visits: v1 lists (Instagram) then an opening and applies, v2 lists, v3 an opening, v4 is another page
+  const id = (i: number) => `00000000-0000-4000-8000-00000000000${i}`;
+  const v = (i: number, visitor: string, path: string, source: string, o: object = {}) => ({ id: id(i), at: new Date(now - (10 - i) * 1000), visitor, path, source, ...o });
+  await t.db.insert(visit).values([
+    v(1, "v1", "/careers", "Instagram"),
+    v(2, "v1", "/careers/[slug]", "Direct", { applied: true }),
+    v(3, "v2", "/careers", "Direct"),
+    v(4, "v3", "/careers/[slug]", "Google"),
+    v(5, "v4", "/", "Direct"),
+  ]);
+
+  const r = await people("GET", "/galaxy/careers/stats");
+  assert.equal(r.status, 200);
+  const s = r.body;
+  assert.equal(s.total, 5);
+  assert.equal(s.today, 1);
+  assert.equal(s.week, 3);
+  assert.equal(s.open, 2);
+  assert.equal(s.days.length, 30);
+  assert.equal(s.days[29].day, ist(now));
+  assert.equal(s.days[29].count, 1);
+  assert.equal(s.days[26].count, 1);
+  assert.equal(s.days.reduce((n: number, d: any) => n + d.count, 0), 4, "the 40-day-old one is outside the 30 days");
+  assert.deepEqual(s.statuses, [{ name: "New", count: 3 }, { name: "Reviewing", count: 1 }, { name: "Shortlisted", count: 0 }, { name: "Rejected", count: 0 }, { name: "Hired", count: 1 }]);
+  assert.deepEqual(s.cities, [{ name: "Pune", count: 4 }, { name: "Mumbai", count: 1 }]);
+  assert.deepEqual(s.roles, [{ name: "Designer", count: 3 }, { name: "Engineer", count: 1 }, { name: "Writer", count: 1 }]);
+  assert.deepEqual(s.openings, [{ name: "Designer, Pune", count: 3 }, { name: "Engineer, Pune", count: 1 }, { name: "Writer, Mumbai", count: 1 }]);
+  assert.equal(s.visitors, 3);
+  assert.deepEqual(s.funnel, { list: 2, opening: 2, applied: 1 });
+  assert.deepEqual(s.sources, [{ name: "Direct", visitors: 1, applied: 0 }, { name: "Google", visitors: 1, applied: 0 }, { name: "Instagram", visitors: 1, applied: 1 }]);
+});
+
+test("an apply marks the visit it came from", async () => {
+  const slug = `view-${++seq}`;
+  await t.db.insert(openings).values({ slug, title: "T", team: "T", place: "P", kind: "full", about: "A", does: [], needs: [], status: "open" });
+  const vid = "00000000-0000-4000-8000-0000000000aa";
+  await t.db.insert(visit).values({ id: vid, at: new Date(t.now()), visitor: "vv", path: "/careers/[slug]", source: "Direct" });
+  assert.equal((await apply(slug, { email: "view1@example.com", fields: { view: vid } })).status, 204);
+  for (let i = 0; i < 50 && !(await t.db.select().from(visit).where(eq(visit.id, vid)))[0]!.applied; i++) await new Promise((r) => setTimeout(r, 20));
+  assert.equal((await t.db.select().from(visit).where(eq(visit.id, vid)))[0]!.applied, true);
+  // a view that isn't a uuid is ignored and still answers 204
+  const appliedCount = async () => (await t.db.select().from(visit).where(eq(visit.applied, true))).length;
+  const before = await appliedCount();
+  assert.equal((await apply(slug, { email: "view2@example.com", fields: { view: "not-a-uuid" } })).status, 204);
+  await new Promise((r) => setTimeout(r, 200));
+  assert.equal(await appliedCount(), before, "a non-uuid view marks nothing");
+});
+
+// markVisit runs after the 204 without being awaited, so each case ends with a control apply that must mark, then checks the others stayed unmarked.
+test("an apply only marks an opening page view under a day old, for a new application", async () => {
+  const slug = `view-${++seq}`;
+  await t.db.insert(openings).values({ slug, title: "T", team: "T", place: "P", kind: "full", about: "A", does: [], needs: [], status: "open" });
+  const mkView = (suffix: string, path: string, at: Date) => {
+    const id = `00000000-0000-4000-8000-0000000000${suffix}`;
+    return t.db.insert(visit).values({ id, at, visitor: `m${suffix}`, path, source: "Direct" }).then(() => id);
+  };
+  const applied = async (id: string) => (await t.db.select().from(visit).where(eq(visit.id, id)))[0]!.applied;
+  const dupView = await mkView("b1", "/careers/[slug]", new Date(t.now()));
+  const homeView = await mkView("b2", "/", new Date(t.now()));
+  const oldView = await mkView("b3", "/careers/[slug]", new Date(t.now() - DAY - 60_000));
+  const control = await mkView("b4", "/careers/[slug]", new Date(t.now()));
+
+  assert.equal((await apply(slug, { email: "dup@example.com" })).status, 204);
+  assert.equal((await apply(slug, { email: "dup@example.com", fields: { view: dupView } })).status, 204, "a duplicate answers 204");
+  assert.equal((await apply(slug, { email: "home@example.com", fields: { view: homeView } })).status, 204);
+  assert.equal((await apply(slug, { email: "old@example.com", fields: { view: oldView } })).status, 204);
+  assert.equal((await apply(slug, { email: "control@example.com", fields: { view: control } })).status, 204);
+  for (let i = 0; i < 50 && !(await applied(control)); i++) await new Promise((r) => setTimeout(r, 20));
+  await new Promise((r) => setTimeout(r, 100));
+  assert.equal(await applied(control), true);
+  assert.equal(await applied(dupView), false, "a duplicate application doesn't mark its view");
+  assert.equal(await applied(homeView), false, "only an opening's page is marked");
+  assert.equal(await applied(oldView), false, "a view over a day old isn't marked");
+});
+
+test("careers stats: IST day edges, same-title openings, sources folded", async () => {
+  const people = await staff("people");
+  await t.db.delete(applications);
+  await t.db.delete(openings);
+  await t.db.delete(visit);
+  const now = t.now();
+  const mk = async (slug: string) =>
+    (await t.db.insert(openings).values({ slug, title: "Twin", team: "T", place: "Pune", kind: "full", about: "A", does: [], needs: [], status: "open" }).returning())[0]!.id;
+  const a = await mk("twin-a");
+  const b = await mk("twin-b");
+  const day = ist(now - 2 * DAY);
+  const next = ist(now - DAY);
+  let k = 0;
+  const put = (openingId: string, createdAt: Date) =>
+    t.db.insert(applications).values({ openingId, name: "A", email: `e${++k}@example.com`, resumeKey: `resumes/x/${k}.pdf`, createdAt });
+  await put(a, new Date(`${day}T23:59:00+05:30`));
+  await put(b, new Date(`${next}T00:01:00+05:30`));
+
+  // 14 sources, one visitor each; the two past the first 12 (by name) fold, the last of them applied
+  const rows = Array.from({ length: 14 }, (_, i) => ({ id: `00000000-0000-4000-8000-0000000001${String(i).padStart(2, "0")}`, at: new Date(now - 1000), visitor: `f${i}`, path: "/careers", source: `S${String(i).padStart(2, "0")}`, applied: i === 13 }));
+  await t.db.insert(visit).values(rows);
+
+  const s = (await people("GET", "/galaxy/careers/stats")).body;
+  assert.equal(s.days.find((d: any) => d.day === day).count, 1);
+  assert.equal(s.days.find((d: any) => d.day === next).count, 1);
+  assert.deepEqual(s.openings, [{ name: "Twin", count: 1 }, { name: "Twin", count: 1 }], "two openings, one title, two rows");
+  assert.equal(s.sources.length, 13);
+  assert.deepEqual(s.sources[12], { name: "Others", visitors: 2, applied: 1 });
+  assert.equal(s.sources[11].name, "S11");
 });
