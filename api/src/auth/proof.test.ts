@@ -4,7 +4,7 @@ import { createHash, generateKeyPairSync, KeyObject, sign as signWith } from "no
 import { isoCBOR } from "@simplewebauthn/server/helpers"; // first: it loads the reflect-metadata x509 needs
 import * as x509 from "@peculiar/x509";
 import { proofOf, type Proof } from "@orbit/contract";
-import { PER_KEY_DAY, proofs, type ProofConfig } from "./proof.ts";
+import { keptKey, PER_KEY_DAY, proofs, readKey, type ProofConfig } from "./proof.ts";
 import { memoryStore } from "./store.ts";
 import { testApp } from "../testkit.ts";
 
@@ -99,7 +99,7 @@ async function setup(enforce = true, extra: Partial<ProofConfig> = {}) {
   const services = fakeServices();
   const cfg: ProofConfig = {
     enforce,
-    apple: { appId: APP, roots: [apple.root] },
+    apple: { appIds: [APP], roots: [apple.root] },
     play: { packageName: "in.heyorbit.app", email: "integrity@orbit.iam.gserviceaccount.com", key: serviceKey, certs: ["test-build-key"] },
     turnstile: { secret: "turnstile-secret" },
     fetch: services.f,
@@ -178,6 +178,69 @@ test("an assertion from a key never attested here fails, so the app attests agai
   assert.match(warned[0]!, /unknownKey/);
 });
 
+// ---------- the host apps (Orbit Launch, Station and Crew prove themselves too, 22 Nov 2026) ----------
+
+const LAUNCH = "TEAM123456.in.heyorbit.launch";
+
+test("each listed app attests and asserts; one not on the list is refused", async () => {
+  const { p, apple } = await setup(); // p lists the Orbit app alone
+  const both = proofs({ enforce: true, apple: { appIds: [APP, LAUNCH], roots: [apple.root] } }, memoryStore());
+  const ok = async (r: Promise<string | null>) => (await quiet(() => r)).result === null;
+  const launch = await apple.phone(LAUNCH);
+  let c = await both.challenge();
+  assert.equal(await ok(both.check({ kind: "ios", challenge: c, keyId: launch.keyId, attestation: await launch.attest(`${c}:${what}`) }, what)), true);
+  c = await both.challenge();
+  assert.equal(await ok(both.check({ kind: "ios", challenge: c, keyId: launch.keyId, assertion: launch.assert(`${c}:${what}`) }, what)), true);
+  // The Orbit app's own key still works beside it.
+  const orbit = await apple.phone(APP);
+  c = await both.challenge();
+  assert.equal(await ok(both.check({ kind: "ios", challenge: c, keyId: orbit.keyId, attestation: await orbit.attest(`${c}:${what}`) }, what)), true);
+  // A server listing only the Orbit app refuses Launch's attestation as another app's.
+  c = await p.challenge();
+  const attestation = await launch.attest(`${c}:${what}`);
+  const { result, warned } = await quiet(() => p.check({ kind: "ios", challenge: c, keyId: launch.keyId, attestation }, what));
+  assert.equal(result, false);
+  assert.match(warned[0]!, /: app$/);
+});
+
+test("a key's assertions answer to the app that attested it, and stop if that app leaves the list", async () => {
+  const { apple } = await setup();
+  const store = memoryStore();
+  const ok = async (r: Promise<string | null>) => (await quiet(() => r)).result === null;
+  const both = proofs({ enforce: true, apple: { appIds: [APP, LAUNCH], roots: [apple.root] } }, store);
+  const launch = await apple.phone(LAUNCH);
+  let c = await both.challenge();
+  assert.equal(await ok(both.check({ kind: "ios", challenge: c, keyId: launch.keyId, attestation: await launch.attest(`${c}:${what}`) }, what)), true);
+  // Launch's key, asserting as if it were the Orbit app's (another app id in its signed data), is refused.
+  const posing = await apple.phone(APP);
+  const imposter = { ...posing, keyId: launch.keyId };
+  c = await both.challenge();
+  assert.equal(await ok(both.check({ kind: "ios", challenge: c, keyId: imposter.keyId, assertion: imposter.assert(`${c}:${what}`) }, what)), false);
+  // The same store, with Launch taken off the list: its key proves nothing more.
+  const orbitOnly = proofs({ enforce: true, apple: { appIds: [APP], roots: [apple.root] } }, store);
+  c = await orbitOnly.challenge();
+  const { result, warned } = await quiet(() => orbitOnly.check({ kind: "ios", challenge: c, keyId: launch.keyId, assertion: launch.assert(`${c}:${what}`) }, what));
+  assert.equal(result, "unproven");
+  assert.match(warned[0]!, /: app$/);
+});
+
+test("a key kept before the host apps came (its public key alone) is the Orbit app's", async () => {
+  assert.deepEqual(readKey("MFkwEwYH", [APP, LAUNCH]), { app: APP, spki: "MFkwEwYH" });
+  assert.deepEqual(readKey(keptKey(LAUNCH, "MFkwEwYH"), [APP, LAUNCH]), { app: LAUNCH, spki: "MFkwEwYH" });
+  // And it still asserts: an Orbit app key stored the old way.
+  const { apple } = await setup();
+  const store = memoryStore();
+  const orbitOnlyBefore = proofs({ enforce: true, apple: { appIds: [APP], roots: [apple.root] } }, store);
+  const phone = await apple.phone(APP);
+  let c = await orbitOnlyBefore.challenge();
+  assert.equal(await orbitOnlyBefore.check({ kind: "ios", challenge: c, keyId: phone.keyId, attestation: await phone.attest(`${c}:${what}`) }, what), null);
+  const kept = (await store.get(`proof:key:${phone.keyId}`))!;
+  await store.set(`proof:key:${phone.keyId}`, readKey(kept, [APP]).spki, 60_000); // as the server before kept it
+  const both = proofs({ enforce: true, apple: { appIds: [APP, LAUNCH], roots: [apple.root] } }, store);
+  c = await both.challenge();
+  assert.equal(await both.check({ kind: "ios", challenge: c, keyId: phone.keyId, assertion: phone.assert(`${c}:${what}`) }, what), null);
+});
+
 test(`one iPhone key proves at most ${PER_KEY_DAY} requests a day, then says tooMany`, async () => {
   const { p, raw, apple } = await setup();
   const phone = await apple.phone();
@@ -247,7 +310,7 @@ test("not enforced, a missing or failed proof is logged and let through", async 
 
 test("enforced, POST /auth/code needs a proof and uses up nothing without one", async () => {
   const apple = await fakeApple();
-  const t = await testApp({ proof: { enforce: true, apple: { appId: APP, roots: [apple.root] } } });
+  const t = await testApp({ proof: { enforce: true, apple: { appIds: [APP], roots: [apple.root] } } });
   try {
     for (let i = 0; i < 12; i++) {
       const r = (await quiet(() => t.call("POST", "/auth/code", { to: "9000000001" }))).result;
@@ -268,7 +331,7 @@ test("enforced, POST /auth/code needs a proof and uses up nothing without one", 
 
 test("enforced, Google's start needs a proof; builds without one send no body", async () => {
   const apple = await fakeApple();
-  const t = await testApp({ proof: { enforce: true, apple: { appId: APP, roots: [apple.root] } } });
+  const t = await testApp({ proof: { enforce: true, apple: { appIds: [APP], roots: [apple.root] } } });
   try {
     assert.equal((await quiet(() => t.call("POST", "/auth/google/start"))).result.status, 403);
     const phone = await apple.phone();
@@ -283,7 +346,7 @@ test("enforced, Google's start needs a proof; builds without one send no body", 
 });
 
 test("not enforced, a send without a proof still goes", async () => {
-  const t = await testApp({ proof: { enforce: false, apple: { appId: APP } } });
+  const t = await testApp({ proof: { enforce: false, apple: { appIds: [APP] } } });
   try {
     const r = (await quiet(() => t.call("POST", "/auth/code", { to: "9000000001" }))).result;
     assert.equal(r.status, 200);
@@ -295,7 +358,7 @@ test("not enforced, a send without a proof still goes", async () => {
 
 test("Google's start takes no Turnstile token: only the app starts it", async () => {
   const services = fakeServices();
-  const t = await testApp({ proof: { enforce: true, apple: { appId: APP }, turnstile: { secret: "s" }, fetch: services.f } });
+  const t = await testApp({ proof: { enforce: true, apple: { appIds: [APP] }, turnstile: { secret: "s" }, fetch: services.f } });
   try {
     const web = { kind: "web", token: "good" };
     assert.equal((await quiet(() => t.call("POST", "/auth/google/start", { proof: web }))).result.status, 403);
@@ -308,7 +371,7 @@ test("Google's start takes no Turnstile token: only the app starts it", async ()
 test("a malformed proof counts as none: let through when not enforced, refused when enforced", async () => {
   const bad = { kind: "ios", challenge: "c", keyId: "k", assertion: "x".repeat(5000) };
   for (const enforce of [false, true]) {
-    const t = await testApp({ proof: { enforce, apple: { appId: APP } } });
+    const t = await testApp({ proof: { enforce, apple: { appIds: [APP] } } });
     try {
       const r = (await quiet(() => t.call("POST", "/auth/code", { to: "9000000001", proof: bad }))).result;
       assert.equal(r.status, enforce ? 403 : 200);

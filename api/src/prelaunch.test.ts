@@ -232,7 +232,7 @@ test("a waitlist send does not replace a pending sign-in code", async () => {
 test("enforced, the waitlist code send needs a proof and sends nothing without one", async () => {
   const f = (async (_url: string, init?: RequestInit) =>
     Response.json({ success: JSON.parse(String(init?.body)).response === "good" })) as unknown as typeof fetch;
-  const p = await testApp({ proof: { enforce: true, apple: { appId: "TEAM123456.in.heyorbit.app" }, turnstile: { secret: "s" }, fetch: f } });
+  const p = await testApp({ proof: { enforce: true, apple: { appIds: ["TEAM123456.in.heyorbit.app"] }, turnstile: { secret: "s" }, fetch: f } });
   try {
     const go = (body: object) => p.app.request("/public/interest/code", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     const no = await go({ phone: "9877000005" });
@@ -250,7 +250,7 @@ test("enforced, the waitlist code send needs a proof and sends nothing without o
 test("with Turnstile set, the waitlist send needs a proof even when enforce is off; sign-in does not", async () => {
   const f = (async (_url: string, init?: RequestInit) =>
     Response.json({ success: JSON.parse(String(init?.body)).response === "good" })) as unknown as typeof fetch;
-  const p = await testApp({ proof: { enforce: false, apple: { appId: "TEAM123456.in.heyorbit.app" }, turnstile: { secret: "s" }, fetch: f } });
+  const p = await testApp({ proof: { enforce: false, apple: { appIds: ["TEAM123456.in.heyorbit.app"] }, turnstile: { secret: "s" }, fetch: f } });
   try {
     const go = (body: object) => p.app.request("/public/interest/code", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     const no = await go({ phone: "9877000006" });

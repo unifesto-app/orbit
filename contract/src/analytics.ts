@@ -4,19 +4,30 @@
 // with no people in them, are kept after the rows go.
 
 // Every request from the app says what it is in this header: "ios/1.0.0", "android/1.0.0"; the website "web"; Galaxy
-// "galaxy" (staff at work, never counted as people using Orbit). A request without it, or with anything else, counts
-// as "app" (an older build, or an unknown one). Nothing in it is trusted: it only sorts the counts.
+// "galaxy" (staff at work, never counted as people using Orbit); the host apps their name before it, "launch-ios/1.0.0",
+// "station-android/1.0.0" or "crew-ios/1.0.0" (hosts at work, kept out of the people's counts, host apps plan decision
+// 19). A request without it, or with anything else, counts as "app" (an older build, or an unknown one). Nothing in it
+// is trusted: it only sorts the counts.
+// ponytail: host apps aren't counted at all yet; they get counts of their own when Galaxy shows host activity.
 export const CLIENT_HEADER = "x-orbit-client";
 export const PLATFORMS = { ios: "iOS", android: "Android", web: "Web", app: "App (older build)" } as const;
 export type Platform = keyof typeof PLATFORMS;
-export type Client = { platform: Platform; version: string | null } | { platform: "galaxy" };
+export const HOST_APPS = ["launch", "station", "crew"] as const;
+export type HostApp = (typeof HOST_APPS)[number];
+export type Client =
+  | { platform: Platform; version: string | null }
+  | { platform: "galaxy" }
+  | { platform: "host"; app: HostApp; os: "ios" | "android"; version: string };
 
 const APP = /^(ios|android)\/(\d{1,3}\.\d{1,3}\.\d{1,3})$/;
+const HOST = /^(launch|station|crew)-(ios|android)\/(\d{1,3}\.\d{1,3}\.\d{1,3})$/;
 /** What a request's CLIENT_HEADER says it is; anything unreadable is an unknown app. */
 export function readClient(header: string | undefined | null): Client {
   const v = (header ?? "").trim().toLowerCase();
   if (v === "galaxy") return { platform: "galaxy" };
   if (v === "web") return { platform: "web", version: null };
+  const h = HOST.exec(v);
+  if (h) return { platform: "host", app: h[1] as HostApp, os: h[2] as "ios" | "android", version: h[3]! };
   const m = APP.exec(v);
   return m ? { platform: m[1] as "ios" | "android", version: m[2]! } : { platform: "app", version: null };
 }

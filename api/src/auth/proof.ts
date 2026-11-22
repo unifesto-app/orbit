@@ -18,7 +18,9 @@ import type { Store } from "./store.ts";
 
 export type ProofConfig = {
   enforce: boolean;
-  apple: { appId: string; roots?: string[] }; // "<team id>.<bundle id>"; roots: Apple's own unless a test swaps it
+  // "<team id>.<bundle id>" of every app that may prove itself: the Orbit app first, then the host apps (Orbit Launch,
+  // Station and Crew, 22 Nov 2026). roots: Apple's own unless a test swaps it.
+  apple: { appIds: string[]; roots?: string[] };
   // A Google Cloud service account in the project linked to Play. `certs`: signing-certificate digests, as verdicts
   // show them, that pass without a Play install (Orbit's own test builds).
   play?: { packageName: string; email: string; key: string; certs?: string[] };
@@ -54,6 +56,14 @@ const sha = (b: Buffer | Uint8Array | string) => createHash("sha256").update(b).
 const NONCE_PREFIX = Buffer.from("3024a1220420", "hex");
 const ENVIRONMENTS = ["appattest\0\0\0\0\0\0\0", "appattestdevelop"]; // production, and builds signed for development
 
+// An attested key is kept as "<app id> <public key>", so its assertions are checked against the app that attested it.
+// A key kept before the host apps came holds the public key alone: it was the Orbit app's (the first app id).
+export const keptKey = (app: string, spki: string) => `${app} ${spki}`;
+export function readKey(held: string, appIds: readonly string[]): { app: string | undefined; spki: string } {
+  const space = held.indexOf(" ");
+  return space < 0 ? { app: appIds[0], spki: held } : { app: held.slice(0, space), spki: held.slice(space + 1) };
+}
+
 export function proofs(cfg: ProofConfig, store: Store) {
   const f = cfg.fetch ?? fetch;
   const timeout = () => AbortSignal.timeout(5000);
@@ -74,17 +84,22 @@ export function proofs(cfg: ProofConfig, store: Store) {
       const spki = leaf.publicKey.export({ type: "spki", format: "der" });
       if (!sha(spki.subarray(-65)).equals(keyId)) return "key"; // the key id is the hash of the uncompressed point
       const a = parseAuthenticatorData(authData);
-      if (!Buffer.from(a.rpIdHash).equals(sha(cfg.apple.appId))) return "app";
+      // Which of Orbit's apps made the key: Apple puts the hash of its app id in the attested data.
+      const app = cfg.apple.appIds.find((id) => Buffer.from(a.rpIdHash).equals(sha(id)));
+      if (!app) return "app";
       if (a.counter !== 0 || !a.aaguid || !ENVIRONMENTS.includes(Buffer.from(a.aaguid).toString("latin1"))) return "environment";
       if (!a.credentialID || !Buffer.from(a.credentialID).equals(keyId)) return "key";
-      await store.set(`proof:key:${p.keyId}`, spki.toString("base64"), KEY_LIFE);
+      await store.set(`proof:key:${p.keyId}`, keptKey(app, spki.toString("base64")), KEY_LIFE);
     } else if (p.assertion) {
       const held = await store.get(`proof:key:${p.keyId}`);
       if (!held) return "unknownKey"; // the app attests a new one and asks again
+      const { app, spki } = readKey(held, cfg.apple.appIds);
+      // An app taken off the list since its key was attested proves nothing more.
+      if (!app || !cfg.apple.appIds.includes(app)) return "app";
       const m = isoCBOR.decodeFirst<Map<string, Uint8Array>>(Buffer.from(p.assertion, "base64"));
       const sig = m.get("signature"), authData = m.get("authenticatorData");
-      if (!sig || !authData || !Buffer.from(authData.subarray(0, 32)).equals(sha(cfg.apple.appId))) return "app";
-      const key = createPublicKey({ key: Buffer.from(held, "base64"), format: "der", type: "spki" });
+      if (!sig || !authData || !Buffer.from(authData.subarray(0, 32)).equals(sha(app))) return "app";
+      const key = createPublicKey({ key: Buffer.from(spki, "base64"), format: "der", type: "spki" });
       if (!verify("sha256", sha(Buffer.concat([authData, clientDataHash])), key, sig)) return "signature";
     } else return "empty";
     return (await store.incr(`proof:day:${p.keyId}`, DAY)) > PER_KEY_DAY ? "tooMany" : null;
