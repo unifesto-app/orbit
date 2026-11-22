@@ -59,11 +59,14 @@ test("1 recording", async () => {
   assert.deepEqual(r.map((x) => x.platform), ["android", "ios"]);
 
   const g = await join();
+  const l = await join(); // a host app: Orbit Launch, hosts at work
   const h = await join();
   await get("/me", g.access, "galaxy");
+  await get("/me", l.access, "launch-ios/1.0.0");
   await get("/me", h.access);
   await until(async () => (await rows(h.me.id)).length >= 1); // the control: its write has landed, so galaxy's would have
   assert.equal((await rows(g.me.id)).length, 0);
+  assert.equal((await rows(l.me.id)).length, 0);
   assert.deepEqual((await rows(h.me.id)).map((x) => [x.platform, x.version]), [["app", null]]);
 
   const j = await join();

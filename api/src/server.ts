@@ -3,7 +3,7 @@ import { createApp } from "./app.ts";
 import { runDeletions } from "./auth/deletion.ts";
 import { codeSender, emailSender, type Mail, sesClient, sesMail, whatsappSender } from "./auth/senders.ts";
 import { readContact } from "@orbit/contract";
-import type { ProofConfig } from "./auth/proof.ts";
+import { appsFrom, type ProofConfig } from "./auth/proof.ts";
 import { memoryStore, redisStore } from "./auth/store.ts";
 import { sweepActivity } from "./analytics.ts";
 import { pruneApplications } from "./careers.ts";
@@ -117,7 +117,9 @@ const revokeApple = ways(waysConfig, store).revokeApple;
 //   linked to the app in Play Console; PLAY_CERTS lists signing-certificate digests (as the log shows them) that pass
 //   without a Play install, for test builds: only keys Orbit alone holds (EAS's), never a debug keystore's, which
 //   anyone can sign with.
-// - APP_BUNDLE_ID: the iOS bundle id and Android package, in.heyorbit.app unless set.
+// - APP_BUNDLE_ID: the apps' iOS bundle ids, comma-separated, the Orbit app's first, which is also the Android package
+//   Play Integrity checks. Unless set: the Orbit app, then the host apps Orbit Launch, Station and Crew (22 Nov 2026).
+//   ponytail: Play checks the first package only; the host apps prove themselves on Android when Play has each.
 // - Web: Turnstile, with TURNSTILE_SECRET.
 const playKey = (() => {
   if (!env.PLAY_INTEGRITY_KEY) return null;
@@ -127,15 +129,15 @@ const playKey = (() => {
   } catch {}
   throw new Error("PLAY_INTEGRITY_KEY must be a service account's JSON key, on one line");
 })();
-const bundleId = env.APP_BUNDLE_ID?.trim() || "in.heyorbit.app";
+const apps = appsFrom(env.APP_BUNDLE_ID, env.APPLE_TEAM_ID?.trim() || "9AH3Z5C5DH");
 const proof: ProofConfig = {
   enforce: env.PROOF?.trim() === "enforce",
-  apple: { appId: `${env.APPLE_TEAM_ID?.trim() || "9AH3Z5C5DH"}.${bundleId}` },
-  play: playKey ? { packageName: bundleId, ...playKey, certs: list(env.PLAY_CERTS) } : undefined,
+  apple: { appIds: apps.appIds },
+  play: playKey ? { packageName: apps.playPackage, ...playKey, certs: list(env.PLAY_CERTS) } : undefined,
   turnstile: env.TURNSTILE_SECRET ? { secret: env.TURNSTILE_SECRET } : undefined,
 };
 console.log(
-  `[proof] ${proof.enforce ? "enforced" : "logged only"}: App Attest for ${proof.apple.appId}, ` +
+  `[proof] ${proof.enforce ? "enforced" : "logged only"}: App Attest for ${proof.apple.appIds.join(", ")}, ` +
     `Play Integrity ${proof.play ? `for ${proof.play.packageName}` : "not set up"}, ` +
     `Turnstile ${proof.turnstile ? "on (the waitlist's code sends enforce it)" : "not set up"}`,
 );
