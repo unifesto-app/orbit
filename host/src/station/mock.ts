@@ -1,28 +1,30 @@
 // Station's three mock venues, the people app's places to play (app/src/kinds.ts and mock.ts) as their counter sees
 // them, and a made-up day of claims around any `now`: the same day for the same venue and time, every state the
 // counter meets in it (someone 20 minutes late, someone due in, a walk-in, a block).
+// Prices are the people app's (app/src/kinds.ts venues).
 // ponytail: mock until the slots API (H8.1 to H8.5) serves a venue's stations and claims.
-import { type Claim, HOUR, MIN, type StationType, type Venue, hours, steps, taken, walkInStart } from './day.ts';
+import { type Claim, HOUR, MIN, type StationType, type Venue, hours, indiaMidnight, steps, taken, walkInStart } from './day.ts';
+import { type Bank, type Payout, type Sold, split, type Terms } from './money.ts';
 
 export const venues: Venue[] = [
   {
     id: 'respawn-zone', name: 'Respawn Zone', initials: 'RZ', bg: '#12002B', fg: '#22D3EE', area: 'Gachibowli', open: [11, 26],
     types: [
-      { id: 'pc', name: 'Gaming PC', count: 12, unit: ['PC', 'PCs'], step: 30, whole: false },
-      { id: 'ps5', name: 'PS5', count: 4, unit: ['PS5', 'PS5s'], step: 30, whole: false },
-      { id: 'vr', name: 'VR bay', count: 2, unit: ['bay', 'bays'], step: 30, whole: false },
+      { id: 'pc', name: 'Gaming PC', count: 12, unit: ['PC', 'PCs'], step: 30, whole: false, price: 16200, offPeak: { from: 11, to: 16, weekdays: true, price: 12000 } },
+      { id: 'ps5', name: 'PS5', count: 4, unit: ['PS5', 'PS5s'], step: 30, whole: false, price: 25000 },
+      { id: 'vr', name: 'VR bay', count: 2, unit: ['bay', 'bays'], step: 30, whole: false, price: 40000 },
     ],
   },
   {
     id: 'kickoff-arena', name: 'Kickoff Arena', initials: 'KA', bg: '#14532D', fg: '#FFFFFF', area: 'Gachibowli', open: [6, 24],
     types: [
-      { id: 'football', name: '5-a-side football', count: 2, unit: ['pitch', 'pitches'], step: 60, whole: true },
-      { id: 'cricket', name: 'Box cricket', count: 1, unit: ['box', 'boxes'], step: 60, whole: true },
+      { id: 'football', name: '5-a-side football', count: 2, unit: ['pitch', 'pitches'], step: 60, whole: true, price: 120000, offPeak: { from: 6, to: 16, weekdays: true, price: 90000 } },
+      { id: 'cricket', name: 'Box cricket', count: 1, unit: ['box', 'boxes'], step: 60, whole: true, price: 100000 },
     ],
   },
   {
     id: 'smash-court', name: 'Smash Court', initials: 'SC', bg: '#0B7285', fg: '#FFFFFF', area: 'Kondapur', open: [5, 23],
-    types: [{ id: 'badminton', name: 'Badminton', count: 4, unit: ['court', 'courts'], step: 60, whole: true }],
+    types: [{ id: 'badminton', name: 'Badminton', count: 4, unit: ['court', 'courts'], step: 60, whole: true, price: 50000, offPeak: { from: 10, to: 16, weekdays: false, price: 35000 } }],
   },
 ];
 
@@ -90,4 +92,66 @@ export function mockDay(v: Venue, now: number): Claim[] {
     }
   }
   return claims.sort((x, y) => x.start - y.start);
+}
+
+// Each venue's money, made up to show the cases: Respawn Zone in its commission-free months with a verified bank and a
+// payout asked for; Kickoff Arena on its full rate, including the buyer fee, its new bank account still being checked;
+// Smash Court on half commission with no bank account yet. Dates are India midnights.
+const DAY = 24 * HOUR;
+const india = (y: number, m: number, d: number) => Date.UTC(y, m - 1, d) - 330 * MIN;
+const MONEY: Record<string, { terms: Terms; bank: (now: number) => Bank; asks: number[]; lastOpen: boolean }> = {
+  'respawn-zone': {
+    terms: { onboarded: india(2026, 10, 9), rate: 0.065, feeIncluded: false },
+    bank: () => ({ bank: 'HDFC Bank', last4: '4821', holder: 'Respawn Zone', state: 'verified' }),
+    asks: [22, 15, 8, 1], // days ago; the last is still waiting to be paid
+    lastOpen: true,
+  },
+  'kickoff-arena': {
+    terms: { onboarded: india(2026, 5, 11), rate: 0.06, feeIncluded: true },
+    bank: (now) => ({ bank: 'ICICI Bank', last4: '0937', holder: 'Kickoff Arena', state: 'checking', until: now + 52 * HOUR }), // a replacement, 72 hours
+    asks: [24, 17, 10], // a week and more since the last: it can ask now
+    lastOpen: false,
+  },
+  'smash-court': {
+    terms: { onboarded: india(2026, 7, 13), rate: 0.065, feeIncluded: false },
+    bank: () => null,
+    asks: [],
+    lastOpen: false,
+  },
+};
+
+/** A venue's last 30 days of bookings (today's as given), with its terms, bank account and payouts. */
+const earningsOf = (x: Sold, terms: Terms) => split(x.t, x.c, terms).earnings;
+
+export function mockMoney(v: Venue, now: number, today: readonly Claim[]) {
+  const m = MONEY[v.id];
+  const typeOf = (c: Claim) => v.types.find((t) => t.id === c.type)!;
+  const days: { day: number; sold: Sold[] }[] = [];
+  for (let k = 0; k < 30; k++) {
+    const h = hours(v, now - k * DAY);
+    if (h.day < indiaMidnight(m.terms.onboarded)) break;
+    // Past days as they ended; one booking in 16 the player cancelled in time, so its price went back.
+    const claims =
+      k === 0
+        ? today
+        : mockDay(v, h.closes - MIN).map((c) => {
+            if (!c.code || parseInt(c.code.slice(2), 36) % 16 !== 0) return c;
+            const { checkedIn, in: _in, by, released, ...left } = c; // cancelled in time: nobody came
+            return { ...left, refunded: true };
+          });
+    days.push({ day: h.day, sold: claims.filter((c) => c.kind === 'booking').map((c) => ({ t: typeOf(c), c })) });
+  }
+  // Weekly payouts of what was ready at each ask, paid the next day with a UTR.
+  const all = days.flatMap((d) => d.sold);
+  const payouts: Payout[] = [];
+  m.asks.forEach((ago, i) => {
+    const asked = now - ago * DAY;
+    if (asked < m.terms.onboarded + 7 * DAY) return;
+    const ready = all.filter((x) => x.c.end + 3 * DAY <= asked).reduce((a, x) => a + earningsOf(x, m.terms), 0);
+    const paise = ready - payouts.reduce((a, p) => a + p.paise, 0);
+    if (paise <= 0) return;
+    const open = m.lastOpen && i === m.asks.length - 1;
+    payouts.push({ id: `p${i}`, asked, paise, status: open ? 'requested' : 'paid', ...(open ? {} : { paid: asked + DAY, utr: `${v.initials}N${(asked / 1000).toString(36).toUpperCase().slice(-8)}` }) });
+  });
+  return { terms: m.terms, bank: m.bank(now), payouts, days };
 }

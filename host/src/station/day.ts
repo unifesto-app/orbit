@@ -25,6 +25,9 @@ export type StationType = {
   unit: [string, string]; // one and many: ["pitch", "pitches"]
   step: 30 | 60; // minutes between starts
   whole: boolean; // booked whole by one group: one QR, nobody counted at the door
+  price: number; // paise an hour, for one
+  // One cheaper window (Play 8): hours from-to (24h India time), on weekdays only or every day.
+  offPeak?: { from: number; to: number; weekdays: boolean; price: number };
 };
 export type Venue = {
   id: string;

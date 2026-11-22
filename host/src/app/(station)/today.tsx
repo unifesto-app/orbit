@@ -17,7 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { type Claim, type Door, type StationType, type Venue, MIN, dayLabel, door, hourWord, steps, taken, timeLabel } from '../../station/day';
 import { useStation } from '../../station/state';
-import { Head, Pill, Round } from '../../station/ui';
+import { Head, Pill, Round, Section } from '../../station/ui';
 import { first, range, units, what } from '../../station/words';
 
 const HATCH = require('../../../assets/tabs/hatch.png');
@@ -46,11 +46,7 @@ function Day() {
             touch(late.id);
           }} />}
       <NextUp touched={touched} onTouch={touch} />
-      <View style={styles.section}>
-        <Text style={styles.h2} accessibilityRole="header">
-          The day
-        </Text>
-      </View>
+      <Section title="The day" />
       <View style={styles.legend}>
         {(['booking', 'walkin', 'block', 'free'] as const).map((k) => (
           <View key={k} style={styles.key}>
@@ -96,12 +92,7 @@ function NextUp({ touched, onTouch }: { touched: ReadonlySet<string>; onTouch: (
   );
   return (
     <>
-      <View style={styles.section}>
-        <Text style={styles.h2} accessibilityRole="header">
-          Next up
-        </Text>
-        <Text style={styles.aside}>Next two hours</Text>
-      </View>
+      <Section title="Next up" aside="Next two hours" />
       {rows.length === 0 ? (
         <OrbitSays top={0} text={h.state === 'after' ? 'That’s the day done.' : 'Nobody’s due in the next two hours.'} />
       ) : (
@@ -217,9 +208,6 @@ function TypeCard({ t }: { t: StationType }) {
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: color.ground },
   grow: { flex: 1, minWidth: 0, gap: 2 },
-  section: { marginTop: 40, marginBottom: 12, marginHorizontal: 20, flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 },
-  h2: { fontFamily: font.headline, fontSize: 18, lineHeight: 24, color: color.text },
-  aside: { fontFamily: font.text, fontSize: 13, color: color.secondary },
   rows: { marginHorizontal: 20 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
   rule: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: stoneAt(0.12) },

@@ -6,7 +6,7 @@ import { OrbitSays } from '@orbit/mobile/orbitSays';
 import { color, font, groundAt, space, stoneAt } from '@orbit/mobile/theme';
 import { router } from 'expo-router';
 import type { ComponentProps, ReactNode } from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { Venue } from './day';
@@ -31,6 +31,18 @@ export function Head({ venue, title, line }: { venue: Venue; title: string; line
       <Pressable onPress={() => router.push('/you')} accessibilityRole="button" accessibilityLabel="You" hitSlop={4} style={styles.me}>
         <Text style={styles.meText}>A</Text>
       </Pressable>
+    </View>
+  );
+}
+
+/** A section's heading, 40 below what's above it, with an optional grey word at the right ("Next two hours"). */
+export function Section({ title, aside }: { title: string; aside?: string }) {
+  return (
+    <View style={styles.section}>
+      <Text style={styles.h2} accessibilityRole="header">
+        {title}
+      </Text>
+      {aside && <Text style={styles.aside}>{aside}</Text>}
     </View>
   );
 }
@@ -86,11 +98,21 @@ export function SheetSays(props: Omit<ComponentProps<typeof OrbitSays>, 'top'>) 
   );
 }
 
-/** A short sheet on the glass: the title and its line, the X, then what's in it. */
+/**
+ * A short sheet on the glass: the title and its line, the X, then what's in it, which scrolls clear of the keyboard and
+ * lets a drag put the keyboard away (a number pad has no return key).
+ */
 export function Sheet({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
   const insets = useSafeAreaInsets();
   return (
-    <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, space.big) }]}>
+    <ScrollView
+      style={styles.sheetScroll}
+      bounces={false}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="interactive"
+      automaticallyAdjustKeyboardInsets
+      contentContainerStyle={[styles.sheet, { paddingBottom: Math.max(insets.bottom, space.big) }]}
+    >
       <Glass style={StyleSheet.absoluteFill} />
       <View style={[StyleSheet.absoluteFill, styles.shade]} />
       <View style={styles.sheetHead}>
@@ -107,7 +129,7 @@ export function Sheet({ title, note, children }: { title: string; note?: string;
         </Pressable>
       </View>
       {children}
-    </View>
+    </ScrollView>
   );
 }
 
@@ -141,6 +163,7 @@ export const styles = StyleSheet.create({
   chipOn: { backgroundColor: stoneAt(0.16), borderColor: stoneAt(0.5) },
   chipText: { fontFamily: font.medium, fontSize: 14, color: color.text },
   sheetSays: { marginHorizontal: -20 },
+  sheetScroll: { flexGrow: 0 },
   sheet: { paddingTop: space.big, paddingHorizontal: 20, gap: 18, overflow: 'hidden' },
   shade: { backgroundColor: groundAt(0.55) },
   sheetHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
@@ -149,6 +172,10 @@ export const styles = StyleSheet.create({
   x: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   xMark: { width: 12, height: 12, tintColor: color.text },
   label: { fontFamily: font.medium, fontSize: 12, lineHeight: 16, color: color.secondary },
+  section: { marginTop: 40, marginBottom: 12, marginHorizontal: 20, flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 },
+  h2: { fontFamily: font.headline, fontSize: 18, lineHeight: 24, color: color.text },
+  aside: { fontFamily: font.text, fontSize: 13, color: color.secondary },
+  input: { height: 44, borderRadius: 22, paddingHorizontal: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: stoneAt(0.24), backgroundColor: stoneAt(0.08), color: color.text, fontFamily: font.text, fontSize: 15 },
   field: { gap: space.small },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.small },
   frow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 36 },
