@@ -80,7 +80,8 @@
 
 .foot nav {
   display: flex;
-  gap: 20px;
+  flex-wrap: wrap; /* six links run past a phone's width on one line */
+  gap: 8px 20px;
 }
 
 .foot a {
