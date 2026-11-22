@@ -17,7 +17,8 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { dayLabel, timeLabel } from '../../station/day';
-import { balance, monthOf, nextStep, numbers, percent, rateAt, rupees, type Terms } from '../../station/money';
+import { monthOf, percent, rupees } from '../../money';
+import { balance, nextStep, numbers, rateAt, type Terms } from '../../station/money';
 import { useStation } from '../../station/state';
 import { Head, Pill, Section } from '../../station/ui';
 

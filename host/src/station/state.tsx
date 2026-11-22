@@ -6,7 +6,8 @@ import { createContext, type ReactNode, useContext, useEffect, useMemo, useState
 
 import { admit, admitTo, byCode, type Claim, freeOne, hours } from './day';
 import { mockDay, mockMoney, venues } from './mock';
-import type { Bank, Payout, Sold } from './money';
+import type { Bank } from '../money';
+import type { Payout, Sold } from './money';
 
 export type Role = 'admin' | 'desk';
 
