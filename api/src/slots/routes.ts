@@ -108,6 +108,7 @@ export function slotsRoutes({ db, notify, secret, now = Date.now }: Deps) {
           .where(and(eq(teamRoles.hostId, hostId), eq(teamRoles.userId, userId), isNotNull(teamRoles.startedAt), isNull(teamRoles.endedAt)));
         if (!mine || (adminOnly && mine.role !== "admin")) return GONE;
         if (!changeable(host!)) return CLOSED;
+        if (host!.kind !== "venue") return GONE; // a kind change that landed since the first read
         const [venue] = await tx.select().from(venues).where(eq(venues.hostId, hostId)).for(venueLock);
         return body(tx, { host: host!, venue, userId });
       });
