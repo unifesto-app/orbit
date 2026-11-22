@@ -4,7 +4,7 @@ import { createHash, generateKeyPairSync, KeyObject, sign as signWith } from "no
 import { isoCBOR } from "@simplewebauthn/server/helpers"; // first: it loads the reflect-metadata x509 needs
 import * as x509 from "@peculiar/x509";
 import { proofOf, type Proof } from "@orbit/contract";
-import { keptKey, PER_KEY_DAY, proofs, readKey, type ProofConfig } from "./proof.ts";
+import { appsFrom, DEFAULT_BUNDLES, keptKey, PER_KEY_DAY, proofs, readKey, type ProofConfig } from "./proof.ts";
 import { memoryStore } from "./store.ts";
 import { testApp } from "../testkit.ts";
 
@@ -54,8 +54,9 @@ async function fakeApple() {
         const attStmt = new Map<string, unknown>([["x5c", [new Uint8Array(leaf.rawData)]], ["receipt", new Uint8Array(8)]]);
         return cbor(new Map<string, unknown>([["fmt", "apple-appattest"], ["attStmt", attStmt], ["authData", authData]])).toString("base64");
       },
-      assert(signed: string) {
-        const authData = Buffer.concat([sha(appId), Buffer.from([0]), Buffer.from([0, 0, 0, ++counter])]);
+      // `as`: the app id put in the signed data, the attested app's own unless a test poses as another.
+      assert(signed: string, as = appId) {
+        const authData = Buffer.concat([sha(as), Buffer.from([0]), Buffer.from([0, 0, 0, ++counter])]);
         const signature = signWith("sha256", sha(Buffer.concat([authData, sha(signed)])), KeyObject.from(keys.privateKey));
         return cbor(new Map<string, unknown>([["signature", signature], ["authenticatorData", authData]])).toString("base64");
       },
@@ -211,11 +212,11 @@ test("a key's assertions answer to the app that attested it, and stop if that ap
   const launch = await apple.phone(LAUNCH);
   let c = await both.challenge();
   assert.equal(await ok(both.check({ kind: "ios", challenge: c, keyId: launch.keyId, attestation: await launch.attest(`${c}:${what}`) }, what)), true);
-  // Launch's key, asserting as if it were the Orbit app's (another app id in its signed data), is refused.
-  const posing = await apple.phone(APP);
-  const imposter = { ...posing, keyId: launch.keyId };
+  // Launch's own key, signing data that names the Orbit app, is refused for the app, not the signature.
   c = await both.challenge();
-  assert.equal(await ok(both.check({ kind: "ios", challenge: c, keyId: imposter.keyId, assertion: imposter.assert(`${c}:${what}`) }, what)), false);
+  const posing = await quiet(() => both.check({ kind: "ios", challenge: c, keyId: launch.keyId, assertion: launch.assert(`${c}:${what}`, APP) }, what));
+  assert.equal(posing.result, "unproven");
+  assert.match(posing.warned[0]!, /: app$/);
   // The same store, with Launch taken off the list: its key proves nothing more.
   const orbitOnly = proofs({ enforce: true, apple: { appIds: [APP], roots: [apple.root] } }, store);
   c = await orbitOnly.challenge();
@@ -239,6 +240,16 @@ test("a key kept before the host apps came (its public key alone) is the Orbit a
   const both = proofs({ enforce: true, apple: { appIds: [APP, LAUNCH], roots: [apple.root] } }, store);
   c = await both.challenge();
   assert.equal(await both.check({ kind: "ios", challenge: c, keyId: phone.keyId, assertion: phone.assert(`${c}:${what}`) }, what), null);
+});
+
+test("APP_BUNDLE_ID: unset is the Orbit app then the host apps; a list keeps its order; Play takes the first", () => {
+  assert.deepEqual(appsFrom(undefined, "TEAM123456"), { appIds: DEFAULT_BUNDLES.map((b) => `TEAM123456.${b}`), playPackage: "in.heyorbit.app" });
+  assert.deepEqual(appsFrom(" , ", "TEAM123456").playPackage, "in.heyorbit.app");
+  assert.deepEqual(appsFrom("in.heyorbit.app", "TEAM123456"), { appIds: ["TEAM123456.in.heyorbit.app"], playPackage: "in.heyorbit.app" });
+  assert.deepEqual(appsFrom("in.heyorbit.app, in.heyorbit.launch,", "TEAM123456").appIds, ["TEAM123456.in.heyorbit.app", "TEAM123456.in.heyorbit.launch"]);
+  assert.throws(() => appsFrom("in.heyorbit.app in.heyorbit.launch", "TEAM123456"), /bundle ids/);
+  assert.throws(() => appsFrom("orbit", "TEAM123456"), /bundle ids/);
+  assert.throws(() => appsFrom(undefined, "team"), /APPLE_TEAM_ID/);
 });
 
 test(`one iPhone key proves at most ${PER_KEY_DAY} requests a day, then says tooMany`, async () => {

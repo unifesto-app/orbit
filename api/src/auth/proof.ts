@@ -64,6 +64,19 @@ export function readKey(held: string, appIds: readonly string[]): { app: string 
   return space < 0 ? { app: appIds[0], spki: held } : { app: held.slice(0, space), spki: held.slice(space + 1) };
 }
 
+// The apps from APP_BUNDLE_ID (comma-separated bundle ids, the Orbit app first) under the Apple team: App Attest's app ids
+// and Play's package, the first. Unset or empty: the Orbit app, then the host apps. A list that isn't bundle ids stops
+// the API at startup, rather than refusing every phone later.
+export const DEFAULT_BUNDLES = ["in.heyorbit.app", "in.heyorbit.launch", "in.heyorbit.station", "in.heyorbit.crew"];
+export function appsFrom(bundleIds: string | undefined, team: string): { appIds: string[]; playPackage: string } {
+  const listed = (bundleIds ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  const bundles = listed.length ? listed : DEFAULT_BUNDLES;
+  const bad = bundles.find((b) => !/^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/.test(b));
+  if (bad !== undefined) throw new Error(`APP_BUNDLE_ID must be bundle ids, comma-separated (got "${bad}")`);
+  if (!/^[A-Z0-9]{10}$/.test(team)) throw new Error(`APPLE_TEAM_ID must be a 10-character team id (got "${team}")`);
+  return { appIds: bundles.map((b) => `${team}.${b}`), playPackage: bundles[0]! };
+}
+
 export function proofs(cfg: ProofConfig, store: Store) {
   const f = cfg.fetch ?? fetch;
   const timeout = () => AbortSignal.timeout(5000);

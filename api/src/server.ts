@@ -3,7 +3,7 @@ import { createApp } from "./app.ts";
 import { runDeletions } from "./auth/deletion.ts";
 import { codeSender, emailSender, type Mail, sesClient, sesMail, whatsappSender } from "./auth/senders.ts";
 import { readContact } from "@orbit/contract";
-import type { ProofConfig } from "./auth/proof.ts";
+import { appsFrom, type ProofConfig } from "./auth/proof.ts";
 import { memoryStore, redisStore } from "./auth/store.ts";
 import { sweepActivity } from "./analytics.ts";
 import { pruneApplications } from "./careers.ts";
@@ -129,12 +129,11 @@ const playKey = (() => {
   } catch {}
   throw new Error("PLAY_INTEGRITY_KEY must be a service account's JSON key, on one line");
 })();
-const bundleIds = list(env.APP_BUNDLE_ID)?.length ? list(env.APP_BUNDLE_ID)! : ["in.heyorbit.app", "in.heyorbit.launch", "in.heyorbit.station", "in.heyorbit.crew"];
-const appleTeam = env.APPLE_TEAM_ID?.trim() || "9AH3Z5C5DH";
+const apps = appsFrom(env.APP_BUNDLE_ID, env.APPLE_TEAM_ID?.trim() || "9AH3Z5C5DH");
 const proof: ProofConfig = {
   enforce: env.PROOF?.trim() === "enforce",
-  apple: { appIds: bundleIds.map((b) => `${appleTeam}.${b}`) },
-  play: playKey ? { packageName: bundleIds[0]!, ...playKey, certs: list(env.PLAY_CERTS) } : undefined,
+  apple: { appIds: apps.appIds },
+  play: playKey ? { packageName: apps.playPackage, ...playKey, certs: list(env.PLAY_CERTS) } : undefined,
   turnstile: env.TURNSTILE_SECRET ? { secret: env.TURNSTILE_SECRET } : undefined,
 };
 console.log(

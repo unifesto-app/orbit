@@ -20,7 +20,7 @@ export type Client =
   | { platform: "host"; app: HostApp; os: "ios" | "android"; version: string };
 
 const APP = /^(ios|android)\/(\d{1,3}\.\d{1,3}\.\d{1,3})$/;
-const HOST = /^(launch|station|crew)-(ios|android)\/(\d{1,3}\.\d{1,3}\.\d{1,3})$/;
+const HOST = new RegExp(`^(${HOST_APPS.join("|")})-(ios|android)/(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})$`);
 /** What a request's CLIENT_HEADER says it is; anything unreadable is an unknown app. */
 export function readClient(header: string | undefined | null): Client {
   const v = (header ?? "").trim().toLowerCase();
