@@ -9,7 +9,7 @@ import { StatusBar } from 'expo-status-bar';
 import { StationProvider } from '../station/state';
 import { isLaunch, isStation } from '../variant';
 
-// Station's short sheets (walk-in and block, you) are see-through, so their own frosted glass shows, as the Orbit
+// Station's short sheets (walk-in and block, you, payout, bank) are see-through, so their own frosted glass shows, as the Orbit
 // app's venue sheet: as tall as what's in them, with a grabber.
 const SHEET = {
   presentation: 'formSheet',
@@ -32,6 +32,9 @@ export default function Layout() {
           {/* The scanner takes the whole screen, over Today (take 2). */}
           <Stack.Screen name="scan" options={{ presentation: 'fullScreenModal', contentStyle: { backgroundColor: '#000' } }} />
           <Stack.Screen name="you" options={SHEET} />
+          {/* Money's, Admins only (take 3). */}
+          <Stack.Screen name="payout" options={SHEET} />
+          <Stack.Screen name="bank" options={SHEET} />
         </Stack.Protected>
         {/* Orbit Launch's own: in Station and Crew a link to them goes nowhere. */}
         <Stack.Protected guard={isLaunch}>
