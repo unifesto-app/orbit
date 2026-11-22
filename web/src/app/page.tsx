@@ -43,7 +43,7 @@ export default function Home() {
         <div className={base.copy}>
           <Orbits className={base.art} />
           <h1 className={base.line}>
-            There’s more to live{" "}
+            There’s more to life{" "}
             <span className={base.deep} style={{ backgroundImage: deepType }}>
               beyond the usual.
             </span>
@@ -171,7 +171,7 @@ const LD = {
       name: "Orbit",
       url: SITE,
       logo: `${SITE}/apple-icon.png`,
-      slogan: "There’s more to live beyond the usual.",
+      slogan: "There’s more to life beyond the usual.",
       description: DESCRIPTION,
       areaServed: { "@type": "Country", name: "India" },
       sameAs: SOCIAL.map(([, url]) => url),

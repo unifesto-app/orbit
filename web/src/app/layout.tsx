@@ -17,12 +17,12 @@ const script = Sacramento({ variable: "--font-script", subsets: ["latin"], weigh
 // twitter-image.png), made from the page's own drawing; Next adds its tags.
 export const metadata: Metadata = {
   metadataBase: new URL(SITE),
-  title: { default: "Orbit: There’s more to live beyond the usual.", template: "%s · Orbit" },
+  title: { default: "Orbit: There’s more to life beyond the usual.", template: "%s · Orbit" },
   description: DESCRIPTION,
   applicationName: "Orbit",
   alternates: { canonical: "/" },
-  openGraph: { ...OPEN_GRAPH, url: "/", title: "Orbit: There’s more to live beyond the usual.", description: DESCRIPTION },
-  twitter: { card: "summary_large_image", site: X_HANDLE, title: "Orbit: There’s more to live beyond the usual.", description: DESCRIPTION },
+  openGraph: { ...OPEN_GRAPH, url: "/", title: "Orbit: There’s more to life beyond the usual.", description: DESCRIPTION },
+  twitter: { card: "summary_large_image", site: X_HANDLE, title: "Orbit: There’s more to life beyond the usual.", description: DESCRIPTION },
   formatDetection: { telephone: false },
 };
 
