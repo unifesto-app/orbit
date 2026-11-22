@@ -4,10 +4,12 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { read } from "../../../api";
 import { Alert, Badge, Container, day, PageHeader, ui } from "../../ui";
+import { Analytics } from "./analytics";
 import { SITE } from "./site";
 
 // Careers (owner, 22 Nov 2026: "careers page at heyorbit.in/careers, link to galaxy", "Openings + applications"; API:
-// /galaxy/openings), for holders of People: the openings heyorbit.in/careers shows while Open, and who has applied.
+// /galaxy/openings), for holders of People: how careers is doing (analytics.tsx), then the openings heyorbit.in/careers
+// shows while Open, and who has applied.
 export const metadata: Metadata = { title: "Careers" };
 
 export default function Careers() {
@@ -22,6 +24,9 @@ export default function Careers() {
           See the site ↗
         </a>
       </div>
+      <Suspense fallback={null}>
+        <Analytics />
+      </Suspense>
       <Suspense fallback={null}>
         <List />
       </Suspense>

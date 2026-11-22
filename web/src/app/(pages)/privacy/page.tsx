@@ -50,7 +50,7 @@ export default function Privacy() {
           The page you open, where you came from (as a name like Instagram or LinkedIn), the kind of device and browser,
           and the country, region and city our network provider reads from your IP address.
         </li>
-        <li>How long the page was on screen, how fast it loaded, and whether you started the form, got a code and joined.</li>
+        <li>How long the page was on screen, how fast it loaded, and whether you started the form, got a code and joined, or sent a job application.</li>
       </ul>
       <p>
         We count visits to see which links bring people and how the site works for them. We use no cookies, and we don’t

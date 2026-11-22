@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import { and, count, desc, eq, inArray, lt, ne, notInArray, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { Apply, applyFields, type ApplicationList, type OpeningAdmin, type OpeningCard, type OpeningPage, Opening, proofOf, RESUME_MAX_BYTES, SetApplication } from "@orbit/contract";
+import { APPLICATION_STATUSES, Apply, applyFields, type CareersStats, type ApplicationList, type OpeningAdmin, type OpeningCard, type OpeningPage, Opening, proofOf, RESUME_MAX_BYTES, SetApplication } from "@orbit/contract";
 import type { Deps } from "./auth/routes.ts";
 import { applicationEmail } from "./careers-email.ts";
 import type { Media } from "./media.ts";
@@ -12,6 +12,7 @@ import { applications, auditLog, openings } from "./db/schema.ts";
 import { bucketOf, fail, invalid, ipOf, isUuid, listPage, parse, signedIn, taken, unlinked } from "./http.ts";
 import { requireFeature, type StaffEnv } from "./roles/access.ts";
 import { slugFor } from "./slugs.ts";
+import { ist, markVisit, top } from "./visits.ts";
 import type { Db } from "./db/index.ts";
 
 // Careers (contract/src/careers.ts; owner, 22 Nov 2026: "careers page at heyorbit.in/careers, link to galaxy", "Openings
@@ -121,6 +122,8 @@ export function careersRoutes({ db, store, secret, media, proof, mail, now = Dat
       if (unlinked(e)) return nope(c); // staff deleted the opening while this was on its way
       throw e;
     }
+    // The visit the form was sent from, if the page said which: never holds up or fails the 204 (markVisit catches).
+    if (typeof body.view === "string" && isUuid(body.view)) void markVisit(db, body.view, "applied", now());
     // The confirmation, for a new application only. It never holds up or fails the 204: a send that fails is logged.
     if (mail)
       void Promise.resolve()
@@ -130,6 +133,61 @@ export function careersRoutes({ db, store, secret, media, proof, mail, now = Dat
   });
 
   // ---- Galaxy, for holders of People
+
+  // GET /galaxy/careers/stats: contract/src/careers.ts has the definitions. Each read is logged.
+  app.get("/galaxy/careers/stats", ...staff, async (c) => {
+    const at = now(); // one clock for the whole answer
+    await audit(c.var.actor.id, "careers.stats", {});
+    const DAY = 86_400_000;
+    const today = ist(at);
+    const from = new Date(`${ist(at - 29 * DAY)}T00:00:00+05:30`);
+    const rows = async <T>(q: ReturnType<typeof sql>) => (await db.execute(q)) as unknown as T[];
+    const win = sql`at >= ${from.toISOString()}::timestamptz`;
+    const careers = sql`path in ('/careers', '/careers/[slug]')`;
+    // One row per visitor-day (the visitor code changes daily) on the careers pages: the first view's source and the steps reached.
+    const perVisitor = sql`select (array_agg(source order by at))[1] as source, bool_or(path = '/careers') as l, bool_or(path = '/careers/[slug]') as o, bool_or(applied) as a from visit where ${win} and ${careers} group by visitor`;
+    const apps = await db.select({ at: applications.createdAt, status: applications.status, title: openings.title, place: openings.place }).from(applications).innerJoin(openings, eq(applications.openingId, openings.id));
+    const [{ n: open }] = (await db.select({ n: count() }).from(openings).where(eq(openings.status, "open"))) as [{ n: number }];
+    const [funnel] = await rows<CareersStats["funnel"] & { visitors: number }>(
+      sql`select count(*)::int as visitors, (count(*) filter (where l))::int as list, (count(*) filter (where o))::int as opening, (count(*) filter (where a))::int as applied from (${perVisitor}) v`,
+    );
+    const sources = await rows<{ name: string; visitors: number; applied: number }>(
+      sql`select source as name, count(*)::int as visitors, (count(*) filter (where a))::int as applied from (${perVisitor}) v group by 1 order by 2 desc, 1`,
+    );
+
+    const byDay = new Map<string, number>();
+    for (const a of apps) byDay.set(ist(a.at.getTime()), (byDay.get(ist(a.at.getTime())) ?? 0) + 1);
+    const days = Array.from({ length: 30 }, (_, i) => {
+      const d = ist(at - (29 - i) * DAY);
+      return { day: d, count: byDay.get(d) ?? 0 };
+    });
+    // Most first, ties by name, zeros left out.
+    const tally = (names: string[], limit = Infinity) => {
+      const m = new Map<string, number>();
+      for (const k of names) m.set(k, (m.get(k) ?? 0) + 1);
+      return [...m].map(([name, n]) => ({ name, count: n })).sort((x, y) => y.count - x.count || (x.name < y.name ? -1 : x.name > y.name ? 1 : 0)).slice(0, limit);
+    };
+    const city = (place: string) => place.split(",")[0]!.trim() || place;
+    const role = (a: { title: string; place: string }) => {
+      const tail = `, ${city(a.place)}`;
+      return a.title.endsWith(tail) ? a.title.slice(0, -tail.length) : a.title;
+    };
+    const body: CareersStats = {
+      total: apps.length,
+      today: byDay.get(today) ?? 0,
+      week: days.slice(-7).reduce((n, d) => n + d.count, 0),
+      open,
+      days,
+      statuses: Object.entries(APPLICATION_STATUSES).map(([k, name]) => ({ name, count: apps.filter((a) => a.status === k).length })),
+      cities: tally(apps.map((a) => city(a.place))),
+      roles: tally(apps.map(role)),
+      openings: tally(apps.map((a) => a.title), 10),
+      visitors: funnel!.visitors,
+      funnel: { list: funnel!.list, opening: funnel!.opening, applied: funnel!.applied },
+      sources: top(sources, (r) => ({ visitors: r.reduce((n, s) => n + s.visitors, 0), applied: r.reduce((n, s) => n + s.applied, 0) })),
+    };
+    return c.json(body);
+  });
 
   const adminOf = async (where?: ReturnType<typeof eq>): Promise<OpeningAdmin[]> => {
     const rows = await db.select().from(openings).where(where).orderBy(desc(openings.createdAt), desc(openings.id));
