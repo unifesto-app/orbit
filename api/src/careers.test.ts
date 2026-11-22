@@ -176,7 +176,7 @@ test("editing openings and applications", async () => {
 
 test("with Turnstile set up, an apply without a good token is refused", async () => {
   const f = (async (_url: string, init?: RequestInit) => Response.json({ success: JSON.parse(String(init?.body)).response === "good" })) as unknown as typeof fetch;
-  const p = await testApp({ proof: { enforce: false, apple: { appId: "TEAM123456.in.heyorbit.app" }, turnstile: { secret: "s" }, fetch: f } });
+  const p = await testApp({ proof: { enforce: false, apple: { appIds: ["TEAM123456.in.heyorbit.app"] }, turnstile: { secret: "s" }, fetch: f } });
   try {
     await p.db.insert(openings).values({ slug: "x-1", title: "X", team: "T", place: "P", kind: "full", about: "A", does: [], needs: [], status: "open" });
     const no = await apply("x-1", { app: p.app });

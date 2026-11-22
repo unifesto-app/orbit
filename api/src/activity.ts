@@ -5,7 +5,8 @@ import type { Db } from "./db/index.ts";
 // Who used Orbit on which day (contract/src/analytics.ts; owner, 19 Nov 2026: "user analytics, mau, dau etc", kept
 // "90 days"). markActive runs on every signed-in request (http.ts, signedIn) and writes at most one row per person, day
 // and platform: a set in memory remembers today's, and the table's key catches the rest. It never waits on the database
-// and never fails a request. Galaxy's own requests are staff at work, not people using Orbit, and aren't counted.
+// and never fails a request. Galaxy's own requests are staff at work, and the host apps' (Orbit Launch, Station and Crew)
+// hosts at work, not people using Orbit: neither is counted.
 // ponytail: the set lives in this process, so a restart or a second API process writes today's rows again, harmlessly;
 // each person's first request of the day is one unawaited insert, so midnight IST and a deploy bring a short burst.
 
@@ -15,7 +16,7 @@ const seen = new Set<string>();
 let seenDay = "";
 
 export function markActive(db: Db, userId: string, client: Client, now: number) {
-  if (client.platform === "galaxy") return;
+  if (client.platform === "galaxy" || client.platform === "host") return;
   const day = istDay(now);
   if (day !== seenDay) {
     seen.clear(); // a new day: yesterday's people are counted again on their first request
