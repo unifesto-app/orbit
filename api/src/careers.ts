@@ -173,6 +173,27 @@ export function careersRoutes({ db, store, secret, media, proof, mail, now = Dat
     return c.json({ at: stamp.toISOString() });
   });
 
+  // Only an opening nobody applied to: applications stay with their opening (12-month cleanup, Privacy Policy). The
+  // foreign key has no cascade, so an application that lands during the delete fails it (23503) and gets the same 409.
+  app.delete("/galaxy/openings/:id", ...staff, async (c) => {
+    const id = c.req.param("id");
+    if (!isUuid(id)) return nope(c);
+    const applied = () => fail(c, 409, "applied", "People have applied to this opening. Close it instead: their applications stay until they're deleted.");
+    const [{ n }] = (await db.select({ n: count() }).from(applications).where(eq(applications.openingId, id))) as [{ n: number }];
+    if (n) return applied();
+    let row: { title: string } | undefined;
+    try {
+      [row] = await db.delete(openings).where(eq(openings.id, id)).returning({ title: openings.title });
+    } catch (e) {
+      const err = e as { code?: string; cause?: { code?: string } };
+      if ((err.code ?? err.cause?.code) === "23503") return applied();
+      throw e;
+    }
+    if (!row) return nope(c);
+    await audit(c.var.actor.id, "careers.opening.delete", { id, title: row.title });
+    return c.body(null, 204);
+  });
+
   app.get("/galaxy/openings/:id/applications", ...staff, async (c) => {
     const id = c.req.param("id");
     if (!isUuid(id)) return nope(c);

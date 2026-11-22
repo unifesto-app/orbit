@@ -62,3 +62,10 @@ export async function removeApplication(id: string) {
   refresh();
   return r.ok ? {} : { error: r.error.message };
 }
+
+// An opening nobody applied to, for good; the API refuses one with applications.
+export async function removeOpening(id: string) {
+  const r = await galaxy("DELETE", `/galaxy/openings/${encodeURIComponent(id)}`);
+  if (r.ok) redirect("/careers");
+  return { error: r.error.message };
+}
