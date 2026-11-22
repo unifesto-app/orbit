@@ -74,11 +74,13 @@ function Columns({ data, label, series, height, interval }: { data: Tally; label
 
 // A ranked list as horizontal bars, in the order given, with the count (and a share of `of`) at each bar's end, or a
 // row's own `value`. Long names are cut, whole on hover; `wide` gives names more room (job titles). The space after the
-// bars grows with the longest value, so "4 · 0 applied (0%)" stays on one line.
+// bars grows with the longest value, up to 160px, so "4 · 0 applied (0%)" stays on one line.
 export function Ranked({ data, of, label, series = "People", wide = false }: { data: (Tally[number] & { value?: string })[]; of?: number; label: string; series?: string; wide?: boolean }) {
   if (!data.length) return <p className={s.empty}>Nothing yet.</p>;
   const rows = data.map((d) => ({ ...d, value: d.value ?? (of ? `${d.count} · ${Math.round((d.count / of) * 100)}%` : String(d.count)) }));
-  const right = Math.max(72, Math.max(...rows.map((r) => r.value.length)) * 7 + 8); // about 7px a character at 12px
+  // About 7px a character at 12px, between 72 and 160: wider would squeeze the bars on a narrow column (the whole value
+  // is in the tooltip too).
+  const right = Math.min(160, Math.max(72, Math.max(...rows.map((r) => r.value.length)) * 7 + 8));
   return (
     <figure className={s.chart} style={{ height: rows.length * 34 + 8 }} aria-label={label}>
       <ResponsiveContainer>

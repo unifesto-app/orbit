@@ -408,6 +408,67 @@ test("an apply marks the visit it came from", async () => {
   for (let i = 0; i < 50 && !(await t.db.select().from(visit).where(eq(visit.id, vid)))[0]!.applied; i++) await new Promise((r) => setTimeout(r, 20));
   assert.equal((await t.db.select().from(visit).where(eq(visit.id, vid)))[0]!.applied, true);
   // a view that isn't a uuid is ignored and still answers 204
+  const appliedCount = async () => (await t.db.select().from(visit).where(eq(visit.applied, true))).length;
+  const before = await appliedCount();
   assert.equal((await apply(slug, { email: "view2@example.com", fields: { view: "not-a-uuid" } })).status, 204);
-  assert.equal((await t.db.select().from(visit).where(eq(visit.applied, true))).length >= 1, true);
+  await new Promise((r) => setTimeout(r, 200));
+  assert.equal(await appliedCount(), before, "a non-uuid view marks nothing");
+});
+
+// markVisit runs after the 204 without being awaited, so each case ends with a control apply that must mark, then checks the others stayed unmarked.
+test("an apply only marks an opening page view under a day old, for a new application", async () => {
+  const slug = `view-${++seq}`;
+  await t.db.insert(openings).values({ slug, title: "T", team: "T", place: "P", kind: "full", about: "A", does: [], needs: [], status: "open" });
+  const mkView = (suffix: string, path: string, at: Date) => {
+    const id = `00000000-0000-4000-8000-0000000000${suffix}`;
+    return t.db.insert(visit).values({ id, at, visitor: `m${suffix}`, path, source: "Direct" }).then(() => id);
+  };
+  const applied = async (id: string) => (await t.db.select().from(visit).where(eq(visit.id, id)))[0]!.applied;
+  const dupView = await mkView("b1", "/careers/[slug]", new Date(t.now()));
+  const homeView = await mkView("b2", "/", new Date(t.now()));
+  const oldView = await mkView("b3", "/careers/[slug]", new Date(t.now() - DAY - 60_000));
+  const control = await mkView("b4", "/careers/[slug]", new Date(t.now()));
+
+  assert.equal((await apply(slug, { email: "dup@example.com" })).status, 204);
+  assert.equal((await apply(slug, { email: "dup@example.com", fields: { view: dupView } })).status, 204, "a duplicate answers 204");
+  assert.equal((await apply(slug, { email: "home@example.com", fields: { view: homeView } })).status, 204);
+  assert.equal((await apply(slug, { email: "old@example.com", fields: { view: oldView } })).status, 204);
+  assert.equal((await apply(slug, { email: "control@example.com", fields: { view: control } })).status, 204);
+  for (let i = 0; i < 50 && !(await applied(control)); i++) await new Promise((r) => setTimeout(r, 20));
+  await new Promise((r) => setTimeout(r, 100));
+  assert.equal(await applied(control), true);
+  assert.equal(await applied(dupView), false, "a duplicate application doesn't mark its view");
+  assert.equal(await applied(homeView), false, "only an opening's page is marked");
+  assert.equal(await applied(oldView), false, "a view over a day old isn't marked");
+});
+
+test("careers stats: IST day edges, same-title openings, sources folded", async () => {
+  const people = await staff("people");
+  await t.db.delete(applications);
+  await t.db.delete(openings);
+  await t.db.delete(visit);
+  const now = t.now();
+  const mk = async (slug: string) =>
+    (await t.db.insert(openings).values({ slug, title: "Twin", team: "T", place: "Pune", kind: "full", about: "A", does: [], needs: [], status: "open" }).returning())[0]!.id;
+  const a = await mk("twin-a");
+  const b = await mk("twin-b");
+  const day = ist(now - 2 * DAY);
+  const next = ist(now - DAY);
+  let k = 0;
+  const put = (openingId: string, createdAt: Date) =>
+    t.db.insert(applications).values({ openingId, name: "A", email: `e${++k}@example.com`, resumeKey: `resumes/x/${k}.pdf`, createdAt });
+  await put(a, new Date(`${day}T23:59:00+05:30`));
+  await put(b, new Date(`${next}T00:01:00+05:30`));
+
+  // 14 sources, one visitor each; the two past the first 12 (by name) fold, the last of them applied
+  const rows = Array.from({ length: 14 }, (_, i) => ({ id: `00000000-0000-4000-8000-0000000001${String(i).padStart(2, "0")}`, at: new Date(now - 1000), visitor: `f${i}`, path: "/careers", source: `S${String(i).padStart(2, "0")}`, applied: i === 13 }));
+  await t.db.insert(visit).values(rows);
+
+  const s = (await people("GET", "/galaxy/careers/stats")).body;
+  assert.equal(s.days.find((d: any) => d.day === day).count, 1);
+  assert.equal(s.days.find((d: any) => d.day === next).count, 1);
+  assert.deepEqual(s.openings, [{ name: "Twin", count: 1 }, { name: "Twin", count: 1 }], "two openings, one title, two rows");
+  assert.equal(s.sources.length, 13);
+  assert.deepEqual(s.sources[12], { name: "Others", visitors: 2, applied: 1 });
+  assert.equal(s.sources[11].name, "S11");
 });

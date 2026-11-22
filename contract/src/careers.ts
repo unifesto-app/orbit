@@ -91,8 +91,9 @@ export const SetApplication = z.object({ status: z.enum(keys(APPLICATION_STATUSE
 // - Applications come from the applications table (as they stand: a deleted one isn't counted).
 // - Visitors and sources come from the site's own cookieless visit log (contract/src/visit.ts): a visitor is one
 //   visitor-day on /careers or an opening's page, the source is that day's first careers view's, and "applied" is a
-//   visit the Apply form was sent from. Nothing about a visit is stored with the application, and no application is
-//   tied to a visit after the fact. Visits from before applied was tracked show as not applied.
+//   visit the Apply form was sent from. Nothing about a visit is stored with the application (though on a quiet day
+//   the times line up, so these numbers stay with People holders). Visits from before applied was tracked show as
+//   not applied.
 export type CareersStats = {
   total: number; // applications now on file
   today: number;

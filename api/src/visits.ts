@@ -23,14 +23,15 @@ export const ist = (ms: number) => new Date(ms + 330 * 60_000).toISOString().sli
 export const top = <T extends { name: string }>(all: T[], sum: (rest: T[]) => Omit<T, "name">): T[] =>
   all.length > KEEP ? [...all.slice(0, KEEP), { name: "Others", ...sum(all.slice(KEEP)) } as T] : all;
 
-// Marks a step on a view made in the last day. Never throws: a log must not hold up a join.
+// Marks a step on a view made in the last day. Never throws: a log must not hold up a join. "applied" only marks an
+// opening's page, the one the Apply form is on, so an applicant can't flag any other view of theirs.
 export async function markVisit(db: Db, id: string | undefined, step: "code" | "joined" | "applied", now: number) {
   if (!id) return;
   try {
     await db
       .update(visit)
       .set({ [step]: true })
-      .where(and(eq(visit.id, id), gte(visit.at, new Date(now - DAY))));
+      .where(and(eq(visit.id, id), gte(visit.at, new Date(now - DAY)), step === "applied" ? eq(visit.path, "/careers/[slug]") : undefined));
   } catch (e) {
     console.error(`[visit] ${step} not marked: ${e instanceof Error ? e.message : String(e)}`);
   }

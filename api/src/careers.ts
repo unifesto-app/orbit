@@ -146,7 +146,7 @@ export function careersRoutes({ db, store, secret, media, proof, mail, now = Dat
     const careers = sql`path in ('/careers', '/careers/[slug]')`;
     // One row per visitor-day (the visitor code changes daily) on the careers pages: the first view's source and the steps reached.
     const perVisitor = sql`select (array_agg(source order by at))[1] as source, bool_or(path = '/careers') as l, bool_or(path = '/careers/[slug]') as o, bool_or(applied) as a from visit where ${win} and ${careers} group by visitor`;
-    const apps = await db.select({ at: applications.createdAt, status: applications.status, title: openings.title, place: openings.place }).from(applications).innerJoin(openings, eq(applications.openingId, openings.id));
+    const apps = await db.select({ at: applications.createdAt, status: applications.status, opening: applications.openingId, title: openings.title, place: openings.place }).from(applications).innerJoin(openings, eq(applications.openingId, openings.id));
     const [{ n: open }] = (await db.select({ n: count() }).from(openings).where(eq(openings.status, "open"))) as [{ n: number }];
     const [funnel] = await rows<CareersStats["funnel"] & { visitors: number }>(
       sql`select count(*)::int as visitors, (count(*) filter (where l))::int as list, (count(*) filter (where o))::int as opening, (count(*) filter (where a))::int as applied from (${perVisitor}) v`,
@@ -167,6 +167,16 @@ export function careersRoutes({ db, store, secret, media, proof, mail, now = Dat
       for (const k of names) m.set(k, (m.get(k) ?? 0) + 1);
       return [...m].map(([name, n]) => ({ name, count: n })).sort((x, y) => y.count - x.count || (x.name < y.name ? -1 : x.name > y.name ? 1 : 0)).slice(0, limit);
     };
+    // By opening, not by title, so two openings with one title stay two rows; most first, ties by title.
+    const topOpenings = (all: { opening: string; title: string }[]) => {
+      const m = new Map<string, { name: string; count: number }>();
+      for (const a of all) {
+        const row = m.get(a.opening) ?? { name: a.title, count: 0 };
+        row.count++;
+        m.set(a.opening, row);
+      }
+      return [...m.values()].sort((x, y) => y.count - x.count || (x.name < y.name ? -1 : x.name > y.name ? 1 : 0)).slice(0, 10);
+    };
     const city = (place: string) => place.split(",")[0]!.trim() || place;
     const role = (a: { title: string; place: string }) => {
       const tail = `, ${city(a.place)}`;
@@ -181,7 +191,7 @@ export function careersRoutes({ db, store, secret, media, proof, mail, now = Dat
       statuses: Object.entries(APPLICATION_STATUSES).map(([k, name]) => ({ name, count: apps.filter((a) => a.status === k).length })),
       cities: tally(apps.map((a) => city(a.place))),
       roles: tally(apps.map(role)),
-      openings: tally(apps.map((a) => a.title), 10),
+      openings: topOpenings(apps),
       visitors: funnel!.visitors,
       funnel: { list: funnel!.list, opening: funnel!.opening, applied: funnel!.applied },
       sources: top(sources, (r) => ({ visitors: r.reduce((n, s) => n + s.visitors, 0), applied: r.reduce((n, s) => n + s.applied, 0) })),
