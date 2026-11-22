@@ -6,7 +6,7 @@
 import { DARK_TINT, Glass } from '@orbit/mobile/glass';
 import { color, font, radius, space, stoneAt } from '@orbit/mobile/theme';
 import { Children, Fragment, type ReactNode } from 'react';
-import { Image, type ImageSourcePropType, Pressable, type StyleProp, StyleSheet, Text, View, type ViewStyle } from 'react-native';
+import { Image, type ImageSourcePropType, Pressable, type StyleProp, StyleSheet, Text, TextInput, type TextInputProps, View, type ViewStyle } from 'react-native';
 
 import type { Host } from './data';
 
@@ -58,6 +58,35 @@ export function Pill({ label, onPress, dark = false }: { label: string; onPress?
         <Text style={styles.pillText}>{label}</Text>
       </Glass>
     </Pressable>
+  );
+}
+
+/** The wide button a step ends with (Continue): frosted, 50 tall, across the page's margins. Faded while it can't go. */
+export function Wide({ label, onPress, disabled = false, muted = false }: { label: string; onPress: () => void; disabled?: boolean; muted?: boolean }) {
+  return (
+    <Pressable onPress={onPress} disabled={disabled} accessibilityRole="button" accessibilityState={{ disabled }} style={({ pressed }) => [disabled && styles.off, pressed && styles.pressed]}>
+      <Glass style={styles.wide}>
+        <Text style={[styles.wideText, muted && styles.mutedText]}>{label}</Text>
+      </Glass>
+    </Pressable>
+  );
+}
+
+/** A labelled field: the label small and grey above a 44 pill, or a 56 one for a code (`code`). */
+export function Field({ label, code = false, ...input }: TextInputProps & { label: string; code?: boolean }) {
+  return (
+    <View style={styles.field}>
+      {!code && <Text style={styles.fieldLabel}>{label}</Text>}
+      <Glass style={code ? styles.codeBox : styles.input}>
+        <TextInput
+          accessibilityLabel={label}
+          placeholderTextColor={color.secondary}
+          selectionColor={color.accent}
+          style={[styles.inputText, code && styles.codeText]}
+          {...input}
+        />
+      </Glass>
+    </View>
   );
 }
 
@@ -117,6 +146,7 @@ export function Row({
   right,
   onPress,
   external = false,
+  plain = false,
   spoken,
 }: {
   label: string;
@@ -128,6 +158,7 @@ export function Row({
   right?: ReactNode;
   onPress?: () => void;
   external?: boolean;
+  plain?: boolean; // an action done right here (Sign out): no > after it
   spoken?: string;
 }) {
   const body = (
@@ -148,7 +179,7 @@ export function Row({
         </Text>
       )}
       {right}
-      {onPress && <Image source={external ? EXTERNAL : CHEVRON} style={styles.chevron} />}
+      {onPress && !plain && <Image source={external ? EXTERNAL : CHEVRON} style={styles.chevron} />}
     </>
   );
   return onPress ? (
@@ -251,6 +282,16 @@ export const styles = StyleSheet.create({
   tagText: { fontFamily: font.medium, fontSize: 12, color: color.text },
   pill: { height: 32, paddingHorizontal: 12, borderRadius: 16, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
   pillText: { fontFamily: font.title, fontSize: 13, color: color.text },
+  off: { opacity: 0.4 },
+  wide: { height: 50, borderRadius: 25, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
+  wideText: { fontFamily: font.title, fontSize: 14, color: color.text },
+  mutedText: { color: color.secondary },
+  field: { gap: 6 },
+  fieldLabel: { fontFamily: font.medium, fontSize: 12, color: color.secondary },
+  input: { height: 44, paddingHorizontal: 16, borderRadius: 22, justifyContent: 'center', overflow: 'hidden' },
+  codeBox: { height: 56, paddingHorizontal: 16, borderRadius: 28, justifyContent: 'center', overflow: 'hidden' },
+  inputText: { height: '100%', fontFamily: font.text, fontSize: 15, color: color.text },
+  codeText: { fontFamily: font.price, fontSize: 24, letterSpacing: 12, textAlign: 'center' },
   row: { minHeight: 28, flexDirection: 'row', alignItems: 'center', gap: space.small },
   label: { flex: 1, fontFamily: font.title, fontSize: 15, lineHeight: 20, color: color.text },
   lines2: { flex: 1, gap: 2 }, // a label and its note

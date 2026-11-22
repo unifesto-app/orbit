@@ -24,6 +24,10 @@ const config: ExpoConfig = {
     bundleIdentifier: v.id,
     appleTeamId: '9AH3Z5C5DH',
     infoPlist: { ITSAppUsesNonExemptEncryption: false },
+    // App Attest, so a code send proves it comes from Orbit Launch (api/src/auth/proof.ts). Launch alone signs in so
+    // far; Station and Crew get it with their sign-in, once their App IDs have the capability too. The App ID needs App
+    // Attest turned on in Apple's portal, or the build won't sign.
+    ...(key === 'launch' && { entitlements: { 'com.apple.developer.devicecheck.appattest-environment': 'production' } }),
   },
   android: {
     package: v.id,
@@ -36,6 +40,7 @@ const config: ExpoConfig = {
   plugins: [
     'expo-router',
     'expo-font',
+    'expo-secure-store', // the sign-in's Keychain (src/session.ts); on Android, kept out of backups
     // The ticket scanner (host apps plan, decision 16). Camera only: no microphone on either platform.
     ['expo-camera', { cameraPermission: '$(PRODUCT_NAME) uses the camera to scan tickets.', microphonePermission: false, recordAudioAndroid: false }],
   ],

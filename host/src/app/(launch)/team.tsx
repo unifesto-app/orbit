@@ -10,7 +10,7 @@
 // - Status: live, paused, suspended or archived; Pause and Archive for the owner alone;
 // - You: your account (sign-in, security, Delete account), help, the web Console, and Sign out.
 // ponytail: Admins' view, from the mock. Every row and button opens nothing yet except the web Console; host pages on the
-// web aren't built, so Share page and View wait for them, and Sign out for sign-in.
+// web aren't built, so Share page and View wait for them. Sign out leaves the dev demo for Sign in.
 import { useTabBarScroll } from '@orbit/mobile/tabBar';
 import { color, font, space } from '@orbit/mobile/theme';
 import { Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -19,6 +19,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { adminInvites, admins, drafts, endsAt, eventTeams, events, host, invites, now, page, sales } from '../../launch/data';
 import { dayWord, startsToday } from '../../launch/day';
 import { inviteLine, mustWait, spokenContact, statusMoves, statusNote, teamLine } from '../../launch/team';
+import { signOut } from '../../session';
 import { Card, Glow, HostHead, Monogram, Note, PERSON_INDENT, Person, Pill, Row, Section, Tag, Verified, styles as ui } from '../../launch/ui';
 
 const STATUS = { live: 'Live', paused: 'Paused', suspended: 'Suspended by Orbit', archived: 'Archived' } as const;
@@ -168,7 +169,7 @@ export default function Host() {
           <Row label="Account" value="Sign-in, security, delete" onPress={() => {}} />
           <Row label="Help and support" onPress={() => {}} />
           <Row label="Open the web Console" external onPress={() => Linking.openURL('https://console.heyorbit.in').catch(() => {})} />
-          <Row label="Sign out" />
+          <Row label="Sign out" plain onPress={signOut} />
         </Card>
       </ScrollView>
     </View>
