@@ -33,7 +33,12 @@ const config: ExpoConfig = {
       backgroundColor: '#121215', // Charcoal
     },
   },
-  plugins: ['expo-router', 'expo-font'],
+  plugins: [
+    'expo-router',
+    'expo-font',
+    // The ticket scanner (host apps plan, decision 16). Camera only: no microphone on either platform.
+    ['expo-camera', { cameraPermission: '$(PRODUCT_NAME) uses the camera to scan tickets.', microphonePermission: false, recordAudioAndroid: false }],
+  ],
   owner: 'unifesto-app',
 };
 

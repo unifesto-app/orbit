@@ -5,6 +5,9 @@
 // - Check-in opens 15 minutes before the start and closes at the booked end; a late arrival still ends at the booked end.
 // - A booking nobody checked in for can be released 15 minutes after its start: no refund, and the booker is told.
 // - A walk-in starts at the current step (30 minutes for gaming, the hour for pitches and courts); a booking beats it.
+// - The scanner (Event day doc, slots, decision 16): the same QR at the counter, from 15 minutes before the start to the
+//   booked end, counted in stations. One station, or a pitch or court booked whole, is in on the scan; several ask how
+//   many are here and let nobody in until the desk taps (Event day decision 2).
 // ponytail: mock until the slots API (H8.1 to H8.5); the time labels repeat app/src/booking.ts until shared code moves
 // to mobile/ (host apps plan, decision 14).
 
@@ -43,8 +46,12 @@ export type Claim = {
   who?: string; // a booking's name
   code?: string; // its ticket code
   why?: string; // a block's reason
-  checkedIn?: number;
-  released?: boolean;
+  checkedIn?: number; // when the first of them was let in
+  in?: number; // how many are in so far, of `count`
+  by?: string; // who let the first in, for "first at 6:12 PM by Ravi"
+  released?: number; // when the desk released it as a no-show
+  refunded?: boolean;
+  again?: number; // times the desk let someone in again after Already in (logged)
 };
 
 /** Where a booking stands at the counter. */
@@ -158,4 +165,62 @@ export function freeOne(claims: readonly Claim[], type: string, at: number): Cla
   if (!w) return [...claims];
   const rest = claims.filter((c) => c !== w);
   return w.count > 1 ? [...rest, { ...w, count: w.count - 1 }, { ...w, id: `${w.id}f${at}`, count: 1, end: at }] : [...rest, { ...w, end: at }];
+}
+
+/** What the scanner says, in the order it checks: the Event day doc's slot results. */
+export type Scan =
+  | { kind: 'unknown' } // Not an Orbit ticket
+  | { kind: 'elsewhere' } // Not for this venue
+  | { kind: 'refunded' }
+  | { kind: 'released'; at: number } // Released as a no-show at 6:45 PM
+  | { kind: 'ended' }
+  | { kind: 'early'; starts: number } // Too early · starts 6:30 PM
+  | { kind: 'already'; first: number; by?: string } // All 3 in · first at 6:12 PM by Ravi
+  | { kind: 'ask'; left: number } // several, so the desk taps how many are here
+  | { kind: 'in'; n: number }; // in on the scan
+
+/** A scanned ticket: the booking found by its QR or code, and whether it's this venue's. */
+export function scan(found: { claim: Claim; ours: boolean } | undefined, v: Venue, now: number): Scan {
+  const c = found?.claim;
+  if (!c || c.kind !== 'booking') return { kind: 'unknown' };
+  const t = v.types.find((x) => x.id === c.type);
+  if (!found.ours || !t) return { kind: 'elsewhere' };
+  if (c.refunded) return { kind: 'refunded' };
+  if (c.released !== undefined) return { kind: 'released', at: c.released };
+  if (now >= c.end) return { kind: 'ended' };
+  if (now < c.start - EARLY) return { kind: 'early', starts: c.start };
+  const left = c.count - (c.in ?? 0);
+  if (left <= 0) return { kind: 'already', first: c.checkedIn ?? c.start, by: c.by };
+  return t.whole || c.count === 1 ? { kind: 'in', n: left } : { kind: 'ask', left };
+}
+
+/**
+ * Have `total` of a booking in, never fewer than are in already nor more than it holds: so a tap that lands twice
+ * still lets in only who was counted. The first time and who did it stay as they were.
+ */
+export const admitTo = (c: Claim, total: number, now: number, by: string): Claim => ({
+  ...c,
+  in: Math.min(Math.max(c.in ?? 0, total), c.count),
+  checkedIn: c.checkedIn ?? now,
+  by: c.by ?? by,
+});
+/** Let `n` more in. */
+export const admit = (c: Claim, n: number, now: number, by: string): Claim => admitTo(c, (c.in ?? 0) + n, now, by);
+
+/**
+ * Whether the camera's sight of `text` at `at` is the same ticket seen within `ms` (2.5 seconds, Event day doc), so the
+ * scanner ignores it. Each code keeps its own time, so two tickets held up together don't take turns; one still in view
+ * stays ignored until it has been away that long.
+ */
+export function seenRecently(seen: Map<string, number>, text: string, at: number, ms = 2500): boolean {
+  const last = seen.get(text);
+  seen.set(text, at);
+  for (const [k, t] of seen) if (at - t > ms) seen.delete(k);
+  return last !== undefined && at - last < ms;
+}
+
+/** The booking whose 8-character code a scanned QR or typed code holds: spaces, dashes and case don't matter. */
+export function byCode(claims: readonly Claim[], text: string): Claim | undefined {
+  const code = text.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return code.length < 8 ? undefined : claims.find((c) => c.kind === 'booking' && !!c.code && code.includes(c.code));
 }

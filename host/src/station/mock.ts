@@ -27,6 +27,7 @@ export const venues: Venue[] = [
 ];
 
 const NAMES = ['Rahul S.', 'Aditi K.', 'Sai Teja', 'Meera P.', 'Nikhil V.', 'Varun M.', 'Divya R.', 'Rohit G.', 'Harsha B.', 'Lavanya T.', 'Imran K.', 'Sneha J.', 'Karthik N.', 'Pooja L.', 'Abhishek D.', 'Fatima Z.', 'Manoj C.', 'Keerthi A.', 'Yash P.', 'Nandini S.', 'Tarun R.', 'Zoya H.', 'Vamsi K.', 'Ishita M.'];
+const STAFF = ['Ravi', 'Sana', 'Kiran']; // the desk, for "first at 6:12 PM by Ravi"
 const BLOCKS: Record<string, { type: string; from: number; to: number; why: string }> = {
   'respawn-zone': { type: 'ps5', from: 14, to: 21, why: 'Controller repair' },
   'kickoff-arena': { type: 'cricket', from: 20, to: 23, why: 'Private party' },
@@ -48,7 +49,8 @@ export function mockDay(v: Venue, now: number): Claim[] {
   const { day, closes, state } = hours(v, now);
   const rnd = seeded(`${v.id}${day}`);
   const claims: Claim[] = [];
-  const code = () => `${v.initials}${Math.floor(rnd() * 36 ** 4).toString(36).toUpperCase().padStart(4, '0')}`;
+  // 8 characters, as the Orbit app's ticket prints them for typing in when a QR won't scan ("RZ7Q 2M9X").
+  const code = () => `${v.initials}${Math.floor(rnd() * 36 ** 6).toString(36).toUpperCase().padStart(6, '0')}`;
   const order = [...NAMES].sort(() => rnd() - 0.5); // each name once before any comes round again
   let named = 0;
   const name = () => order[named++ % order.length];
@@ -83,7 +85,7 @@ export function mockDay(v: Venue, now: number): Claim[] {
       const count = s.whole ? 1 : 1 + Math.floor(rnd() * Math.min(4, s.count));
       // Anyone whose time has started came, but one in eight earlier ones never did and was released.
       const gone = end <= now && rnd() < 0.125;
-      const came = at > now ? {} : gone ? { released: true } : { checkedIn: at + 3 * MIN };
+      const came = at > now ? {} : gone ? { released: at + 15 * MIN } : { checkedIn: at + 3 * MIN, in: count, by: STAFF[Math.floor(rnd() * STAFF.length)] };
       add({ type: s.id, kind: 'booking', count, start: at, end, who: name(), code: code(), ...came });
     }
   }

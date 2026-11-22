@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { type Claim, HOUR, MIN, dayLabel, door, freeOne, hourWord, hours, openingDay, steps, taken, timeLabel, walkIn, walkInStart } from './day.ts';
+import { type Claim, HOUR, MIN, admit, admitTo, byCode, dayLabel, door, freeOne, hourWord, hours, openingDay, scan, seenRecently, steps, taken, timeLabel, walkIn, walkInStart } from './day.ts';
 import { mockDay, venues } from './mock.ts';
 
 const [cafe, turf] = venues;
@@ -34,7 +34,7 @@ test('check-in opens 15 minutes early; a booking can be released 15 minutes in',
   assert.equal(door(c, at(18, 40)), 'late');
   assert.equal(door(c, at(18, 45)), 'noShow');
   assert.equal(door({ ...c, checkedIn: at(18, 50) }, at(19)), 'here');
-  assert.equal(door({ ...c, released: true }, at(19)), 'released');
+  assert.equal(door({ ...c, released: at(18, 30) }, at(19)), 'released');
   assert.equal(door(c, at(20, 30)), 'missed');
 });
 
@@ -42,7 +42,7 @@ test('blocks and walk-ins take stations; released bookings give them back', () =
   const claims: Claim[] = [
     { id: 'a', type: 'pc', kind: 'booking', count: 10, start: at(19), end: at(21) },
     { id: 'b', type: 'pc', kind: 'block', count: 1, start: at(18), end: at(22), why: 'Repair' },
-    { id: 'c', type: 'pc', kind: 'booking', count: 3, start: at(18), end: at(19), released: true },
+    { id: 'c', type: 'pc', kind: 'booking', count: 3, start: at(18), end: at(19), released: at(18, 30) },
   ];
   assert.deepEqual(taken(claims, pc, at(19, 30)), { booking: 10, walkin: 0, block: 1, free: 1 });
   assert.equal(taken(claims, pc, at(18)).free, 11);
@@ -123,4 +123,72 @@ test('a block goes through the same check as a walk-in', () => {
   const claims: Claim[] = [{ id: 'a', type: 'pc', kind: 'booking', count: 12, start: at(19), end: at(20) }];
   assert.deepEqual(walkIn(claims, cafe, pc, at(18, 20), 2, 1), { ok: false, line: '1 free only until 7:00 PM' });
   assert.deepEqual(walkIn([], cafe, pc, at(25, 40), 1, 1).ok, true); // 1:40 AM: the night's last step
+});
+
+test('the scanner: one is in on the scan, several are asked how many, then Already in', () => {
+  const [, , courts] = venues;
+  const three: Claim = { id: 'b', type: 'pc', kind: 'booking', count: 3, start: at(18, 30), end: at(20, 30), who: 'Meera P.', code: 'RZ7Q2M9X' };
+  const ours = (claim: Claim) => ({ claim, ours: true });
+  assert.deepEqual(scan(ours(three), cafe, at(18, 14)), { kind: 'early', starts: at(18, 30) }); // Too early · starts 6:30 PM
+  assert.deepEqual(scan(ours(three), cafe, at(18, 15)), { kind: 'ask', left: 3 });
+  const two = admit(three, 2, at(18, 20), 'Ravi');
+  assert.deepEqual(scan(ours(two), cafe, at(18, 40)), { kind: 'ask', left: 1 });
+  const all = admit(two, 1, at(18, 50), 'Sana');
+  assert.deepEqual([all.in, all.checkedIn, all.by], [3, at(18, 20), 'Ravi']); // the first time and who stay
+  assert.deepEqual(scan(ours(all), cafe, at(19)), { kind: 'already', first: at(18, 20), by: 'Ravi' });
+  assert.deepEqual(scan(ours(all), cafe, at(20, 30)), { kind: 'ended' }); // a late arrival still ends at the booked end
+  assert.deepEqual(scan(ours({ ...three, released: at(18, 45) }), cafe, at(18, 50)), { kind: 'released', at: at(18, 45) });
+  assert.deepEqual(scan(ours({ ...three, refunded: true }), cafe, at(18, 50)), { kind: 'refunded' });
+  assert.deepEqual(scan({ claim: three, ours: false }, cafe, at(18, 50)), { kind: 'elsewhere' });
+  assert.deepEqual(scan(undefined, cafe, at(18, 50)), { kind: 'unknown' });
+  // One PS5, or a pitch or court booked whole: in on the scan, nobody counted.
+  assert.deepEqual(scan(ours({ ...three, type: 'ps5', count: 1 }), cafe, at(18, 30)), { kind: 'in', n: 1 });
+  assert.deepEqual(scan(ours({ ...three, type: 'football', count: 1 }), turf, at(18, 30)), { kind: 'in', n: 1 });
+  assert.deepEqual(scan(ours({ ...three, type: 'badminton', count: 2 }), courts, at(18, 30)), { kind: 'in', n: 2 });
+});
+
+test('a scanned QR or a typed code finds its booking, however it is spaced', () => {
+  const claims: Claim[] = [
+    { id: 'a', type: 'pc', kind: 'booking', count: 1, start: at(18), end: at(19), code: 'RZ7Q2M9X' },
+    { id: 'w', type: 'pc', kind: 'walkin', count: 1, start: at(18), end: at(19) },
+  ];
+  assert.equal(byCode(claims, 'rz7q 2m9x')?.id, 'a');
+  assert.equal(byCode(claims, 'orbit:RZ7Q-2M9X')?.id, 'a'); // a QR holding more than the code
+  assert.equal(byCode(claims, 'RZ7Q'), undefined); // too short to be a code
+  assert.equal(byCode(claims, 'KA000000'), undefined);
+});
+
+test('letting in never goes past the booking, and a double tap counts once', () => {
+  const three: Claim = { id: 'b', type: 'pc', kind: 'booking', count: 3, start: at(18, 30), end: at(20, 30) };
+  assert.equal(admit(three, 5, at(18, 20), 'Ravi').in, 3);
+  assert.equal(admit(three, 0, at(18, 20), 'Ravi').in, 0);
+  const one = admitTo(three, 1, at(18, 20), 'Ravi');
+  assert.equal(admitTo(admitTo(three, 1, at(18, 20), 'you'), 1, at(18, 20), 'you').in, 1); // "Let 1 in" tapped twice
+  assert.equal(admitTo(admitTo(one, 0, at(18, 21), 'you'), 1, at(18, 21), 'you').in, 1); // never fewer than are in
+});
+
+test('the scanner checks in order: refunded, released, ended, early, already', () => {
+  const c: Claim = { id: 'b', type: 'pc', kind: 'booking', count: 2, start: at(18, 30), end: at(19, 30) };
+  const ours = (claim: Claim) => ({ claim, ours: true });
+  assert.equal(scan(ours({ ...c, refunded: true }), cafe, at(20)).kind, 'refunded'); // refunded and ended
+  assert.equal(scan(ours({ ...c, released: at(18, 45) }), cafe, at(20)).kind, 'released'); // released and ended
+  assert.equal(scan(ours(admit(c, 2, at(18, 35), 'Ravi')), cafe, at(18, 14)).kind, 'early'); // early wins over in
+  const pitches: Claim = { ...c, type: 'football', count: 2, in: 1 }; // a whole booking partly in: the rest, on the scan
+  assert.deepEqual(scan(ours(pitches), turf, at(18, 40)), { kind: 'in', n: 1 });
+});
+
+test('a code needs a booking: walk-ins and blocks never match', () => {
+  const claims: Claim[] = [{ id: 'w', type: 'pc', kind: 'walkin', count: 1, start: at(18), end: at(19), code: 'RZ7Q2M9X' }];
+  assert.equal(byCode(claims, 'RZ7Q2M9X'), undefined);
+});
+
+test('the same ticket is ignored for 2.5 seconds, each code on its own clock', () => {
+  const seen = new Map<string, number>();
+  const t = at(18, 20);
+  assert.equal(seenRecently(seen, 'A', t), false);
+  assert.equal(seenRecently(seen, 'B', t + 100), false);
+  assert.equal(seenRecently(seen, 'A', t + 200), true); // two held up together don't take turns
+  assert.equal(seenRecently(seen, 'B', t + 300), true);
+  assert.equal(seenRecently(seen, 'A', t + 2000), true); // still in view: it stays ignored
+  assert.equal(seenRecently(seen, 'A', t + 4600), false); // away 2.6 seconds: seen afresh
 });
