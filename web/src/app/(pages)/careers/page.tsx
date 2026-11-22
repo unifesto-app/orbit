@@ -1,4 +1,4 @@
-import { OPENING_KINDS } from "@orbit/contract";
+import { OPENING_KINDS, type OpeningCard } from "@orbit/contract";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
@@ -48,19 +48,50 @@ async function Openings() {
         <p>If you’d like to build Orbit with us anyway, write to {mail} and tell us what you’d do.</p>
       </>
     );
+  const cities = byCity(list);
   return (
     <>
-      <h2>Open roles</h2>
-      <ul className={styles.list}>
-        {list.map((o) => (
-          <li key={o.slug}>
-            <Link href={`/careers/${o.slug}`} className={styles.row}>
-              <span className={styles.role}>{o.title}</span>
-              <span className={styles.meta}>{[o.team, o.place, OPENING_KINDS[o.kind]].join(" · ")}</span>
-            </Link>
-          </li>
-        ))}
-      </ul>
+      {cities.length > 1 && (
+        <nav className={styles.cities} aria-label="Cities">
+          {cities.map(([city]) => (
+            <a key={city} href={`#${anchor(city)}`}>
+              {city}
+            </a>
+          ))}
+        </nav>
+      )}
+      {cities.map(([city, roles]) => (
+        <section key={city} aria-labelledby={anchor(city)}>
+          <h2 id={anchor(city)} className={styles.city}>
+            {city}
+          </h2>
+          <ul className={styles.list}>
+            {roles.map((o) => (
+              <li key={o.slug}>
+                <Link href={`/careers/${o.slug}`} className={styles.row}>
+                  <span className={styles.role}>{unsuffix(o.title, city)}</span>
+                  <span className={styles.meta}>{[o.team, unprefix(o.place, city), OPENING_KINDS[o.kind]].filter(Boolean).join(" · ")}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
     </>
   );
 }
+
+// Grouped by city (owner, 22 Nov 2026: "group the careers page by city"): the city is what Where says before its first
+// comma ("Pune, mostly from home" is Pune; "Remote in India" is its own group). Cities A to Z, so none reads as first in
+// line; roles A to Z within each. Under a city's heading its name isn't repeated: "Venue Partnerships Intern, Pune"
+// shows as "Venue Partnerships Intern", "Pune, mostly from home" as "mostly from home". Each opening's page keeps both.
+const cityOf = (o: OpeningCard) => o.place.split(",")[0]!.trim();
+function byCity(list: OpeningCard[]) {
+  const groups = new Map<string, OpeningCard[]>();
+  for (const o of list) groups.set(cityOf(o), [...(groups.get(cityOf(o)) ?? []), o]);
+  const az = (a: string, b: string) => a.localeCompare(b, "en-IN");
+  return [...groups].sort(([a], [b]) => az(a, b)).map(([city, roles]) => [city, roles.sort((a, b) => az(a.title, b.title))] as const);
+}
+const anchor = (city: string) => city.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+const unsuffix = (title: string, city: string) => (title.endsWith(`, ${city}`) ? title.slice(0, -city.length - 2) : title);
+const unprefix = (place: string, city: string) => (place.startsWith(`${city}, `) ? place.slice(city.length + 2) : place === city ? "" : place);
