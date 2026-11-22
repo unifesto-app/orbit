@@ -13,13 +13,13 @@
 import { useTabBarScroll } from '@orbit/mobile/tabBar';
 import { color, font, space } from '@orbit/mobile/theme';
 import type { ReactNode } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { type LaunchEvent, drafts, endsAt, events, host, invites, now, salesOf } from '../../launch/data';
 import { split, startsToday } from '../../launch/day';
 import { available, hostDecidesRefunds, payoutOpens, rupees } from '../../launch/money';
-import { CARET, EventCard, Glow, Monogram, Pill, Row, Section } from '../../launch/ui';
+import { EventCard, Glow, HostHead, Pill, Row, Section } from '../../launch/ui';
 
 type Stage = 'open' | 'next' | 'past';
 const date = (when: string) => when.split(' · ')[0]; // "Fri 20 Nov"
@@ -38,16 +38,7 @@ export default function Events() {
         onScroll={onScroll}
         scrollEventThrottle={16}
       >
-        <View style={styles.head}>
-          <Pressable style={styles.switcher} accessibilityRole="button" accessibilityLabel={`${host.name}. Switch host`}>
-            <Monogram host={host} size={32} />
-            <Text style={styles.hostName} numberOfLines={1}>
-              {host.name}
-            </Text>
-            <Image source={CARET} style={styles.caret} />
-          </Pressable>
-          <Pill label="New event" dark />
-        </View>
+        <HostHead host={host} right={<Pill label="New event" dark />} />
         {groups.map((g) => (
           <Cards key={g.word} title={g.word}>
             {g.events.map((e) => (
@@ -139,10 +130,6 @@ function Card({ event: e, stage }: { event: LaunchEvent; stage: Stage }) {
 
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: color.ground },
-  head: { height: 44, marginHorizontal: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  switcher: { flexShrink: 1, flexDirection: 'row', alignItems: 'center', gap: space.small },
-  hostName: { flexShrink: 1, fontFamily: font.title, fontSize: 17, color: color.text },
-  caret: { width: 14, height: 14, tintColor: color.secondary },
   cards: { gap: space.big },
   empty: { marginTop: space.big, marginHorizontal: 20, fontFamily: font.text, fontSize: 15, color: color.secondary },
 });
