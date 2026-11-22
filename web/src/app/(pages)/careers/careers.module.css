@@ -29,6 +29,42 @@
   font-weight: var(--orbit-weight-medium);
 }
 
+/* The cities with roles, each a jump to its list. */
+.cities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 28px;
+}
+
+.cities a {
+  padding: 6px 14px;
+  border: 1px solid var(--orbit-border);
+  border-radius: var(--orbit-radius-pill);
+  font-size: 14px;
+  color: var(--orbit-text-2);
+  text-decoration: none;
+  transition:
+    color 0.2s,
+    border-color 0.2s;
+}
+
+.cities a:hover {
+  color: var(--orbit-text);
+  border-color: var(--orbit-accent);
+}
+
+/* A city's heading under "Open roles", clear of the top when jumped to. */
+.city {
+  margin-top: 32px;
+  font-family: var(--display);
+  font-weight: var(--orbit-weight-headline);
+  font-size: 18px;
+  letter-spacing: -0.01em;
+  color: var(--orbit-text-2);
+  scroll-margin-top: 24px;
+}
+
 /* The open roles: a row each, title over its team, place and kind. */
 .list {
   margin: 16px 0 0;
