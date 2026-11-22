@@ -51,14 +51,15 @@ const CITIES: [string, number, number, boolean?][] = [
 
 // Where each hub's name sits: beside its dot on the side with room, edged in Charcoal so arcs and dots pass under it. Kanpur and Surat stay unnamed, too near Lucknow and
 // Mumbai to fit.
-const LABEL: Record<string, "left" | "right" | "none"> = {
+const LABEL: Record<string, "left" | "right" | "above" | "below" | "none"> = {
   Mumbai: "left",
   Ahmedabad: "left",
   Pune: "right",
   Surat: "none",
   Kanpur: "none",
   Jaipur: "left",
-  Bengaluru: "left",
+  Bengaluru: "below", // left would sit on Mangaluru, right on Chennai
+  Hyderabad: "above", // starting over its dot: right would sit on Visakhapatnam, centred on Pune's name
 };
 
 // Longitude and latitude to the drawing: equirectangular, widths shrunk by the cosine of India's middle latitude.
@@ -112,7 +113,16 @@ export function Network({ className }: { className?: string }) {
           <g key={p.name}>
             <circle cx={p.x} cy={p.y} r={4.5} fill="var(--orbit-accent)" />
             {side !== "none" && (
-              <text x={p.x + (side === "left" ? -15 : 15)} y={p.y + 4} textAnchor={side === "left" ? "end" : "start"} fill="var(--orbit-text)" fontSize={16} stroke="var(--orbit-ground)" strokeWidth={6} paintOrder="stroke">
+              <text
+                x={p.x + (side === "left" ? -15 : side === "right" ? 15 : side === "above" ? -4 : 0)}
+                y={p.y + (side === "above" ? -12 : side === "below" ? 22 : 4)}
+                textAnchor={side === "left" ? "end" : side === "below" ? "middle" : "start"}
+                fill="var(--orbit-text)"
+                fontSize={16}
+                stroke="var(--orbit-ground)"
+                strokeWidth={6}
+                strokeLinejoin="round"
+                paintOrder="stroke">
                 {p.name}
               </text>
             )}

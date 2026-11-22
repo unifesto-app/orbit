@@ -153,7 +153,13 @@
 /* The form */
 
 .formSpace {
-  min-height: 839px; /* the details step's height at every width (measured 18 Nov 2026); keep in step with it */
+  min-height: 839px; /* the details step's height on a phone (320 to 375 wide, measured 22 Nov 2026); keep in step */
+}
+
+@media (min-width: 960px) {
+  .formSpace {
+    min-height: 686px; /* and in the laptop column, 440 wide with no box round it (22 Nov 2026) */
+  }
 }
 
 .form {
