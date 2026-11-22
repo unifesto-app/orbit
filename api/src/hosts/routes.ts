@@ -3,7 +3,7 @@ import { Hono, type Context } from "hono";
 import { createMiddleware } from "hono/factory";
 import { EditHost, type HostPage, SetParent, StaffReason, VerifyHost } from "@orbit/contract";
 import type { Db } from "../db/index.ts";
-import { auditLog, follows, hosts, hostSlugs, teamRoles, users } from "../db/schema.ts";
+import { auditLog, follows, hosts, hostSlugs, teamRoles, users, venues } from "../db/schema.ts";
 import { type Env, fail, invalid, isUuid, type Notify, listPage, parse, signedIn, taken } from "../http.ts";
 import { adminsOf, changeable, holdersOf, holdIfUnanswered, masked, onHost, requireFeature, type StaffEnv, teamOf, tell } from "../roles/access.ts";
 import { type Action, parentRule, statusRule } from "./rules.ts";
@@ -74,6 +74,14 @@ export function hostsRoutes({ db, notify, secret, now = Date.now }: Deps) {
           .where(and(eq(teamRoles.hostId, host.id), eq(teamRoles.userId, c.var.user.id), eq(teamRoles.role, "admin"), isNotNull(teamRoles.startedAt), isNull(teamRoles.endedAt)));
         if (!seat) return "gone" as const;
         if (!changeable(cur!)) return "closed" as const;
+        // A Venue with its counter set up, or a Desk seat that has started, stays a Venue: as anything else its bookings
+        // couldn't be checked in or released (slots routes answer only Venue hosts). A waiting Desk invite doesn't count:
+        // accept refuses on a host that's no longer a Venue.
+        if (b.kind !== undefined && b.kind !== "venue" && cur!.kind === "venue") {
+          const [v] = await tx.select({ id: venues.hostId }).from(venues).where(eq(venues.hostId, host.id));
+          const [desk] = await tx.select({ id: teamRoles.id }).from(teamRoles).where(and(eq(teamRoles.hostId, host.id), eq(teamRoles.role, "crew"), isNotNull(teamRoles.startedAt), isNull(teamRoles.endedAt)));
+          if (v || desk) return "venue" as const;
+        }
         if (b.slug && b.slug !== cur!.slug) {
           // Every slug stays held by its host: its own old one is free to come back to, anyone else's is not.
           const [got] = await tx
@@ -93,6 +101,7 @@ export function hostsRoutes({ db, notify, secret, now = Date.now }: Deps) {
       if (done === "gone") return nothing(c);
       if (done === "closed") return fail(c, 409, "hostClosed", "This host can't be edited right now.");
       if (done === "taken") return fail(c, 409, "linkTaken", "That link is taken. Try another.");
+      if (done === "venue") return fail(c, 409, "stillVenue", "This Venue takes bookings by the hour, so it stays a Venue.");
     } catch (e) {
       if (taken(e)) return fail(c, 409, "linkTaken", "That link is taken. Try another.");
       throw e;

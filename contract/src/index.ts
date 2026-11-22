@@ -12,6 +12,7 @@ export * from "./hosts.ts";
 export * from "./media.ts";
 export * from "./money.ts";
 export * from "./roles.ts";
+export * from "./slots.ts";
 export * from "./user.ts";
 export * from "./pm.ts";
 export * from "./prelaunch.ts";

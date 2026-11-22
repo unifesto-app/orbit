@@ -134,6 +134,13 @@
       "when": 1795354384431,
       "tag": "0018_careers_applied",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1795360132107,
+      "tag": "0019_slots",
+      "breakpoints": true
     }
   ]
 }

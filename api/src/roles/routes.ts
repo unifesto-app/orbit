@@ -89,7 +89,7 @@ export function rolesRoutes({ db, notify, secret, now = Date.now }: Deps) {
     return c.json({ members, invites });
   });
 
-  // POST /hosts/:id/team: invite an Admin by phone or email. The answer is the same whether or not they're on Orbit.
+  // POST /hosts/:id/team: invite an Admin, or a Venue's Desk, by phone or email. The answer is the same whether or not they're on Orbit.
   app.post("/hosts/:id/team", auth, async (c) => {
     const b = await parse(c, InviteAdmin);
     if (!b) return invalid(c);
@@ -100,6 +100,9 @@ export function rolesRoutes({ db, notify, secret, now = Date.now }: Deps) {
     if (t?.mine.role !== "admin") return nothing(c);
     const { host } = t;
     if (!changeable(host)) return fail(c, 409, "hostClosed", "This host can't change its team right now.");
+    // Desk is a crew seat with no event, and only a Venue has a counter.
+    const desk = b.role === "desk";
+    if (desk && host.kind !== "venue") return fail(c, 400, "notVenue", "Desk is for a Venue's counter.");
 
     const [open] = await db.select().from(teamRoles).where(and(eq(teamRoles.hostId, host.id), eq(teamRoles.contact, contact), isNull(teamRoles.endedAt)));
     const invited = () => fail(c, 409, "invited", "They already have an invite waiting. Withdraw it to send a new one.");
@@ -108,14 +111,14 @@ export function rolesRoutes({ db, notify, secret, now = Date.now }: Deps) {
     try {
       seat = await db.transaction(async (tx) => {
         if (open) await tx.update(teamRoles).set({ endedAt: at(), endReason: "expired" }).where(eq(teamRoles.id, open.id));
-        const [s] = await tx.insert(teamRoles).values({ hostId: host.id, role: "admin", contact, addedBy: c.var.user.id, addedAt: at() }).returning();
+        const [s] = await tx.insert(teamRoles).values({ hostId: host.id, role: desk ? "crew" : "admin", contact, addedBy: c.var.user.id, addedAt: at() }).returning();
         return s!;
       });
     } catch (e) {
       if (taken(e)) return invited(); // another invite to them landed at the same moment
       throw e;
     }
-    await notify({ to: { contact }, kind: "teamInvite", data: { seatId: seat.id, hostId: host.id, hostName: host.name, role: "admin" } });
+    await notify({ to: { contact }, kind: "teamInvite", data: { seatId: seat.id, hostId: host.id, hostName: host.name, role: desk ? "desk" : "admin" } });
     return c.json({ id: seat.id, contact, status: "waiting" }, 201);
   });
 
@@ -136,7 +139,8 @@ export function rolesRoutes({ db, notify, secret, now = Date.now }: Deps) {
     );
   });
 
-  // POST /invites/:id/accept. An Admin role then waits for the adder to confirm it's the right person.
+  // POST /invites/:id/accept. An Admin role then waits for the adder to confirm it's the right person. A crew seat (Desk)
+  // starts on Accept: it holds no money and edits nothing, and the Roles review asked for no confirm step.
   app.post("/invites/:id/accept", auth, async (c) => {
     const id = c.req.param("id");
     const [seat] = isUuid(id) ? await db.select().from(teamRoles).where(eq(teamRoles.id, id)) : [];
@@ -158,13 +162,25 @@ export function rolesRoutes({ db, notify, secret, now = Date.now }: Deps) {
               lte(teamRoles.addedAt, new Date(now() - INVITE_DAYS * DAY)),
             ),
           );
+        // A Desk seat starts here, so it gets the checks an Admin's confirm makes: the host still has a counter and can
+        // change its team, and whoever sent it is still one of its Admins.
+        if (seat.role === "crew") {
+          const [h] = await tx.select().from(hosts).where(eq(hosts.id, seat.hostId)).for("share");
+          if (!h || h.kind !== "venue" || !changeable(h)) return "closed" as const;
+          const [adder] = await tx
+            .select({ id: teamRoles.id })
+            .from(teamRoles)
+            .where(and(eq(teamRoles.hostId, h.id), eq(teamRoles.userId, seat.addedBy), eq(teamRoles.role, "admin"), isNotNull(teamRoles.startedAt), isNull(teamRoles.endedAt)));
+          if (!adder) return undefined;
+        }
         const [row] = await tx
           .update(teamRoles)
-          .set({ userId: c.var.user.id, acceptedAt: at() })
+          .set({ userId: c.var.user.id, acceptedAt: at(), ...(seat.role === "crew" ? { startedAt: at() } : {}) })
           .where(and(eq(teamRoles.id, seat.id), isNull(teamRoles.acceptedAt), isNull(teamRoles.endedAt)))
           .returning();
         return row;
       });
+      if (done === "closed") return fail(c, 409, "hostClosed", "This host can't change its team right now.");
       if (!done) return refuse(c, "notWaiting");
     } catch (e) {
       // One open place per person on a host: an invite by phone and another by email can't both be accepted.
@@ -172,7 +188,7 @@ export function rolesRoutes({ db, notify, secret, now = Date.now }: Deps) {
       throw e;
     }
     await notify({ to: { userId: seat.addedBy }, kind: "teamAccepted", data: { seatId: seat.id, hostId: seat.hostId, name: c.var.user.name } });
-    return c.json({ id: seat.id, status: "accepted" });
+    return c.json({ id: seat.id, status: seat.role === "crew" ? "started" : "accepted" });
   });
 
   // POST /hosts/:id/team/:seat/confirm: the adder confirms it's the right person, and the Admin role starts.

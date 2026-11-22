@@ -4,6 +4,7 @@ import { authRoutes, type Deps } from "./auth/routes.ts";
 import { deletionRoutes } from "./auth/deletion.ts";
 import { securityRoutes } from "./auth/security.ts";
 import { eventsRoutes } from "./events/routes.ts";
+import { slotsRoutes } from "./slots/routes.ts";
 import { hostsRoutes } from "./hosts/routes.ts";
 import { mediaRoutes } from "./media.ts";
 import { pmRoutes } from "./pm/routes.ts";
@@ -34,6 +35,7 @@ export function createApp(deps?: Deps) {
     app.route("/", rolesRoutes(deps));
     app.route("/", hostsRoutes(deps));
     app.route("/", eventsRoutes(deps));
+    app.route("/", slotsRoutes(deps));
     app.route("/", mediaRoutes(deps.media));
     app.route("/", pmRoutes(deps));
     app.route("/", prelaunchRoutes(deps));

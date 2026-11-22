@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { type AnyPgColumn, bigint, boolean, check, date, doublePrecision, index, integer, jsonb, pgTable, primaryKey, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
-import type { AgendaItem, FaqItem } from "@orbit/contract";
+import type { AgendaItem, FaqItem, Week } from "@orbit/contract";
 
 // The User flow's tables (Orbit flows: User). Migrated people keep their Unifesto ids, so `id` takes any UUID.
 // Phone and email are the ways in by code; Google and Apple live in `identities`, passkeys in `passkeys`.
@@ -89,7 +89,8 @@ export const follows = pgTable(
   (t) => [primaryKey({ columns: [t.userId, t.hostId] }), index().on(t.hostId)],
 );
 
-// A place on a host's team, from invite to end. Only Admin for now; event roles come with events.
+// A place on a host's team, from invite to end. Admin or crew; crew with no event on a Venue host is Desk (Play: the
+// counter). Event roles come with events.
 // An invite is keyed by the phone or email it was sent to; no account is made for it. Rows end, never go, so who was
 // on a team stays known (staff can't act on a host they left in the last 30 days).
 export const teamRoles = pgTable(
@@ -99,7 +100,7 @@ export const teamRoles = pgTable(
     hostId: uuid("host_id")
       .notNull()
       .references(() => hosts.id),
-    role: text("role", { enum: ["admin"] }).notNull(),
+    role: text("role", { enum: ["admin", "crew"] }).notNull(),
     contact: text("contact").notNull(), // E.164 or lowercased email the invite went to
     userId: uuid("user_id").references(() => users.id), // set on Accept
     addedBy: uuid("added_by")
@@ -216,6 +217,119 @@ export const ticketTypes = pgTable(
     check("ticket_types_quantity_positive", sql`${t.quantity} is null or ${t.quantity} > 0`),
     check("ticket_types_sales_end_after_start", sql`${t.salesEndAt} is null or ${t.salesStartAt} is null or ${t.salesEndAt} > ${t.salesStartAt}`),
     index().on(t.eventId),
+  ],
+);
+
+// ---------- Play (Orbit flows: Play): a Venue's stations and every claim on them ----------
+
+// One row per Venue host that takes bookings by the hour.
+export const venues = pgTable(
+  "venues",
+  {
+    hostId: uuid("host_id")
+      .primaryKey()
+      .references(() => hosts.id),
+    address: text("address").notNull(),
+    area: text("area").notNull(),
+    lat: doublePrecision("lat").notNull(),
+    lng: doublePrecision("lng").notNull(),
+    placeId: text("place_id"),
+    deskPhone: text("desk_phone").notNull(),
+    week: jsonb("week").$type<Week>().notNull(), // Sunday first; [first hour, last hour] in India time, past 24 runs into the morning; null is closed
+    cutoffMinutes: integer("cutoff_minutes").notNull().default(120), // up to how long before a start a player can cancel for the price back (Play decision 12)
+    logsWalkIns: boolean("logs_walk_ins").notNull().default(false),
+    createdAt: at("created_at").notNull().defaultNow(),
+    updatedAt: at("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    check("venues_cutoff_in_a_day", sql`${t.cutoffMinutes} between 0 and 1440`),
+    check("venues_point_in_india", sql`${t.lat} between 6 and 37.5 and ${t.lng} between 68 and 97.5`),
+  ],
+);
+
+// One row per station type ("Gaming PC", "5-a-side football"): booked by count, never a named machine.
+export const stations = pgTable(
+  "stations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    hostId: uuid("host_id")
+      .notNull()
+      .references(() => venues.hostId),
+    name: text("name").notNull(),
+    unit: text("unit").notNull(), // what one is called: "PC", "pitch"
+    tile: text("tile", { enum: ["gaming", "sports"] }).notNull(),
+    count: integer("count").notNull(),
+    whole: boolean("whole").notNull(), // booked whole by one group: pitches and courts
+    step: integer("step").notNull(), // minutes between starts
+    pricePaise: integer("price_paise").notNull(), // an hour, for one
+    coopPaise: integer("coop_paise"), // two or three on one (gaming)
+    offPeakFrom: integer("off_peak_from"),
+    offPeakTo: integer("off_peak_to"),
+    offPeakWeekdays: boolean("off_peak_weekdays"),
+    offPeakPaise: integer("off_peak_paise"),
+    games: text("games"),
+    archivedAt: at("archived_at"),
+    createdAt: at("created_at").notNull().defaultNow(),
+    updatedAt: at("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    check("stations_count_range", sql`${t.count} between 1 and 200`),
+    check("stations_step", sql`${t.step} in (30, 60)`),
+    check("stations_price_positive", sql`${t.pricePaise} > 0`),
+    check("stations_coop_positive", sql`${t.coopPaise} is null or ${t.coopPaise} > 0`),
+    check(
+      "stations_off_peak_all_or_nothing",
+      sql`(${t.offPeakFrom} is null) = (${t.offPeakTo} is null) and (${t.offPeakFrom} is null) = (${t.offPeakWeekdays} is null) and (${t.offPeakFrom} is null) = (${t.offPeakPaise} is null)`,
+    ),
+    check(
+      "stations_off_peak_sane",
+      sql`${t.offPeakFrom} is null or (${t.offPeakFrom} >= 0 and ${t.offPeakFrom} < ${t.offPeakTo} and ${t.offPeakTo} <= 24 and ${t.offPeakPaise} < ${t.pricePaise})`,
+    ),
+    index().on(t.hostId),
+  ],
+);
+
+// Every claim on a station type: a booking (held, then paid), a walk-in or a block.
+export const stationClaims = pgTable(
+  "station_claims",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    stationId: uuid("station_id")
+      .notNull()
+      .references(() => stations.id),
+    kind: text("kind", { enum: ["booking", "walkin", "block"] }).notNull(),
+    // - held: a player is paying; counts until hold_ends_at (10 minutes). Lapsing needs no job.
+    // - paid: firm. A booking whose money landed (booking slice), or a block.
+    // - checked_in: someone's here. A booking after the first admit, or a walk-in (they're at the counter).
+    // - freed: a walk-in the desk freed early (the minus): ends_at moved to that moment, so it still counts up to then.
+    // - ended: a block lifted early: ends_at moved to that moment, likewise.
+    // - refunded, released (a no-show the desk let go): never count.
+    // A claim takes `count` stations on [starts_at, ends_at) when status is paid, checked_in, freed or ended, or held
+    // with hold_ends_at after now (slots/rules.ts `counts`, the one place that says so; pass the injected now).
+    status: text("status", { enum: ["held", "paid", "checked_in", "ended", "freed", "refunded", "released"] }).notNull(),
+    count: integer("count").notNull(),
+    // No check that times sit on the step grid: a walk-in freed early ends "now", and the next may start then.
+    startsAt: at("starts_at").notNull(),
+    endsAt: at("ends_at").notNull(),
+    holdEndsAt: at("hold_ends_at"),
+    userId: uuid("user_id").references(() => users.id), // a booking's person (holder, then booker); null for walk-ins and blocks
+    reason: text("reason"), // a block's why
+    admitted: integer("admitted").notNull().default(0),
+    checkedInAt: at("checked_in_at"),
+    checkedInBy: uuid("checked_in_by").references(() => users.id),
+    releasedAt: at("released_at"),
+    releasedBy: uuid("released_by").references(() => users.id),
+    createdBy: uuid("created_by").references(() => users.id), // who added it at the counter, or the player for a hold
+    createdAt: at("created_at").notNull().defaultNow(),
+    updatedAt: at("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    check("station_claims_count_positive", sql`${t.count} > 0`),
+    check("station_claims_ends_after_starts", sql`${t.endsAt} > ${t.startsAt}`),
+    check("station_claims_held_has_end", sql`${t.status} <> 'held' or ${t.holdEndsAt} is not null`),
+    check("station_claims_admitted_in_count", sql`${t.admitted} between 0 and ${t.count}`),
+    index().on(t.stationId, t.startsAt),
+    index().on(t.userId),
   ],
 );
 
