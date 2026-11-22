@@ -1,6 +1,7 @@
 // The Orbit network on the map of India (owner, 22 Nov 2026: "mention the launch network or availablity network on
-// india map"): cities at their real places, the city list's popular ones (contract popularCities) as hubs joined by
-// brighter arcs, the rest joined to their nearest neighbours. No outline of India is drawn: a map of India published here
+// india map"): cities at their real places as dots, the city list's popular ones (contract popularCities) as named hubs
+// joined by arcs. Kept to that (owner, 22 Nov 2026, the list of AI-design tells: no overly detailed diagrams), so no web
+// of lines between every city and no halos. No outline of India is drawn: a map of India published here
 // must show the Survey of India's boundary, and the common free outlines don't, so the cities alone trace the country
 // until that outline is added.
 
@@ -48,16 +49,17 @@ const CITIES: [string, number, number, boolean?][] = [
   ["Thiruvananthapuram", 8.52, 76.94],
 ];
 
-// Where each hub's name sits: beside its dot on the side with room. Kanpur and Surat stay unnamed, too near Lucknow and
+// Where each hub's name sits: beside its dot on the side with room, edged in Charcoal so arcs and dots pass under it. Kanpur and Surat stay unnamed, too near Lucknow and
 // Mumbai to fit.
-const LABEL: Record<string, "left" | "right" | "none"> = {
+const LABEL: Record<string, "left" | "right" | "above" | "below" | "none"> = {
   Mumbai: "left",
   Ahmedabad: "left",
   Pune: "right",
   Surat: "none",
   Kanpur: "none",
   Jaipur: "left",
-  Bengaluru: "left",
+  Bengaluru: "below", // left would sit on Mangaluru, right on Chennai
+  Hyderabad: "above", // starting over its dot: right would sit on Visakhapatnam, centred on Pune's name
 };
 
 // Longitude and latitude to the drawing: equirectangular, widths shrunk by the cosine of India's middle latitude.
@@ -84,7 +86,6 @@ function joins(from: typeof points, pool: typeof points, n: number) {
 
 const hubs = points.filter((p) => p.hub);
 const backbone = joins(hubs, hubs, 2);
-const local = joins(points, points, 2);
 
 // A gentle arc between two points, bowed to one side by a sixth of its length, so the joins read as orbits.
 const arc = ([a, b]: [(typeof points)[number], (typeof points)[number]]) => {
@@ -96,12 +97,7 @@ const arc = ([a, b]: [(typeof points)[number], (typeof points)[number]]) => {
 export function Network({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 560 610" className={className} role="img" aria-label={`The Orbit network across India: ${hubs.map((h) => h.name).join(", ")} and more cities`}>
-      <g fill="none" stroke="var(--orbit-text)" strokeOpacity={0.14} strokeWidth={1}>
-        {local.map((j) => (
-          <path key={j.map((p) => p.name).join()} d={arc(j)} />
-        ))}
-      </g>
-      <g fill="none" stroke="var(--orbit-accent)" strokeOpacity={0.6} strokeWidth={1.5}>
+      <g fill="none" stroke="var(--orbit-accent)" strokeWidth={1.5}>
         {backbone.map((j) => (
           <path key={j.map((p) => p.name).join()} d={arc(j)} />
         ))}
@@ -109,16 +105,24 @@ export function Network({ className }: { className?: string }) {
       {points
         .filter((p) => !p.hub)
         .map((p) => (
-          <circle key={p.name} cx={p.x} cy={p.y} r={2.5} fill="var(--orbit-text)" fillOpacity={0.5} />
+          <circle key={p.name} cx={p.x} cy={p.y} r={2.5} fill="var(--orbit-text-2)" />
         ))}
       {hubs.map((p) => {
         const side = LABEL[p.name] ?? "right";
         return (
           <g key={p.name}>
-            <circle cx={p.x} cy={p.y} r={11} fill="var(--orbit-accent)" fillOpacity={0.16} />
             <circle cx={p.x} cy={p.y} r={4.5} fill="var(--orbit-accent)" />
             {side !== "none" && (
-              <text x={p.x + (side === "left" ? -15 : 15)} y={p.y + 4} textAnchor={side === "left" ? "end" : "start"} fill="var(--orbit-text)" fillOpacity={0.85} fontSize={16}>
+              <text
+                x={p.x + (side === "left" ? -15 : side === "right" ? 15 : side === "above" ? -4 : 0)}
+                y={p.y + (side === "above" ? -12 : side === "below" ? 22 : 4)}
+                textAnchor={side === "left" ? "end" : side === "below" ? "middle" : "start"}
+                fill="var(--orbit-text)"
+                fontSize={16}
+                stroke="var(--orbit-ground)"
+                strokeWidth={6}
+                strokeLinejoin="round"
+                paintOrder="stroke">
                 {p.name}
               </text>
             )}

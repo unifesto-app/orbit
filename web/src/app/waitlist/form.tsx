@@ -46,7 +46,7 @@ function Share() {
   const [said, say] = useState<string>();
   async function share() {
     const url = `${location.origin}/waitlist?utm_source=waitlist&utm_medium=share`;
-    const text = "I’m on the Orbit waitlist. There’s more to live beyond the usual.";
+    const text = "I’m on the Orbit waitlist. There’s more to life beyond the usual.";
     try {
       if (navigator.share) return await navigator.share({ title: "Orbit", text, url });
     } catch (e) {
@@ -116,7 +116,7 @@ export function Waitlist({ features, turnstile }: { features: [string, string][]
       <div className={styles.done}>
         <div role="status" className={styles.joined}>
           <p className={styles.aside}>see you soon</p>
-          <h2 className={styles.title}>You’re in, {s.name}.</h2>
+          <h2 className={styles.title}>You’re in, {s.name}</h2>
         </div>
         <Share />
       </div>

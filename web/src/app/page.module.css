@@ -1,6 +1,9 @@
 /* The homepage in the app's look (mobile/src/theme.ts, glass.tsx, orbitSays.tsx; app/src/rows.tsx, orbitAd.tsx):
-   Charcoal ground, Stone type, Sage on elements only; corners 6 + 8 = 14 on a card face, 16 with its 2px frosted rim;
-   8 inside, 24 between, 40 between sections (64 on a laptop). The line in its orbits comes from site.module.css. */
+   Charcoal ground, Stone type, Sage on elements only; 8 inside, 24 between, 40 between sections (64 on a laptop). The
+   line in its orbits comes from site.module.css.
+   Kept plain (owner, 22 Nov 2026, the list of AI-design tells): no glow or gradient behind anything, no boxes drawn
+   round words, no labels over headlines, no tightened letters, and only the tokens' shades (text, text-2, border,
+   hairline), never a one-off opacity. Buttons keep their glass. */
 
 .page {
   position: relative;
@@ -29,7 +32,7 @@
   align-items: center;
   height: 44px;
   padding: 0 18px;
-  border: 1px solid rgb(var(--orbit-stone-rgb) / 0.16);
+  border: 1px solid var(--orbit-border);
   border-radius: var(--orbit-radius-pill);
   background: rgb(var(--orbit-charcoal-rgb) / 0.7);
   box-shadow: var(--orbit-glass-highlight);
@@ -45,7 +48,7 @@
 }
 
 .capsule:hover {
-  border-color: rgb(var(--orbit-stone-rgb) / 0.32);
+  border-color: var(--orbit-glass-border);
 }
 
 .capsule:active {
@@ -89,30 +92,18 @@
   height: 22px;
 }
 
-/* Account's panel: frosted glass from the top of the screen, its bottom corners round (the cards' 22 + rim), a frosted
-   rim along the bottom only, and the accent glowing up from its bottom centre (FaceWash at 0.5). The waitlist pill sits
-   centred at its foot, as on Home's carousel (.dock). */
+/* The hero: the line in its orbits on the page's own Charcoal. The waitlist pill sits centred at its foot (.dock). */
 .panel {
   display: grid;
   justify-items: center;
   gap: var(--orbit-space-big);
   padding: 64px 16px 92px; /* room at the foot for the waitlist pill (dock.tsx): 24 + 44 + 24 */
-  border-bottom: 2px solid rgb(var(--orbit-stone-rgb) / 0.16);
-  border-radius: 0 0 24px 24px;
-  background:
-    radial-gradient(90% 90% at 50% 100%, rgb(var(--orbit-accent-rgb) / 0.5), rgb(var(--orbit-accent-rgb) / 0) 100%),
-    var(--orbit-glass-background);
   text-align: center;
 }
 
 .panel > :first-child {
   width: 100%;
   max-width: 880px;
-}
-
-/* The near rings' Charcoal gap (brand.tsx) would show as dark arcs on the lighter glass; the rings cross without it. */
-.panel polyline[stroke-width="7"] {
-  display: none;
 }
 
 .column {
@@ -127,8 +118,8 @@
 }
 
 
-/* Orbit's bubbles (the chat's): 20 round with the 6 tail corner on the speaker's side, Orbit's Charcoal with a faint
-   edge, answers outlined on your side. */
+/* Orbit's bubbles (the chat's): 20 round with the 6 tail corner on the speaker's side, a faint Stone fill and no
+   outline; answers outlined on your side, as they're what you tap. */
 .says {
   display: grid;
   gap: var(--orbit-space-small);
@@ -157,9 +148,8 @@
   gap: 6px;
   max-width: min(80%, 560px);
   padding: 10px 14px;
-  border: 1px solid rgb(var(--orbit-stone-rgb) / 0.12);
   border-radius: 20px 20px 20px 6px;
-  background: rgb(var(--orbit-charcoal-rgb) / 0.6);
+  background: var(--orbit-hairline);
   font-size: 16px;
   line-height: 22px;
 }
@@ -180,7 +170,7 @@
 
 .answer {
   padding: 9px 14px;
-  border: 1px solid rgb(var(--orbit-stone-rgb) / 0.32);
+  border: 1px solid var(--orbit-glass-border);
   border-radius: 20px 20px 6px 20px;
   font-size: 15px;
   line-height: 20px;
@@ -189,12 +179,12 @@
 }
 
 .answer:hover {
-  background: rgb(var(--orbit-stone-rgb) / 0.08);
+  background: var(--orbit-hairline);
 }
 
 /* Apple's gallery: the heading at the page's left edge, then a row of tiles that starts there and runs off the right of
    the screen, scrolling sideways and snapping each tile to the start; arrows under it on the right. Each tile: the
-   headline and its line, then the phone. */
+   headline and its line, then the phone, with no card round them. */
 .lead {
   max-width: 1192px;
   margin: 0 auto 24px;
@@ -203,7 +193,7 @@
   font-weight: var(--orbit-weight-display);
   font-size: clamp(32px, 4.4vw, 48px);
   line-height: 1.05;
-  letter-spacing: var(--orbit-tracking-display);
+  text-wrap: balance;
 }
 
 .gallery {
@@ -227,11 +217,7 @@
   align-content: space-between;
   justify-items: center;
   gap: 32px;
-  width: min(84vw, 400px);
-  padding: 28px 24px;
-  border: 1px solid var(--orbit-border);
-  border-radius: 28px;
-  background: radial-gradient(90% 55% at 50% 100%, rgb(var(--orbit-accent-rgb) / 0.22), rgb(var(--orbit-accent-rgb) / 0));
+  width: min(84vw, 352px);
   scroll-snap-align: start;
 }
 
@@ -247,7 +233,6 @@
   font-weight: var(--orbit-weight-display);
   font-size: clamp(26px, 7vw, 32px);
   line-height: 1.05;
-  letter-spacing: var(--orbit-tracking-display);
   text-wrap: balance;
 }
 
@@ -281,7 +266,7 @@
 }
 
 .paddles button:hover:not([aria-disabled="true"]) {
-  border-color: rgb(var(--orbit-stone-rgb) / 0.4);
+  border-color: var(--orbit-text-2);
 }
 
 .paddles button[aria-disabled="true"] {
@@ -293,19 +278,6 @@
   transform: scaleX(-1);
 }
 
-/* The card label, Apple's small line above a headline. */
-.tag,
-.kicker {
-  font-size: 14px;
-  font-weight: var(--orbit-weight-title);
-  color: var(--orbit-accent);
-}
-
-.words .tag {
-  margin-bottom: -4px;
-  color: var(--orbit-accent);
-}
-
 .wide {
   max-width: 1192px;
   margin-inline: auto;
@@ -314,10 +286,6 @@
 
 .wide .lead {
   padding: 0;
-}
-
-.kicker {
-  margin: 0 0 8px;
 }
 
 .sub {
@@ -370,7 +338,6 @@
 @media (min-width: 960px) {
   .panel {
     padding-top: 40px;
-    border-radius: 0 0 40px 40px;
   }
 
   .section,

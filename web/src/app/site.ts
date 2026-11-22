@@ -7,7 +7,7 @@ export const SITE = "https://heyorbit.in";
 // The search and link-preview descriptions (owner, 18 Nov 2026: "make it seo friendly"): what Orbit has, so search and
 // AI answers can say what it is. They name no place (owner, 21 Nov 2026: was "coming to Hyderabad").
 export const DESCRIPTION =
-  "There’s more to live beyond the usual. Fests in one click, turf, courts and gaming by the hour, hackathons, meetups, and the comedians and bands you love, on Orbit.";
+  "There’s more to life beyond the usual. Fests in one click, turf, courts and gaming by the hour, hackathons, meetups, and the comedians and bands you love, on Orbit.";
 export const WAITLIST_DESCRIPTION =
   "Join the Orbit waitlist for fests in one click, turf, courts and gaming by the hour, hackathons, meetups, and the comedians and bands you love.";
 
@@ -39,5 +39,5 @@ export const OPEN_GRAPH = {
   type: "website" as const,
   siteName: "Orbit",
   locale: "en_IN",
-  images: [{ url: "/opengraph-image.png", width: 1200, height: 630, alt: "Orbit: There’s more to live beyond the usual." }],
+  images: [{ url: "/opengraph-image.png", width: 1200, height: 630, alt: "Orbit: There’s more to life beyond the usual." }],
 };

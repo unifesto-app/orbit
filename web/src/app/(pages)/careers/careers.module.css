@@ -13,9 +13,6 @@
 
 .note,
 .error {
-  padding: 10px 12px;
-  border-radius: var(--orbit-radius);
-  background: rgb(var(--orbit-stone-rgb) / 0.06);
   font-size: 14px;
   overflow-wrap: anywhere;
 }
@@ -29,29 +26,24 @@
   font-weight: var(--orbit-weight-medium);
 }
 
-/* The cities with roles, each a jump to its list. */
+/* The cities with roles, each a jump to its list: plain links, as the footer's. */
 .cities {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 28px;
+  gap: 0 20px;
+  margin-top: 24px;
 }
 
 .cities a {
-  padding: 6px 14px;
-  border: 1px solid var(--orbit-border);
-  border-radius: var(--orbit-radius-pill);
+  padding: 6px 0; /* a 32px tall tap target */
   font-size: 14px;
   color: var(--orbit-text-2);
   text-decoration: none;
-  transition:
-    color 0.2s,
-    border-color 0.2s;
+  transition: color 0.2s;
 }
 
 .cities a:hover {
   color: var(--orbit-text);
-  border-color: var(--orbit-accent);
 }
 
 /* A city's heading under "Open roles", clear of the top when jumped to. */
@@ -60,28 +52,25 @@
   font-family: var(--display);
   font-weight: var(--orbit-weight-headline);
   font-size: 18px;
-  letter-spacing: -0.01em;
   color: var(--orbit-text-2);
   scroll-margin-top: 24px;
 }
 
-/* The open roles: a row each, title over its team, place and kind. */
+/* The open roles: a row each, title over its team, place and kind; spaced, no hairlines between. */
 .list {
-  margin: 16px 0 0;
+  margin: 8px 0 0;
   padding: 0 !important;
   list-style: none;
-  border-top: 1px solid var(--orbit-hairline);
 }
 
 .list li {
   margin: 0 !important;
-  border-bottom: 1px solid var(--orbit-hairline);
 }
 
 .row {
   display: grid;
   gap: 4px;
-  padding: 18px 0;
+  padding: 12px 0;
   text-decoration: none;
 }
 
@@ -89,7 +78,6 @@
   font-family: var(--display);
   font-weight: var(--orbit-weight-headline);
   font-size: 19px;
-  letter-spacing: -0.01em;
   transition: color 0.2s;
 }
 
@@ -162,7 +150,7 @@
   margin-left: 6px;
   font-style: normal;
   font-weight: var(--orbit-weight-text);
-  color: rgb(var(--orbit-stone-rgb) / 0.4);
+  color: var(--orbit-text-2);
 }
 
 .field input,
@@ -241,9 +229,6 @@
 
 .done {
   margin-top: 16px;
-  padding: 16px;
-  border: 1px solid var(--orbit-border);
-  border-radius: var(--orbit-radius);
 }
 
 .done p {

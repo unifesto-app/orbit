@@ -35,7 +35,7 @@ export default function WaitlistPage() {
         <div className={styles.copy}>
           <Orbits className={styles.art} />
           <h1 className={styles.line}>
-            There’s more to live{" "}
+            There’s more to life{" "}
             <span className={styles.deep} style={{ backgroundImage: deepType }}>
               beyond the usual.
             </span>
