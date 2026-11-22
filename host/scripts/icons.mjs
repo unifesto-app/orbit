@@ -6,9 +6,10 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
 // Station's tabs, then Launch's (Events, Money shared, Host as `team`); the bell is Launch's Inbox circle, and find,
-// sound and mute are Station's scanner's.
+// sound and mute are Station's scanner's; verified (the host's tick, as the Orbit app's) and external (a row that opens
+// the web) are Launch's Host tab's.
 const tabs = { today: "calendar-dot-fill", money: "currency-inr-fill", venue: "storefront-fill", events: "calendar-fill", team: "users-fill" };
-const marks = { close: "x-bold", bell: "bell-fill", chevron: "caret-right-bold", caret: "caret-down-bold", find: "magnifying-glass-bold", sound: "speaker-high-fill", mute: "speaker-slash-fill" };
+const marks = { close: "x-bold", bell: "bell-fill", chevron: "caret-right-bold", caret: "caret-down-bold", find: "magnifying-glass-bold", sound: "speaker-high-fill", mute: "speaker-slash-fill", verified: "seal-check-fill", external: "arrow-up-right-bold" };
 const PT = 25; // the app's TAB_PT
 
 const res = await fetch(`https://api.iconify.design/ph.json?icons=${[...Object.values(tabs), ...Object.values(marks)].join(",")}`);

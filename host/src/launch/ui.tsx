@@ -15,6 +15,8 @@ const EDGE = 1; // its outline
 const CARD = radius.sm + PAD + EDGE; // corners nest outward from the poster's 6
 const POSTER = 72; // 3:4, so 96 tall
 const CHEVRON = require('../../assets/tabs/chevron.png');
+const EXTERNAL = require('../../assets/tabs/external.png');
+const VERIFIED = require('../../assets/tabs/verified.png');
 const CARET = require('../../assets/tabs/caret.png');
 const GLOW = require('../../assets/tabs/glow.png');
 
@@ -80,31 +82,65 @@ export function Note({ children }: { children: string }) {
   return <Text style={styles.note}>{children}</Text>;
 }
 
+/** A person's round initials (people are circles, hosts rounded squares); your own on Forest, as in the Orbit app. */
+export function Person({ initials, you = false, waiting = false }: { initials?: string; you?: boolean; waiting?: boolean }) {
+  return (
+    <View style={[styles.person, you && styles.personYou, waiting && styles.personWaiting]}>
+      {initials && <Text style={styles.personText}>{initials}</Text>}
+    </View>
+  );
+}
+
+/** The host's verified tick, as the Orbit app's: the Sage seal over a Stone disc. */
+export function Verified({ size = 18 }: { size?: number }) {
+  return (
+    <View style={[styles.verified, { width: size, height: size }]} accessible accessibilityRole="image" accessibilityLabel="Verified">
+      <View style={[styles.verifiedDisc, { width: size / 2, height: size / 2, borderRadius: size / 4 }]} />
+      <Image source={VERIFIED} style={{ width: size, height: size, tintColor: color.accent }} />
+    </View>
+  );
+}
+
 /**
- * One line in a card: a label, a value (grey, or Stone when `strong`), a control, and a > when the whole row opens
- * something. `dot` puts the accent's dot before the value, for a state that's good (a verified bank account). A row
- * reads as one to a screen reader, unless it holds a control of its own; `spoken` replaces what it reads.
+ * One line in a card: a label (with a grey `note` under it), a value (grey, or Stone when `strong`), a control, and a >
+ * when the whole row opens something, or a ↗ when it opens the web (`external`). `lead` sits before the label (a
+ * person's initials). `dot` puts the accent's dot before the value, for a state that's good (a verified bank account).
+ * A row reads as one to a screen reader, unless it holds a control of its own; `spoken` replaces what it reads.
  */
 export function Row({
   label,
+  note,
+  lead,
   value,
   strong = false,
   dot = false,
   right,
   onPress,
+  external = false,
   spoken,
 }: {
   label: string;
+  note?: string;
+  lead?: ReactNode;
   value?: string;
   strong?: boolean;
   dot?: boolean;
   right?: ReactNode;
   onPress?: () => void;
+  external?: boolean;
   spoken?: string;
 }) {
   const body = (
     <>
-      <Text style={styles.label}>{label}</Text>
+      {lead}
+      {note ? (
+        <View style={styles.lines2}>
+          <Text style={styles.rowLabel}>{label}</Text>
+          <Text style={styles.rowNote}>{note}</Text>
+        </View>
+      ) : (
+        <Text style={styles.label}>{label}</Text>
+      )}
       {dot && <View style={styles.dot} />}
       {value !== undefined && (
         <Text style={[styles.value, strong && styles.strong]} numberOfLines={1}>
@@ -112,13 +148,13 @@ export function Row({
         </Text>
       )}
       {right}
-      {onPress && <Image source={CHEVRON} style={styles.chevron} />}
+      {onPress && <Image source={external ? EXTERNAL : CHEVRON} style={styles.chevron} />}
     </>
   );
   return onPress ? (
     <Pressable
       onPress={onPress}
-      accessibilityRole="button"
+      accessibilityRole={external ? 'link' : 'button'}
       accessibilityLabel={spoken}
       hitSlop={{ top: PAD / 2, bottom: PAD / 2 }}
       style={({ pressed }) => [styles.row, pressed && styles.pressed]}
@@ -132,20 +168,24 @@ export function Row({
   );
 }
 
-/** A card of rows between hairlines (Money's numbers, its commission, the bank account). */
-export function Card({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
+/**
+ * A card of rows between hairlines (Money's numbers, its commission, the bank account). `indent` starts the hairlines
+ * where the words do, past a row's `lead` (the Admins' initials), as in iOS Settings.
+ */
+export function Card({ children, style, indent = 0 }: { children: ReactNode; style?: StyleProp<ViewStyle>; indent?: number }) {
   const rows = Children.toArray(children); // drops the false and null of rows shown only sometimes
   return (
     <View style={[styles.card, style]}>
       {rows.map((row, i) => (
         <Fragment key={i}>
-          {i > 0 && <View style={styles.hairline} />}
+          {i > 0 && <View style={[styles.hairline, { marginLeft: indent }]} />}
           {row}
         </Fragment>
       ))}
     </View>
   );
 }
+export const PERSON_INDENT = 32 + 12; // a Person and the row's gap after it
 
 /** One event on Events, holding its own work: the poster and how it's selling, then a row per thing to do on it. */
 export function EventCard({
@@ -213,6 +253,16 @@ export const styles = StyleSheet.create({
   pillText: { fontFamily: font.title, fontSize: 13, color: color.text },
   row: { minHeight: 28, flexDirection: 'row', alignItems: 'center', gap: space.small },
   label: { flex: 1, fontFamily: font.title, fontSize: 15, lineHeight: 20, color: color.text },
+  lines2: { flex: 1, gap: 2 }, // a label and its note
+  rowLabel: { fontFamily: font.title, fontSize: 15, lineHeight: 20, color: color.text },
+  rowNote: { fontFamily: font.text, fontSize: 13, lineHeight: 18, color: color.secondary },
+  // 32 round, then 12 to the words (the row's 8 and 4 more), as PERSON_INDENT counts.
+  person: { width: 32, height: 32, marginRight: 4, borderRadius: 16, backgroundColor: color.raised, alignItems: 'center', justifyContent: 'center' },
+  personYou: { backgroundColor: color.fill }, // Forest is for your own
+  personWaiting: { backgroundColor: 'transparent', borderWidth: 1, borderStyle: 'dashed', borderColor: stoneAt(0.32) },
+  personText: { fontFamily: font.headline, fontSize: 12, color: color.text },
+  verified: { alignItems: 'center', justifyContent: 'center' },
+  verifiedDisc: { position: 'absolute', backgroundColor: color.text },
   value: { maxWidth: '60%', fontFamily: font.text, fontSize: 14, color: color.secondary },
   strong: { color: color.text },
   dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: color.accent }, // an element, so the accent is allowed

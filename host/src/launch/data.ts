@@ -12,6 +12,30 @@ export const now = Date.parse('2026-11-20T18:40:00+05:30'); // take 1's event da
 export type Host = { id: string; name: string; initials: string; bg: string; fg: string };
 export const host: Host = { id: 'punchline', name: 'Punchline Collective', initials: 'PC', bg: '#F2C14E', fg: '#141414' };
 
+// The host's page as people see it, and its status (Hosts flow, Host profile and settings; Becoming a host).
+export const page = {
+  kind: 'Comedy group',
+  city: 'Hyderabad',
+  followers: 2050,
+  verified: true,
+  status: 'live' as 'live' | 'paused' | 'suspended' | 'archived',
+  visibility: 'public' as 'public' | 'private',
+  logo: false, // the monogram stands in until a logo is added
+  banner: false,
+  about: 'An open mic every Friday in Jubilee Hills, where new comics try five minutes on a very forgiving room.',
+};
+
+// The host's Admins, the owner marked, and Admin roles sent and not yet accepted (Hosts flow, Team and roles).
+export const admins = [
+  { id: 'u-you', name: 'Abhinavtej Reddy', initials: 'AR', you: true, owner: true },
+  { id: 'u-sana', name: 'Sana Mirza', initials: 'SM', you: false, owner: false },
+];
+export const adminInvites = [{ id: 'i-417', contact: '+91 ••••• ••417', sentAt: '2026-11-18T18:40:00+05:30' }];
+
+// Each event's team: its Event lead and how many Crew have started (Roles by use case). Invites still waiting are in
+// `invites` below.
+export const eventTeams: Record<string, { lead?: string; crew: number }> = { 'open-mic-night': { lead: 'Arjun Rao', crew: 1 } };
+
 // The host's commission clock and rate (Money decisions 14 to 17), set by Orbit's staff in Galaxy. Its sales so far fell
 // in the 0% intro months, so their commission is ₹0.
 export const commissionTerms = { onboarded: '2026-10-18', ratePct: 7 };

@@ -4,7 +4,8 @@
 const IST = 19_800_000; // +05:30, all year
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
-const istDay = (t: number) => Math.floor((t + IST) / DAY);
+// A moment's day in India time, as a count of days: two moments on the same India day share it.
+export const istDay = (t: number) => Math.floor((t + IST) / DAY);
 const night = (t: number) => {
   const hour = new Date(t + IST).getUTCHours();
   return hour >= 17 || hour < 5;
