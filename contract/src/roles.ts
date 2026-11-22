@@ -13,6 +13,7 @@ export const Team = z.object({
   hostId: z.string(),
   owner: z.boolean(),
   admin: z.boolean(),
+  desk: z.boolean(), // a Venue's counter seat: role crew with no event (Play: At the desk)
   events: z.record(z.string(), z.enum(["Curator", "Co-curator", "Crew"])), // empty until events exist
 });
 export type Team = z.infer<typeof Team>;
@@ -30,6 +31,7 @@ export const HOST_KINDS = {
   "startup-community": "Startup community",
   company: "Company",
   "housing-society": "Housing society",
+  venue: "Venue",
   other: "Other",
 } as const;
 export const HostKind = z.enum(Object.keys(HOST_KINDS) as [keyof typeof HOST_KINDS, ...(keyof typeof HOST_KINDS)[]]);
@@ -43,7 +45,8 @@ export const StartHost = z.object({
 });
 
 // POST /hosts/:id/team: a phone number or email, the same field as sign-in.
-export const InviteAdmin = z.object({ to: z.string().min(1).max(254) });
+// `role: "desk"` is for a Venue's counter; absent means Admin.
+export const InviteAdmin = z.object({ to: z.string().min(1).max(254), role: z.enum(["admin", "desk"]).optional() });
 
 // Galaxy, People: suspending needs a reason; no `until` closes the account for good.
 export const Suspend = z.object({ reason: z.string().trim().min(3).max(500), until: z.iso.datetime().nullable() });

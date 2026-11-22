@@ -30,7 +30,7 @@ export async function actorOf(db: Db, u: User, now: number): Promise<Actor> {
 export async function rolesOf(db: Db, u: User, now: number): Promise<Roles> {
   const a = await actorOf(db, u, now);
   const seats = await db
-    .select({ hostId: hosts.id, ownerId: hosts.ownerId, role: teamRoles.role })
+    .select({ hostId: hosts.id, ownerId: hosts.ownerId, kind: hosts.kind, role: teamRoles.role })
     .from(teamRoles)
     .innerJoin(hosts, eq(hosts.id, teamRoles.hostId))
     // An archived host is closed to all but its owner, also while staff suspend it.
@@ -43,7 +43,7 @@ export async function rolesOf(db: Db, u: User, now: number): Promise<Roles> {
       ),
     );
   return {
-    teams: seats.map((s) => ({ hostId: s.hostId, owner: s.ownerId === u.id, admin: s.role === "admin", events: {} })),
+    teams: seats.map((s) => ({ hostId: s.hostId, owner: s.ownerId === u.id, admin: s.role === "admin", desk: s.role === "crew" && s.kind === "venue", events: {} })),
     staff: a.owner || a.features.length ? { owner: a.owner, features: [...a.features], confirmed: true } : null,
   };
 }

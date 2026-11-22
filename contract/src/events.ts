@@ -40,7 +40,7 @@ export const TimeZone = z
 export type TimeZone = z.infer<typeof TimeZone>;
 
 // An instant with its offset, in years a plan could mean (Postgres refuses year 0 and the far end).
-const When = z.iso
+export const When = z.iso
   .datetime({ offset: true })
   .refine((s) => {
     const y = new Date(Date.parse(s)).getUTCFullYear();
