@@ -26,7 +26,7 @@ export function Glow({ tint }: { tint: string }) {
 }
 
 /** A host's 1:1 logo: its monogram on its colour, a rounded square. */
-export function Monogram({ host, size }: { host: Host; size: number }) {
+export function Monogram({ host, size }: { host: Pick<Host, 'initials' | 'bg' | 'fg'>; size: number }) {
   return (
     <View style={[styles.monogram, { width: size, height: size, backgroundColor: host.bg }]}>
       <Text style={[styles.monogramText, { color: host.fg, fontSize: Math.round(size * 0.4) }]}>{host.initials}</Text>

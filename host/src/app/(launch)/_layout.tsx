@@ -2,7 +2,7 @@
 // dark glass capsule low on the screen, the open tab under a lighter pill that springs to it, Phosphor filled icons
 // beside DM Sans 600 labels (the open tab's in the Sage to Moss gradient), shrinking to the open tab while the page
 // scrolls down. Beside it, the round Inbox with its count (owner, 22 Nov 2026: "Inbox", over the chat orb and Scan,
-// which only works around check-in): what came in since it was last opened.
+// which only works around check-in), with how many of its messages are unread.
 // ponytail: the same bar as Station's (host/src/app/(station)/_layout.tsx) with other tabs and circle; pull both into one
 // host tab bar once Station lands. No drag along the bar (the Orbit app's has one).
 import { DARK_TINT as DARK, Glass } from '@orbit/mobile/glass';
@@ -14,7 +14,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, Image, LayoutAnimation, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaInsetsContext, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { unread } from '../../launch/data';
+import { badge } from '../../launch/inbox';
+import { useUnread } from '../../launch/inboxStore';
 
 const PAD = 4;
 const GAP = 10;
@@ -24,9 +25,6 @@ const TABS = [
   { name: 'earnings', href: '/earnings', label: 'Money', icon: require('../../../assets/tabs/money.png'), on: require('../../../assets/tabs/money-on.png') },
   { name: 'team', href: '/team', label: 'Host', icon: require('../../../assets/tabs/team.png'), on: require('../../../assets/tabs/team-on.png') },
 ] as const;
-
-// The Inbox's count on its circle: nothing when there's nothing new, and never wider than two characters.
-const badge = (n: number) => (n <= 0 ? null : n > 9 ? '9+' : String(n));
 
 // Only Launch reaches it: the root layout's Stack.Protected guard sends Station and Crew to /.
 export default function LaunchTabs() {
@@ -41,6 +39,7 @@ export default function LaunchTabs() {
   useEffect(() => {
     Animated.spring(x, { toValue: open * slot, useNativeDriver: true, speed: 18, bounciness: 6 }).start();
   }, [open, slot, x]);
+  const unread = useUnread();
   const count = badge(unread);
   return (
     <Tabs style={styles.root}>
