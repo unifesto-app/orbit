@@ -1,11 +1,13 @@
 import { role } from '@orbit/tokens';
 import * as Application from 'expo-application';
+import { Redirect } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { variant as v } from '../variant';
+import { isLaunch, variant as v } from '../variant';
 
-// Each app shows its name until its own screens come.
+// Orbit Launch opens on Events; Station and Crew show their name until their own screens come.
 export default function Index() {
+  if (isLaunch) return <Redirect href="/events" />;
   return (
     <View style={s.root}>
       {v ? (
