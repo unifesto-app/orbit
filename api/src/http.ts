@@ -70,11 +70,15 @@ export const signedIn = (db: Db, secret: string, now: () => number) =>
     await next();
   });
 
-// A unique value someone else got to first.
-export const taken = (e: unknown) => {
+// Postgres's error code, on the error or (through Drizzle) on its cause.
+const pgCode = (e: unknown) => {
   const err = e as { code?: string; cause?: { code?: string } };
-  return (err.code ?? err.cause?.code) === "23505";
+  return err.code ?? err.cause?.code;
 };
+// A unique value someone else got to first.
+export const taken = (e: unknown) => pgCode(e) === "23505";
+// A row another still points at, or one pointing at a row that's gone (a foreign key).
+export const unlinked = (e: unknown) => pgCode(e) === "23503";
 
 // The visitor's address as Caddy sets it: Caddy trusts Cf-Connecting-Ip only from Cloudflare's ranges and always
 // overwrites X-Forwarded-For with the result (deploy/Caddyfile, api block). Cf-Connecting-Ip itself is passed

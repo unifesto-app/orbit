@@ -3,11 +3,12 @@ import * as Application from 'expo-application';
 import { Redirect } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { isStation, variant as v } from '../variant';
+import { isLaunch, isStation, variant as v } from '../variant';
 
-// Orbit Station opens on Today; Launch and Crew show their name until their own screens come.
+// Orbit Station opens on Today and Orbit Launch on Events; Crew shows its name until its own screens come.
 export default function Index() {
   if (isStation) return <Redirect href="/today" />;
+  if (isLaunch) return <Redirect href="/events" />;
   return (
     <View style={s.root}>
       {v ? (

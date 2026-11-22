@@ -80,6 +80,7 @@ export type OpeningList = { openings: OpeningAdmin[] };
 // GET /galaxy/openings/:id/applications?page=: newest first, 50 a page. The résumé is downloaded on its own (GET
 // /galaxy/applications/:id/resume, as an attachment). PUT /galaxy/applications/:id: { status }. DELETE
 // /galaxy/applications/:id: the application and its résumé, for someone who asks (Privacy Policy).
+// DELETE /galaxy/openings/:id: 204 for an opening nobody applied to; 409 "applied" otherwise (close it instead).
 export type ApplicationAdmin = Apply & { id: string; status: ApplicationStatus; createdAt: string };
 export type ApplicationList = { applications: ApplicationAdmin[]; total: number; page: number; pageSize: number };
 export const SetApplication = z.object({ status: z.enum(keys(APPLICATION_STATUSES)) });

@@ -9,7 +9,7 @@ import { applicationEmail } from "./careers-email.ts";
 import type { Media } from "./media.ts";
 import { proofs } from "./auth/proof.ts";
 import { applications, auditLog, openings } from "./db/schema.ts";
-import { bucketOf, fail, invalid, ipOf, isUuid, listPage, parse, signedIn, taken } from "./http.ts";
+import { bucketOf, fail, invalid, ipOf, isUuid, listPage, parse, signedIn, taken, unlinked } from "./http.ts";
 import { requireFeature, type StaffEnv } from "./roles/access.ts";
 import { slugFor } from "./slugs.ts";
 import type { Db } from "./db/index.ts";
@@ -118,6 +118,7 @@ export function careersRoutes({ db, store, secret, media, proof, mail, now = Dat
     } catch (e) {
       await dropResume(key);
       if (taken(e)) return dup();
+      if (unlinked(e)) return nope(c); // staff deleted the opening while this was on its way
       throw e;
     }
     // The confirmation, for a new application only. It never holds up or fails the 204: a send that fails is logged.
@@ -171,6 +172,26 @@ export function careersRoutes({ db, store, secret, media, proof, mail, now = Dat
     if (!row) return nope(c);
     await audit(c.var.actor.id, "careers.opening.set", { id });
     return c.json({ at: stamp.toISOString() });
+  });
+
+  // Only an opening nobody applied to: applications stay with their opening (12-month cleanup, Privacy Policy). The
+  // foreign key has no cascade, so an application that lands during the delete fails it (23503) and gets the same 409.
+  app.delete("/galaxy/openings/:id", ...staff, async (c) => {
+    const id = c.req.param("id");
+    if (!isUuid(id)) return nope(c);
+    const applied = () => fail(c, 409, "applied", "People have applied to this opening. Close it instead: their applications stay until they're deleted.");
+    const [{ n }] = (await db.select({ n: count() }).from(applications).where(eq(applications.openingId, id))) as [{ n: number }];
+    if (n) return applied();
+    let row: { title: string } | undefined;
+    try {
+      [row] = await db.delete(openings).where(eq(openings.id, id)).returning({ title: openings.title });
+    } catch (e) {
+      if (unlinked(e)) return applied();
+      throw e;
+    }
+    if (!row) return nope(c);
+    await audit(c.var.actor.id, "careers.opening.delete", { id, title: row.title });
+    return c.body(null, 204);
   });
 
   app.get("/galaxy/openings/:id/applications", ...staff, async (c) => {

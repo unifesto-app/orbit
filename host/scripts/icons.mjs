@@ -5,8 +5,10 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
-const tabs = { today: "calendar-dot-fill", money: "currency-inr-fill", venue: "storefront-fill" };
-const marks = { close: "x-bold", find: "magnifying-glass-bold", sound: "speaker-high-fill", mute: "speaker-slash-fill" }; // the scanner's too
+// Station's tabs, then Launch's (Events, Money shared, Host as `team`); the bell is Launch's Inbox circle, and find,
+// sound and mute are Station's scanner's.
+const tabs = { today: "calendar-dot-fill", money: "currency-inr-fill", venue: "storefront-fill", events: "calendar-fill", team: "users-fill" };
+const marks = { close: "x-bold", bell: "bell-fill", chevron: "caret-right-bold", caret: "caret-down-bold", find: "magnifying-glass-bold", sound: "speaker-high-fill", mute: "speaker-slash-fill" };
 const PT = 25; // the app's TAB_PT
 
 const res = await fetch(`https://api.iconify.design/ph.json?icons=${[...Object.values(tabs), ...Object.values(marks)].join(",")}`);
@@ -30,6 +32,13 @@ const hatch = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4 4"><rect w
 for (const scale of [1, 2, 3]) {
   const out = new URL(`../assets/tabs/hatch${scale > 1 ? `@${scale}x` : ""}.png`, import.meta.url);
   execFileSync("rsvg-convert", ["-w", String(4 * scale), "-h", String(4 * scale), "-o", out.pathname], { input: hatch });
+}
+// Launch's host glow (the Orbit app's Glow in app/src/rows.tsx: 35% at the top, 12% at 45%, none at 320pt), black on
+// clear so the screen tints it the host's colour, and stretched across the width: no SVG library needed.
+const glow = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4 320"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-opacity=".35"/><stop offset=".45" stop-opacity=".12"/><stop offset="1" stop-opacity="0"/></linearGradient></defs><rect width="4" height="320" fill="url(#g)"/></svg>`;
+for (const scale of [1, 2, 3]) {
+  const out = new URL(`../assets/tabs/glow${scale > 1 ? `@${scale}x` : ""}.png`, import.meta.url);
+  execFileSync("rsvg-convert", ["-w", String(4 * scale), "-h", String(320 * scale), "-o", out.pathname], { input: glow });
 }
 for (const [file, svg] of Object.entries(svgs)) {
   for (const scale of [1, 2, 3]) {
