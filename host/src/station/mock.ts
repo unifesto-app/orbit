@@ -11,9 +11,9 @@ export const venues: Venue[] = [
   {
     id: 'respawn-zone', name: 'Respawn Zone', initials: 'RZ', bg: '#12002B', fg: '#22D3EE', area: 'Gachibowli', open: [11, 26],
     types: [
-      { id: 'pc', name: 'Gaming PC', count: 12, unit: ['PC', 'PCs'], step: 30, whole: false, price: 16200, offPeak: { from: 11, to: 16, weekdays: true, price: 12000 } },
-      { id: 'ps5', name: 'PS5', count: 4, unit: ['PS5', 'PS5s'], step: 30, whole: false, price: 25000 },
-      { id: 'vr', name: 'VR bay', count: 2, unit: ['bay', 'bays'], step: 30, whole: false, price: 40000 },
+      { id: 'pc', name: 'Gaming PC', count: 12, unit: ['PC', 'PCs'], step: 30, whole: false, price: 16200, offPeak: { from: 11, to: 16, weekdays: true, price: 12000 }, games: 'Valorant, CS2, Dota 2, Fortnite' },
+      { id: 'ps5', name: 'PS5', count: 4, unit: ['PS5', 'PS5s'], step: 30, whole: false, price: 25000, coop: 35000, games: 'EA FC 25, Tekken 8, Spider-Man 2' },
+      { id: 'vr', name: 'VR bay', count: 2, unit: ['bay', 'bays'], step: 30, whole: false, price: 40000, games: 'Beat Saber, Superhot' },
     ],
   },
   {
@@ -155,4 +155,66 @@ export function mockMoney(v: Venue, now: number, today: readonly Claim[]) {
     payouts.push({ id: `p${i}`, asked, paise, status: open ? 'requested' : 'paid', ...(open ? {} : { paid: asked + DAY, utr: `${v.initials}N${(asked / 1000).toString(36).toUpperCase().slice(-8)}` }) });
   });
   return { terms: m.terms, bank: m.bank(now), payouts, days };
+}
+
+// Each venue's page and team as its Admin sees them on Venue (Hosts flow: profile, Team and roles, Performers and
+// venues; Play: setting up a venue). Desk names match the scanner's "first at 6:12 PM by Ravi".
+// ponytail: mock until GET /hosts/:id, the team and invites, the "at" links and the venue settings come from the API.
+export type Member = { name: string; role: 'Admin' | 'Desk'; you?: boolean; owner?: boolean };
+export type Invite = { contact: string; role: 'Admin' | 'Desk'; sent: number };
+export type AtAsk = { id: string; title: string; by: string; when: string; series?: boolean };
+const VENUE: Record<string, { kind: string; address: string; deskPhone: string; followers: number; logWalkIns: boolean; cutoff: number; team: Member[]; invites: (now: number) => Invite[]; asks: AtAsk[]; hosted: AtAsk[] }> = {
+  'respawn-zone': {
+    kind: 'Gaming café',
+    address: 'Above Inorbit Mall entrance, Gachibowli, Hyderabad',
+    deskPhone: '+91 90000 11001',
+    followers: 2040,
+    logWalkIns: true,
+    cutoff: 120,
+    team: [
+      { name: 'You', role: 'Admin', you: true, owner: true },
+      { name: 'Nisha R.', role: 'Admin' },
+      { name: 'Ravi K.', role: 'Desk' },
+      { name: 'Sana M.', role: 'Desk' },
+    ],
+    invites: (now) => [{ contact: '+91 90000 22010', role: 'Desk', sent: now - 3 * DAY }],
+    asks: [{ id: 'valorant-night', title: 'Valorant Night Cup', by: 'CircuitFeed', when: 'Fri 27 Nov · 7:00 PM' }],
+    hosted: [{ id: 'campus-esports-cup', title: 'Campus Esports Cup', by: 'Respawn Club', when: 'Sat 28 Nov · 11:00 AM' }],
+  },
+  'kickoff-arena': {
+    kind: 'Turf',
+    address: 'Stadium Road, Gachibowli, Hyderabad',
+    deskPhone: '+91 90000 11002',
+    followers: 1120,
+    logWalkIns: false,
+    cutoff: 120,
+    team: [
+      { name: 'You', role: 'Admin', you: true, owner: true },
+      { name: 'Kiran T.', role: 'Desk' },
+    ],
+    invites: () => [],
+    asks: [{ id: 'sunday-5-a-side', title: 'Sunday 5-a-side Football', by: 'Kickoff Hyderabad', when: 'Every Sunday · 7:00 AM', series: true }],
+    hosted: [],
+  },
+  'smash-court': {
+    kind: 'Badminton courts',
+    address: 'Botanical Garden Road, Kondapur, Hyderabad',
+    deskPhone: '+91 90000 11003',
+    followers: 380,
+    logWalkIns: true,
+    cutoff: 240,
+    team: [
+      { name: 'You', role: 'Admin', you: true, owner: true },
+      { name: 'Deepa V.', role: 'Admin' },
+    ],
+    invites: () => [],
+    asks: [],
+    hosted: [],
+  },
+};
+
+/** A venue's page, settings, team and "at" asks, and its opening hours for each day of the week (Sunday first). */
+export function mockVenue(v: Venue, now: number) {
+  const m = VENUE[v.id];
+  return { ...m, invites: m.invites(now), week: Array.from({ length: 7 }, () => v.open as [number, number] | null) };
 }
