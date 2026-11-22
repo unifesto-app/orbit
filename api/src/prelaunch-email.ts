@@ -76,7 +76,7 @@ u + .body .gd{background:#000;mix-blend-mode:difference}
 </style>
 </head>
 <body class="body b0" style="margin:0;padding:0;${bg(ground)}" bgcolor="${ground}">
-<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:${ground}">There’s more to live beyond the usual.</div>
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:${ground}">There’s more to life beyond the usual.</div>
 <table role="presentation" class="b0" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${ground}" style="${bg(ground)}">
 <tr><td class="b0" align="center" bgcolor="${ground}" style="padding:32px 12px 40px;${bg(ground)}">
 <table role="presentation" class="b0" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${ground}" style="max-width:560px;${bg(ground)}">
@@ -139,7 +139,7 @@ export function welcomeEmail(p: { name: string; features: Feature[] }, site = SI
     lead,
     ...(wants.length ? ["", `You’d love: ${wants.join(", ")}.`] : []),
     "",
-    "There’s more to live beyond the usual.",
+    "There’s more to life beyond the usual.",
     "Instagram: https://www.instagram.com/heyorbit.in",
     "",
     why,
