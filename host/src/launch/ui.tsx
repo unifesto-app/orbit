@@ -6,7 +6,7 @@
 import { DARK_TINT, Glass } from '@orbit/mobile/glass';
 import { color, font, radius, space, stoneAt } from '@orbit/mobile/theme';
 import { Children, Fragment, type ReactNode } from 'react';
-import { Image, type ImageSourcePropType, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, type ImageSourcePropType, Pressable, type StyleProp, StyleSheet, Text, View, type ViewStyle } from 'react-native';
 
 import type { Host } from './data';
 
@@ -14,8 +14,8 @@ const PAD = 16; // a text card's padding (owner, 19 Nov 2026: "remember for card
 const EDGE = 1; // its outline
 const CARD = radius.sm + PAD + EDGE; // corners nest outward from the poster's 6
 const POSTER = 72; // 3:4, so 96 tall
-export const CHEVRON = require('../../assets/tabs/chevron.png');
-export const CARET = require('../../assets/tabs/caret.png');
+const CHEVRON = require('../../assets/tabs/chevron.png');
+const CARET = require('../../assets/tabs/caret.png');
 const GLOW = require('../../assets/tabs/glow.png');
 
 /** The host's colour from the top of the screen, fading into the page by 320pt: a wash behind the page, never text. */
@@ -59,13 +59,55 @@ export function Pill({ label, onPress, dark = false }: { label: string; onPress?
   );
 }
 
-/** One line in a card: a label, a grey value, a control, and a > when the whole row opens something. */
-export function Row({ label, value, right, onPress }: { label: string; value?: string; right?: ReactNode; onPress?: () => void }) {
+/** The top of every Launch tab: the host switcher (its logo, name and caret), and a control on the right. */
+export function HostHead({ host, right }: { host: Host; right?: ReactNode }) {
+  return (
+    <View style={styles.hostHead}>
+      <Pressable style={styles.switcher} accessibilityRole="button" accessibilityLabel={`${host.name}. Switch host`}>
+        <Monogram host={host} size={32} />
+        <Text style={styles.hostName} numberOfLines={1}>
+          {host.name}
+        </Text>
+        <Image source={CARET} style={styles.caret} />
+      </Pressable>
+      {right}
+    </View>
+  );
+}
+
+/** Grey words under a card, as a note on what it holds. */
+export function Note({ children }: { children: string }) {
+  return <Text style={styles.note}>{children}</Text>;
+}
+
+/**
+ * One line in a card: a label, a value (grey, or Stone when `strong`), a control, and a > when the whole row opens
+ * something. `dot` puts the accent's dot before the value, for a state that's good (a verified bank account). A row
+ * reads as one to a screen reader, unless it holds a control of its own; `spoken` replaces what it reads.
+ */
+export function Row({
+  label,
+  value,
+  strong = false,
+  dot = false,
+  right,
+  onPress,
+  spoken,
+}: {
+  label: string;
+  value?: string;
+  strong?: boolean;
+  dot?: boolean;
+  right?: ReactNode;
+  onPress?: () => void;
+  spoken?: string;
+}) {
   const body = (
     <>
       <Text style={styles.label}>{label}</Text>
+      {dot && <View style={styles.dot} />}
       {value !== undefined && (
-        <Text style={styles.value} numberOfLines={1}>
+        <Text style={[styles.value, strong && styles.strong]} numberOfLines={1}>
           {value}
         </Text>
       )}
@@ -74,11 +116,34 @@ export function Row({ label, value, right, onPress }: { label: string; value?: s
     </>
   );
   return onPress ? (
-    <Pressable onPress={onPress} accessibilityRole="button" hitSlop={{ top: PAD / 2, bottom: PAD / 2 }} style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={spoken}
+      hitSlop={{ top: PAD / 2, bottom: PAD / 2 }}
+      style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+    >
       {body}
     </Pressable>
   ) : (
-    <View style={styles.row}>{body}</View>
+    <View style={styles.row} accessible={!right} accessibilityLabel={spoken}>
+      {body}
+    </View>
+  );
+}
+
+/** A card of rows between hairlines (Money's numbers, its commission, the bank account). */
+export function Card({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
+  const rows = Children.toArray(children); // drops the false and null of rows shown only sometimes
+  return (
+    <View style={[styles.card, style]}>
+      {rows.map((row, i) => (
+        <Fragment key={i}>
+          {i > 0 && <View style={styles.hairline} />}
+          {row}
+        </Fragment>
+      ))}
+    </View>
   );
 }
 
@@ -97,7 +162,7 @@ export function EventCard({
   poster?: ImageSourcePropType; // a draft has none yet, so a blank stands in
   when?: string;
   tag?: string; // the repeat tag
-  sold?: string; // "31 of 40 sold · ₹9,269"
+  sold?: string; // "31 of 40 sold · ₹9,269", or Money's "Your earnings ₹9,269"
   share?: number; // 0 to 1, drawn under `sold` in the accent (an element, never text)
   right?: ReactNode; // a control beside the head (a draft's Continue)
   children?: ReactNode;
@@ -148,7 +213,14 @@ export const styles = StyleSheet.create({
   pillText: { fontFamily: font.title, fontSize: 13, color: color.text },
   row: { minHeight: 28, flexDirection: 'row', alignItems: 'center', gap: space.small },
   label: { flex: 1, fontFamily: font.title, fontSize: 15, lineHeight: 20, color: color.text },
-  value: { maxWidth: '50%', fontFamily: font.text, fontSize: 14, color: color.secondary },
+  value: { maxWidth: '60%', fontFamily: font.text, fontSize: 14, color: color.secondary },
+  strong: { color: color.text },
+  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: color.accent }, // an element, so the accent is allowed
+  note: { marginTop: space.small, marginHorizontal: 20, fontFamily: font.text, fontSize: 13, lineHeight: 18, color: color.secondary },
+  hostHead: { height: 44, marginHorizontal: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  switcher: { flexShrink: 1, flexDirection: 'row', alignItems: 'center', gap: space.small },
+  hostName: { flexShrink: 1, fontFamily: font.title, fontSize: 17, color: color.text },
+  caret: { width: 14, height: 14, tintColor: color.secondary },
   chevron: { width: 14, height: 14, tintColor: color.secondary },
   card: { marginHorizontal: 20, padding: PAD, borderRadius: CARD, borderWidth: EDGE, borderColor: color.border, backgroundColor: color.card },
   head: { flexDirection: 'row', alignItems: 'center', gap: 12 },
