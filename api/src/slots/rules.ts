@@ -88,13 +88,14 @@ export function walkIn(
   now: number,
   hrs: number,
   count: number,
+  clock = now, // when holds are read against: a future block starts at `now` but a hold lapses by the real clock
 ): { ok: true; start: number; end: number } | { ok: false; line: string } {
   const { opens, closes: close, state } = hours(week, now);
   if (state === "before") return { ok: false, line: `Opens at ${timeLabel(opens)}` };
   if (state === "after") return { ok: false, line: "Closed for the day" };
   const start = walkInStart(s.step, now);
   const end = Math.min(start + hrs * HOUR, close);
-  const n = (at: number) => taken(claims, s, at, now).free;
+  const n = (at: number) => taken(claims, s, at, clock).free;
   // The step it starts in is checked from now, so a station freed early this step is free for it.
   for (let at = start; at < end; at += s.step * MIN) {
     if (n(Math.max(at, now)) >= count) continue;
@@ -129,15 +130,14 @@ export function stranded(claims: readonly Claim[], stationId: string, count: num
   return [...out].sort((a, b) => a.start - b.start);
 }
 
-/** The live bookings that held under the old week and wouldn't under the new one: outside that day's new hours, or on a
- * day that's now closed. A booking belongs to the opening the old week put it in, so a night past midnight counts. */
-export function outsideWeek(claims: readonly Claim[], oldWeek: Week, newWeek: Week, now: number): Claim[] {
+/** The live bookings the new week leaves outside its hours: not inside the opening the new week puts their start in (a
+ * closed day has none). Read against the new week alone, so a night slot that moves into the next day's hours still fits. */
+export function outsideWeek(claims: readonly Claim[], newWeek: Week, now: number): Claim[] {
   return claims
     .filter((c) => {
       if (!live(c, now)) return false;
-      const day = hours(oldWeek, c.start).day;
-      const h = openOn(newWeek, day);
-      return !h || c.start < day + h[0] * HOUR || c.end > day + h[1] * HOUR;
+      const h = hours(newWeek, c.start);
+      return !(c.start >= h.opens && c.end <= h.closes);
     })
     .sort((a, b) => a.start - b.start);
 }

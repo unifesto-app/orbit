@@ -236,7 +236,7 @@ export const venues = pgTable(
     placeId: text("place_id"),
     deskPhone: text("desk_phone").notNull(),
     week: jsonb("week").$type<Week>().notNull(), // Sunday first; [first hour, last hour] in India time, past 24 runs into the morning; null is closed
-    cutoffMinutes: integer("cutoff_minutes").notNull().default(120), // how long before a start people can still book
+    cutoffMinutes: integer("cutoff_minutes").notNull().default(120), // up to how long before a start a player can cancel for the price back (Play decision 12)
     logsWalkIns: boolean("logs_walk_ins").notNull().default(false),
     createdAt: at("created_at").notNull().defaultNow(),
     updatedAt: at("updated_at").notNull().defaultNow(),

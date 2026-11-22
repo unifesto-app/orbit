@@ -162,6 +162,17 @@ export function rolesRoutes({ db, notify, secret, now = Date.now }: Deps) {
               lte(teamRoles.addedAt, new Date(now() - INVITE_DAYS * DAY)),
             ),
           );
+        // A Desk seat starts here, so it gets the checks an Admin's confirm makes: the host still has a counter and can
+        // change its team, and whoever sent it is still one of its Admins.
+        if (seat.role === "crew") {
+          const [h] = await tx.select().from(hosts).where(eq(hosts.id, seat.hostId)).for("share");
+          if (!h || h.kind !== "venue" || !changeable(h)) return "closed" as const;
+          const [adder] = await tx
+            .select({ id: teamRoles.id })
+            .from(teamRoles)
+            .where(and(eq(teamRoles.hostId, h.id), eq(teamRoles.userId, seat.addedBy), eq(teamRoles.role, "admin"), isNotNull(teamRoles.startedAt), isNull(teamRoles.endedAt)));
+          if (!adder) return undefined;
+        }
         const [row] = await tx
           .update(teamRoles)
           .set({ userId: c.var.user.id, acceptedAt: at(), ...(seat.role === "crew" ? { startedAt: at() } : {}) })
@@ -169,6 +180,7 @@ export function rolesRoutes({ db, notify, secret, now = Date.now }: Deps) {
           .returning();
         return row;
       });
+      if (done === "closed") return fail(c, 409, "hostClosed", "This host can't change its team right now.");
       if (!done) return refuse(c, "notWaiting");
     } catch (e) {
       // One open place per person on a host: an invite by phone and another by email can't both be accepted.

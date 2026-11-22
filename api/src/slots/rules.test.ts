@@ -56,6 +56,9 @@ test("a hold counts until it lapses, no job needed", () => {
   assert.equal(taken([held], pc, at(19), at(18, 31)).free, 12);
   assert.equal(fits([held], pc, at(19), at(20), 9, at(18, 29)), false);
   assert.equal(fits([held], pc, at(19), at(20), 9, at(18, 31)), true);
+  // A block from 7 PM asked at 6:20 PM reads the hold by the real clock, not by its own start (when the hold has lapsed).
+  assert.deepEqual(walkIn([held], every([11, 26]), pc, at(19), 1, 9, at(18, 20)), { ok: false, line: "Only 8 free until 8:00 PM" });
+  assert.equal(walkIn([held], every([11, 26]), pc, at(19), 1, 9).ok, true);
 });
 
 test("a walk-in freed early this step leaves its station free for the next one", () => {
@@ -162,14 +165,19 @@ test("a new week strands bookings outside its hours", () => {
     booking(1, at(19), at(21), { status: "refunded" }), // gone
   ];
   const [a, b, c] = claims;
-  assert.deepEqual(ids(outsideWeek(claims, old, old, now)), []); // no change
+  assert.deepEqual(ids(outsideWeek(claims, old, now)), []); // no change
   const shorter = every([11, 23]);
-  assert.deepEqual(ids(outsideWeek(claims, old, shorter, now)), [b!.id, c!.id]); // the late one, and the night
+  assert.deepEqual(ids(outsideWeek(claims, shorter, now)), [b!.id, c!.id]); // the late one, and the night
   const sundayShut = every([11, 26]);
   sundayShut[0] = null;
-  assert.deepEqual(ids(outsideWeek(claims, old, sundayShut, now)), [a!.id, b!.id, c!.id]);
+  assert.deepEqual(ids(outsideWeek(claims, sundayShut, now)), [a!.id, b!.id, c!.id]);
   const later = every([20, 26]);
-  assert.deepEqual(ids(outsideWeek(claims, old, later, now)), [a!.id]);
-  assert.deepEqual(ids(outsideWeek(claims, old, shorter, at(22, 30))), [b!.id, c!.id]); // b still runs; a played already
-  assert.deepEqual(ids(outsideWeek(claims, old, shorter, at(23, 45))), [c!.id]);
+  assert.deepEqual(ids(outsideWeek(claims, later, now)), [a!.id]);
+  assert.deepEqual(ids(outsideWeek(claims, shorter, at(22, 30))), [b!.id, c!.id]); // b still runs; a played already
+  assert.deepEqual(ids(outsideWeek(claims, shorter, at(23, 45))), [c!.id]);
+  // Sunday now shuts at midnight and Monday opens then: the 1 AM slot sits in Monday's new hours, so nothing is stranded.
+  const moved = every([11, 26]);
+  moved[0] = [11, 24];
+  moved[1] = [0, 24];
+  assert.deepEqual(ids(outsideWeek(claims, moved, now)), []);
 });

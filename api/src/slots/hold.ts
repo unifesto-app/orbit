@@ -1,6 +1,6 @@
 import { and, eq, gt, inArray } from "drizzle-orm";
 import type { Db } from "../db/index.ts";
-import { hosts, stationClaims, stations, venues } from "../db/schema.ts";
+import { hosts, stationClaims, stations, users, venues } from "../db/schema.ts";
 import { fits, hours, HOUR, MIN } from "./rules.ts";
 import { toClaim } from "./routes.ts";
 
@@ -16,19 +16,22 @@ export type HoldInput = { hostId: string; stationId: string; userId: string; sta
 export type Held = typeof stationClaims.$inferSelect;
 export type HoldResult =
   | { ok: true; claim: Held }
-  | { ok: false; error: "notFound" | "hostClosed" | "badTime" | "tooMany" | "full" };
+  | { ok: false; error: "notFound" | "hostClosed" | "badTime" | "badCount" | "tooMany" | "full" };
 
 export async function hold(db: Db, i: HoldInput, now: number): Promise<HoldResult> {
   const at = new Date(now);
   const end = i.start + i.hours * HOUR;
   return db.transaction(async (tx): Promise<HoldResult> => {
-    // The same order of locks as the counter's writes: host, venue, then the station.
+    // The same order of locks as the counter's writes: host, venue, then the station (the person's row in between).
     const [host] = await tx.select().from(hosts).where(eq(hosts.id, i.hostId)).for("share");
     if (!host || host.kind !== "venue") return { ok: false, error: "notFound" };
     if (host.status !== "live") return { ok: false, error: "hostClosed" };
+    // The person too, so two holds of theirs at once take turns and the second lapses the first (one live hold per venue).
+    await tx.select({ id: users.id }).from(users).where(eq(users.id, i.userId)).for("no key update");
     const [venue] = await tx.select().from(venues).where(eq(venues.hostId, i.hostId)).for("share");
     const [s] = await tx.select().from(stations).where(and(eq(stations.id, i.stationId), eq(stations.hostId, i.hostId))).for("update");
     if (!venue || !s || s.archivedAt) return { ok: false, error: "notFound" };
+    if (!Number.isInteger(i.count) || i.count < 1) return { ok: false, error: "badCount" };
     if (i.count > s.count) return { ok: false, error: "tooMany" };
     // On the station's grid, ahead of now, inside one opening of the next 14 days.
     const open = hours(venue.week, i.start);

@@ -493,3 +493,86 @@ test("admit lets people in at the start and release frees a no-show", async () =
     await t.close();
   }
 });
+
+test("a future block sees live holds, the step now is in reads from now, and repeats are safe", async () => {
+  const w = await world();
+  const { t, as, admin, desk, A } = w;
+  try {
+    await w.setup(A, w.everyDay([11, 26]));
+    const ps5 = await w.station(A, w.pc(1, "PS5"));
+    // A live hold tomorrow at 11 AM, as it opens: a block over it is refused while the hold runs, by the real clock.
+    const tomorrow11 = w.base - (18 * HOUR + 20 * MIN) + DAY + 11 * HOUR;
+    const h = await hold(t.db, { hostId: A, stationId: ps5.id, userId: w.booker.me.id, start: tomorrow11, hours: 1, count: 1 }, t.now());
+    assert.ok(h.ok);
+    const blocked = await as(admin)("POST", `/venues/${A}/blocks`, { stationId: ps5.id, hours: 1, count: 1, why: "Party", start: iso(tomorrow11) });
+    assert.equal(blocked.status, 409);
+    assert.equal(blocked.body.error, "noRoom");
+    assert.deepEqual(await hold(t.db, { hostId: A, stationId: ps5.id, userId: w.booker2.me.id, start: tomorrow11 + HOUR, hours: 1, count: 0 }, t.now()), { ok: false, error: "badCount" });
+
+    // One person's two holds at once, on two stations: the second lapses the first.
+    const pcs = await w.station(A, w.pc(4, "PCs"));
+    const eight = w.base + 100 * MIN;
+    const both = await Promise.all([ps5.id, pcs.id].map((stationId) => hold(t.db, { hostId: A, stationId, userId: w.booker2.me.id, start: eight, hours: 1, count: 1 }, t.now())));
+    assert.ok(both.every((r) => r.ok));
+    const mine = await t.db.select().from(stationClaims).where(and(eq(stationClaims.userId, w.booker2.me.id), eq(stationClaims.status, "held")));
+    assert.equal(mine.filter((r) => r.holdEndsAt!.getTime() > t.now()).length, 1);
+
+    // A walk-in freed early: the cell now is in says free at once, as a new walk-in would find it.
+    const solo = await w.station(A, w.pc(1, "Solo"));
+    assert.equal((await w.wi(admin, A, solo.id, 1, 1)).status, 201);
+    t.tick(5 * MIN); // 6:25 PM
+    assert.equal((await as(desk)("POST", `/venues/${A}/walk-ins/free`, { stationId: solo.id })).status, 200);
+    assert.equal(w.freeAt(await w.day(admin, A), solo.id, w.base - 20 * MIN), 1); // the 6:00 PM cell, read at 6:25
+
+    // A host id that isn't one is nothing here, never a server error.
+    const id = h.ok ? h.claim.id : "";
+    assert.equal((await as(admin)("POST", `/venues/abc/claims/${id}/admit`, { total: 1 })).status, 404);
+    assert.equal((await as(admin)("POST", `/venues/abc/claims/${id}/release`)).status, 404);
+    assert.equal((await as(admin)("DELETE", `/venues/abc/blocks/${id}`)).status, 404);
+
+    // Releasing twice: the same answer, and the booker is told once.
+    const late = await w.claim(pcs.id, w.booker.me.id, w.base - 20 * MIN, w.base + 40 * MIN, 1);
+    const r1 = await as(desk)("POST", `/venues/${A}/claims/${late.id}/release`);
+    const r2 = await as(desk)("POST", `/venues/${A}/claims/${late.id}/release`);
+    assert.deepEqual([r1.status, r2.status, r2.body.status], [200, 200, "released"]);
+    assert.equal(t.notices.filter((x) => x.kind === "slotReleased" && x.data?.claimId === late.id).length, 1);
+  } finally {
+    await t.close();
+  }
+});
+
+test("a Desk seat starts only on a Venue that can change its team, from a sitting Admin; a set-up Venue stays a Venue", async () => {
+  const w = await world();
+  const { t, as, admin, stranger, booker, booker2, A, B } = w;
+  try {
+    // A has a Desk seat, so it can't become another kind; B can until it's set up.
+    const k = await as(admin)("PATCH", `/hosts/${A}`, { kind: "company" });
+    assert.equal(k.status, 409);
+    assert.equal(k.body.error, "stillVenue");
+    assert.equal((await as(admin)("PATCH", `/hosts/${B}`, { kind: "company" })).status, 200);
+    assert.equal((await as(admin)("PATCH", `/hosts/${B}`, { kind: "venue" })).status, 200);
+    assert.equal((await w.setup(B, w.everyDay([6, 24]))).status, 201);
+    assert.equal((await as(admin)("PATCH", `/hosts/${B}`, { kind: "company" })).status, 409);
+
+    // An invite from an Admin removed since: it can't start.
+    const adm = await as(admin)("POST", `/hosts/${B}/team`, { to: stranger.p });
+    assert.equal((await as(stranger)("POST", `/invites/${adm.body.id}/accept`)).status, 200);
+    assert.equal((await as(admin)("POST", `/hosts/${B}/team/${adm.body.id}/confirm`)).status, 200);
+    const fromGone = await as(stranger)("POST", `/hosts/${B}/team`, { to: booker.p, role: "desk" });
+    assert.equal(fromGone.status, 201);
+    assert.equal((await as(admin)("DELETE", `/hosts/${B}/team/${adm.body.id}`)).status, 204);
+    const r = await as(booker)("POST", `/invites/${fromGone.body.id}/accept`);
+    assert.equal(r.status, 409);
+    assert.equal(r.body.error, "notWaiting");
+
+    // An invite to a host archived since: it can't start either.
+    const inv = await as(admin)("POST", `/hosts/${B}/team`, { to: booker2.p, role: "desk" });
+    assert.equal(inv.status, 201);
+    assert.equal((await as(admin)("POST", `/hosts/${B}/archive`)).status, 200);
+    const shut = await as(booker2)("POST", `/invites/${inv.body.id}/accept`);
+    assert.equal(shut.status, 409);
+    assert.equal(shut.body.error, "hostClosed");
+  } finally {
+    await t.close();
+  }
+});

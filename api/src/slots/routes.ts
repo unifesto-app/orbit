@@ -190,7 +190,7 @@ export function slotsRoutes({ db, notify, secret, now = Date.now }: Deps) {
           } else {
             if (JSON.stringify(venue.week) !== JSON.stringify(b.week)) {
               const live = byId(await liveBookings(tx, hostId));
-              const out = outsideWeek([...live.values()].map((r) => toClaim(r.claim)), venue.week, b.week, now());
+              const out = outsideWeek([...live.values()].map((r) => toClaim(r.claim)), b.week, now());
               if (out.length) return inTheWay(out.map((o) => live.get(o.id)!), "the old hours");
             }
             await tx.update(venues).set({ ...fields, updatedAt: at() }).where(eq(venues.hostId, hostId));
@@ -308,7 +308,8 @@ export function slotsRoutes({ db, notify, secret, now = Date.now }: Deps) {
     const free: VenueDay["free"] = {};
     for (const s of list) {
       free[s.id] = [];
-      for (let t = h.opens; t < h.closes; t += 30 * MIN) free[s.id]!.push({ at: iso(t), free: takenAt(rule, s, t, now()).free });
+      // The step now is in reads from now, as a walk-in does: a station freed early this step is free again.
+      for (let t = h.opens; t < h.closes; t += 30 * MIN) free[s.id]!.push({ at: iso(t), free: takenAt(rule, s, t <= now() && now() < t + 30 * MIN ? now() : t, now()).free });
     }
     const who = await names(claims.flatMap((r) => [r.userId, r.checkedInBy]));
     const out: VenueDay = {
@@ -327,7 +328,7 @@ export function slotsRoutes({ db, notify, secret, now = Date.now }: Deps) {
     const s = await lockStation(tx, host.id, stationId);
     if (!s || s.archivedAt) return GONE;
     const claims = (await claimsOf(tx, s.id, ref)).map(toClaim);
-    const fit = walkIn(claims, venue.week, { id: s.id, step: s.step as 30 | 60, count: s.count }, ref, hrs, cnt);
+    const fit = walkIn(claims, venue.week, { id: s.id, step: s.step as 30 | 60, count: s.count }, ref, hrs, cnt, now());
     return fit.ok ? { s, start: fit.start, end: fit.end } : no(409, "noRoom", fit.line);
   };
 
@@ -407,7 +408,7 @@ export function slotsRoutes({ db, notify, secret, now = Date.now }: Deps) {
 
   // A claim of this venue, read before its station is locked, and read again under the lock by the caller.
   const stationOf = async (hostId: string, claimId: string) => {
-    if (!isUuid(claimId)) return null;
+    if (!isUuid(hostId) || !isUuid(claimId)) return null;
     const [r] = await db
       .select({ stationId: stationClaims.stationId })
       .from(stationClaims)
@@ -474,6 +475,8 @@ export function slotsRoutes({ db, notify, secret, now = Date.now }: Deps) {
       if (!(await lockStation(tx, host.id, sid))) return GONE;
       const r = await claimUnder(tx, sid, claimId);
       if (!r || r.kind !== "booking") return GONE;
+      // A retried tap on one already released answers as the first did, and tells nobody twice.
+      if (r.status === "released") return { json: await oneClaim(r) };
       if (r.status === "checked_in" || r.admitted > 0) return no(409, "here", "They've checked in.");
       if (r.status !== "paid") return no(409, "notOpen", "That booking can't be released.");
       const d = door(toClaim(r), now());
