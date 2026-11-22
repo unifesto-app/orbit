@@ -1,14 +1,17 @@
 // The app's screens, drawn in HTML on the homepage as Apple draws its own on apple.com (owner, 22 Nov 2026: "instead
 // of screenshots. build an ui in home. like apple site"). Built from the app's parts at its own sizes (a 390pt phone,
 // app/src and mobile/src), then scaled with the frame (phone.module.css). Sample content, as in the store screens, with
-// no place names; the posters are drawn in CSS. Each phone is one picture to a screen reader, its `label`.
+// no place names; the posters are drawn in CSS. Each phone is one picture to a screen reader, its `label`, and its
+// words are no headings.
 import type { ReactNode } from "react";
 import { Icon } from "./icons";
 import s from "./phone.module.css";
 
 export function Phone({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className={s.phone} role="img" aria-label={label}>
+    // data-nosnippet: the sample events inside are a picture of the app, not Orbit's listings, so search keeps them out
+    // of its snippets.
+    <div className={s.phone} role="img" aria-label={label} data-nosnippet>
       <div className={s.screen}>
         <div className={s.status}>
           <span>9:41</span>
@@ -58,10 +61,10 @@ export function HomeScreen() {
           <i className={s.tile} />
           <i className={s.plus}>+</i>
         </div>
-        <span className={`${s.pill} ${s.dark}`}>View events</span>
+        <span className={s.pill}>View events</span>
       </div>
       <div className={s.top}>
-        <span className={`${s.pill} ${s.dark} ${s.place}`}>
+        <span className={`${s.pill} ${s.place}`}>
           <Icon name="pin" size={16} />
           Near you
         </span>
@@ -79,7 +82,7 @@ export function HomeScreen() {
         <i />
         <i />
       </div>
-      <h4 className={s.h}>Your tickets</h4>
+      <p className={s.h}>Your tickets</p>
       <div className={s.ticket}>
         <i className={`${s.thumb} ${s.orange}`} />
         <div>
@@ -89,7 +92,7 @@ export function HomeScreen() {
         </div>
         <span className={`${s.pill} ${s.frost} ${s.small}`}>View ticket</span>
       </div>
-      <h4 className={s.h}>Next from your orbit</h4>
+      <p className={s.h}>Next from your orbit</p>
       <div className={s.feed}>
         <i className={`${s.thumb} ${s.navy}`} />
         <div>
@@ -202,7 +205,7 @@ function EventPage({
             <Icon name="verified" size={14} />
           </span>
         </p>
-        <h4>{title}</h4>
+        <p className={s.title}>{title}</p>
         <p className={s.with}>{lineup}</p>
         <p className={s.state}>
           <i />
@@ -329,7 +332,7 @@ export function SlotScreen() {
       <i className={s.grabber} />
       <div className={s.sheetHead}>
         <span>
-          <h4>Book a slot</h4>
+          <p className={s.sheetTitle}>Book a slot</p>
           <small>Kickoff Arena</small>
         </span>
         <Round light>

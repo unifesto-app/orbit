@@ -13,14 +13,6 @@
   box-sizing: border-box;
 }
 
-/* Jumps within a page (the homepage's answers) glide; moves to another page don't (data-scroll-behavior in the layout),
-   and nothing glides for people who ask for less motion. */
-@media (prefers-reduced-motion: no-preference) {
-  html {
-    scroll-behavior: smooth;
-  }
-}
-
 html {
   background: var(--orbit-ground);
   color: var(--orbit-text);

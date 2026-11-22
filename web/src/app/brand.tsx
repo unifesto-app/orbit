@@ -89,7 +89,7 @@ export function Wordmark({ className }: { className?: string }) {
 // like in artifact", "bring heart to middle ring"): three tilted, crossing rings round the heart, each in two halves.
 // The far halves and four dimmer symbols sit behind the heart; the near halves cross in front of it with a Charcoal
 // gap, and three symbols ride them. Drawn in the kit's own units (its 1000 x 580 board, cropped to the rings), so the
-// gloss and shadows scale with it. The line sits over the lowest part only (page.module.css, .copy), below every
+// gloss and shadows scale with it. The line sits over the lowest part only (site.module.css, .copy), below every
 // symbol, so the rings pass behind the words and no word covers a symbol (owner: "orbit back of text only"). The kit's
 // two low pearls would sit under the words: one moved up its ring, one left out.
 const RINGS = [
@@ -120,20 +120,20 @@ export function Orbits({ className }: { className?: string }) {
         <Ring key={r.points} {...r} />
       ))}
       <g opacity={0.7}>
-        <g filter="url(#sym3d)" data-symbol>
+        <g filter="url(#sym3d)">
           <path d="M 211.7 275.4 L 216.8 288.1 L 230.4 289.0 L 220.0 297.8 L 223.3 311.0 L 211.7 303.8 L 200.2 311.0 L 203.5 297.8 L 193.0 289.0 L 206.6 288.1 Z" transform="rotate(44.6 211.7 295.1)" fill="url(#body)" />
         </g>
-        <g filter="url(#sym3d)" data-symbol>
+        <g filter="url(#sym3d)">
           <path d={SPARK(765.1, 146.4, 19.7)} transform="rotate(-17.5 765.1 146.4)" fill="url(#body)" />
         </g>
-        <g filter="url(#sym3d)" data-symbol>
+        <g filter="url(#sym3d)">
           <path d="M 513.2 91.2 L 516.6 99.7 L 525.7 100.3 L 518.7 106.1 L 520.9 114.9 L 513.2 110.1 L 505.5 114.9 L 507.7 106.1 L 500.7 100.3 L 509.8 99.7 Z" transform="rotate(-18.0 513.2 104.3)" fill="url(#body)" />
         </g>
-        <g filter="url(#sym3d)" data-symbol>
+        <g filter="url(#sym3d)">
           <path d={SPARK(673.9, 134.1, 13.95)} transform="rotate(-16.9 673.9 134.1)" fill="url(#body)" />
         </g>
       </g>
-      <g filter="url(#heart3d)" data-symbol>
+      <g filter="url(#heart3d)">
         <path d={HEART} transform="rotate(12 500 290) translate(500 290) scale(1.25) translate(-500 -500)" fill="url(#body)" />
       </g>
       {near.map((r) => (
@@ -142,13 +142,13 @@ export function Orbits({ className }: { className?: string }) {
           <Ring {...r} />
         </g>
       ))}
-      <g filter="url(#sym3d)" data-symbol>
+      <g filter="url(#sym3d)">
         <circle cx={760} cy={309} r={15} fill="url(#body)" />
       </g>
-      <g filter="url(#sym3d)" data-symbol>
+      <g filter="url(#sym3d)">
         <path d={HEART} transform="rotate(-57.7 300.0 334.1) translate(300.0 334.1) scale(0.420) translate(-500 -500)" fill="url(#body)" />
       </g>
-      <g filter="url(#sym3d)" data-symbol>
+      <g filter="url(#sym3d)">
         <path d={SPARK(81.5, 296.8, 15)} transform="rotate(-57.9 81.5 296.8)" fill="url(#body)" />
       </g>
     </svg>

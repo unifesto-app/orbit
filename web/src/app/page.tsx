@@ -1,14 +1,16 @@
 // Orbit's homepage (owner, 22 Nov 2026: "lets build Orbit's Homepage", then "redesign it based on mobile app"), drawn
-// with the app's own parts: the waitlist pill on Home's dark glass, gliding from the hero to the navbar (dock.tsx), the line in its orbits on Account's 4:3 glass panel
-// with the Sage glow, Orbit's chat bubbles with the orb, the app's screens drawn live as Apple shows its own, the
-// network across India, and the 3D wordmark at the foot as on Account. Orbit isn't open yet, so every way in leads to /waitlist. Copy is only what's
-// already public: the line, llms.txt, the store listing's captions and the fit list.
+// with the app's own parts: the line in its orbits on Account's 4:3 glass panel with the Sage glow, the waitlist pill on
+// Home's dark glass gliding from the hero to the navbar and down to the foot (dock.tsx), Orbit's chat bubbles with the
+// orb, the app's screens drawn live as Apple shows its own (phone.tsx, gallery.tsx), the network across India
+// (network.tsx), and the 3D wordmark at the foot as on Account. Orbit isn't open yet, so every way in leads to /waitlist.
+// Copy is only what's already public: the line, llms.txt, the store listing's captions and the fit list.
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { deepType, Defs, Orbits, Wordmark } from "./brand";
 import { Dock } from "./dock";
 import { Foot } from "./foot";
 import { Gallery } from "./gallery";
+import { Jump } from "./jump";
 import { Network } from "./network";
 import { ChatScreen, ComedyScreen, HackathonScreen, HomeScreen, Phone, SlotScreen } from "./phone";
 import styles from "./page.module.css";
@@ -53,7 +55,7 @@ export default function Home() {
         <Says
           said={[
             <>
-              <strong>Orbit isn’t open yet.</strong>
+              <strong>Orbit isn’t open yet.</strong>{" "}
               Fests in one click, turf, courts and gaming by the hour, hackathons, meetups, and the comedians and bands
               you love. Join the waitlist, and Orbit will say when it opens.
             </>,
@@ -146,13 +148,19 @@ function Says({ said, answers }: { said: ReactNode[]; answers: [string, string][
           </div>
         );
       })}
-      <nav className={styles.answers} aria-label="Answers">
-        {answers.map(([label, href]) => (
-          <Link key={label} href={href} className={styles.answer}>
-            {label}
-          </Link>
-        ))}
-      </nav>
+      <div className={styles.answers}>
+        {answers.map(([label, href]) =>
+          href.startsWith("#") ? (
+            <Jump key={label} href={href as `#${string}`} className={styles.answer}>
+              {label}
+            </Jump>
+          ) : (
+            <Link key={label} href={href} className={styles.answer}>
+              {label}
+            </Link>
+          ),
+        )}
+      </div>
     </div>
   );
 }

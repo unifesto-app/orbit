@@ -31,10 +31,11 @@ export function Gallery({ label, children }: { label: string; children: ReactNod
         {children}
       </div>
       <div className={styles.paddles}>
-        <button type="button" aria-label="Back" disabled={ends[0]} onClick={() => move(-1)} className={styles.flip}>
+        {/* aria-disabled, not disabled, so a focused arrow keeps focus when it reaches its end. */}
+        <button type="button" aria-label="Back" aria-disabled={ends[0]} onClick={() => !ends[0] && move(-1)} className={styles.flip}>
           <Icon name="chevron" size={18} />
         </button>
-        <button type="button" aria-label="Next" disabled={ends[1]} onClick={() => move(1)}>
+        <button type="button" aria-label="Next" aria-disabled={ends[1]} onClick={() => !ends[1] && move(1)}>
           <Icon name="chevron" size={18} />
         </button>
       </div>

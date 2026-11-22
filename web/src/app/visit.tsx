@@ -14,7 +14,7 @@ let started = false;
 const vitals: { lcp?: number; inp?: number; ttfb?: number; cls?: number } = {};
 
 // What the page itself can tell about the visit: where it came from, the link's utm_ tags, the time zone, language and
-// screen. Also sent with a join (waitlist.tsx).
+// screen. Also sent with a join (waitlist/form.tsx).
 // A link's utm_ tags, kept for the rest of the visit: shared links land on the homepage, and the waitlist a click later
 // has none of its own. (The referrer needs no keeping: moves within the site leave document.referrer as it was.)
 let landingUtm: Record<string, string> | undefined;

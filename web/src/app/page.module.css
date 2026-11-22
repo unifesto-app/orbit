@@ -126,15 +126,6 @@
   scroll-margin-top: 72px; /* clear of the pinned capsules when an answer jumps here */
 }
 
-/* Search's centred section heading. */
-.title {
-  margin-bottom: var(--orbit-space-big);
-  text-align: center;
-  font-family: var(--display);
-  font-weight: var(--orbit-weight-headline);
-  font-size: 24px;
-  letter-spacing: -0.02em;
-}
 
 /* Orbit's bubbles (the chat's): 20 round with the 6 tail corner on the speaker's side, Orbit's Charcoal with a faint
    edge, answers outlined on your side. */
@@ -289,11 +280,11 @@
   transition: opacity 0.2s, border-color 0.2s;
 }
 
-.paddles button:hover:not(:disabled) {
+.paddles button:hover:not([aria-disabled="true"]) {
   border-color: rgb(var(--orbit-stone-rgb) / 0.4);
 }
 
-.paddles button:disabled {
+.paddles button[aria-disabled="true"] {
   opacity: 0.35;
   cursor: default;
 }

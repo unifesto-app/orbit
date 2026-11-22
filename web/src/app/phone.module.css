@@ -37,7 +37,7 @@
 }
 
 /* No weight (:where), so a part's own margin wins. */
-:where(.screen) :where(h4, p) {
+:where(.screen) :where(p) {
   margin: 0;
 }
 
@@ -578,7 +578,7 @@
   padding: 18px 20px 0;
 }
 
-.body h4 {
+.body .title {
   font-family: var(--display);
   font-weight: var(--orbit-weight-headline);
   font-size: 26px;
@@ -803,7 +803,7 @@
   display: grid;
 }
 
-.sheetHead h4 {
+.sheetTitle {
   font-family: var(--display);
   font-weight: var(--orbit-weight-headline);
   font-size: 22px;

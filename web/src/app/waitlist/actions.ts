@@ -15,7 +15,7 @@ export type Details = { name: string; phone: string; email: string; dob: string;
 type Sent = { sent?: { phone: string; at: number } };
 export type Step = ({ at: "details"; form?: Details; error?: string } & Sent) | ({ at: "code"; form: Details; error?: string; note?: string } & Sent) | { at: "done"; name: string; email: string };
 
-// What the page itself may tell about the visit (waitlist.tsx); the rest comes from the request's headers.
+// What the page itself may tell about the visit (form.tsx); the rest comes from the request's headers.
 const FromPage = InterestMeta.pick({ referrer: true, utm: true, timezone: true, language: true, screen: true });
 const isFeature = (v: string): v is Feature => Object.hasOwn(FEATURES, v);
 
@@ -40,7 +40,7 @@ export async function sendCode(data: FormData): Promise<Step> {
   // The one box (owner, 18 Nov 2026: "common checkbox along with 18+"): 18 or older, and the Terms and Privacy Policy.
   if (!form.agree) return back("Tick the box to confirm you’re 18 or older and agree to the Terms and Privacy Policy.");
 
-  // Only the name, email or date changed and the last code is still good (waitlist.tsx): checked, nothing sent.
+  // Only the name, email or date changed and the last code is still good (form.tsx): checked, nothing sent.
   if (data.get("reuse")) return { at: "code", form };
   const token = String(data.get("turnstile") ?? "");
   const view = String(data.get("view") ?? "") || undefined; // the page view, for the visit log (contract visit.ts)

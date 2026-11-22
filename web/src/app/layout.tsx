@@ -30,7 +30,7 @@ export const viewport: Viewport = { themeColor: palette.charcoal };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en-IN" data-scroll-behavior="smooth" className={`${display.variable} ${text.variable} ${script.variable}`}>
+    <html lang="en-IN" className={`${display.variable} ${text.variable} ${script.variable}`}>
       <body>
         {/* It reads the address (usePathname), which a page like /careers/[slug] only knows when asked for. It draws
             nothing, so it waits in its own boundary instead of holding up the page. */}
