@@ -1,0 +1,1 @@
+ALTER TABLE "visit" ADD COLUMN "applied" boolean DEFAULT false NOT NULL;

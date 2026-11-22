@@ -38,6 +38,7 @@ export async function apply(slug: string, _: Applied, data: FormData): Promise<A
   for (const [k, v] of Object.entries(fields)) body.set(k, String(v));
   body.set("resume", resume, "resume.pdf");
   body.set("turnstile", String(data.get("turnstile") ?? ""));
+  body.set("view", String(data.get("view") ?? "").slice(0, 36)); // the page view, for the visit log only
   const sent = await call(`/public/openings/${encodeURIComponent(slug)}/apply`, body);
   if (!sent.ok) return { error: sent.code === "notFound" ? "This role isn’t taking applications any more." : sent.error };
   return { done: { name: r.data.name.split(/\s+/)[0]!, email: r.data.email } };

@@ -2,6 +2,7 @@
 
 import { startTransition, useActionState } from "react";
 import { useTurnstile } from "../../../turnstile";
+import { viewId } from "../../../visit";
 import type { Applied } from "../actions";
 import styles from "../careers.module.css";
 
@@ -23,6 +24,7 @@ export function ApplyForm({ action, turnstile }: { action: (prev: Applied, data:
     if (resume instanceof File && resume.size > MAX_BYTES) return { error: TOO_BIG };
     try {
       data.set("turnstile", (await check.take()) ?? "");
+      data.set("view", viewId() ?? ""); // this page view, marked "applied" in the site's visit log (Galaxy's careers sources)
       return await action(prev, data);
     } catch {
       return { error: "Can't reach Orbit right now. Try again in a minute." };

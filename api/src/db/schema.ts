@@ -458,6 +458,7 @@ export const visit = pgTable(
     started: boolean("started").notNull().default(false),
     code: boolean("code").notNull().default(false),
     joined: boolean("joined").notNull().default(false),
+    applied: boolean("applied").notNull().default(false), // a careers view the Apply form was sent from
   },
   (t) => [index("visit_at_idx").on(t.at)],
 );

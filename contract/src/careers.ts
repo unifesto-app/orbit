@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { Tally } from "./prelaunch.ts";
 import { Text } from "./text.ts";
 
 // Careers (owner, 22 Nov 2026: "careers page at heyorbit.in/careers, link to galaxy", "Openings + applications"):
@@ -84,3 +85,26 @@ export type OpeningList = { openings: OpeningAdmin[] };
 export type ApplicationAdmin = Apply & { id: string; status: ApplicationStatus; createdAt: string };
 export type ApplicationList = { applications: ApplicationAdmin[]; total: number; page: number; pageSize: number };
 export const SetApplication = z.object({ status: z.enum(keys(APPLICATION_STATUSES)) });
+
+// GET /galaxy/careers/stats, for holders of People (owner, 22 Nov 2026: "bring analytics for careers"): the careers
+// pages and their applications, summed up. Days are India's (IST), the last 30 counted to today.
+// - Applications come from the applications table (as they stand: a deleted one isn't counted).
+// - Visitors and sources come from the site's own cookieless visit log (contract/src/visit.ts): a visitor is one
+//   visitor-day on /careers or an opening's page, the source is that day's first careers view's, and "applied" is a
+//   visit the Apply form was sent from. Nothing about a visit is stored with the application (though on a quiet day
+//   the times line up, so these numbers stay with People holders). Visits from before applied was tracked show as
+//   not applied.
+export type CareersStats = {
+  total: number; // applications now on file
+  today: number;
+  week: number; // the last 7 days, today included
+  open: number; // openings now Open
+  days: { day: string; count: number }[]; // applications a day, the last 30 days
+  statuses: Tally; // by status, in the pipeline's order, zeros included
+  cities: Tally; // by the opening's city (its Where before the first comma), most first
+  roles: Tally; // by the opening's title without ", <city>", most first
+  openings: Tally; // the 10 openings with the most applications, by full title
+  visitors: number; // visitor-days on the careers pages, the last 30 days
+  funnel: { list: number; opening: number; applied: number }; // visitor-days that saw the list, an opening, and applied
+  sources: { name: string; visitors: number; applied: number }[]; // careers visitor-days by source, most first
+};
