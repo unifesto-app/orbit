@@ -7,7 +7,7 @@ import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Text, TextInput, View } from 'react-native';
 
-import { type BankForm, bankFrom } from '../station/money';
+import { type BankForm, bankFrom } from '../money';
 import { useStation } from '../station/state';
 import { close, Pill, Sheet, SheetSays, styles as ui } from '../station/ui';
 

@@ -5,7 +5,8 @@ import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
 
 import { dayLabel } from '../station/day';
-import { balance, paiseFrom, rupees, WEEK } from '../station/money';
+import { paiseFrom, rupees } from '../money';
+import { balance, WEEK } from '../station/money';
 import { useStation } from '../station/state';
 import { close, Pill, Sheet, SheetSays, styles as ui } from '../station/ui';
 

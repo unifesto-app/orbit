@@ -4,7 +4,8 @@
 // Prices are the people app's (app/src/kinds.ts venues).
 // ponytail: mock until the slots API (H8.1 to H8.5) serves a venue's stations and claims.
 import { type Claim, HOUR, MIN, type StationType, type Venue, hours, indiaMidnight, steps, taken, walkInStart } from './day.ts';
-import { type Bank, type Payout, type Sold, split, type Terms } from './money.ts';
+import type { Bank } from '../money.ts';
+import { type Payout, type Sold, split, type Terms } from './money.ts';
 
 export const venues: Venue[] = [
   {
