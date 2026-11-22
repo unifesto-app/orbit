@@ -10,7 +10,7 @@
 // disc solid to SOLID of its radius and fading out by the rim (orb-field.png), and the chat's 55% Charcoal as the same
 // soft disc (orb-shade.png). Scaled up from the orb they grow soft-edged floods; a sweep round its own centre looks the
 // same at any scale, so only the edge moves.
-// Run: node app/scripts/chat-orb.cjs (from the repo root). Writes assets/orb.png, @2x, @3x, orb-field.png, orb-shade.png.
+// Run: node app/scripts/chat-orb.cjs (from the repo root). Writes mobile/assets/orb.png, @2x, @3x, and app/assets/orb-field.png, orb-shade.png.
 /* global __dirname, Buffer */
 const sharp = require('sharp');
 const path = require('path');
@@ -96,7 +96,7 @@ function softDisc(px, alpha, paint) {
       .ensureAlpha()
       .composite([{ input: Buffer.from(rings(px)) }, { input: round(px), blend: 'dest-in' }])
       .png()
-      .toFile(path.join(__dirname, '..', 'assets', `orb${scale > 1 ? `@${scale}x` : ''}.png`));
+      .toFile(path.join(__dirname, '..', '..', 'mobile', 'assets', `orb${scale > 1 ? `@${scale}x` : ''}.png`)); // shared with the host apps
   }
   console.log('assets: orb');
 })();

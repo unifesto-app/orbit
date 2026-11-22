@@ -13,6 +13,7 @@ import { Note, Page, Pill, SignInNote, styles as kit } from '../account/kit';
 import { inboxDays, timeLabel } from '../inbox';
 import { type Message, useInbox } from '../inboxStore';
 import { events, hosts, now } from '../mock';
+import { ORB } from '../orbitSays';
 import { Monogram, Poster, Section } from '../rows';
 import { markRead, useSignedIn } from '../session';
 import { color, font, space, stoneAt } from '../theme';
@@ -100,7 +101,7 @@ function Picture({ of }: { of: Message['picture'] }) {
   if (e) return <Poster media={e.poster} width={PICTURE} label={e.title} />;
   const h = of && 'host' in of ? hosts.find((x) => x.id === of.host) : undefined;
   if (h) return <Monogram mark={h} size={PICTURE} />;
-  return <Image source={require('../../assets/orb.png')} style={styles.orb} accessibilityIgnoresInvertColors />;
+  return <Image source={ORB} style={styles.orb} accessibilityIgnoresInvertColors />;
 }
 
 const styles = StyleSheet.create({

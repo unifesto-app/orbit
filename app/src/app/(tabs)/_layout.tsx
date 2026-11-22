@@ -31,6 +31,7 @@ import { SafeAreaInsetsContext, useSafeAreaInsets } from 'react-native-safe-area
 // no Liquid Glass it's the fill, dark enough that the page doesn't show through the labels.
 import { useChatUsed } from '../../chatUsed';
 import { DARK_TINT as DARK, Glass } from '../../glass';
+import { ORB } from '../../orbitSays';
 import { BAR, barAfterScroll, barBottom, orbNudge, SIDE, TabBarScroll, TabBarSmall } from '../../tabBar';
 import { color, font, stoneAt } from '../../theme';
 
@@ -182,7 +183,7 @@ function ChatOrb({ bottom }: { bottom: number }) {
       style={({ pressed }) => [styles.orb, { bottom }, pressed && { opacity: 0.8 }]}
     >
       <Glass style={styles.ring} tint={DARK}>
-        <Image source={require('../../../assets/orb.png')} style={styles.disc} />
+        <Image source={ORB} style={styles.disc} />
       </Glass>
     </Pressable>
   );
