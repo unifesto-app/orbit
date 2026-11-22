@@ -7,7 +7,7 @@ import styles from "./careers.module.css";
 import { openings } from "./openings";
 
 // heyorbit.in/careers (owner, 22 Nov 2026: "careers page at heyorbit.in/careers, link to galaxy"): the openings staff
-// mark Open in Galaxy's Careers page, newest first, each opening its own page with the Apply form.
+// mark Open in Galaxy's Careers page, by city, each opening its own page with the Apply form.
 const DESCRIPTION = "Open roles at Orbit, and how to apply.";
 export const metadata: Metadata = {
   title: "Careers",
@@ -51,20 +51,21 @@ async function Openings() {
   const cities = byCity(list);
   return (
     <>
+      <h2>Open roles</h2>
       {cities.length > 1 && (
         <nav className={styles.cities} aria-label="Cities">
-          {cities.map(([city]) => (
-            <a key={city} href={`#${anchor(city)}`}>
+          {cities.map(({ city, id }) => (
+            <a key={id} href={`#${id}`}>
               {city}
             </a>
           ))}
         </nav>
       )}
-      {cities.map(([city, roles]) => (
-        <section key={city} aria-labelledby={anchor(city)}>
-          <h2 id={anchor(city)} className={styles.city}>
+      {cities.map(({ city, id, roles }) => (
+        <section key={id} aria-labelledby={id}>
+          <h3 id={id} className={styles.city}>
             {city}
-          </h2>
+          </h3>
           <ul className={styles.list}>
             {roles.map((o) => (
               <li key={o.slug}>
@@ -85,13 +86,23 @@ async function Openings() {
 // comma ("Pune, mostly from home" is Pune; "Remote in India" is its own group). Cities A to Z, so none reads as first in
 // line; roles A to Z within each. Under a city's heading its name isn't repeated: "Venue Partnerships Intern, Pune"
 // shows as "Venue Partnerships Intern", "Pune, mostly from home" as "mostly from home". Each opening's page keeps both.
-const cityOf = (o: OpeningCard) => o.place.split(",")[0]!.trim();
+// Spellings that differ only in case or punctuation ("Pune", "pune") are one city, shown as first spelled; a city whose
+// name makes no link id (all punctuation) gets "city-2" and the like, so every jump and heading stays its own.
+const cityOf = (o: OpeningCard) => o.place.split(",")[0]!.trim() || o.place;
+const slug = (s: string) => s.toLocaleLowerCase("en-IN").replace(/[^\p{L}\p{M}\p{N}]+/gu, "-").replace(/^-|-$/g, "");
 function byCity(list: OpeningCard[]) {
-  const groups = new Map<string, OpeningCard[]>();
-  for (const o of list) groups.set(cityOf(o), [...(groups.get(cityOf(o)) ?? []), o]);
+  const groups = new Map<string, { city: string; roles: OpeningCard[] }>();
+  for (const o of list) {
+    const city = cityOf(o);
+    const key = slug(city) || city;
+    const group = groups.get(key) ?? { city, roles: [] };
+    group.roles.push(o);
+    groups.set(key, group);
+  }
   const az = (a: string, b: string) => a.localeCompare(b, "en-IN");
-  return [...groups].sort(([a], [b]) => az(a, b)).map(([city, roles]) => [city, roles.sort((a, b) => az(a.title, b.title))] as const);
+  return [...groups.values()]
+    .sort((a, b) => az(a.city, b.city))
+    .map((g, i) => ({ city: g.city, id: slug(g.city) || `city-${i + 1}`, roles: g.roles.sort((a, b) => az(a.title, b.title)) }));
 }
-const anchor = (city: string) => city.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-const unsuffix = (title: string, city: string) => (title.endsWith(`, ${city}`) ? title.slice(0, -city.length - 2) : title);
+const unsuffix = (title: string, city: string) => (title.endsWith(`, ${city}`) && title.length > city.length + 2 ? title.slice(0, -city.length - 2) : title);
 const unprefix = (place: string, city: string) => (place.startsWith(`${city}, `) ? place.slice(city.length + 2) : place === city ? "" : place);

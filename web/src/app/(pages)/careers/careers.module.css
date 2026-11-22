@@ -54,8 +54,14 @@
   border-color: var(--orbit-accent);
 }
 
-/* A city's heading, clear of the top when jumped to. */
+/* A city's heading under "Open roles", clear of the top when jumped to. */
 .city {
+  margin-top: 32px;
+  font-family: var(--display);
+  font-weight: var(--orbit-weight-headline);
+  font-size: 18px;
+  letter-spacing: -0.01em;
+  color: var(--orbit-text-2);
   scroll-margin-top: 24px;
 }
 
