@@ -3,12 +3,15 @@ import * as Application from 'expo-application';
 import { Redirect } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
 
+import { useSession } from '../session';
 import { isLaunch, isStation, variant as v } from '../variant';
 
-// Orbit Station opens on Today and Orbit Launch on Events; Crew shows its name until its own screens come.
+// Orbit Station opens on Today. Orbit Launch opens on Sign in, then the no-host screen (Events in the dev demo). Crew
+// shows its name until its own screens come.
 export default function Index() {
+  const session = useSession();
   if (isStation) return <Redirect href="/today" />;
-  if (isLaunch) return <Redirect href="/events" />;
+  if (isLaunch) return <Redirect href={!session ? '/signin' : 'demo' in session ? '/events' : '/welcome'} />;
   return (
     <View style={s.root}>
       {v ? (
