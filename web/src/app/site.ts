@@ -4,11 +4,22 @@ import { WAITLIST_CONTACT } from "@orbit/contract";
 
 export const SITE = "https://heyorbit.in";
 
-// The search and link-preview description (owner, 18 Nov 2026: "make it seo friendly"). The page itself shows only the
-// line; this names what Orbit has, so search and AI answers can say what it is. It names no
-// place (owner, 21 Nov 2026: was "coming to Hyderabad").
+// The search and link-preview descriptions (owner, 18 Nov 2026: "make it seo friendly"): what Orbit has, so search and
+// AI answers can say what it is. They name no place (owner, 21 Nov 2026: was "coming to Hyderabad").
 export const DESCRIPTION =
+  "There’s more to live beyond the usual. Fests in one click, turf, courts and gaming by the hour, hackathons, meetups, and the comedians and bands you love, on Orbit.";
+export const WAITLIST_DESCRIPTION =
   "Join the Orbit waitlist for fests in one click, turf, courts and gaming by the hour, hackathons, meetups, and the comedians and bands you love.";
+
+// Who Orbit is for, so the right people see themselves and the rest pass (owner, 19 Nov 2026), on the homepage and the
+// waitlist.
+export const FIT = [
+  "You’ve said “there’s nothing to do this weekend” and didn’t quite believe it.",
+  "You usually hear about the good stuff a day late.",
+  "You’d try a jam, a comedy night or a hackathon with people you haven’t met yet.",
+  "You’d rather book the turf than plan it over twenty messages.",
+  "You want what’s on near you in one place, not spread across ten WhatsApp groups.",
+];
 
 // One address with the welcome email (api/src/prelaunch-email.ts).
 export const CONTACT = WAITLIST_CONTACT;

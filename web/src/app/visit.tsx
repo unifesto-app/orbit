@@ -14,12 +14,18 @@ let started = false;
 const vitals: { lcp?: number; inp?: number; ttfb?: number; cls?: number } = {};
 
 // What the page itself can tell about the visit: where it came from, the link's utm_ tags, the time zone, language and
-// screen. Also sent with a join (waitlist.tsx).
+// screen. Also sent with a join (waitlist/form.tsx).
+// A link's utm_ tags, kept for the rest of the visit: shared links land on the homepage, and the waitlist a click later
+// has none of its own. (The referrer needs no keeping: moves within the site leave document.referrer as it was.)
+let landingUtm: Record<string, string> | undefined;
+
 export function pageFacts() {
-  const utm = Object.fromEntries([...new URLSearchParams(location.search)].filter(([k]) => k.startsWith("utm_")).slice(0, 10).map(([k, v]) => [k.slice(0, 40), v.slice(0, 200)]));
+  const own = Object.fromEntries([...new URLSearchParams(location.search)].filter(([k]) => k.startsWith("utm_")).slice(0, 10).map(([k, v]) => [k.slice(0, 40), v.slice(0, 200)]));
+  const utm = Object.keys(own).length ? own : landingUtm;
+  landingUtm ??= utm;
   return {
     referrer: document.referrer.slice(0, 1000) || undefined,
-    utm: Object.keys(utm).length ? utm : undefined,
+    utm,
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone?.slice(0, 64),
     language: navigator.language?.slice(0, 35),
     screen: `${screen.width}x${screen.height}@${Math.round(devicePixelRatio * 100) / 100}`.slice(0, 20),

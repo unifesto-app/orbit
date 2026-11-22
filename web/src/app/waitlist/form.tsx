@@ -2,9 +2,9 @@
 
 import { useActionState, useState } from "react";
 import { type Details, join, sendCode, type Step } from "./actions";
-import styles from "./page.module.css";
-import { useTurnstile } from "./turnstile";
-import { formStarted, pageFacts, viewId } from "./visit";
+import styles from "../site.module.css";
+import { useTurnstile } from "../turnstile";
+import { formStarted, pageFacts, viewId } from "../visit";
 
 // Two steps and nothing else (owner, 18 Nov 2026: "very simple for user to complete it"): the details with the features
 // they'd love (optional), then the WhatsApp code, which sends itself once six digits are in. `features` comes from the
@@ -45,7 +45,7 @@ const OFFLINE = "Can't reach Orbit right now. Try again in a minute.";
 function Share() {
   const [said, say] = useState<string>();
   async function share() {
-    const url = `${location.origin}/?utm_source=waitlist&utm_medium=share`;
+    const url = `${location.origin}/waitlist?utm_source=waitlist&utm_medium=share`;
     const text = "I’m on the Orbit waitlist. There’s more to live beyond the usual.";
     try {
       if (navigator.share) return await navigator.share({ title: "Orbit", text, url });

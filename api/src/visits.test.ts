@@ -251,3 +251,10 @@ test("website stats: People only, audited, summed in IST days", async () => {
   assert.equal(m.cities.length, 13);
   assert.deepEqual(m.cities.at(-1), { name: "Others", count: 2 });
 });
+
+// Last, so no count above sees its row; it keeps the clock where it is.
+test("the waitlist's own page is a page of its own; an unknown one is refused", async () => {
+  const id = await view("198.51.100.30", { path: "/waitlist" });
+  assert.equal((await row(id))!.path, "/waitlist");
+  assert.equal((await hit("198.51.100.30", { kind: "view", id: randomUUID(), path: "/nope", userAgent: UA })).status, 400);
+});
