@@ -3,7 +3,7 @@
 import { ADULT, ageOn, Dob, FEATURES, type Feature, Interest, InterestMeta, readPhone } from "@orbit/contract";
 import { refresh } from "next/cache";
 import { headers } from "next/headers";
-import { call } from "./call";
+import { call } from "../call";
 
 // The waitlist in two steps (owner, 18 Nov 2026: "Name, Mobile, WhatsApp Otp, DoB", "very simple for user to
 // complete"): the details and the features they'd love, then the WhatsApp code. Checked here first so a code is never

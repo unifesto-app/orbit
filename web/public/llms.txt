@@ -1,6 +1,6 @@
 # Orbit
 
-> There’s more to live beyond the usual. Orbit isn’t open yet; people can join the waitlist at https://heyorbit.in.
+> There’s more to live beyond the usual. Orbit isn’t open yet; people can join the waitlist at https://heyorbit.in/waitlist.
 
 ## What Orbit will have
 
@@ -13,12 +13,14 @@
 
 ## The waitlist
 
-- Join at https://heyorbit.in with a name, a WhatsApp number (confirmed with a 6-digit WhatsApp code), an email address and a date of birth. Orbit is for people 18 and over.
+- Join at https://heyorbit.in/waitlist with a name, a WhatsApp number (confirmed with a 6-digit WhatsApp code), an email address and a date of birth. Orbit is for people 18 and over.
 - Joining is free and is not an account. Orbit will say when it opens.
 
 ## Links
 
-- [Waitlist](https://heyorbit.in): the only page until launch
+- [Home](https://heyorbit.in): what Orbit is
+- [Waitlist](https://heyorbit.in/waitlist): join before launch
+- [Careers](https://heyorbit.in/careers)
 - [Terms](https://heyorbit.in/terms)
 - [Privacy Policy](https://heyorbit.in/privacy)
 - [Instagram](https://www.instagram.com/heyorbit.in)
