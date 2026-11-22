@@ -447,7 +447,8 @@ export function slotsRoutes({ db, notify, secret, now = Date.now }: Deps) {
     return write(c, hostId, false, "share", async (tx, { host, userId }) => {
       if (!(await lockStation(tx, host.id, sid))) return GONE;
       const r = await claimUnder(tx, sid, claimId);
-      if (!r || r.kind !== "booking" || (r.status !== "paid" && r.status !== "checked_in")) return GONE;
+      // A refunded or released booking reaches the scan order below, so the desk is told why it won't let them in.
+      if (!r || r.kind !== "booking" || !["paid", "checked_in", "refunded", "released"].includes(r.status)) return GONE;
       const rule = toClaim(r);
       const why = scanRefusal(rule, now());
       if (why) return no(409, why.error, why.message);
