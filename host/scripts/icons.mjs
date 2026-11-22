@@ -6,7 +6,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
 const tabs = { today: "calendar-dot-fill", money: "currency-inr-fill", venue: "storefront-fill" };
-const marks = { close: "x-bold" };
+const marks = { close: "x-bold", find: "magnifying-glass-bold", sound: "speaker-high-fill", mute: "speaker-slash-fill" }; // the scanner's too
 const PT = 25; // the app's TAB_PT
 
 const res = await fetch(`https://api.iconify.design/ph.json?icons=${[...Object.values(tabs), ...Object.values(marks)].join(",")}`);

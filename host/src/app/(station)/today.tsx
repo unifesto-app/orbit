@@ -18,23 +18,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { type Claim, type Door, type StationType, type Venue, MIN, dayLabel, door, hourWord, steps, taken, timeLabel } from '../../station/day';
 import { useStation } from '../../station/state';
 import { Head, Pill, Round } from '../../station/ui';
+import { first, range, units, what } from '../../station/words';
 
 const HATCH = require('../../../assets/tabs/hatch.png');
 const SOON = 2 * 60 * MIN; // Next up looks this far ahead
-
-const units = (t: StationType, n: number) => `${n} ${n === 1 ? t.unit[0] : t.unit[1]}`;
-const first = (who = '') => who.split(' ')[0];
-/** "6:00 to 7:00 PM"; the start keeps its AM or PM when the end's differs. */
-function range(a: number, b: number) {
-  const x = timeLabel(a);
-  const y = timeLabel(b);
-  return `${x.slice(-2) === y.slice(-2) ? x.slice(0, -3) : x} to ${y}`;
-}
-/** "2 × Gaming PC"; a pitch or court booked whole is its name. */
-function what(v: Venue, c: Claim) {
-  const t = v.types.find((x) => x.id === c.type)!;
-  return t.whole ? (c.count > 1 ? units(t, c.count) : t.name) : `${c.count} × ${t.name}`;
-}
 
 // Keyed by venue and opening, so a Wait, a row kept after Check in or a picked bar never carries over to another day.
 export default function Today() {
@@ -101,7 +88,11 @@ function NextUp({ touched, onTouch }: { touched: ReadonlySet<string>; onTouch: (
   const { venue: v, claims, now, hours: h, checkIn } = useStation();
   const from = Math.max(now, h.opens);
   const rows = claims.filter(
-    (c) => c.kind === 'booking' && (touched.has(c.id) || (['soon', 'open', 'late', 'noShow'].includes(door(c, now)) && c.start <= from + SOON)),
+    (c) =>
+      c.kind === 'booking' &&
+      (touched.has(c.id) ||
+        (['soon', 'open', 'late', 'noShow'].includes(door(c, now)) && c.start <= from + SOON) ||
+        (door(c, now) === 'here' && (c.in ?? 0) < c.count)), // part of a group in: the rest are still due
   );
   return (
     <>
@@ -123,7 +114,7 @@ function NextUp({ touched, onTouch }: { touched: ReadonlySet<string>; onTouch: (
               open: [styles.dot, 'Check-in open'],
               late: [styles.dotLate, `${mins} min late`],
               noShow: [styles.dotLate, `${mins} min late · can be released`],
-              here: [styles.dot, `Here · checked in ${timeLabel(c.checkedIn ?? now)}`],
+              here: [styles.dot, (c.in ?? 0) < c.count ? `${c.in ?? 0} of ${c.count} in · since ${timeLabel(c.checkedIn ?? now)}` : `Here · checked in ${timeLabel(c.checkedIn ?? now)}`],
               ended: [styles.dot, 'Played'],
               missed: [styles.dotLate, 'Never came'],
               released: [styles.dotLate, 'Released'],
