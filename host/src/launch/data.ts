@@ -1,5 +1,5 @@
 // Orbit Launch's mock: one host the viewer is an Admin of, its events with their sales, a draft, an invite not yet
-// accepted and the Inbox's unread count, following the Hosts, Money and Event day flow docs (paise, India time). It is
+// accepted, the commission terms and the bank account, following the Hosts, Money and Event day flow docs (paise, India time). It is
 // the Orbit app's Console mock (git 58351ce^1: app/src/console/data.ts), as Events take 1 draws it on Fri 20 Nov.
 // ponytail: static, at a fixed `now`. It goes as GET /me (teams), GET /hosts/:id and the events, sales and inbox
 // endpoints land; then the Events tab also follows the viewer's role (an Event lead sees only their events).
@@ -72,6 +72,3 @@ export const drafts = [{ id: 'draft-new-year-open-mic', name: 'New Year’s Eve 
 
 // Event roles sent and not yet accepted, shown on their event's card (Roles by use case: Event lead and Crew).
 export const invites = [{ eventId: 'open-mic-night', role: 'Crew' }];
-
-// New in the Inbox since it was last opened: bookings, refund requests, payouts, invites accepted, performers' asks.
-export const unread = 3;
