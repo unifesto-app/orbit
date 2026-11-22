@@ -23,7 +23,7 @@ export function applicationEmail(p: { name: string; title: string; slug: string 
     "",
     lead,
     "",
-    "There’s more to live beyond the usual.",
+    "There’s more to life beyond the usual.",
     `The role: ${role}`,
     "",
     why,
