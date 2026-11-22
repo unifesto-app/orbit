@@ -9,7 +9,7 @@ import { applicationEmail } from "./careers-email.ts";
 import type { Media } from "./media.ts";
 import { proofs } from "./auth/proof.ts";
 import { applications, auditLog, openings } from "./db/schema.ts";
-import { bucketOf, fail, invalid, ipOf, isUuid, listPage, parse, signedIn, taken } from "./http.ts";
+import { bucketOf, fail, invalid, ipOf, isUuid, listPage, parse, signedIn, taken, unlinked } from "./http.ts";
 import { requireFeature, type StaffEnv } from "./roles/access.ts";
 import { slugFor } from "./slugs.ts";
 import type { Db } from "./db/index.ts";
@@ -118,6 +118,7 @@ export function careersRoutes({ db, store, secret, media, proof, mail, now = Dat
     } catch (e) {
       await dropResume(key);
       if (taken(e)) return dup();
+      if (unlinked(e)) return nope(c); // staff deleted the opening while this was on its way
       throw e;
     }
     // The confirmation, for a new application only. It never holds up or fails the 204: a send that fails is logged.
@@ -185,8 +186,7 @@ export function careersRoutes({ db, store, secret, media, proof, mail, now = Dat
     try {
       [row] = await db.delete(openings).where(eq(openings.id, id)).returning({ title: openings.title });
     } catch (e) {
-      const err = e as { code?: string; cause?: { code?: string } };
-      if ((err.code ?? err.cause?.code) === "23503") return applied();
+      if (unlinked(e)) return applied();
       throw e;
     }
     if (!row) return nope(c);

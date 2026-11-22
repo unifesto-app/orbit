@@ -519,7 +519,8 @@ export const openings = pgTable(
   (t) => [index("openings_status_idx").on(t.status)],
 );
 
-// One per person per opening. No cascade: an opening is closed, never deleted, so applications are never lost with it.
+// One per person per opening. No cascade: an opening can be deleted only while nobody has applied (the key refuses it
+// otherwise), so applications are never lost with it.
 // The résumé is a private file (resumes/<opening>/<random>.pdf), never under /media; `ip` is kept for abuse only.
 export const applications = pgTable(
   "applications",
