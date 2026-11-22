@@ -5,6 +5,7 @@ packages:
   - web
   - app
   - host
+  - mobile
   - galaxy
   - console
 

@@ -41,6 +41,7 @@ import { BarGlass, Glass, useAccessibility } from '../glass';
 import { Icon } from '../icons';
 import { markChatUsed } from '../chatUsed';
 import { useContent } from '../content';
+import { ORB as ORB_ART } from '../orbitSays';
 import { CircleButton } from '../rows';
 import { useSession } from '../session';
 import { RINGS } from '../splash/motion';
@@ -168,7 +169,7 @@ export default function ChatScreen() {
       <Animated.View style={[styles.head, { paddingTop: insets.top + HEAD_TOP, opacity: chrome }]} pointerEvents={live && !closing ? 'auto' : 'none'}>
         <BarGlass scrollY={scrollY} />
         <CircleButton icon="back" label="Back" onPress={close} />
-        <Image source={require('../../assets/orb.png')} style={styles.mark} />
+        <Image source={ORB_ART} style={styles.mark} />
         <Text style={styles.name}>Orbit</Text>
         <View style={styles.grow} />
         <CircleButton icon="info" label={about ? 'Close chat info' : 'Chat info'} onPress={() => setAbout((on) => !on)} />
@@ -383,7 +384,7 @@ function Info({
     <Pressable style={styles.backdrop} onPress={onDismiss} accessibilityLabel="Close chat info">
       <Glass tint={groundAt(0.8)} style={[styles.about, { top, width: Math.min(360, width - 32) }]} accessibilityViewIsModal>
         <View style={styles.who}>
-          <Image source={require('../../assets/orb.png')} style={styles.whoMark} />
+          <Image source={ORB_ART} style={styles.whoMark} />
           <View style={styles.grow}>
             <Text style={styles.welcomeTitle}>Orbit</Text>
             <Text style={styles.aboutLine}>Your guide to events and places near you</Text>
@@ -540,7 +541,7 @@ const FACE = 28;
 function Said({ mine, children }: { mine: boolean; children: ReactNode }) {
   return (
     <View style={[styles.said, mine ? styles.saidMine : styles.saidTheirs]}>
-      {mine ? children : <Image source={require('../../assets/orb.png')} style={styles.face} accessibilityIgnoresInvertColors />}
+      {mine ? children : <Image source={ORB_ART} style={styles.face} accessibilityIgnoresInvertColors />}
       {mine ? <You /> : children}
     </View>
   );

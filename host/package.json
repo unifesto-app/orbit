@@ -4,12 +4,16 @@
   "private": true,
   "main": "expo-router/entry",
   "dependencies": {
+    "@expo-google-fonts/dm-sans": "^0.4.2",
+    "@expo-google-fonts/plus-jakarta-sans": "^0.4.2",
     "@expo-google-fonts/sacramento": "^0.4.1",
+    "@orbit/mobile": "workspace:*",
     "@orbit/tokens": "workspace:*",
     "expo": "~58.0.26",
     "expo-application": "~58.1.2",
     "expo-constants": "~58.0.16",
     "expo-font": "~58.0.12",
+    "expo-glass-effect": "~58.0.5",
     "expo-linking": "~58.0.17",
     "expo-router": "~58.0.32",
     "expo-status-bar": "~58.0.5",
@@ -27,6 +31,7 @@
     "ios:launch": "APP_VARIANT=launch expo prebuild --clean -p ios && APP_VARIANT=launch expo run:ios --device --port 8082",
     "ios:station": "APP_VARIANT=station expo prebuild --clean -p ios && APP_VARIANT=station expo run:ios --device --port 8082",
     "ios:crew": "APP_VARIANT=crew expo prebuild --clean -p ios && APP_VARIANT=crew expo run:ios --device --port 8082",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --test \"src/**/*.test.ts\""
   }
 }
