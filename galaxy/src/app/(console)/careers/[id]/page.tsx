@@ -5,7 +5,7 @@ import { Suspense } from "react";
 import { read } from "../../../../api";
 import { Alert, Container, PageHeader, Pages, ui } from "../../../ui";
 import styles from "../careers.module.css";
-import { DeleteApplication, OpeningForm, StatusPicker } from "../form";
+import { DeleteApplication, DeleteOpening, OpeningForm, StatusPicker } from "../form";
 import { SITE } from "../site";
 
 // One opening: its editor, then everyone who applied, newest first, each with their résumé (downloaded through
@@ -117,6 +117,11 @@ async function Body({ params, searchParams }: PageProps<"/careers/[id]">) {
           Made {when(createdAt)}, last saved {when(updatedAt)}. Its link never changes, so a shared one keeps working.
         </p>
         <OpeningForm id={openingId} initial={opening} />
+        {applications === 0 ? (
+          <DeleteOpening id={openingId} />
+        ) : (
+          <p className={ui.secondary}>People have applied, so this opening can’t be deleted. Set it to Closed to take it off the site.</p>
+        )}
       </Container>
     </>
   );

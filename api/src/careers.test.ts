@@ -312,3 +312,25 @@ test("the applicant gets one email for a new application", async () => {
   await new Promise((r) => setImmediate(r));
   assert.equal(mine().length, 1, "a repeat sends none");
 });
+
+test("delete an opening", async () => {
+  const people = await staff("people");
+  const plain = await staff();
+  const gone = (await people("POST", "/galaxy/openings", opening({ status: "draft", title: "Delete Me" }))).body;
+  const kept = (await people("POST", "/galaxy/openings", opening({ title: "Has Applicants" }))).body;
+  assert.equal((await apply(kept.slug, { email: "del@example.com" })).status, 204);
+
+  assert.equal((await plain("DELETE", `/galaxy/openings/${gone.id}`)).status, 404, "needs People");
+  assert.equal((await people("DELETE", "/galaxy/openings/nope")).status, 404);
+  assert.equal((await people("DELETE", "/galaxy/openings/00000000-0000-4000-8000-000000000000")).status, 404);
+
+  const r = await people("DELETE", `/galaxy/openings/${kept.id}`);
+  assert.equal(r.status, 409);
+  assert.equal(r.body.error, "applied");
+  assert.equal((await t.db.select().from(openings).where(eq(openings.id, kept.id))).length, 1);
+
+  assert.equal((await people("DELETE", `/galaxy/openings/${gone.id}`)).status, 204);
+  assert.equal((await people("GET", "/galaxy/openings")).body.openings.some((o: any) => o.id === gone.id), false);
+  const log = (await t.db.select().from(auditLog)).find((a) => a.action === "careers.opening.delete");
+  assert.deepEqual(log?.data, { id: gone.id, title: "Delete Me" });
+});

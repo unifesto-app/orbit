@@ -4,7 +4,7 @@ import { APPLICATION_STATUSES, type ApplicationStatus, type Opening, OPENING_KIN
 import { type ReactNode, startTransition, useActionState, useState, useTransition } from "react";
 import { ui } from "../../ui";
 import act from "../act.module.css";
-import { removeApplication, type Saved, saveOpening, setStatus } from "./actions";
+import { removeApplication, removeOpening, type Saved, saveOpening, setStatus } from "./actions";
 import styles from "./careers.module.css";
 
 // The opening's editor, the same for a new one and a saved one. Lists are one line each, as the site shows them.
@@ -143,6 +143,28 @@ export function DeleteApplication({ id, name }: { id: string; name: string }) {
           className={ui.btn}
           disabled={pending}
           onClick={() => start(async () => setError((await removeApplication(id)).error))}
+        >
+          Delete for good
+        </button>
+        {error && <span role="alert" className={styles.error}>{error}</span>}
+      </div>
+    </details>
+  );
+}
+
+export function DeleteOpening({ id }: { id: string }) {
+  const [pending, start] = useTransition();
+  const [error, setError] = useState<string>();
+  return (
+    <details className={act.act}>
+      <summary className={ui.btnLink}>Delete opening</summary>
+      <div className={styles.confirm}>
+        <p>Delete this opening for good? Its link stops working.</p>
+        <button
+          type="button"
+          className={ui.btn}
+          disabled={pending}
+          onClick={() => start(async () => setError((await removeOpening(id)).error))}
         >
           Delete for good
         </button>
