@@ -6,3 +6,4 @@ import { variants } from '../variants';
 // client is added the config comes from Metro, so it would be whichever variant Metro started with.
 export const variant = Object.values(variants).find((x) => x.id === Application.applicationId);
 export const isStation = variant?.id === variants.station.id;
+export const isLaunch = variant?.id === variants.launch.id;
