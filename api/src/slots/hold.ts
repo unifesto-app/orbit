@@ -22,12 +22,12 @@ export async function hold(db: Db, i: HoldInput, now: number): Promise<HoldResul
   const at = new Date(now);
   const end = i.start + i.hours * HOUR;
   return db.transaction(async (tx): Promise<HoldResult> => {
-    // The same order of locks as the counter's writes: host, venue, then the station (the person's row in between).
+    // The person first, as suspending or deleting them locks them before their hosts: so two holds of theirs at once
+    // take turns and the second lapses the first (one live hold per venue). Then the counter's order: host, venue, station.
+    await tx.select({ id: users.id }).from(users).where(eq(users.id, i.userId)).for("no key update");
     const [host] = await tx.select().from(hosts).where(eq(hosts.id, i.hostId)).for("share");
     if (!host || host.kind !== "venue") return { ok: false, error: "notFound" };
     if (host.status !== "live") return { ok: false, error: "hostClosed" };
-    // The person too, so two holds of theirs at once take turns and the second lapses the first (one live hold per venue).
-    await tx.select({ id: users.id }).from(users).where(eq(users.id, i.userId)).for("no key update");
     const [venue] = await tx.select().from(venues).where(eq(venues.hostId, i.hostId)).for("share");
     const [s] = await tx.select().from(stations).where(and(eq(stations.id, i.stationId), eq(stations.hostId, i.hostId))).for("update");
     if (!venue || !s || s.archivedAt) return { ok: false, error: "notFound" };

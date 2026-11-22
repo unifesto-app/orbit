@@ -74,11 +74,12 @@ export function hostsRoutes({ db, notify, secret, now = Date.now }: Deps) {
           .where(and(eq(teamRoles.hostId, host.id), eq(teamRoles.userId, c.var.user.id), eq(teamRoles.role, "admin"), isNotNull(teamRoles.startedAt), isNull(teamRoles.endedAt)));
         if (!seat) return "gone" as const;
         if (!changeable(cur!)) return "closed" as const;
-        // A Venue with its counter set up, or Desk seats, stays a Venue: as anything else its bookings couldn't be
-        // checked in or released (slots routes answer only Venue hosts).
+        // A Venue with its counter set up, or a Desk seat that has started, stays a Venue: as anything else its bookings
+        // couldn't be checked in or released (slots routes answer only Venue hosts). A waiting Desk invite doesn't count:
+        // accept refuses on a host that's no longer a Venue.
         if (b.kind !== undefined && b.kind !== "venue" && cur!.kind === "venue") {
           const [v] = await tx.select({ id: venues.hostId }).from(venues).where(eq(venues.hostId, host.id));
-          const [desk] = await tx.select({ id: teamRoles.id }).from(teamRoles).where(and(eq(teamRoles.hostId, host.id), eq(teamRoles.role, "crew"), isNull(teamRoles.endedAt)));
+          const [desk] = await tx.select({ id: teamRoles.id }).from(teamRoles).where(and(eq(teamRoles.hostId, host.id), eq(teamRoles.role, "crew"), isNotNull(teamRoles.startedAt), isNull(teamRoles.endedAt)));
           if (v || desk) return "venue" as const;
         }
         if (b.slug && b.slug !== cur!.slug) {

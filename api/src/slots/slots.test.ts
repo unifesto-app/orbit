@@ -576,3 +576,18 @@ test("a Desk seat starts only on a Venue that can change its team, from a sittin
     await t.close();
   }
 });
+
+test("a Desk invite nobody has accepted doesn't keep a host a Venue, and can't start once it isn't one", async () => {
+  const w = await world();
+  const { t, as, admin, booker, B } = w;
+  try {
+    const inv = await as(admin)("POST", `/hosts/${B}/team`, { to: booker.p, role: "desk" });
+    assert.equal(inv.status, 201);
+    assert.equal((await as(admin)("PATCH", `/hosts/${B}`, { kind: "company" })).status, 200);
+    const r = await as(booker)("POST", `/invites/${inv.body.id}/accept`);
+    assert.equal(r.status, 409);
+    assert.equal(r.body.error, "hostClosed");
+  } finally {
+    await t.close();
+  }
+});
