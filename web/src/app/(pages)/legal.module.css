@@ -33,7 +33,6 @@
   font-weight: var(--orbit-weight-display);
   font-size: clamp(36px, 6vw, 52px);
   line-height: 1.05;
-  letter-spacing: var(--orbit-tracking-display);
 }
 
 .updated {
@@ -47,7 +46,6 @@
   font-family: var(--display);
   font-weight: var(--orbit-weight-headline);
   font-size: 20px;
-  letter-spacing: -0.01em;
 }
 
 .doc p,

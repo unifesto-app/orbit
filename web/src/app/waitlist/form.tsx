@@ -116,7 +116,7 @@ export function Waitlist({ features, turnstile }: { features: [string, string][]
       <div className={styles.done}>
         <div role="status" className={styles.joined}>
           <p className={styles.aside}>see you soon</p>
-          <h2 className={styles.title}>You’re in, {s.name}.</h2>
+          <h2 className={styles.title}>You’re in, {s.name}</h2>
         </div>
         <Share />
       </div>

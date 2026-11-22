@@ -19,12 +19,13 @@ import base from "./site.module.css";
 
 // What Orbit will have, as Apple shows its own: a row of tiles that scrolls sideways, each a headline from the store
 // listing's captions (its second half in the 3D type), one line, and the app's screen drawn live under it (phone.tsx).
-const CHAPTERS: { tag: string; head: [string, string]; line: string; label: string; Screen: () => ReactNode }[] = [
-  { tag: "Home", head: ["What’s on this week,", "in one place."], line: "Your tickets, the hosts you follow, and what’s on near you.", label: "Orbit’s Home", Screen: HomeScreen },
-  { tag: "Ask Orbit", head: ["Not sure what to do?", "Just ask."], line: "Ask Orbit about events, places to play and hosts near you.", label: "Orbit’s chat", Screen: ChatScreen },
-  { tag: "Performers", head: ["Know who’s on stage", "before you go."], line: "Follow comedians and bands, and tap “Loved it” after the show.", label: "An open mic night on Orbit", Screen: ComedyScreen },
-  { tag: "Hackathons", head: ["Hackathons,", "start to finish."], line: "Teams, rounds, announcements and results in one place.", label: "A hackathon on Orbit", Screen: HackathonScreen },
-  { tag: "Play", head: ["Book the hour", "that suits you."], line: "Turf, courts and gaming cafés, by the hour.", label: "Booking a slot on Orbit", Screen: SlotScreen },
+// No label over a headline and no full stop at its end (owner, 22 Nov 2026: the list of AI-design tells, "fix in web").
+const CHAPTERS: { head: [string, string]; line: string; label: string; Screen: () => ReactNode }[] = [
+  { head: ["What’s on this week,", "in one place"], line: "Your tickets, the hosts you follow, and what’s on near you.", label: "Orbit’s Home", Screen: HomeScreen },
+  { head: ["Not sure what to do?", "Just ask"], line: "Ask Orbit about events, places to play and hosts near you.", label: "Orbit’s chat", Screen: ChatScreen },
+  { head: ["Know who’s on stage", "before you go"], line: "Follow comedians and bands, and tap “Loved it” after the show.", label: "An open mic night on Orbit", Screen: ComedyScreen },
+  { head: ["Hackathons,", "start to finish"], line: "Teams, rounds, announcements and results in one place.", label: "A hackathon on Orbit", Screen: HackathonScreen },
+  { head: ["Book the hour", "that suits you"], line: "Turf, courts and gaming cafés, by the hour.", label: "Booking a slot on Orbit", Screen: SlotScreen },
 ];
 
 export default function Home() {
@@ -73,10 +74,9 @@ export default function Home() {
           What Orbit will have
         </h2>
         <Gallery label="What Orbit will have">
-          {CHAPTERS.map(({ tag, head, line, label, Screen }) => (
+          {CHAPTERS.map(({ head, line, label, Screen }) => (
             <article key={label} className={styles.tile}>
               <div className={styles.words}>
-                <p className={styles.tag}>{tag}</p>
                 <h3>
                   {head[0]}{" "}
                   <span className={base.deep} style={{ backgroundImage: deepType }}>
@@ -95,14 +95,10 @@ export default function Home() {
 
       <section className={`${styles.section} ${styles.wide} ${styles.network}`} aria-labelledby="network-title">
         <div>
-          <p className={styles.kicker}>The network</p>
           <h2 id="network-title" className={styles.lead}>
-            One network, city to city.
+            One network, city to city
           </h2>
-          <p className={styles.sub}>
-            Hosts and people across India, joined on one network. Wherever you are, what’s on near you will be on
-            Orbit.
-          </p>
+          <p className={styles.sub}>Hosts and people across India. Wherever you are, what’s on near you will be on Orbit.</p>
         </div>
         <Network className={styles.map} />
       </section>

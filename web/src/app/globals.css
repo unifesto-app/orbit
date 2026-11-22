@@ -80,7 +80,7 @@ input {
 }
 
 .button:hover {
-  border-color: rgb(var(--orbit-stone-rgb) / 0.4);
+  border-color: var(--orbit-text-2);
 }
 
 .button:active {

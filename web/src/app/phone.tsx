@@ -279,7 +279,7 @@ export function HackathonScreen() {
             <br />
             ANYTHING
           </b>
-          <em>HACKATHON</em>
+          <em>Hackathon</em>
           <i className={s.code}>&lt;/&gt;</i>
         </div>
       }
