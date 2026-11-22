@@ -6,16 +6,32 @@ import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 
-import { isLaunch } from '../variant';
+import { StationProvider } from '../station/state';
+import { isLaunch, isStation } from '../variant';
 
-// The Orbit app's type (@orbit/mobile/theme's `font` names): Plus Jakarta Sans for heads, DM Sans for text.
+// Station's short sheets (walk-in, block, scan, you) are see-through, so their own frosted glass shows, as the Orbit
+// app's venue sheet: as tall as what's in them, with a grabber.
+const SHEET = {
+  presentation: 'formSheet',
+  sheetAllowedDetents: 'fitToContents',
+  sheetGrabberVisible: true,
+  contentStyle: { backgroundColor: 'transparent' },
+} as const;
+
 export default function Layout() {
   const [loaded, error] = useFonts({ Sacramento_400Regular, DMSans_400Regular, DMSans_500Medium, DMSans_600SemiBold, PlusJakartaSans_600SemiBold, PlusJakartaSans_700Bold });
   if (!loaded && !error) return null;
-  return (
+  const stack = (
     <>
       <StatusBar style="light" />
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: color.ground } }}>
+        {/* Station's own: in Launch and Crew a link to them goes nowhere, since they read Station's state. */}
+        <Stack.Protected guard={isStation}>
+          <Stack.Screen name="(station)" />
+          <Stack.Screen name="walkin" options={SHEET} />
+          <Stack.Screen name="scan" options={SHEET} />
+          <Stack.Screen name="you" options={SHEET} />
+        </Stack.Protected>
         {/* Orbit Launch's own: in Station and Crew a link to them goes nowhere. */}
         <Stack.Protected guard={isLaunch}>
           <Stack.Screen name="(launch)" />
@@ -36,4 +52,5 @@ export default function Layout() {
       </Stack>
     </>
   );
+  return isStation ? <StationProvider>{stack}</StationProvider> : stack;
 }
