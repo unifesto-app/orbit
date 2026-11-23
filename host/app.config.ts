@@ -41,8 +41,9 @@ const config: ExpoConfig = {
     'expo-router',
     'expo-font',
     'expo-secure-store', // the sign-in's Keychain (src/session.ts); on Android, kept out of backups
-    // The ticket scanner (host apps plan, decision 16). Camera only: no microphone on either platform.
-    ['expo-camera', { cameraPermission: '$(PRODUCT_NAME) uses the camera to scan tickets.', microphonePermission: false, recordAudioAndroid: false }],
+    // The ticket scanner (host apps plan, decision 16). Camera only: no microphone on either platform. The full name, not
+    // $(PRODUCT_NAME): that's the Xcode target's, squashed from the label ("PlayPartner").
+    ['expo-camera', { cameraPermission: `${v.name} uses the camera to scan tickets.`, microphonePermission: false, recordAudioAndroid: false }],
   ],
   owner: 'unifesto-app',
 };
