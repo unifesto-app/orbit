@@ -129,7 +129,8 @@
       [
         "@sentry/react-native",
         {
-          "disableAutoUpload": true
+          "organization": "heyorbit",
+          "project": "orbit-app"
         }
       ]
     ],

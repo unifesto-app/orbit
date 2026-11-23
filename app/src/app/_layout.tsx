@@ -14,8 +14,9 @@ import { Splash } from '../splash/Splash';
 import { color } from '../theme';
 
 // Sentry (owner, 23 Nov 2026: "add sentry to orbit"): crashes, errors and a fifth of app starts and screens as traces.
-// Off until EXPO_PUBLIC_SENTRY_DSN is set when the app is built. The SDK's defaults send no personal data, and replay and
-// screenshots stay off, so tickets, QR codes and payment sheets never leave the phone.
+// The DSN comes in at build time: eas.json for EAS builds, app/.env on a Mac; without it Sentry stays off. The SDK's
+// defaults send no personal data, and replay and screenshots stay off, so tickets, QR codes and payment sheets never
+// leave the phone.
 Sentry.init({
   dsn: process.env.EXPO_PUBLIC_SENTRY_DSN,
   environment: __DEV__ ? 'development' : 'production',

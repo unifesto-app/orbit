@@ -11,11 +11,13 @@
     },
     "preview": {
       "corepack": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": { "EXPO_PUBLIC_SENTRY_DSN": "https://ddc790ead5d44d9b1251502a1890210a@o4512480664485888.ingest.us.sentry.io/4512480676610048" }
     },
     "production": {
       "corepack": true,
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": { "EXPO_PUBLIC_SENTRY_DSN": "https://ddc790ead5d44d9b1251502a1890210a@o4512480664485888.ingest.us.sentry.io/4512480676610048" }
     }
   }
 }
