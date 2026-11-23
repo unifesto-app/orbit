@@ -10,6 +10,7 @@
     "@orbit/contract": "workspace:*",
     "@orbit/mobile": "workspace:*",
     "@orbit/tokens": "workspace:*",
+    "@sentry/react-native": "~8.28.1",
     "expo": "~58.0.26",
     "expo-alternate-app-icons": "^11.0.0",
     "expo-apple-authentication": "~58.0.3",

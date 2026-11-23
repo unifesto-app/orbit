@@ -1,6 +1,7 @@
 import { DMSans_400Regular, DMSans_500Medium, DMSans_600SemiBold } from '@expo-google-fonts/dm-sans';
 import { PlusJakartaSans_600SemiBold, PlusJakartaSans_700Bold } from '@expo-google-fonts/plus-jakarta-sans';
 import { Sacramento_400Regular } from '@expo-google-fonts/sacramento';
+import * as Sentry from '@sentry/react-native';
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -11,6 +12,15 @@ import { PushHost } from '../push';
 import { refreshAccount } from '../session';
 import { Splash } from '../splash/Splash';
 import { color } from '../theme';
+
+// Sentry (owner, 23 Nov 2026: "add sentry to orbit"): crashes, errors and a fifth of app starts and screens as traces.
+// Off until EXPO_PUBLIC_SENTRY_DSN is set when the app is built. The SDK's defaults send no personal data, and replay and
+// screenshots stay off, so tickets, QR codes and payment sheets never leave the phone.
+Sentry.init({
+  dsn: process.env.EXPO_PUBLIC_SENTRY_DSN,
+  environment: __DEV__ ? 'development' : 'production',
+  tracesSampleRate: __DEV__ ? 1 : 0.2,
+});
 
 // The tabs always sit under the location sheet, even when the app opens or reloads on /location, so Close has a
 // screen to go back to (without it: "GO_BACK was not handled", and the sheet shows as a plain card).
@@ -26,7 +36,9 @@ const SHEET = {
   contentStyle: { backgroundColor: 'transparent' },
 } as const;
 
-export default function RootLayout() {
+export default Sentry.wrap(RootLayout);
+
+function RootLayout() {
   const [loaded, error] = useFonts({
     PlusJakartaSans_600SemiBold,
     PlusJakartaSans_700Bold,

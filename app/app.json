@@ -125,7 +125,13 @@
         }
       ],
       "expo-web-browser",
-      "expo-apple-authentication"
+      "expo-apple-authentication",
+      [
+        "@sentry/react-native",
+        {
+          "disableAutoUpload": true
+        }
+      ]
     ],
     "extra": {
       "eas": {
