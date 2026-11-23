@@ -12,6 +12,8 @@ test("scrub keeps a failed query's SQL but not its values, contacts or anything 
   const out = scrub(event);
   assert.equal(out.exception.values[0]!.value, 'Failed query: select * from "people" where "phone" = $1\nparams: [removed]');
   assert.deepEqual(out.extra.arguments, ["[mail] waitlist welcome not sent: Email address is not verified: [email]", "[codes] whatsapp [phone] refused"]);
+  const frame = "/repo/node_modules/.pnpm/drizzle-orm@0.45.4_@opentelemetry+api@1.10.0_postgres@4.1.1/node_modules/drizzle-orm/errors.js";
+  assert.equal(scrub(frame), frame);
   assert.equal(out.event_id, event.event_id);
   assert.equal(out.timestamp, event.timestamp);
 });

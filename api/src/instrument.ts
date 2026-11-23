@@ -3,7 +3,7 @@ import * as Sentry from "@sentry/node";
 // Error text can still name people after dataCollection below: drizzle puts a failed query's values after "\nparams: ",
 // and SES and Meta errors can quote the address or number they refused. Every string in an event goes through this.
 const PARAMS = /\nparams: [\s\S]*/g;
-const EMAIL = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
+const EMAIL = /[\w.+-]+@[\w-]+(?:\.[\w-]+)*\.[A-Za-z]{2,}\b/g; // a letter ending, so "drizzle-orm@0.45.4" paths stay
 const PHONE = /\+\d{10,15}|\b91\d{10}\b/g; // +E.164, and Meta's "91…" without the plus
 export const scrub = <T>(v: T): T =>
   (typeof v === "string"
@@ -27,6 +27,7 @@ if (dsn) {
     integrations: [Sentry.captureConsoleIntegration({ levels: ["error"] })],
     // console.log lines ([notify] with a contact, even a deleted account's) would ride along on the next error.
     beforeBreadcrumb: (b) => (b.category === "console" ? null : b),
+    // Also leans on the default normalizeDepth (3): deeper, a DrizzleQueryError's own `params` array would be sent whole.
     beforeSend: scrub,
     // The SDK sends bodies, headers, cookies, query strings and local variables by default. Here those hold sign-in
     // codes, phone numbers, emails, tokens and résumés, so none of it goes: only the error, its stack and the route.
