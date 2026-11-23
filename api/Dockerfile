@@ -7,4 +7,4 @@ RUN pnpm install --frozen-lockfile --filter @orbit/api...
 ENV NODE_ENV=production PORT=3000
 EXPOSE 3000
 WORKDIR /repo/api
-CMD ["node", "--experimental-strip-types", "src/server.ts"]
+CMD ["node", "--experimental-strip-types", "--import", "./src/instrument.ts", "src/server.ts"]

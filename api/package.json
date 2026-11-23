@@ -7,8 +7,8 @@
     "node": ">=24"
   },
   "scripts": {
-    "dev": "node --experimental-strip-types --watch src/server.ts",
-    "start": "node --experimental-strip-types src/server.ts",
+    "dev": "node --experimental-strip-types --import ./src/instrument.ts --watch src/server.ts",
+    "start": "node --experimental-strip-types --import ./src/instrument.ts src/server.ts",
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-strip-types --test --test-concurrency=1 'src/**/*.test.ts'",
     "build": "tsc --noEmit",
@@ -20,6 +20,7 @@
     "@hono/node-server": "^1.19.0",
     "@orbit/contract": "workspace:*",
     "@orbit/tokens": "workspace:*",
+    "@sentry/node": "^11.16.0",
     "@simplewebauthn/server": "~14.0.3",
     "drizzle-orm": "^0.45.4",
     "hono": "^4.9.0",
