@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { CONTACT, LEGAL_UPDATED, OPEN_GRAPH, X_HANDLE } from "../../site";
+import { CONTACT, OPEN_GRAPH, PRIVACY_UPDATED, X_HANDLE } from "../../site";
 import styles from "../legal.module.css";
 
 // The waitlist's privacy policy: exactly what the page and the API keep (api/src/prelaunch.ts, contract
@@ -19,7 +19,7 @@ export default function Privacy() {
   return (
     <article>
       <h1>Privacy Policy</h1>
-      <p className={styles.updated}>Last updated {LEGAL_UPDATED}</p>
+      <p className={styles.updated}>Last updated {PRIVACY_UPDATED}</p>
 
       <p>
         This policy covers the Orbit website at heyorbit.in (“Orbit”, “we”): its waitlist, and job applications sent from
@@ -91,6 +91,7 @@ export default function Privacy() {
         <li>Amazon Web Services, which runs our servers and database and sends our emails.</li>
         <li>Cloudflare, which runs our network and the check that you’re not a bot.</li>
         <li>Meta, which delivers our WhatsApp messages.</li>
+        <li>Sentry, which tells us when something on our servers breaks.</li>
       </ul>
       <p>They handle it only to provide these services to us.</p>
 
