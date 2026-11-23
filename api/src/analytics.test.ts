@@ -227,11 +227,14 @@ test("5 sign-ins, ways, ages, genders, follows, deletions", async () => {
     .values(Array.from({ length: 5 }, () => ({ name: "H", slug: `h-${randomUUID()}`, kind: "venue" as const, city: "Hyderabad", ownerId: E, createdBy: E })))
     .returning({ id: hosts.id });
   const h = hs[0];
-  // C follows five hosts and a deleted account follows them too: the median and p90 must tell 1 from 5, without the deleted.
+  // Live followers follow 1, 1, 2 and 5 hosts: percentile_disc's median is 1, where percentile_cont's 1.5 would cast to 2
+  // and counting the deleted account's five would make it 2 as well. p90 is 5.
   const gone = await newUser(at(50), { deletedAt: at(45) }); // outside "deleted, last 30 days"
   await t.db.insert(follows).values([
     { userId: A, hostId: h!.id },
     { userId: B, hostId: h!.id },
+    { userId: D, hostId: hs[1]!.id },
+    { userId: D, hostId: hs[2]!.id },
     ...hs.flatMap((x) => [{ userId: C, hostId: x.id }, { userId: gone, hostId: x.id }]),
   ]);
   // deletions
@@ -252,7 +255,8 @@ test("5 sign-ins, ways, ages, genders, follows, deletions", async () => {
   assert.equal(gd["Not given"], 5);
   assert.ok(!JSON.stringify(b).includes("some free text"));
   assert.equal(b.follows.people - a.follows.people, 7);
-  assert.equal(b.follows.following - a.follows.following, 3);
+  assert.deepEqual([a.follows.following, a.follows.p50, a.follows.p90], [0, null, null]); // nobody follows yet: a dash, not 0
+  assert.equal(b.follows.following - a.follows.following, 4);
   // The shared database has others' follows too, so the expected values come from every live follower's count, sorted.
   const per = ((await t.db.execute(sql`select count(*)::int as n from follows f join users u on u.id = f.user_id where u.deleted_at is null group by f.user_id`)) as any[])
     .map((r) => r.n as number)
