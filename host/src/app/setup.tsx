@@ -18,6 +18,7 @@ import { useStation } from '../station/state';
 import { Chip, close, Pill, Round, Sheet, SheetSays, Stepper, styles as ui } from '../station/ui';
 import { contactOk, hoursOk, inTheWay, type KindForm, kindFrom } from '../station/venue';
 import { range, what as whatOf } from '../station/words';
+import { variants } from '../../variants';
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const rupeeText = (paise?: number) => (paise ? String(paise / 100) : '');
@@ -225,7 +226,7 @@ export default function Setup() {
         <SheetSays
           text={
             desk
-              ? 'They start when they accept, in Orbit Station: scan, walk-ins, blocks and no-shows, with names, stations and hours. Never money, prices or settings. Desk never ends on its own; remove them here.'
+              ? `They start when they accept, in ${variants.station.name}: scan, walk-ins, blocks and no-shows, with names, stations and hours. Never money, prices or settings. Desk never ends on its own; remove them here.`
               : 'They start once you confirm it’s them after they accept. Admins see everything, the bank account too.'
           }
         />

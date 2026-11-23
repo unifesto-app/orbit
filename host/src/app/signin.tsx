@@ -22,6 +22,7 @@ import { Field, Pill, Wide, styles as ui } from '../launch/ui';
 import { requestCode } from '../proof';
 import { api, openDemo, signIn, thisDevice } from '../session';
 import { type Step, clock, initialsOf, secondsLeft, stepAfter, stepBack } from '../signinSteps';
+import { thisApp } from '../variant';
 
 const ICON = require('../../assets/icons/launch.png');
 const BACK = require('../../assets/tabs/chevron.png');
@@ -147,9 +148,9 @@ function Contact({ phoneOnly, busy, error, onSend }: { phoneOnly: boolean; busy:
   const can = !!text.trim() && !busy;
   return (
     <>
-      {!phoneOnly && <Image source={ICON} style={styles.icon} accessibilityLabel="Orbit Launch" />}
+      {!phoneOnly && <Image source={ICON} style={styles.icon} accessibilityLabel={thisApp.name} />}
       <Text style={styles.title} accessibilityRole="header">
-        {phoneOnly ? 'Add your WhatsApp number' : 'Sign in to Orbit Launch'}
+        {phoneOnly ? 'Add your WhatsApp number' : `Sign in to ${thisApp.name}`}
       </Text>
       <Text style={styles.line}>
         {phoneOnly ? 'Every Orbit account has one. Its code comes on WhatsApp.' : 'Use the phone number or email on your Orbit account. New to Orbit? You’ll make one next.'}

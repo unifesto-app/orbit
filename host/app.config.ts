@@ -11,7 +11,7 @@ if (!key || !Object.hasOwn(variants, key)) {
 const v = variants[key as keyof typeof variants];
 
 const config: ExpoConfig = {
-  name: v.name,
+  name: v.label, // the home-screen name; the stores' full name is set in App Store Connect and Play Console
   slug: 'orbit-host',
   version: '1.0.0',
   platforms: ['ios', 'android'],
