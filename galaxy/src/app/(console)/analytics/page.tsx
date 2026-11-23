@@ -147,7 +147,8 @@ async function Body() {
             pairs={[
               ["Accounts", n(t.follows.people)],
               ["Following a host", `${n(t.follows.following)} (${pct(t.follows.following, t.follows.people)})`],
-              ["Follows per account", t.follows.average.toFixed(2)],
+              ["Hosts each follower follows, median", t.follows.p50 === null ? "–" : n(t.follows.p50)],
+              ["Hosts each follower follows, 90th percentile", t.follows.p90 === null ? "–" : n(t.follows.p90)],
             ]}
           />
         </Container>

@@ -222,8 +222,18 @@ test("5 sign-ins, ways, ages, genders, follows, deletions", async () => {
   await sess(D, null, at(1));
   await t.db.insert(sessions).values({ userId: E, deviceHash: randomUUID(), client: "web", name: "Galaxy · Chrome on macOS", refreshHash: "x", freshVia: "google", createdAt: at(1), expiresAt: new Date(t.now() + DAY) });
   // follows
-  const [h] = await t.db.insert(hosts).values({ name: "H", slug: `h-${randomUUID()}`, kind: "venue", city: "Hyderabad", ownerId: E, createdBy: E }).returning({ id: hosts.id });
-  await t.db.insert(follows).values([{ userId: A, hostId: h!.id }, { userId: B, hostId: h!.id }]);
+  const hs = await t.db
+    .insert(hosts)
+    .values(Array.from({ length: 5 }, () => ({ name: "H", slug: `h-${randomUUID()}`, kind: "venue" as const, city: "Hyderabad", ownerId: E, createdBy: E })))
+    .returning({ id: hosts.id });
+  const h = hs[0];
+  // C follows five hosts and a deleted account follows them too: the median and p90 must tell 1 from 5, without the deleted.
+  const gone = await newUser(at(50), { deletedAt: at(45) }); // outside "deleted, last 30 days"
+  await t.db.insert(follows).values([
+    { userId: A, hostId: h!.id },
+    { userId: B, hostId: h!.id },
+    ...hs.flatMap((x) => [{ userId: C, hostId: x.id }, { userId: gone, hostId: x.id }]),
+  ]);
   // deletions
   await newUser(at(0), { deletionRequestedAt: new Date(), deletionDueAt: new Date(t.now() + 20 * DAY) });
   await newUser(at(50), { deletedAt: at(2) });
@@ -242,9 +252,15 @@ test("5 sign-ins, ways, ages, genders, follows, deletions", async () => {
   assert.equal(gd["Not given"], 5);
   assert.ok(!JSON.stringify(b).includes("some free text"));
   assert.equal(b.follows.people - a.follows.people, 7);
-  assert.equal(b.follows.following - a.follows.following, 2);
-  const [{ total }] = (await t.db.execute(sql`select count(*)::int as total from follows f join users u on u.id = f.user_id where u.deleted_at is null`)) as any;
-  assert.equal(b.follows.average, Math.round((total / b.follows.people) * 100) / 100);
+  assert.equal(b.follows.following - a.follows.following, 3);
+  // The shared database has others' follows too, so the expected values come from every live follower's count, sorted.
+  const per = ((await t.db.execute(sql`select count(*)::int as n from follows f join users u on u.id = f.user_id where u.deleted_at is null group by f.user_id`)) as any[])
+    .map((r) => r.n as number)
+    .sort((x, y) => x - y);
+  const disc = (p: number) => per[Math.max(0, Math.ceil(p * per.length) - 1)]; // percentile_disc: the first count reaching p
+  assert.equal(per.length, b.follows.following);
+  assert.equal(b.follows.p50, disc(0.5));
+  assert.equal(b.follows.p90, disc(0.9));
   assert.equal(b.deletions.pending - a.deletions.pending, 1);
   assert.equal(b.deletions.month - a.deletions.month, 1);
 });
