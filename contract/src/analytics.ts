@@ -51,6 +51,8 @@ export type AnalyticsStats = {
   ages: Tally; // accounts by age band, in age order: under 18, 18–24, 25–34, 35–44, 45+, not given
   genders: Tally;
   cities: Tally; // the 10 cities with the most accounts, then "Others"
-  follows: { people: number; following: number; average: number }; // accounts, those following a host, follows per account
+  // Accounts, those following a host, and how many hosts those followers follow: the median and 90th percentile (null
+  // while nobody follows one). Percentiles, not an average, so a few accounts following many hosts don't lift it.
+  follows: { people: number; following: number; p50: number | null; p90: number | null };
   deletions: { pending: number; month: number }; // waiting out their 30 days; carried out in the last 30 days
 };

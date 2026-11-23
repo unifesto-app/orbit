@@ -158,11 +158,13 @@ export function analyticsRoutes({ db, secret, now = Date.now }: Deps) {
     const rest = sorted.slice(10).reduce((n, r) => n + r.count, 0);
     const cities: Tally = rest ? [...sorted.slice(0, 10), { name: "Others", count: rest }] : sorted;
 
-    const [f] = await many<{ people: number; following: number; total: number }>(
+    // Percentiles over the accounts following at least one host: over all accounts the median is 0 until half follow.
+    // percentile_disc picks a real count (no 1.5 hosts).
+    const [f] = await many<{ people: number; following: number; p50: number | null; p90: number | null }>(
       db,
-      sql`select count(*)::int as people, (count(*) filter (where exists (select 1 from follows f where f.user_id = users.id)))::int as following, (select count(*) from follows f join users u on u.id = f.user_id where u.deleted_at is null)::int as total from users where deleted_at is null`,
+      sql`select (select count(*) from users where deleted_at is null)::int as people, count(*)::int as following, (percentile_disc(0.5) within group (order by n))::int as p50, (percentile_disc(0.9) within group (order by n))::int as p90 from (select count(*) as n from follows f join users u on u.id = f.user_id where u.deleted_at is null group by f.user_id) x`,
     );
-    const follows = { people: f!.people, following: f!.following, average: f!.people ? Math.round((f!.total / f!.people) * 100) / 100 : 0 };
+    const follows = f!;
 
     const [d] = await many<{ pending: number; month: number }>(
       db,
