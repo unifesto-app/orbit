@@ -88,6 +88,15 @@ function avatar() {
   return `<g transform="scale(${1024 / 1080})">${inner.replace(/<rect width="1080" height="1080"[^>]*><\/rect>/, '')}</g>`;
 }
 
+// The glass pill (the app's buttons), 800 by 220 and centred, with ORBIT on it, frosting whatever is `behind` it.
+const GLASS_DEFS = `<clipPath id="pane"><rect x="112" y="402" width="800" height="220" rx="110"/></clipPath>
+  <filter id="frost" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="30"/></filter>
+  <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${P.stone}" stop-opacity=".1"/><stop offset=".45" stop-color="${P.stone}" stop-opacity="0"/></linearGradient>
+  <linearGradient id="tint" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${P.charcoal}" stop-opacity=".3"/><stop offset="1" stop-color="${P.charcoal}" stop-opacity=".5"/></linearGradient>`;
+const onGlass = (behind) => `${behind}<g clip-path="url(#pane)"><rect width="1024" height="1024" fill="${P.charcoal}"/><g filter="url(#frost)">${behind}</g>
+        <rect width="1024" height="1024" fill="url(#tint)"/><rect x="112" y="402" width="800" height="220" fill="url(#sheen)"/></g>
+        <rect x="113.5" y="403.5" width="797" height="217" rx="108.5" fill="none" stroke="${glass.border}" stroke-width="3"/>${word(640)}`;
+
 // The alternates. Each is a full-bleed `ground`, the `art` on it (with any `defs` it needs) and `android`, its scale
 // on Android. Ticket and Hologram keep the names shipped 16 Nov.
 const IN_ORBIT = [
@@ -112,16 +121,8 @@ const ALT = {
   // The lockup on a glass pill, the app's buttons, frosting the symbols behind it.
   Glass: {
     ground: GROUND,
-    defs: `<clipPath id="pane"><rect x="112" y="402" width="800" height="220" rx="110"/></clipPath>
-      <filter id="frost" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="30"/></filter>
-      <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${P.stone}" stop-opacity=".1"/><stop offset=".45" stop-color="${P.stone}" stop-opacity="0"/></linearGradient>
-      <linearGradient id="tint" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${P.charcoal}" stop-opacity=".3"/><stop offset="1" stop-color="${P.charcoal}" stop-opacity=".5"/></linearGradient>`,
-    art: () => {
-      const behind = sym('heart', 700, 380, 2.9, 12, 1, 'heart3d') + sym('pearl', 310, 650, 5.2) + sym('spark', 250, 300, 3.6, -17);
-      return `${behind}<g clip-path="url(#pane)"><rect width="1024" height="1024" fill="${P.charcoal}"/><g filter="url(#frost)">${behind}</g>
-        <rect width="1024" height="1024" fill="url(#tint)"/><rect x="112" y="402" width="800" height="220" fill="url(#sheen)"/></g>
-        <rect x="113.5" y="403.5" width="797" height="217" rx="108.5" fill="none" stroke="${glass.border}" stroke-width="3"/>${word(640)}`;
-    },
+    defs: GLASS_DEFS,
+    art: () => onGlass(sym('heart', 700, 380, 2.9, 12, 1, 'heart3d') + sym('pearl', 310, 650, 5.2) + sym('spark', 250, 300, 3.6, -17)),
     android: 0.7,
   },
   // The 16 Nov Ticket in the kit's look: a 3D ticket in the symbols' body over a Sage glow, ORBIT printed on it.
@@ -155,7 +156,9 @@ async function ios(s, file, thumb) {
   await sharp(flat).toFile(file);
   await sharp(flat).resize(120).png().toFile(thumb);
 }
-(async () => {
+// The host apps' icons (host/scripts/app-icon.cjs) draw with the same pieces.
+module.exports = { P, SYM, word, sym, svg, at, GROUND, GLASS_DEFS, onGlass };
+if (require.main === module) (async () => {
   fs.mkdirSync(path.join(out, 'icons'), { recursive: true });
   await ios(svg(GROUND + word(640)), path.join(out, 'icon.png'), path.join(out, 'icons', 'orbit-thumb.png'));
   // Android adaptive: the lockup inside the middle the launcher shows, on a Charcoal layer.

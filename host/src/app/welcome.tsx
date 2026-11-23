@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Monogram, Note, Pill, Section, styles as ui } from '../launch/ui';
 import { api, refreshMe, signOut, useSession } from '../session';
+import { thisApp } from '../variant';
 
 const ICON = require('../../assets/icons/launch.png');
 type Invite = { id: string; hostId: string; hostName: string; role: 'admin'; accepted: boolean };
@@ -64,7 +65,7 @@ export default function Welcome() {
     >
       <View style={styles.brand}>
         <Image source={ICON} style={styles.icon} accessible={false} />
-        <Text style={styles.brandName}>Orbit Launch</Text>
+        <Text style={styles.brandName}>{thisApp.name}</Text>
       </View>
       <Text style={styles.title} accessibilityRole="header">
         {first ? `Hi, ${first}` : 'Hi'}

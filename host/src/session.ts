@@ -17,7 +17,7 @@ import Constants from 'expo-constants';
 import { useSyncExternalStore } from 'react';
 import { Alert, Platform, Settings } from 'react-native';
 
-import { variant } from './variant';
+import { thisApp } from './variant';
 
 let secure: typeof import('expo-secure-store') | null = null;
 try {
@@ -77,7 +77,7 @@ function readKept(): Session {
   }
 }
 
-const app = variant?.word ?? 'launch';
+const app = thisApp.word;
 export const api = makeApi({
   base: API_URL,
   fetch,
@@ -108,11 +108,11 @@ export function useSession(): Session {
 }
 
 // This phone, as the API knows it: the id it gave this app's first sign-in, kept across sign-outs, so a later phone code
-// doesn't ask "Is this you?" again. Named for the app, so Sign-in and security lists "Launch · iPhone".
+// doesn't ask "Is this you?" again. Named for the app, so Sign-in and security lists "Event Partner · iPhone".
 export function thisDevice(): Device {
   const id = kept.get(DEVICE);
   const phone = Constants.deviceName?.trim() || (Platform.OS === 'ios' ? 'iPhone' : 'Android phone');
-  const name = `${variant?.name.replace('Orbit ', '') ?? 'Launch'} · ${phone}`;
+  const name = `${thisApp.label} · ${phone}`;
   return { ...(id && { id }), name: name.slice(0, 100), client: 'app' };
 }
 
