@@ -17,7 +17,11 @@ import { Monogram, Note, Pill, Section, styles as ui } from '../launch/ui';
 import { api, refreshMe, signOut, useSession } from '../session';
 import { thisApp } from '../variant';
 
-const ICON = require('../../assets/icons/launch.png');
+const ICON = {
+  launch: require('../../assets/icons/launch.png'),
+  station: require('../../assets/icons/station.png'),
+  crew: require('../../assets/icons/crew.png'),
+}[thisApp.word]; // static requires, for Metro
 type Invite = { id: string; hostId: string; hostName: string; role: 'admin'; accepted: boolean };
 const ROLE = { admin: 'Admin' } as const;
 // "Sat 20 Dec", the day an account's deletion is due, in India time.

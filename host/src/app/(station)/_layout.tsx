@@ -13,6 +13,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, Image, LayoutAnimation, Platform, Pressable, StyleSheet, Text, useWindowDimensions } from 'react-native';
 import { SafeAreaInsetsContext, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useSession } from '../../session';
 import { useStation } from '../../station/state';
 import { isStation } from '../../variant';
 
@@ -26,7 +27,8 @@ const TABS = [
 ] as const;
 
 export default function StationTabs() {
-  if (!isStation) return <Redirect href="/" />;
+  const session = useSession();
+  if (!isStation || !session) return <Redirect href="/" />;
   return <Bar />;
 }
 

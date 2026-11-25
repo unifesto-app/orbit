@@ -18,6 +18,7 @@ import { Linking, ScrollView, StyleSheet, Switch, Text, View } from 'react-nativ
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Card, Row } from '../../launch/ui';
+import { signOut } from '../../session';
 import { useStation } from '../../station/state';
 import { Pill, Section } from '../../station/ui';
 import { daysLeft, priceLine, span } from '../../station/venue';
@@ -180,7 +181,7 @@ export default function VenueTab() {
         <Row label="Account" value="Sign-in, security, delete" />
         <Row label="Help and support" />
         <Row label="Open the web Console" external onPress={toConsole} />
-        <Row label="Sign out" />
+        <Row label="Sign out" onPress={signOut} />
       </Card>
     </ScrollView>
   );

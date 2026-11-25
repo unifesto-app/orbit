@@ -1,4 +1,4 @@
-// Who's signed in to this host app (Launch for now; Station and Crew take it up with their own sign-in), against the
+// Who's signed in to this host app (each of the three signs in on its own), against the
 // Orbit API with the shared client (@orbit/mobile/api). One Orbit account works in every app, but each app keeps its own
 // session: its own refresh token and device id (host apps plan, "Why each app has its own session").
 // - The refresh token, the device id, the App Attest key id (proof.ts) and the account as last read all live in the
