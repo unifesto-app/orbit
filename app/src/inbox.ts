@@ -18,8 +18,9 @@ export type Opens =
 export type InboxItem = {
   id: string;
   at: string; // when it was sent, ISO
-  from: string; // who it's from: a host, a meetup, "Near you", "Orbit"
-  kind: string; // what it is, after the sender: "Announcement", "Tomorrow", "Refund sent"
+  from: string; // who it's from: a host, a meetup, "Orbit"; read out, not shown (the row shows its type's icon)
+  kind: string; // what it is: "Announcement", "Tomorrow", "Near you", "Refund sent"
+  type: 'announcement' | 'reminder' | 'follow' | 'near' | 'ticket' | 'refund' | 'inRoom' | 'thanks' | 'account'; // its icon
   text: string;
   picture: { event: string } | { host: string } | null; // the event's 3:4 poster, the host's logo, or Orbit's orb
   opens: Opens;

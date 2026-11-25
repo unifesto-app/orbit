@@ -1,25 +1,39 @@
 // Notifications, the inbox (Notifications doc, "The inbox and where each message opens"), from the bell in Home's
 // header. The owner picked the Rows take on 19 Nov 2026 (https://claude.ai/artifact/4H6dp7ssrQbNXCJ4kSBj2b): Home's feed
 // rows, a heading per day, newest first, the last 180 days. Each row is the event's poster, the host's logo or Orbit's
-// orb; who it's from and what it is; the message; the time; a Sage dot until it's opened. A tap marks it read and opens
-// its own screen (src/inbox.ts); one with no screen of its own shows the whole message in place. Mark all read sits by
-// the title, Settings (Account › Notifications) at the top right. It fills even with push off.
+// orb; an icon for what it is, then what it is (the sender's name only for screen readers; owner, 25 Nov 2026: "in
+// notifications, instead of name, use icon"); the message; the time; a Sage dot until it's opened. A tap marks it read
+// and opens its own screen (src/inbox.ts); one with no screen of its own shows the whole message in place. Mark all read
+// sits by the title, a gear for Settings (Account › Notifications) at the top right. It fills even with push off.
 // ponytail: the mock's messages (src/inboxStore.ts); the API's inbox, refreshed on open and every minute, replaces them.
 import { type Href, router } from 'expo-router';
 import { useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Note, Page, Pill, SignInNote, styles as kit } from '../account/kit';
-import { inboxDays, timeLabel } from '../inbox';
+import { type IconName, Icon } from '../icons';
+import { inboxDays, type InboxItem, timeLabel } from '../inbox';
 import { type Message, useInbox } from '../inboxStore';
 import { events, hosts, now } from '../mock';
 import { ORB } from '../orbitSays';
-import { Monogram, Poster, Section } from '../rows';
+import { CircleButton, Monogram, Poster, Section } from '../rows';
 import { markRead, useSignedIn } from '../session';
 import { color, font, space, stoneAt } from '../theme';
 
 const PICTURE = 44; // a logo or the orb; a poster is that wide at 3:4
 const DAYS_APART = 40; // between days, as Home's sections (owner, 19 Nov 2026: "add proper gaps b/w sections")
+// Account's icon where it has one: Tickets, Following, Location, Refunds, Sign-in and security.
+const ICON: Record<InboxItem['type'], IconName> = {
+  announcement: 'megaphone',
+  reminder: 'alarm',
+  follow: 'following',
+  near: 'pin',
+  ticket: 'ticket',
+  refund: 'refund',
+  inRoom: 'group',
+  thanks: 'heart', // Loved it
+  account: 'key',
+};
 
 export default function Inbox() {
   const signedIn = useSignedIn();
@@ -42,11 +56,7 @@ export default function Inbox() {
 
   return (
     <Page
-      bar={
-        <View style={styles.barPill}>
-          <Pill label="Settings" size="small" onPress={() => router.push('/account/notifications')} />
-        </View>
-      }>
+      bar={<CircleButton icon="gear" label="Notification settings" onPress={() => router.push('/account/notifications')} />}>
       <View style={styles.head}>
         <Text style={[kit.title, styles.title]} accessibilityRole="header">
           Notifications
@@ -82,9 +92,12 @@ function MessageRow({ m, whole, onPress }: { m: Message; whole: boolean; onPress
       style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
       <Picture of={m.picture} />
       <View style={styles.lines}>
-        <Text style={styles.kicker} numberOfLines={1}>
-          {m.from} · {m.kind}
-        </Text>
+        <View style={styles.kickerRow}>
+          <Icon name={ICON[m.type]} size={16} color={color.secondary} />
+          <Text style={[styles.kicker, styles.shrink]} numberOfLines={1}>
+            {m.kind}
+          </Text>
+        </View>
         <Text style={[styles.text, !m.unread && styles.readText]} numberOfLines={whole ? undefined : 2}>
           {m.text}
         </Text>
@@ -107,12 +120,13 @@ function Picture({ of }: { of: Message['picture'] }) {
 const styles = StyleSheet.create({
   head: { marginHorizontal: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.small },
   title: { marginHorizontal: 0, flexShrink: 1 },
-  barPill: { height: 44, justifyContent: 'center' },
   rows: { marginHorizontal: 20, gap: 20 }, // Home's feed rows: no rules between them, 20 apart
   row: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   pressed: { opacity: 0.7 },
   lines: { flex: 1, minWidth: 0, gap: 2 },
-  // As Home's feed rows: who in a small grey label, the message leads, the time under it.
+  // As Home's feed rows: what it is in a small grey label, the message leads, the time under it.
+  kickerRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  shrink: { flexShrink: 1 },
   kicker: { fontFamily: font.medium, fontSize: 12, lineHeight: 16, color: color.secondary },
   text: { fontFamily: font.title, fontSize: 15, lineHeight: 20, color: color.text },
   readText: { color: stoneAt(0.82) },
