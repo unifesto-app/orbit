@@ -12,6 +12,10 @@
 // - New people: About you, a name (prefilled from Google or Apple) and a date of birth with the age shown back, and the
 //   terms line. Under 18 makes no account (decision 5). A phone-only account is then offered a passkey.
 // Nothing asks for an email, push or anything else here.
+// Drawn as Take 1 "In orbit" (owner, 25 Nov 2026: "Build Take 1", https://claude.ai/artifact/4H6R7Di4qXbT9T8w6XrW1w):
+// the splash's scene heads the sheet (Frame in src/sheet.tsx, full on the first step), Continue names where the code
+// goes, the code is six cells, +91 sits in the WhatsApp field, "Is this you?" shows a photo circle, About you ends with
+// Create account, and after signing in the title says you're in (or welcome back) while Orbit asks the question.
 // Every step is the Orbit API's (api/src/auth/routes.ts): it checks the codes, knows the accounts and says which step is
 // next; its messages show as they come.
 // - Google, Apple and Use a passkey get their proof on the phone (src/ways.ts) and go through the same steps: a linked
@@ -30,9 +34,10 @@ import { day, type Way } from '../account/rules';
 import { BROKEN, type Result } from '../api';
 import { Glass } from '../glass';
 import { requestCode } from '../proof';
+import { Monogram } from '../rows';
 import { api, keepAccount, runPending, setAccount, signIn, thisDevice } from '../session';
 import { Choice, Frame, GoogleMark, Phone, styles as sheet } from '../sheet';
-import { ADULT, ageOn, type Contact, readContact, readDob, sentTo, toOf, typeDob } from '../signin';
+import { ADULT, ageOn, type Contact, readContact, readDob, sentTo, toOf, typeDob, welcomeOf } from '../signin';
 import { color, font } from '../theme';
 import { addPasskey, appleHere, appleProof, type Got, googleProof, passkeyAnswer, passkeysHere } from '../ways';
 
@@ -58,6 +63,7 @@ export default function Login() {
   const via = useRef<Way>('phone'); // how they came in, read when the last step lands
   const made = useRef(false); // About you made the account just now
   const [name, setName] = useState(''); // About you's, prefilled when the API knows it
+  const [welcome, setWelcome] = useState(''); // the title over the questions after signing in
   const [error, setError] = useState<string | null>(null); // the API's message, under the title
   const [busy, setBusy] = useState(false);
   const working = useRef(false); // the same, read at once: a code filled in twice sends it once
@@ -122,6 +128,7 @@ export default function Login() {
     if (s.step === 'signedIn') {
       signIn(s, via.current);
       signedInHere.current = true;
+      setWelcome(welcomeOf(s.me.name, made.current));
       const phoneOnly = made.current && via.current === 'phone' && !s.me.email && passkeysHere() === 'ready';
       later.current = [
         ...(s.addEmail ? [{ at: 'link' as const, token: s.addEmail.token }] : []),
@@ -226,10 +233,11 @@ export default function Login() {
     code: { title: 'Enter the code', note: step.at === 'code' ? sentTo(step.to) : undefined },
     phone: { title: 'Your WhatsApp number' },
     whose: { title: 'Is this you?' },
-    link: { title: 'Add this email to your account?', note: 'Your number is already on Orbit.' },
-    way: { title: `Add ${step.at === 'way' ? NAMES[step.provider] : ''} to your account?`, note: 'Your number is already on Orbit.' },
-    keep: { title: 'Keep your account?', note: step.at === 'keep' ? `It’s set to be deleted on ${day(step.due)}.` : undefined },
-    passkey: { title: 'Add a passkey?', note: 'Next time, sign in with Face ID or your fingerprint.' },
+    // After signing in: the title says you're in, and Orbit asks (`ask`, then its line).
+    link: { title: welcome, ask: 'Add this email to your account?', note: 'Your number is already on Orbit.' },
+    way: { title: welcome, ask: `Add ${step.at === 'way' ? NAMES[step.provider] : ''} to your account?`, note: 'Your number is already on Orbit.' },
+    keep: { title: welcome, ask: 'Keep your account?', note: step.at === 'keep' ? `It’s set to be deleted on ${day(step.due)}.` : undefined },
+    passkey: { title: welcome, ask: 'Add a passkey?', note: 'Next time, sign in with Face ID or your fingerprint.' },
     about: { title: 'About you' },
   }[step.at];
 
@@ -238,7 +246,7 @@ export default function Login() {
   const say = step.at === 'whose' ? 'Numbers change hands. If this isn’t your account, start fresh.' : (head.note ?? '');
 
   return (
-    <Frame title={head.title} note={asking ? undefined : head.note} error={error}>
+    <Frame title={head.title} note={asking ? undefined : head.note} error={error} big={step.at === 'start'}>
       {step.at === 'start' && (
         <Start
           busy={busy}
@@ -268,10 +276,10 @@ export default function Login() {
         </Choice>
       )}
       {/* Both answers sign in: the number proved the account. */}
-      {step.at === 'link' && <Choice yes="Add email" no="Not now" say={say} busy={busy} onYes={() => addEmail(step.token)} onNo={advance} />}
-      {step.at === 'way' && <Choice yes={`Add ${NAMES[step.provider]}`} no="Not now" say={say} busy={busy} onYes={() => addWay(step.token)} onNo={advance} />}
-      {step.at === 'keep' && <Choice yes="Keep my account" no="Not now" say={say} busy={busy} onYes={() => void keep()} onNo={advance} />}
-      {step.at === 'passkey' && <Choice yes="Add a passkey" no="Not now" say={say} busy={busy} onYes={() => void offerPasskey()} onNo={advance} />}
+      {step.at === 'link' && <Choice yes="Add email" no="Not now" ask={head.ask} say={say} busy={busy} onYes={() => addEmail(step.token)} onNo={advance} />}
+      {step.at === 'way' && <Choice yes={`Add ${NAMES[step.provider]}`} no="Not now" ask={head.ask} say={say} busy={busy} onYes={() => addWay(step.token)} onNo={advance} />}
+      {step.at === 'keep' && <Choice yes="Keep my account" no="Not now" ask={head.ask} say={say} busy={busy} onYes={() => void keep()} onNo={advance} />}
+      {step.at === 'passkey' && <Choice yes="Add a passkey" no="Not now" ask={head.ask} say={say} busy={busy} onYes={() => void offerPasskey()} onNo={advance} />}
       {step.at === 'about' && <About name={name} busy={busy} onName={setName} onDone={(dob) => void create(step.signup, dob)} />}
     </Frame>
   );
@@ -312,7 +320,13 @@ function Start({
         />
         {read === 'abroad' && <Text style={styles.line}>Orbit takes Indian (+91) numbers only.</Text>}
       </View>
-      <Pill label="Continue" size="wide" disabled={!contact || busy} onPress={go} />
+      {/* It says where the code goes once the field reads a number or an email (Take 1). */}
+      <Pill
+        label={contact?.kind === 'phone' ? 'Send code on WhatsApp' : contact?.kind === 'email' ? 'Send code by email' : 'Continue'}
+        size="wide"
+        disabled={!contact || busy}
+        onPress={go}
+      />
 
       {/* The other ways in, one card of rows like Account's (owner, 17 Nov 2026: "bring app screens kind ui"), each the
           same size, in the User doc's order. Google keeps its four-colour G, Apple its mark. */}
@@ -327,10 +341,18 @@ function Start({
 }
 
 // The masked account a phone number opens (masked by the API), so someone with a recycled SIM can say it isn't theirs.
+// Its first letter in a round photo circle over the name, as your own is on Account (Take 1).
 function Account({ name, since }: { name: string; since: number }) {
   return (
     <Glass style={styles.accountRim}>
       <View style={styles.accountFace}>
+        {/* Only for a masked name ("R••• K•••"): an account with none comes as "An account", which has no initial. Hidden
+            from screen readers, as the name says it. */}
+        {name.includes('•') && (
+          <Glass style={styles.photoRim} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+            <Monogram mark={{ initials: name.charAt(0), bg: color.fill, fg: color.text }} size={PHOTO} round />
+          </Glass>
+        )}
         <Text style={styles.accountName}>{name}</Text>
         <Text style={styles.line}>On Orbit since {since}</Text>
       </View>
@@ -381,11 +403,12 @@ function About({ name, busy, onName, onDone }: { name: string; busy: boolean; on
           Privacy Policy
         </Text>
       </Text>
-      <Pill label="Continue" size="wide" disabled={!ok || busy} onPress={() => dob && onDone(dob)} />
+      <Pill label="Create account" size="wide" disabled={!ok || busy} onPress={() => dob && onDone(dob)} />
     </View>
   );
 }
 
+const PHOTO = 56;
 const styles = {
   ...sheet,
   ...StyleSheet.create({
@@ -393,6 +416,7 @@ const styles = {
   accountRim: { marginHorizontal: 20, padding: 1, borderRadius: RIM },
   accountFace: { borderRadius: RIM - 1, backgroundColor: color.card, padding: 16, gap: 2, alignItems: 'center' },
   accountName: { fontFamily: font.headline, fontSize: 20, lineHeight: 26, color: color.text },
+  photoRim: { padding: 1, borderRadius: PHOTO / 2 + 1, marginBottom: 10 }, // Account's 1px rim round a photo
   // Google's G, 18 wide, in a row icon's 22 box and its gap to the label, so every label starts in one line.
   googleBox: { width: 22, marginRight: 4, alignItems: 'center' },
   }),

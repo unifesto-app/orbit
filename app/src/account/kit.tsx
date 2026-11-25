@@ -5,7 +5,7 @@
 // remove right side text and add > icon"), or a ↗ when it opens the web ("if external then top right direction arrow"). Buttons are frosted pills with
 // white labels, never squared; a chip's pick is an accent dot, never accent text.
 import { Children, Fragment, type ReactNode, isValidElement, useEffect, useState } from 'react';
-import { Animated, Pressable, StyleSheet, Switch, Text, TextInput, type TextInputProps, View, useWindowDimensions } from 'react-native';
+import { Animated, Platform, Pressable, StyleSheet, Switch, Text, TextInput, type TextInputProps, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Glass } from '../glass';
@@ -285,14 +285,16 @@ export function Chips<T extends string>({ options, value, onChange }: { options:
   );
 }
 
-// A text field: its label, then a frosted pill like the search box (owner: "also squared search").
-export function Field({ label, ...input }: TextInputProps & { label: string }) {
+// A text field: its label, then a frosted pill like the search box (owner: "also squared search"). `prefix` is fixed text
+// before what's typed, behind a hairline, as +91 on the WhatsApp number (sign-in Take 1, owner, 25 Nov 2026).
+export function Field({ label, prefix, ...input }: TextInputProps & { label: string; prefix?: string }) {
   return (
     <View style={styles.field}>
       <Text style={styles.fieldLabel}>{label}</Text>
-      <Glass style={[styles.input, input.multiline && styles.area]}>
+      <Glass style={[styles.input, input.multiline && styles.area, !!prefix && styles.prefixed]}>
+        {!!prefix && <Text style={styles.prefix}>{prefix}</Text>}
         <TextInput
-          style={[styles.inputText, input.multiline && styles.areaText]}
+          style={[styles.inputText, input.multiline && styles.areaText, !!prefix && styles.grow]}
           placeholderTextColor={color.secondary}
           keyboardAppearance="dark"
           accessibilityLabel={label}
@@ -307,7 +309,12 @@ export function Field({ label, ...input }: TextInputProps & { label: string }) {
 // in; iOS offers an emailed or texted code above the keyboard (not a WhatsApp one). A wrong one clears for another try.
 // Resend waits as long as the API says (30 seconds, User doc). `onChange` shows Change number or Change email.
 // A code that didn't go (refused, or typed while a resend was out) clears for another try.
+// Six cells (sign-in Take 1, owner, 25 Nov 2026: "Build Take 1"), each digit in its own frosted pill, the next one
+// ringed in the accent with a caret. One field lies over all six, its text and caret hidden, so autofill, paste and the
+// keyboard work as on any field; the cells only show what it holds.
+// ponytail: the caret is steady; it could blink (with Reduce Motion respected) if it reads as stuck.
 const CODE = 6;
+const CELL = 46; // at most: 6 cells and 5 small gaps make 316, inside a 360 phone's margins
 export function Code({
   to,
   wait,
@@ -322,6 +329,7 @@ export function Code({
   onChange?: () => void;
 }) {
   const [code, setCode] = useState('');
+  const [focused, setFocused] = useState(true); // autoFocus: the next cell is ringed while the keyboard is up
   // Counted against the clock, not ticks: timers stop while they're in WhatsApp reading the code.
   const [until, setUntil] = useState(() => Date.now() + wait * 1000);
   const [now, setNow] = useState(Date.now);
@@ -337,7 +345,14 @@ export function Code({
   };
   return (
     <View style={styles.code}>
-      <Glass style={styles.codeBox}>
+      <View style={styles.cells}>
+        {Array.from({ length: CODE }, (_, i) => (
+          // Hidden from screen readers: the field over them says the code.
+          <Glass key={i} style={styles.cell} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+            {code[i] !== undefined ? <Text style={styles.cellText}>{code[i]}</Text> : focused && i === code.length && <View style={styles.caret} />}
+            {focused && i === code.length && <View style={styles.cellOn} />}
+          </Glass>
+        ))}
         <TextInput
           value={code}
           onChangeText={(t) => {
@@ -345,18 +360,23 @@ export function Code({
             setCode(digits);
             if (digits.length === CODE) void onCode(digits).then((ok) => ok !== true && setCode('')); // refused, or another request was out
           }}
-          style={styles.codeText}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          style={styles.codeInput}
+          // Android hides the cursor by colour: caretHidden there also takes away long-press Paste.
+          caretHidden={Platform.OS === 'ios'}
+          cursorColor="transparent"
+          selectionHandleColor="transparent"
+          selectionColor="transparent"
           keyboardType="number-pad"
           textContentType="oneTimeCode"
           autoComplete="one-time-code"
           keyboardAppearance="dark"
           maxLength={CODE}
           autoFocus
-          placeholder="••••••"
-          placeholderTextColor={color.secondary}
           accessibilityLabel={`${CODE}-digit code`}
         />
-      </Glass>
+      </View>
       <View style={styles.codePair}>
         <Pill
           label={left ? `Resend in ${left}s` : 'Resend code'}
@@ -433,13 +453,19 @@ export const styles = StyleSheet.create({
   fieldLabel: { fontFamily: font.medium, fontSize: 12, color: color.secondary },
   input: { height: 44, paddingHorizontal: 16, borderRadius: 22, justifyContent: 'center' },
   inputText: { fontFamily: font.text, fontSize: 15, color: color.text, height: '100%' },
+  prefixed: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  prefix: { paddingRight: 12, borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: stoneAt(0.24), fontFamily: font.medium, fontSize: 15, lineHeight: 20, color: color.text },
   // A few lines (a note, a reason): the card's corner, since a pill can't grow taller.
   area: { height: undefined, minHeight: 96, paddingVertical: 12, borderRadius: RIM, justifyContent: 'flex-start' },
   areaText: { height: undefined, lineHeight: 21, textAlignVertical: 'top' },
 
   code: { gap: space.small + 4 },
-  codeBox: { marginHorizontal: 20, height: 56, borderRadius: 28, justifyContent: 'center' },
-  codeText: { height: '100%', fontFamily: font.price, fontSize: 24, letterSpacing: 12, color: color.text, textAlign: 'center' },
+  cells: { marginHorizontal: 20, flexDirection: 'row', justifyContent: 'center', gap: space.small },
+  cell: { flex: 1, maxWidth: CELL, height: 56, borderRadius: CELL / 2, alignItems: 'center', justifyContent: 'center' }, // narrower on a narrow screen
+  cellText: { fontFamily: font.price, fontSize: 24, color: color.text },
+  cellOn: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: CELL / 2, borderWidth: 1.5, borderColor: color.accent }, // the next digit: an element, so the accent
+  caret: { width: 2, height: 24, borderRadius: 1, backgroundColor: color.text },
+  codeInput: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, color: 'transparent', fontSize: 1 }, // over the cells: taps, autofill and paste land here
   codePair: { marginHorizontal: 20, flexDirection: 'row', justifyContent: 'center', gap: space.small },
 
   pageNote: { marginHorizontal: 20, marginTop: space.small, fontFamily: font.text, fontSize: 13, lineHeight: 18, color: color.secondary },
