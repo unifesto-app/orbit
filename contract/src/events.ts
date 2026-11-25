@@ -145,6 +145,7 @@ export const TeamEvent = z.object({
   publishedAt: Iso.nullable(),
   cancelledAt: Iso.nullable(),
   cancelReason: z.string().nullable(),
+  saved: z.number().nullable(), // how many saved it, from 10 up, else null (Saved doc, P9.3); set on the team's own read only
   createdAt: Iso,
   updatedAt: Iso,
 });

@@ -148,6 +148,13 @@
       "when": 1795622365972,
       "tag": "0020_lively_whiplash",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1795629601766,
+      "tag": "0021_brief_wolf_cub",
+      "breakpoints": true
     }
   ]
 }

@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { type AnyPgColumn, bigint, boolean, check, date, doublePrecision, index, integer, jsonb, pgTable, primaryKey, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { type AnyPgColumn, bigint, boolean, check, date, doublePrecision, foreignKey, index, integer, jsonb, pgTable, primaryKey, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import type { AgendaItem, FaqItem, Week } from "@orbit/contract";
 
 // The User flow's tables (Orbit flows: User). Migrated people keep their Unifesto ids, so `id` takes any UUID.
@@ -87,6 +87,45 @@ export const follows = pgTable(
     createdAt: at("created_at").notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.userId, t.hostId] }), index().on(t.hostId)],
+);
+
+// What a person saved and the lists they made (Saved events and lists doc). Private: nothing public reads these.
+// An event that can't be opened any more (draft, host off the air) keeps its row, hidden by the reads, never deleted.
+export const saves = pgTable(
+  "saves",
+  {
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    eventId: uuid("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+    savedAt: at("saved_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.eventId] }), index().on(t.eventId)],
+);
+
+// The id is the app's own (`l_…`), so it can draw a new list before the API answers.
+export const lists = pgTable(
+  "lists",
+  {
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    id: text("id").notNull(),
+    name: text("name").notNull(),
+    touchedAt: at("touched_at").notNull().defaultNow(), // made, or last added to
+    createdAt: at("created_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.id] })],
+);
+
+export const listEvents = pgTable(
+  "list_events",
+  {
+    userId: uuid("user_id").notNull(),
+    listId: text("list_id").notNull(),
+    eventId: uuid("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.listId, t.eventId] }),
+    index().on(t.eventId),
+    foreignKey({ columns: [t.userId, t.listId], foreignColumns: [lists.userId, lists.id] }).onDelete("cascade"),
+  ],
 );
 
 // A place on a host's team, from invite to end. Admin or crew; crew with no event on a Venue host is Desk (Play: the
