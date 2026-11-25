@@ -4,15 +4,17 @@ import { Redirect } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { signOut, useSession } from '../session';
+import { seats } from '../station/seats';
 import { Pill } from '../station/ui';
 import { isLaunch, isStation, variant as v } from '../variant';
 
 // Every host app opens on Sign in. Then Orbit Station opens on Today (also its dev demo), Orbit Launch on the no-host
-// screen (Events in the dev demo), and Crew shows its name until its own screens come.
+// screen (Events in the dev demo), and Crew shows its name until its own screens come. Signed in to Station on no venue's
+// team, it shows the invites screen (welcome) instead.
 export default function Index() {
   const session = useSession();
   if (!session) return <Redirect href="/signin" />;
-  if (isStation) return <Redirect href="/today" />;
+  if (isStation) return <Redirect href={'me' in session && !seats(session.me).length ? '/welcome' : '/today'} />;
   if (isLaunch) return <Redirect href={'demo' in session ? '/events' : '/welcome'} />;
   return (
     <View style={s.root}>

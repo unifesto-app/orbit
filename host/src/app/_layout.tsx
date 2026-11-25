@@ -8,6 +8,7 @@ import { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 
 import { refreshMe, useSession } from '../session';
+import { seats } from '../station/seats';
 import { StationProvider } from '../station/state';
 import { isLaunch, isStation } from '../variant';
 
@@ -38,7 +39,7 @@ export default function Layout() {
       <StatusBar style="light" />
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: color.ground } }}>
         {/* Station's own: in Launch and Crew a link to them goes nowhere, since they read Station's state. */}
-        <Stack.Protected guard={isStation && (signedIn || demo)}>
+        <Stack.Protected guard={isStation && (demo || (signedIn && seats(session.me).length > 0))}>
           <Stack.Screen name="(station)" />
           <Stack.Screen name="walkin" options={SHEET} />
           {/* The scanner takes the whole screen, over Today (take 2). */}
@@ -54,7 +55,7 @@ export default function Layout() {
           <Stack.Screen name="signin" />
         </Stack.Protected>
         {/* Orbit Launch's own: in Station and Crew a link to them goes nowhere. */}
-        <Stack.Protected guard={isLaunch && signedIn}>
+        <Stack.Protected guard={(isLaunch || isStation) && signedIn}>
           <Stack.Screen name="welcome" />
         </Stack.Protected>
         <Stack.Protected guard={isLaunch && demo}>
