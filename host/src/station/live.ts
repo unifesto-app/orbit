@@ -1,6 +1,7 @@
 // Today's day from the API (GET /venues/:hostId/day) as the shapes Today already draws: the venue's stations as kinds,
 // its claims, and the opening. Pure, so live.test.ts runs it on Node.
 // - Desk sees no money: the day has none, so a kind's price is 0 and nothing on Today reads it.
+// - A held claim (someone mid-payment) takes its stations but isn't due at the door (`held`).
 // - Refunded claims are left out (they take nothing and Today never shows them); released ones keep their time.
 // - Archived stations are left out: nothing new lands on them.
 // - The API's `free` counts aren't read: Today works them out from the claims with taken(), the same rule.
@@ -41,6 +42,7 @@ export function fromApi(d: VenueDay, host: { hostId: string; name: string }, now
       checkedIn: c.checkedInAt ? Date.parse(c.checkedInAt) : undefined,
       in: c.admitted,
       by: c.checkedInBy ?? undefined,
+      held: c.status === 'held' || undefined,
       released: c.status === 'released' ? Date.parse(c.releasedAt ?? c.start) : undefined,
     }));
   // Where now is against the opening, from the phone's clock so it moves between fetches; a closed day opens and closes

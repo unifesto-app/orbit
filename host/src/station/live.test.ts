@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import type { VenueDay } from '@orbit/contract';
 
-import { HOUR, MIN, door, steps, taken } from './day.ts';
+import { HOUR, MIN, atDoor, door, steps, taken } from './day.ts';
 import { fromApi, plural } from './live.ts';
 
 const day = Date.UTC(2026, 10, 22) - 330 * MIN; // Sun 22 Nov 2026, midnight in India
@@ -54,4 +54,29 @@ test('a closed day reads as closed', () => {
 
 test('units say their many', () => {
   assert.deepEqual(['PC', 'pitch', 'box', 'court', 'bus'].map(plural), ['PCs', 'pitches', 'boxes', 'courts', 'buses']);
+});
+
+test('a held booking takes its stations but nobody is due at the door', () => {
+  const held = { ...claim, id: 'h', stationId: 'pc', kind: 'booking' as const, status: 'held' as const, count: 3, start: iso(18), end: iso(19), who: 'Aditi K.' };
+  const t = fromApi({ ...api, claims: [held] }, host, day + 18 * HOUR);
+  assert.equal(taken(t.claims, t.venue.types[0]!, day + 18 * HOUR).booking, 3);
+  assert.equal(atDoor(t.claims[0]!), false);
+  assert.equal(atDoor(fromApi(api, host, day).claims[0]!), true); // a paid one is
+});
+
+test('a pitch booked whole by the hour, and a claim on an archived station', () => {
+  const pitch = { id: 'pitch', name: '5-a-side football', unit: 'pitch', tile: 'sports' as const, count: 2, whole: true, step: 60 as const, archived: false };
+  const onOld = { ...claim, id: 'o', stationId: 'old', kind: 'walkin' as const, status: 'paid' as const, count: 1, start: iso(18), end: iso(19) };
+  const t = fromApi({ ...api, stations: [...api.stations, pitch], claims: [onOld] }, host, day + 18 * HOUR);
+  const p = t.venue.types.find((x) => x.id === 'pitch')!;
+  assert.deepEqual([p.whole, p.step, p.unit], [true, 60, ['pitch', 'pitches']]);
+  assert.equal(steps(t.venue, p, t.hours.day).length, 15); // 11 AM to 2 AM by the hour
+  assert.deepEqual(t.venue.types.map((x) => x.id), ['pc', 'pitch']); // the archived one isn't drawn
+  assert.equal(taken(t.claims, t.venue.types[0]!, day + 18 * HOUR).walkin, 0); // and its claim touches nothing drawn
+});
+
+test('an opening past midnight is still open at 1 AM and done at 2 AM', () => {
+  assert.equal(fromApi(api, host, day + 25 * HOUR).hours.state, 'open');
+  assert.equal(fromApi(api, host, day + 26 * HOUR).hours.state, 'after');
+  assert.equal(fromApi(api, host, day + 10 * HOUR).hours.state, 'before');
 });

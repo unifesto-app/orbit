@@ -15,7 +15,7 @@ import { type ReactElement, useCallback, useEffect, useState } from 'react';
 import { AppState, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { type Claim, type Door, type StationType, type Venue, MIN, dayLabel, door, hourWord, steps, taken, timeLabel } from '../../station/day';
+import { type Claim, type Door, type StationType, type Venue, MIN, atDoor, dayLabel, door, hourWord, steps, taken, timeLabel } from '../../station/day';
 import { blank } from '../../station/live';
 import { useStation, useToday } from '../../station/state';
 import { Head, Pill, Round, Section } from '../../station/ui';
@@ -33,6 +33,7 @@ export default function Today() {
   useFocusEffect(
     useCallback(() => {
       if (!reload) return;
+      reload(); // back on Today: fresh at once (useLoad drops an answer still on its way)
       const tick = setInterval(reload, 30_000);
       const front = AppState.addEventListener('change', (s) => s === 'active' && reload());
       return () => {
@@ -41,11 +42,17 @@ export default function Today() {
       };
     }, [reload]),
   );
-  // The pull's spinner stays until an answer lands: a new day or a new error.
+  // The pull's spinner stays until the fetch settles: each answer is a new day or a new error (not the clock's tick).
   const [pulling, setPulling] = useState(false);
-  useEffect(() => setPulling(false), [today, load?.error]);
+  useEffect(() => setPulling(false), [load?.data, load?.error]);
   const refresh = reload && <RefreshControl refreshing={pulling} onRefresh={() => (setPulling(true), reload())} tintColor={color.secondary} />;
-  const trouble = load?.error ? (load.status === 0 ? 'Can’t reach Orbit. Pull to try again.' : load.error.message) : null;
+  const trouble = !load?.error
+    ? null
+    : load.status === 0
+      ? 'Can’t reach Orbit. Pull to try again.'
+      : load.status === 404
+        ? 'This venue isn’t set up yet. Its Admin sets it up in Venue.'
+        : load.error.message;
   if (!today) return <Waiting venue={blank(seat!)} line={trouble ?? 'Getting today’s day…'} refresh={refresh} />;
   // Keyed by venue and opening, so a Wait, a row kept after Check in or a picked bar never carries over to another day.
   return <Day key={`${today.venue.id}:${today.hours.day}`} trouble={trouble} refresh={refresh} />;
@@ -63,13 +70,15 @@ function Waiting({ venue, line, refresh }: { venue: Venue; line: string; refresh
 }
 
 function Day({ trouble, refresh }: { trouble: string | null; refresh?: ReactElement }) {
-  const { venue: v, claims, now, hours: h, release, closed } = useToday();
+  const { venue: v, claims, now, hours: h, release, closed, load } = useToday();
+  // ponytail: signed in, the counter's writes are faded until S4 sends them to the API.
+  const locked = !!load;
   const insets = useSafeAreaInsets();
   const onScroll = useTabBarScroll();
   const [waited, setWaited] = useState<ReadonlySet<string>>(new Set());
   const [touched, setTouched] = useState<ReadonlySet<string>>(new Set()); // checked in or released here: their rows stay to say so
   const touch = (id: string) => setTouched((s) => new Set(s).add(id));
-  const late = h.state === 'open' ? claims.find((c) => c.kind === 'booking' && door(c, now) === 'noShow' && !waited.has(c.id)) : undefined;
+  const late = h.state === 'open' ? claims.find((c) => atDoor(c) && door(c, now) === 'noShow' && !waited.has(c.id) && v.types.some((t) => t.id === c.type)) : undefined;
   const when = closed ? 'closed today' : h.state === 'before' ? `opens at ${hourWord(v.open[0])}` : h.state === 'open' ? `open till ${hourWord(v.open[1])}` : `closed at ${hourWord(v.open[1])}`;
   return (
     <ScrollView style={styles.page} contentContainerStyle={{ paddingBottom: insets.bottom + space.big }} onScroll={onScroll} scrollEventThrottle={16} refreshControl={refresh}>
@@ -77,13 +86,13 @@ function Day({ trouble, refresh }: { trouble: string | null; refresh?: ReactElem
       {/* The last good day stays on screen under what went wrong. */}
       {trouble && <OrbitSays text={trouble} />}
       {closed ? <OrbitSays text="Closed today. Nothing to run at the counter." /> : v.types.length === 0 && <OrbitSays text="No stations set up yet. An Admin adds them in Venue." />}
-      {late && <NoShow venue={v} claim={late} now={now} onWait={() => setWaited((s) => new Set(s).add(late.id))} onRelease={() => {
+      {late && <NoShow venue={v} claim={late} now={now} locked={locked} onWait={() => setWaited((s) => new Set(s).add(late.id))} onRelease={() => {
             release(late.id);
             touch(late.id);
           }} />}
       {!closed && v.types.length > 0 && (
         <>
-          <NextUp touched={touched} onTouch={touch} />
+          <NextUp touched={touched} onTouch={touch} locked={locked} />
           <Section title="The day" />
           <View style={styles.legend}>
             {(['booking', 'walkin', 'block', 'free'] as const).map((k) => (
@@ -104,28 +113,27 @@ function Day({ trouble, refresh }: { trouble: string | null; refresh?: ReactElem
   );
 }
 
-function NoShow({ venue: v, claim: c, now, onWait, onRelease }: { venue: Venue; claim: Claim; now: number; onWait: () => void; onRelease: () => void }) {
-  const t = v.types.find((x) => x.id === c.type)!;
+function NoShow({ venue: v, claim: c, now, locked, onWait, onRelease }: { venue: Venue; claim: Claim; now: number; locked: boolean; onWait: () => void; onRelease: () => void }) {
+  const t = v.types.find((x) => x.id === c.type);
+  if (!t) return null;
   const mins = Math.round((now - c.start) / MIN);
   const it = c.count > 1 ? `the ${units(t, c.count)} are` : `the ${t.unit[0]} is`;
   return (
     <OrbitSays
       title={`${first(c.who)} hasn’t come`}
       text={`${c.who} booked ${what(v, c)} from ${timeLabel(c.start)}, ${mins} minutes ago. Release it and ${it} free again; ${first(c.who)} is told, with no refund.`}
-      answers={[
-        { label: 'Wait', onPress: onWait },
-        { label: 'Release', onPress: onRelease },
-      ]}
+      // Signed in, Wait alone until S4: OrbitSays' answers can't fade, so Release isn't offered.
+      answers={[{ label: 'Wait', onPress: onWait }, ...(locked ? [] : [{ label: 'Release', onPress: onRelease }])]}
     />
   );
 }
 
-function NextUp({ touched, onTouch }: { touched: ReadonlySet<string>; onTouch: (id: string) => void }) {
+function NextUp({ touched, onTouch, locked }: { touched: ReadonlySet<string>; onTouch: (id: string) => void; locked: boolean }) {
   const { venue: v, claims, now, hours: h, checkIn } = useToday();
   const from = Math.max(now, h.opens);
   const rows = claims.filter(
     (c) =>
-      c.kind === 'booking' &&
+      atDoor(c) &&
       (touched.has(c.id) ||
         (['soon', 'open', 'late', 'noShow'].includes(door(c, now)) && c.start <= from + SOON) ||
         (door(c, now) === 'here' && (c.in ?? 0) < c.count)), // part of a group in: the rest are still due
@@ -163,7 +171,7 @@ function NextUp({ touched, onTouch }: { touched: ReadonlySet<string>; onTouch: (
                     <Text style={styles.meta}>{line}</Text>
                   </View>
                 </View>
-                {['open', 'late', 'noShow'].includes(d) && <Pill label="Check in" onPress={() => {
+                {['open', 'late', 'noShow'].includes(d) && <Pill label="Check in" disabled={locked} onPress={() => {
                       checkIn(c.id);
                       onTouch(c.id);
                     }} />}
@@ -181,7 +189,8 @@ function Cell({ kind, style }: { kind: 'booking' | 'walkin' | 'block' | 'free'; 
 }
 
 function TypeCard({ t }: { t: StationType }) {
-  const { venue: v, claims, now, hours: h, freeOne } = useToday();
+  const { venue: v, claims, now, hours: h, freeOne, load } = useToday();
+  const locked = !!load; // signed in: faded until S4
   const [sel, setSel] = useState<number>();
   const [width, setWidth] = useState(0);
   const at = steps(v, t, h.day);
@@ -237,11 +246,11 @@ function TypeCard({ t }: { t: StationType }) {
       <View style={styles.cfoot}>
         <Text style={styles.kick}>Walk-ins now</Text>
         <View style={styles.stepper}>
-          <Round glyph="−" label={`Free a ${t.unit[0]} early`} disabled={!here.walkin} onPress={() => freeOne(t.id)} />
+          <Round glyph="−" label={`Free a ${t.unit[0]} early`} disabled={!here.walkin || locked} onPress={() => freeOne(t.id)} />
           <Text style={styles.count}>{here.walkin}</Text>
-          <Round glyph="+" label={`Add a walk-in on ${t.name}`} onPress={() => router.push({ pathname: '/walkin', params: { type: t.id } })} />
+          <Round glyph="+" label={`Add a walk-in on ${t.name}`} disabled={locked} onPress={() => router.push({ pathname: '/walkin', params: { type: t.id } })} />
         </View>
-        <Pill label="Block" onPress={() => router.push({ pathname: '/walkin', params: { type: t.id, mode: 'block' } })} />
+        <Pill label="Block" disabled={locked} onPress={() => router.push({ pathname: '/walkin', params: { type: t.id, mode: 'block' } })} />
       </View>
     </View>
   );

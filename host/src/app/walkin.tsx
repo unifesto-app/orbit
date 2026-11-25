@@ -14,7 +14,7 @@ const WHY = ['Maintenance', 'Private party', 'Closed'];
 
 export default function WalkIn() {
   const { type, mode } = useLocalSearchParams<{ type: string; mode?: string }>();
-  const { venue: v, claims, now, hours: h, add } = useToday(); // signed in, the API's stations and claims
+  const { venue: v, claims, now, hours: h, add, today, load } = useToday(); // signed in, the API's stations and claims
   const block = mode === 'block';
   const [hours, setHours] = useState(block ? 2 : 1);
   const [count, setCount] = useState(1);
@@ -22,7 +22,9 @@ export default function WalkIn() {
   const [why, setWhy] = useState(WHY[0]);
   const done = useRef(false); // a second tap while the sheet closes adds nothing
   const t = v.types.find((x) => x.id === type);
-  if (!t) return null;
+  if (!today || !t) return null; // a seat switch while the sheet is up: no day yet
+  // ponytail: signed in, the button is faded until S4 sends walk-ins and blocks to the API.
+  const locked = !!load;
   const tried = walkIn(claims, v, t, now, hours, count);
   const start = walkInStart(t, now);
   const end = Math.min(start + hours * HOUR, h.closes);
@@ -62,9 +64,9 @@ export default function WalkIn() {
       <Pill
         wide
         label={block ? 'Block' : pay === 'qr' ? 'Show Pay now QR' : 'Add walk-in'}
-        disabled={!tried.ok}
+        disabled={!tried.ok || locked}
         onPress={() => {
-          if (!tried.ok || done.current) return;
+          if (!tried.ok || locked || done.current) return;
           done.current = true;
           add(block ? { ...tried.claim, id: `b${tried.claim.id}`, kind: 'block', why } : tried.claim);
           close();

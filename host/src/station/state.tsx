@@ -82,7 +82,7 @@ function useStationState() {
     // What Today draws: the API's day when signed in (null until the first answer), the mock's in the demo; and, signed
     // in, how the fetch stands. Read through useToday().
     today: seats ? fromLive : { venue, claims: day.claims, hours: open, closed: false },
-    load: seats ? { error: live.error, status: live.status, reload: live.reload } : null,
+    load: seats ? { data: live.data, error: live.error, status: live.status, reload: live.reload } : null,
     venue,
     role,
     hours: open,
@@ -94,8 +94,8 @@ function useStationState() {
     // The demo's own: any mock venue, either role.
     setVenue: setVenueId,
     setRole,
-    // The counter's writes change the mock day only. Signed in they reach nothing Today draws (its day is the API's, and
-    // the next fetch is the truth); S4 sends them to the API.
+    // The counter's writes change the mock day only. Signed in, Today and the walk-in sheet fade their buttons instead
+    // (`load` set), so nobody thinks a walk-in was logged; S4 sends them to the API.
     checkIn: (id: string) => change((cs) => cs.map((c) => (c.id === id ? admit(c, c.count - (c.in ?? 0), Date.now(), 'you') : c))),
     release: (id: string) => change((cs) => cs.map((c) => (c.id === id ? { ...c, released: Date.now() } : c))),
     add: (c: Claim) => change((cs) => [...cs, c]),
