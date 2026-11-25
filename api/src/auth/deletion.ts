@@ -1,7 +1,7 @@
 import { and, eq, gt, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import type { Db } from "../db/index.ts";
-import { activity, follows, hosts, identities, listEvents, lists, passkeys, saves, pmActivity, sessions, staffGrants, teamRoles, users } from "../db/schema.ts";
+import { activity, follows, hosts, identities, inboxItems, listEvents, lists, passkeys, saves, pmActivity, sessions, staffGrants, teamRoles, users } from "../db/schema.ts";
 import { type Env, fail, type Notify, signedIn } from "../http.ts";
 import { drop, type Media } from "../media.ts";
 import { holdIfUnanswered, ownerOnlySql } from "../roles/access.ts";
@@ -138,6 +138,8 @@ export async function runDeletions(db: Db, notify: Notify, now: number, revokeAp
         await tx.delete(lists).where(eq(lists.userId, u.id));
         await tx.delete(saves).where(eq(saves.userId, u.id));
         await tx.delete(activity).where(eq(activity.userId, u.id)); // analytics rows go with the account (owner, 19 Nov 2026)
+        // Their inbox goes; deliveries rows stay until the 180-day cleanup, as the log of what was sent (D6).
+        await tx.delete(inboxItems).where(eq(inboxItems.userId, u.id));
         const seats = await tx
           .update(teamRoles)
           .set({ endedAt: at, endReason: "deleted" })

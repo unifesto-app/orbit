@@ -6,15 +6,19 @@ import type { ProofConfig } from "./auth/proof.ts";
 import { memoryStore } from "./auth/store.ts";
 import type { WaysConfig } from "./auth/ways.ts";
 import { connect, migrateDb } from "./db/index.ts";
-import type { Notice } from "./http.ts";
+import type { Mail } from "./auth/senders.ts";
+import type { Notice, Notify } from "./http.ts";
 import { memoryFiles } from "./media.ts";
+import { createNotifier, runDeliveries } from "./notifications.ts";
 
 // A real Postgres for tests: TEST_DATABASE_URL, or the local orbit_test database (createdb orbit_test). Each call
 // empties it and runs every migration, so a test file starts clean. Test files run one at a time (package.json).
 // `send` replaces the sender that records codes, and `codes` sets the opening gate and daily cap (default: open).
 // `ways` sets passkeys, Google and Apple (auth/ways.ts), with `fetch` answering for Google and Apple. `media: false`
 // leaves uploads out, as on a server with no bucket. `proof` checks that requests come from Orbit (default: unchecked).
-export async function testApp(opts: { send?: Sender; codes?: SendPolicy; ways?: WaysConfig; media?: false; proof?: ProofConfig } = {}) {
+// Every notice goes through the real pipeline (notifications.ts) and is also kept in `notices`; nothing is sent until a
+// test calls `deliver()`, which runs one worker pass with `mail` (default: kept in `mails`).
+export async function testApp(opts: { send?: Sender; codes?: SendPolicy; ways?: WaysConfig; media?: false; proof?: ProofConfig; mail?: Mail } = {}) {
   const url = process.env.TEST_DATABASE_URL ?? "postgres://localhost:5432/orbit_test";
   if (!/_test(\?|$)/.test(url)) throw new Error("Tests empty their database, so its name must end in _test");
   const { db, close } = connect(url);
@@ -27,17 +31,23 @@ export async function testApp(opts: { send?: Sender; codes?: SendPolicy; ways?: 
   const notices: Notice[] = [];
   const store = memoryStore(() => clock);
   const media = { files: memoryFiles(), url: "https://api.test/media" };
+  const mail: Mail = opts.mail ?? (async (to, m) => void mails.push({ to, ...m }));
+  const real = createNotifier({ db, now: () => clock });
+  const notify: Notify = async (n, tx) => {
+    notices.push(n);
+    await real(n, tx);
+  };
   const app = createApp({
     db,
     store,
     secret: "test-secret-that-is-at-least-32-characters",
     now: () => clock,
     send: opts.send ?? (async (to, code) => void sent.push({ to, code })),
-    mail: async (to: string, m: { subject: string; html: string; text: string; replyTo?: string }) => void mails.push({ to, ...m }),
+    mail,
     codes: opts.codes,
     ways: opts.ways,
     proof: opts.proof,
-    notify: async (n) => void notices.push(n),
+    notify,
     media: opts.media === false ? undefined : media,
   });
 
@@ -52,5 +62,7 @@ export async function testApp(opts: { send?: Sender; codes?: SendPolicy; ways?: 
   // The code last sent to a phone or email.
   const lastCode = (to: string) => sent.filter((s) => (s.to.kind === "phone" ? s.to.e164 : s.to.email) === to).at(-1)?.code;
 
-  return { db, app, store, call, sent, mails, notices, lastCode, media, close, tick: (ms: number) => void (clock += ms), now: () => clock };
+  const deliver = () => runDeliveries({ db, mail, now: clock });
+
+  return { db, app, store, call, sent, mails, notices, notify, deliver, lastCode, media, close, tick: (ms: number) => void (clock += ms), now: () => clock };
 }

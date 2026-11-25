@@ -1,6 +1,6 @@
 import { and, count, desc, eq, gt, gte, ilike, inArray, isNotNull, isNull, lte, ne, notLike, or, sql } from "drizzle-orm";
 import { Hono, type Context } from "hono";
-import { GrantFeatures, InviteAdmin, Lift, readPhone, STAFF_FEATURES, type StaffFeature, StaffReason, StartHost, Suspend } from "@orbit/contract";
+import { GrantFeatures, InviteAdmin, Lift, type NoticeKind, readPhone, STAFF_FEATURES, type StaffFeature, StaffReason, StartHost, Suspend } from "@orbit/contract";
 import type { Db } from "../db/index.ts";
 import { auditLog, hosts, hostSlugs, sessions, staffGrants, teamRoles, users } from "../db/schema.ts";
 import { contactOf, type Env, fail, invalid, isUuid, type Notify, listPage, parse, signedIn, taken } from "../http.ts";
@@ -38,7 +38,7 @@ export function rolesRoutes({ db, notify, secret, now = Date.now }: Deps) {
   const audit = (tx: Tx, row: Omit<typeof auditLog.$inferInsert, "at">) => tx.insert(auditLog).values({ ...row, at: at() });
 
   const holders = (f: StaffFeature) => holdersOf(db, f, at());
-  const say = (ids: string[], kind: string, data: Record<string, unknown>) => tell(notify, ids, kind, data);
+  const say = (ids: string[], kind: NoticeKind, data: Record<string, unknown>) => tell(notify, ids, kind, data);
 
   // ---------- Hosts and teams ----------
 

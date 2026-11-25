@@ -1,7 +1,7 @@
 import { and, count, desc, eq, ilike, inArray, isNotNull, isNull, or } from "drizzle-orm";
 import { Hono, type Context } from "hono";
 import { createMiddleware } from "hono/factory";
-import { EditHost, HostSlug, type HostPage, SetParent, StaffReason, VerifyHost } from "@orbit/contract";
+import { EditHost, HostSlug, type HostPage, type NoticeKind, SetParent, StaffReason, VerifyHost } from "@orbit/contract";
 import type { Db } from "../db/index.ts";
 import { auditLog, follows, hosts, hostSlugs, teamRoles, users, venues } from "../db/schema.ts";
 import { type Env, fail, invalid, isUuid, type Notify, listPage, parse, signedIn, taken } from "../http.ts";
@@ -26,9 +26,9 @@ export function hostsRoutes({ db, notify, secret, now = Date.now }: Deps) {
   const maybe = createMiddleware<Env>(async (c, next) => (c.req.header("authorization") ? auth(c, next) : next()));
   const at = () => new Date(now());
   const audit = (tx: Tx, row: Omit<typeof auditLog.$inferInsert, "at">) => tx.insert(auditLog).values({ ...row, at: at() });
-  const say = (ids: string[], kind: string, data: Record<string, unknown>) => tell(notify, ids, kind, data);
+  const say = (ids: string[], kind: NoticeKind, data: Record<string, unknown>) => tell(notify, ids, kind, data);
   // Admins hear it, and every holder of Hosts, who see what staff do (as in Roles).
-  const sayStaff = async (h: Host, kind: string, extra: Record<string, unknown>, action: string, reason: string, by: string) => {
+  const sayStaff = async (h: Host, kind: NoticeKind, extra: Record<string, unknown>, action: string, reason: string, by: string) => {
     await say(await adminsOf(db, h.id), kind, { hostId: h.id, hostName: h.name, ...extra });
     await say(await holdersOf(db, "hosts", at()), "staffRiskyAction", { action, hostId: h.id, reason, by });
   };

@@ -10,7 +10,7 @@ import { pruneApplications } from "./careers.ts";
 import { pruneVisits } from "./visits.ts";
 import { ways, type WaysConfig } from "./auth/ways.ts";
 import { connect, migrateDb } from "./db/index.ts";
-import type { Notify } from "./http.ts";
+import { createNotifier, pruneNotifications, runDeliveries } from "./notifications.ts";
 import { type Media, memoryFiles, s3Files } from "./media.ts";
 
 const need = (name: string) => {
@@ -67,8 +67,8 @@ console.log(
     `alert at ${dailyCap} a day per channel, when WhatsApp codes stop until midnight`,
 );
 const store = production || process.env.REDIS_URL ? redisStore(need("REDIS_URL")) : memoryStore();
-// ponytail: messages to people come with the Notifications flow; until then they're only logged.
-const notify: Notify = async (n) => console.log(`[notify] ${n.kind} → ${JSON.stringify(n.to)}`);
+// Messages to people (notifications.ts): written to the inbox and the deliveries queue, which the worker below sends.
+const notify = createNotifier({ db, now: Date.now });
 
 // Uploads (photos, then host logos): the private S3 bucket MEDIA_BUCKET, with the server's AWS credentials, served at
 // MEDIA_URL. Off production without a bucket they're kept in memory; in production without one, uploads say they
@@ -147,6 +147,20 @@ setInterval(() => runDeletions(db, notify, Date.now(), revokeApple, media).catch
 
 // Visit log rows past the privacy page's 180 days.
 setInterval(() => pruneVisits(db, Date.now()).catch((e) => console.error("[visits]", e)), 60 * 60 * 1000).unref();
+
+// Inbox items and deliveries past 180 days.
+setInterval(() => pruneNotifications(db, Date.now()).catch((e) => console.error("[notifications]", e)), 60 * 60 * 1000).unref();
+
+// The deliveries worker: a pass every 5 seconds, never two at once in this process (other processes are kept off by the
+// claim itself). Without SES in production, emails are skipped as not set up; off production they're logged ([mail]).
+let busy = false;
+setInterval(() => {
+  if (busy) return;
+  busy = true;
+  runDeliveries({ db, mail, now: Date.now() })
+    .catch((e) => console.error("[deliveries]", e))
+    .finally(() => (busy = false));
+}, 5_000).unref();
 
 // Activity rows past 90 days (owner, 19 Nov 2026: "90 days"): their day's totals are kept, the people go. On start, then hourly.
 const sweep = () => sweepActivity(db, Date.now()).catch((e) => console.error("[activity]", e));
