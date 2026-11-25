@@ -4,24 +4,32 @@
 // The account comes from the Orbit API (src/api.ts). What the first frame needs (signed in, the account and its roles)
 // is saved on the phone and read back synchronously at launch, the way the location is (src/place.ts); the refresh
 // token is kept in the Keychain, and the access token only in memory.
-// ponytail: saved events and saved lists stay on this phone, seeded from the mock (src/account/data.ts, src/mock.ts),
-// until the API has them. Followed hosts come from the API (GET /me/follows) since 25 Nov 2026.
+// Followed hosts come from the API (GET /me/follows), and so do saved events and lists (GET /me/saves) since 25 Nov 2026:
+// the phone shows a change at once, tells the API, and puts it back if the API says no; the server's copy wins.
 import { type AuthStep, type CategorySlug, type Me as Account, movedCategory } from '@orbit/contract';
 import Constants from 'expo-constants';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import Storage from 'expo-sqlite/kv-store';
-import { useSyncExternalStore } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 import { Alert, Platform } from 'react-native';
 
-import { lists as listsMock, saved as savedMock } from './account/data';
 import type { Way } from './account/rules';
 import type { PayWith, UpiId } from './pay';
 import * as saves from './account/saves';
-import { API_URL, makeApi } from './api';
+import { type Change, confirmed, fresh, fromServer, queued, refused, savesApi, shown, withRead } from './account/savesApi';
+import { isKnown, remember } from './account/seen';
+import { API_URL, makeApi, OFFLINE, type Result } from './api';
 import { hostsApi } from './hosts';
 import type { Viewer } from './home/layout';
-import { events, viewer } from './mock';
+import { viewer } from './mock';
 import { hideNote, showNote } from './note';
+
+let saveEpoch = 0; // bumped by every save change made here, and by sign-in and sign-out: an older read can't undo it
+// Whether the saves have been read this launch: Account › Saved draws a wait, not "Nothing saved yet", until they have.
+let savesStatus: 'loading' | 'ready' | 'failed' = 'loading';
+let reading: Promise<void> | null = null; // the saves read under way, if any
+let queue: Promise<unknown> = Promise.resolve(); // every saves call, one after another, in the order they were tapped
+let model = fresh({ saved: [], lists: [] }); // what the server confirmed, and the changes still waiting (savesApi.ts)
 
 const KEY = 'orbit.session';
 const DEVICE = 'orbit.device';
@@ -100,10 +108,18 @@ function stored(): Session | null {
 }
 
 let current = stored();
+model = fresh(current ? { saved: current.saved, lists: current.lists } : { saved: [], lists: [] });
 const listeners = new Set<() => void>();
 
 function set(next: Session | null) {
-  if (!next) hideNote(); // a note's Undo or Add to a list belongs to the account that showed it
+  if (!next) {
+    hideNote(); // a note's Undo or Add to a list belongs to the account that showed it
+    saveEpoch++; // a saves read still out belongs to the account that left
+    savesStatus = 'loading';
+    queue = Promise.resolve(); // the next account never waits behind, or sends, what this one left
+    reading = null;
+    model = fresh({ saved: [], lists: [] });
+  }
   current = next;
   for (const fn of listeners) fn();
   try {
@@ -225,19 +241,60 @@ export function runPending() {
   action?.();
 }
 
-// Saving (Saved events and lists doc). Only saves of events that can still be opened count toward the 1,000.
-// A real event (a uuid) counts too: its page opens from the API.
-export const canOpen = (id: string) => UUID.test(id) || events.some((e) => e.id === id);
+// Saving (Saved events and lists doc). Only saves of events that can still be opened count toward the 1,000: those whose
+// card is here (the API's answer leaves the hidden ones out).
+export const canOpen = isKnown;
 
-// Applies a change to the saves: null once done, or the problem to show ("You have 1,000 saved…").
-function apply(change: (s: saves.Saves) => saves.Saves | string): string | null {
+
+// One save change, the way a follow goes: shown at once, then sent to the API, and taken back if it says no. Answers null
+// once done, or the problem to show where the person is. A change with no `send` stays on the phone (an event of the old
+// mock, which the API doesn't know).
+// What's drawn is the server's last confirmed saves with the changes still waiting replayed on top (savesApi.ts), so a
+// refused change leaves exactly itself out, whatever was tapped after it. Calls go one after another on `queue`, in the
+// order they were tapped, and a call for an account that has since signed out is never sent (it would carry the next
+// account's token). A refusal alerts the API's message and, online, reads the saves again once the queue has drained
+// ("two phones: the server's copy wins"; "That list is gone" the same). Offline there's no queue of retries.
+let changes = 0;
+const draw = () => current && set({ ...current, ...shown(model) });
+function change(next: Change, send?: () => Promise<Result<unknown>>, failed?: () => void): string | null {
   if (!current) return null;
-  const next = change(current);
-  if (typeof next === 'string') return next;
-  set({ ...current, ...next });
+  const made = next(shown(model));
+  if (typeof made === 'string') return made;
+  const id = ++changes;
+  const who = current.me.id;
+  saveEpoch++;
+  model = queued(model, id, next);
+  if (!send) model = confirmed(model, id); // phone-only: nothing to wait for
+  draw();
+  if (!send) return null;
+  const run = queue.then((): Promise<Result<unknown>> | Result<unknown> => (current?.me.id === who ? send() : { ok: true, data: null }));
+  queue = run.catch(() => {});
+  const handle = (r: Result<unknown>) => {
+    if (current?.me.id !== who) return; // signed out, or someone else in: nothing here is theirs
+    if (r.ok) {
+      model = confirmed(model, id);
+      return;
+    }
+    saveEpoch++;
+    model = refused(model, id);
+    draw();
+    failed?.();
+    Alert.alert(r.error.message);
+    if (r.status !== 0) void loadSaves();
+  };
+  void run.then(handle, () => handle({ ok: false, status: 0, error: OFFLINE }));
   return null;
 }
-const saveEvent = (eventId: string) => apply((s) => saves.save(s, eventId, Date.now(), canOpen));
+// A real event's id is a uuid; the old mock's aren't.
+export const real = (id: string) => UUID.test(id);
+// An Undo with only the real events' ids: the API never knew the old mock's.
+const onlyReal = (u: saves.Undo): saves.Undo => ({
+  saves: u.saves.filter((x) => real(x.id)),
+  lists: Object.fromEntries(Object.entries(u.lists).map(([id, ids]) => [id, ids.filter(real)])),
+});
+// The time is taken once, at the tap: a replay draws the same save, not a newer one.
+const saveEvent = (eventId: string, at = Date.now()) =>
+  change((s) => saves.save(s, eventId, at, canOpen), real(eventId) ? () => savesApi(api).save(eventId) : undefined);
 
 // The star, Save (owner, 16 Nov 2026: "instead of toast use modal, when clicked on love"; a heart until 19 Nov, "saved love
 // with star"): an empty star saves at once and
@@ -245,19 +302,12 @@ const saveEvent = (eventId: string) => apply((s) => saves.save(s, eventId, Date.
 // unsaves. `on` is what the tap asked for, never a toggle, so a save tapped while signed out still saves when the
 // account already had it. Signed out, the sign-in sheet comes first and the save lands after; no modal then, as the
 // sheet is still leaving and one opened over it goes astray. The star filling says it's saved.
-// ponytail: at the cap the star doesn't fill first and roll back (doc); it stays empty and an alert says why. The
-// API's answer makes it a real roll-back. The push ask on an event not on sale yet waits for notifications.
+// A refusal (full, offline, the event gone) rolls the star back and says why (change above). The push ask on an event not on
+// sale yet waits for notifications.
 export function tapSave(eventId: string, on: boolean, fromMenu = false) {
   const signingIn = !current;
   const openLists = () => router.push(`/lists/${eventId}`);
   needsAccount(() => {
-    // ponytail: a real event has no lists sheet and isn't drawn in Saved yet; both come with saves in the API (P9). Until
-    // then the star saves on the phone and a note says so.
-    if (UUID.test(eventId)) {
-      if (!on) return removeSaves([eventId]);
-      const problem = saveEvent(eventId);
-      return problem ? Alert.alert(problem) : showNote({ text: 'Saved' });
-    }
     const problem = on ? saveEvent(eventId) : null;
     if (!signingIn) return problem ? Alert.alert(problem) : openLists();
     // Just signed in, the sheet still leaving: a note, drawn over it, says what happened instead.
@@ -269,14 +319,16 @@ export function tapSave(eventId: string, on: boolean, fromMenu = false) {
 export const addToList = (eventId: string) => tapSave(eventId, true, true);
 
 // Unsave, from the list modal or a saved row's menu: gone from All saved and every list at once, with Undo for 5
-// seconds (until dismissed with assistive tech on, src/note.tsx). Remove all past passes every past save.
+// seconds (until dismissed with assistive tech on, src/note.tsx). Remove all past passes every past save. Undo asks the
+// API to put the same saves back, with their dates and lists.
 export function removeSaves(ids: readonly string[]) {
   if (!current || ids.length === 0) return;
-  const { next, undo } = saves.unsave(current, ids);
-  set({ ...current, ...next });
+  const { undo } = saves.unsave(shown(model), ids);
+  const sent = ids.filter(real);
+  change((s) => saves.unsave(s, ids).next, sent.length ? () => savesApi(api).remove(sent) : undefined, hideNote);
   showNote({
     text: ids.length === 1 ? 'Removed from saved' : `Removed ${ids.length} saved events`,
-    action: { label: 'Undo', run: () => apply((s) => saves.restore(s, undo)) },
+    action: { label: 'Undo', run: () => void change((s) => saves.restore(s, undo), sent.length ? () => savesApi(api).restore(onlyReal(undo)) : undefined) },
     ms: 5000,
   });
 }
@@ -286,14 +338,31 @@ const newId = () => `l_${Date.now().toString(36)}${Math.random().toString(36).sl
 export function newList(name: string, eventId?: string) {
   const id = newId();
   const at = Date.now();
-  return apply((s) => {
-    const made = saves.create(s, name, id, at);
-    return typeof made === 'string' || !eventId ? made : saves.tick(made, id, eventId, true, at, canOpen);
-  });
+  const mine = eventId && real(eventId) ? eventId : null;
+  return change(
+    (s) => {
+      const made = saves.create(s, name, id, at);
+      return typeof made === 'string' || !eventId ? made : saves.tick(made, id, eventId, true, at, canOpen);
+    },
+    // One call: the list, with its first event saved first if it isn't, so a half-made list never shows.
+    () => savesApi(api).putList(id, name.trim(), { first: mine }),
+  );
 }
-export const renameList = (id: string, name: string) => apply((s) => saves.rename(s, id, name));
-export const deleteList = (id: string) => apply((s) => saves.drop(s, id));
-export const tickList = (listId: string, eventId: string, on: boolean) => apply((s) => saves.tick(s, listId, eventId, on, Date.now(), canOpen));
+export const renameList = (id: string, name: string) => change((s) => saves.rename(s, id, name), () => savesApi(api).putList(id, name.trim()));
+// Deleting a list that's already gone is what was asked for, not a failure.
+export const deleteList = (id: string) =>
+  change(
+    (s) => saves.drop(s, id),
+    async () => {
+      const r = await savesApi(api).deleteList(id);
+      return !r.ok && r.error.error === 'listGone' ? { ok: true as const, data: null } : r;
+    },
+  );
+export const tickList = (listId: string, eventId: string, on: boolean, at = Date.now()) =>
+  change(
+    (s) => saves.tick(s, listId, eventId, on, at, canOpen),
+    real(eventId) ? () => savesApi(api).tick(listId, eventId, on) : undefined,
+  );
 
 // Signed out by the API: a suspension says why and until when (the API keeps the token unspent so it can).
 export const api = makeApi({
@@ -330,11 +399,17 @@ export function signIn(done: Extract<AuthStep, { step: 'signedIn' }>, via: Way) 
     // Not kept: the next sign-in is a new device.
   }
   api.start(done);
-  const kept = current ? { saved: current.saved, lists: current.lists } : saves.normalise({ saved: savedMock, lists: listsMock }, Date.now());
+  saveEpoch++; // reads still out belong to whoever was here before
+  savesStatus = 'loading';
+  queue = Promise.resolve(); // nothing of an earlier account's is waited on or sent
+  reading = null;
+  const kept = current ? { saved: current.saved, lists: current.lists } : saves.normalise({ saved: [], lists: [] }, Date.now());
   // What's kept on this phone carries over, follows to Loved it, as saves do.
   const mine = current && { interests: current.interests, interested: current.interested, loved: current.loved, rooms: current.rooms, asked: current.asked, payWith: current.payWith, upiIds: current.upiIds, read: current.read, hostsOff: current.hostsOff };
+  model = fresh(kept);
   set({ via, ...kept, ...mine, follows: current?.follows ?? [], me: done.me });
   void loadFollows();
+  void loadSaves();
 }
 
 // The hosts the account follows, as the API has them (ids only; a host gone private is left out there).
@@ -350,14 +425,70 @@ async function loadFollows(retry = true): Promise<void> {
   if (r.ok && current) set({ ...current, follows: r.data.map((h) => h.id) });
 }
 
+// The saves and lists as the API has them: they become what the server confirmed, with the changes still waiting drawn
+// on top, and the events that came with them are kept to draw. It waits for the saves calls still out, so it never reads
+// before them. A change tapped while it waited has already been sent, so the read goes again (once) rather than being
+// dropped. A read that lands after sign-out, or for another account, is dropped. When it gives up and nothing has been
+// read yet, the status says failed, so the screens offer Try again.
+async function readSaves(): Promise<void> {
+  const who = current?.me.id;
+  if (!who) return;
+  if (savesStatus === 'failed') {
+    savesStatus = 'loading';
+    for (const fn of listeners) fn();
+  }
+  for (let tries = 0; tries < 2; tries++) {
+    await queue;
+    const at = saveEpoch;
+    const r = await savesApi(api).read();
+    if (current?.me.id !== who) return;
+    if (at !== saveEpoch) continue;
+    if (!r.ok) break;
+    remember(r.data.events);
+    savesStatus = 'ready';
+    model = withRead(model, fromServer(r.data));
+    draw();
+    for (const fn of listeners) fn();
+    return;
+  }
+  if (savesStatus !== 'ready') {
+    savesStatus = 'failed';
+    for (const fn of listeners) fn();
+  }
+}
+// One read at a time: a call while one is out joins it. A sign-in or sign-out forgets the one out (set, signIn), so
+// the next account never joins a read that belongs to the last; that read, when it ends, clears only itself.
+function loadSaves(): Promise<void> {
+  if (reading) return reading;
+  const mine: Promise<void> = readSaves().finally(() => {
+    if (reading === mine) reading = null;
+  });
+  reading = mine;
+  return mine;
+}
+// Reading them again, for a Try again.
+export const reloadSaves = () => loadSaves();
+export const useSavesStatus = () => useSyncExternalStore(subscribe, () => savesStatus);
+// Account › Saved and a list's screen read the saves each time they come into view, which also refreshes the events'
+// statuses; not while a read is already under way.
+export function useSavesOnFocus() {
+  useFocusEffect(
+    useCallback(() => {
+      if (!reading) void loadSaves();
+    }, []),
+  );
+}
+
 // The account as the API has it now (a name, a role or a deletion changed elsewhere). Once at launch.
 export async function refreshAccount() {
   if (!current) return;
+  const saved = loadSaves(); // not behind /me: a failing /me must not leave Saved waiting
   const r = await api.authed<Account>('GET', '/me');
   if (r.ok && current?.me.id === r.data.id) {
     set({ ...current, me: r.data });
     await loadFollows();
   }
+  await saved;
 }
 export const setAccount = (me: Account) => current?.me.id === me.id && set({ ...current, me });
 // A field or two the API changed (a new number or email), onto the account as it is now.

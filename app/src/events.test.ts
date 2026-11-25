@@ -4,6 +4,7 @@ import { test } from 'node:test';
 
 import type { EventCard, TierCard } from '@orbit/contract';
 
+import { isKnown } from './account/seen.ts';
 import { eventsApi, hostsOf, toEvent, toHost, whereOf } from './events.ts';
 import { eventStatus } from './status.ts';
 
@@ -161,7 +162,8 @@ test('where the viewer is: a position inside India, else the city; a picked city
 
 test('public reads use call, never authed, and send what was asked', async () => {
   const calls: string[] = [];
-  const api = { call: async (m: string, p: string) => (calls.push(`${m} ${p}`), { ok: true as const, data: null as never }) };
+  const data = { near: [card({ id: 'n1' })], elsewhere: [], events: [card({ id: 's1' })], hosts: [], upcoming: [card({ id: 'u1' })], past: [card({ id: 'p1' })], ...card({ id: 'one' }) };
+  const api = { call: async (m: string, p: string) => (calls.push(`${m} ${p}`), { ok: true as const, data: data as never }) };
   const e = eventsApi(api);
   await e.discover({});
   await e.discover({ lat: 17.4, lng: 78.4, city: 'Hyderabad' });
@@ -177,4 +179,6 @@ test('public reads use call, never authed, and send what was asked', async () =>
     'GET /public/events/open%20mic',
     'GET /public/hosts/punchline/events',
   ]);
+  // What they returned is kept for the Saved screens.
+  for (const id of ['n1', 's1', 'u1', 'p1', 'one']) assert.ok(isKnown(id), id);
 });

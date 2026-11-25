@@ -28,6 +28,10 @@ const visible = and(eq(hosts.visibility, "public"), eq(hosts.status, "live"));
 // An event the lists show: published, public on a visible host, and not ended. One clock: until its end time (Discover D).
 const listed = (now: Date) => and(eq(events.status, "published"), eq(events.visibility, "public"), visible, gt(events.endsAt, now));
 
+// Who can open an event (GET /public/events/:slug, and so who can save it): published or cancelled, on a live host.
+// A link-only event and a private host's events open too. Saves use the same rule.
+export const openable = and(ne(events.status, "draft"), eq(hosts.status, "live"));
+
 const hostColumns = { hid: hosts.id, hslug: hosts.slug, hname: hosts.name, hkind: hosts.kind, hcity: hosts.city, hverified: hosts.verifiedAt, hlogo: hosts.logo, hvis: hosts.visibility };
 const base = {
   id: events.id, slug: events.slug, title: events.title, category: events.category, startsAt: events.startsAt, endsAt: events.endsAt, timezone: events.timezone,
@@ -44,14 +48,14 @@ const distance = (p: Point) =>
     : sql<null>`null`;
 
 // The one builder behind all four reads: a card select with its host, then every event's tiers in one more query.
-async function cards(db: Db, q: { where: SQL | undefined; order: SQL[]; limit: number; at?: Point; full?: boolean }): Promise<EventCard[]> {
+export async function cards(db: Db, q: { where: SQL | undefined; order: SQL[]; limit?: number; at?: Point; full?: boolean }): Promise<EventCard[]> {
   const rows = await db
     .select({ ...base, ...(q.full ? long : {}), ...hostColumns, dist: distance(q.at ?? null) })
     .from(events)
     .innerJoin(hosts, eq(hosts.id, events.hostId))
     .where(q.where)
     .orderBy(...q.order)
-    .limit(q.limit);
+    .limit(q.limit ?? 2 ** 31 - 1);
   const tiers = rows.length
     ? await db.select().from(ticketTypes).where(inArray(ticketTypes.eventId, rows.map((r) => r.id))).orderBy(asc(ticketTypes.sortOrder), asc(ticketTypes.createdAt))
     : [];
@@ -102,7 +106,7 @@ export function publicEventsRoutes({ db, now = Date.now }: Deps) {
       .from(eventSlugs)
       .innerJoin(events, eq(events.id, eventSlugs.eventId))
       .innerJoin(hosts, eq(hosts.id, events.hostId))
-      .where(and(eq(eventSlugs.slug, c.req.param("slug")), ne(events.status, "draft"), eq(hosts.status, "live")));
+      .where(and(eq(eventSlugs.slug, c.req.param("slug")), openable));
     if (!found) return nothing(c);
     const [event] = await cards(db, { where: eq(events.id, found.id), order: [], limit: 1, full: true });
     return c.json(event as PublicEvent);

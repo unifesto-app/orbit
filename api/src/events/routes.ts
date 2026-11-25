@@ -10,6 +10,7 @@ import { events, eventSlugs, hosts, teamRoles, ticketTypes } from "../db/schema.
 import { fail, invalid, isUuid, type Notify, parse, signedIn, taken, type Env } from "../http.ts";
 import { contentImage, drop, linkOf, type Media, newKey } from "../media.ts";
 import { changeable, teamOf } from "../roles/access.ts";
+import { savedCount } from "../saves.ts";
 import { slugFor } from "../slugs.ts";
 import { editRule, effectiveVisibility, placeColumns, stageOf, timesRule, visibilityRule } from "./rules.ts";
 
@@ -41,13 +42,13 @@ const TOO_BIG = "That image is over 5 MB.";
 // What the team reads of an event; the place is one object, or null when it has none. A private host's events read as
 // link-only whatever they stored (Hosts flow: "every event link-only"); the event keeps its own choice for if the host
 // goes public again. Discover and the public read must check the host too (a later task): they never read this.
-export const toTeamEvent = (e: Event, host: HostVisibility): TeamEvent => ({
+export const toTeamEvent = (e: Event, host: HostVisibility, saved: number | null = null): TeamEvent => ({
   id: e.id, hostId: e.hostId, slug: e.slug, status: e.status, visibility: effectiveVisibility(host, e.visibility), title: e.title, category: e.category,
   startsAt: iso(e.startsAt), endsAt: iso(e.endsAt), timezone: e.timezone,
   place: e.venue === null ? null : { venue: e.venue, address: e.address!, area: e.area!, city: e.city!, lat: e.lat, lng: e.lng, placeId: e.placeId },
   online: e.online, onlineLink: e.onlineLink, about: e.about, agenda: e.agenda, faq: e.faq, terms: e.terms,
   poster: e.poster, wide: e.wide, wideEdge: e.wideEdge, tone: toneOf(e),
-  publishedAt: iso(e.publishedAt), cancelledAt: iso(e.cancelledAt), cancelReason: e.cancelReason,
+  publishedAt: iso(e.publishedAt), cancelledAt: iso(e.cancelledAt), cancelReason: e.cancelReason, saved,
   createdAt: e.createdAt.toISOString(), updatedAt: e.updatedAt.toISOString(),
 });
 
@@ -154,7 +155,7 @@ export function eventsRoutes({ db, secret, media, now = Date.now }: Deps) {
   // GET /events/:id: the host's Admins.
   app.get("/events/:id", auth, async (c) => {
     const got = await adminOfEvent(c.req.param("id"), c.var.user.id);
-    return got ? c.json(toTeamEvent(got.event, got.host.visibility)) : nothing(c);
+    return got ? c.json(toTeamEvent(got.event, got.host.visibility, await savedCount(db, got.event.id, new Date(now())))) : nothing(c);
   });
 
   // PATCH /events/:id: Admins edit until it's cancelled; once an ended event has gone, its date and place lock (Hosts flow).

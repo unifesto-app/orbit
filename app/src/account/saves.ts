@@ -1,8 +1,8 @@
 // Saved events and lists (Saved events and lists doc, settled 16 Nov 2026). The heart saves into All saved; lists are
 // optional folders on top, an event in as many as you like, and every event in a list is always saved. Pure, so
 // saves.test.ts runs it under node: the session (src/session.ts) holds the state, and the screens draw it.
-// ponytail: kept on the phone until the API's save endpoints land; then the server's copy wins (doc: Two phones) and
-// "That list is gone" comes back from it as well as from here.
+// The server's copy wins (doc: Two phones): src/session.ts reads it at sign-in and applies each change here first, then
+// tells the API (src/account/savesApi.ts); "That list is gone" comes back from it as well as from here.
 
 export const MAX_SAVED = 1000; // past saves count; hidden ones (events that can't be opened) don't
 export const MAX_LISTS = 50;
@@ -106,13 +106,16 @@ export function tick(s: Saves, listId: string, eventId: string, on: boolean, at:
 // Lists by the last time something was added or the list was made.
 export const byTouched = (lists: readonly List[]) => [...lists].sort((a, b) => b.touched - a.touched);
 
-// Saved events split as every saved screen shows them: upcoming soonest first, then past, latest first. Only events in
-// `events` show: one that can't be opened is hidden, never dropped, and shows again once it can be.
-export function split<E extends { id: string; startsAt: string }>(ids: readonly string[], events: readonly E[], now: number) {
+// Saved events split as every saved screen shows them: upcoming soonest first, then past, latest first. One clock, as
+// Home and the status line have it: an event is upcoming until it ends (its start when no end is known), so a running
+// one isn't past. Only events in `events` show: one that can't be opened is hidden, never dropped, and shows again once
+// it can be.
+export function split<E extends { id: string; startsAt: string; endsAt?: string }>(ids: readonly string[], events: readonly E[], now: number) {
   const at = (e: E) => Date.parse(e.startsAt);
+  const over = (e: E) => (e.endsAt ? Date.parse(e.endsAt) <= now : at(e) < now);
   const found = events.filter((e) => ids.includes(e.id));
   return {
-    upcoming: found.filter((e) => at(e) >= now).sort((a, b) => at(a) - at(b)),
-    past: found.filter((e) => at(e) < now).sort((a, b) => at(b) - at(a)),
+    upcoming: found.filter((e) => !over(e)).sort((a, b) => at(a) - at(b)),
+    past: found.filter(over).sort((a, b) => at(b) - at(a)),
   };
 }

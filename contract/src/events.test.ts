@@ -147,7 +147,7 @@ const iso = "2026-12-01T12:00:00.000Z";
 const eventRow = { id, slug: "night-k3f9ab", status: "draft", visibility: "public", title: "Night", category: null, startsAt: null, endsAt: null, timezone: "Asia/Kolkata", area: null, city: null, online: false };
 const teamEvent = {
   ...eventRow, hostId: id, place: null, onlineLink: null, about: null, agenda: [], faq: [], terms: [],
-  poster: null, wide: null, wideEdge: null, tone: null, publishedAt: null, cancelledAt: null, cancelReason: null, createdAt: iso, updatedAt: iso,
+  poster: null, wide: null, wideEdge: null, tone: null, publishedAt: null, cancelledAt: null, cancelReason: null, saved: null, createdAt: iso, updatedAt: iso,
 };
 
 test("TeamEvent, EventRow and HostEvents are what the API answers", () => {
