@@ -4,8 +4,8 @@
 // The account comes from the Orbit API (src/api.ts). What the first frame needs (signed in, the account and its roles)
 // is saved on the phone and read back synchronously at launch, the way the location is (src/place.ts); the refresh
 // token is kept in the Keychain, and the access token only in memory.
-// ponytail: saved events, saved lists and followed hosts stay on this phone, seeded from the mock (src/account/data.ts,
-// src/mock.ts), until the API has them.
+// ponytail: saved events and saved lists stay on this phone, seeded from the mock (src/account/data.ts, src/mock.ts),
+// until the API has them. Followed hosts come from the API (GET /me/follows) since 25 Nov 2026.
 import { type AuthStep, type CategorySlug, type Me as Account, movedCategory } from '@orbit/contract';
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
@@ -18,6 +18,7 @@ import type { Way } from './account/rules';
 import type { PayWith, UpiId } from './pay';
 import * as saves from './account/saves';
 import { API_URL, makeApi } from './api';
+import { hostsApi } from './hosts';
 import type { Viewer } from './home/layout';
 import { events, viewer } from './mock';
 import { hideNote, showNote } from './note';
@@ -123,14 +124,15 @@ function subscribe(fn: () => void) {
 export const useSession = () => useSyncExternalStore(subscribe, () => current);
 export const useSignedIn = () => useSession() !== null;
 
-// Who Home and the pages draw for: once signed in, the account's initial, the follows made here and the rest of the
-// mock viewer; signed out, only the place, which never needs an account.
+// Who Home and the pages draw for: once signed in, the account's initial, its follows and interests; the place is
+// src/place.ts's, never the session's (null here). The tickets are still the mock's until bookings reach the API.
+// ponytail: `tickets` from the mock viewer until the bookings slice (P12.2).
 export function useViewer(): Viewer {
   const s = useSession();
   const initial = s?.me.name?.trim()[0]?.toUpperCase();
   return s
-    ? { ...viewer, signedIn: true, follows: s.follows, interests: s.interests, ...(initial && { initial }) }
-    : { signedIn: false, follows: [], place: viewer.place };
+    ? { signedIn: true, follows: s.follows, place: null, tickets: viewer.tickets, interests: s.interests, ...(initial && { initial }) }
+    : { signedIn: false, follows: [], place: null };
 }
 // The account's id, to key what's read for it; '' while signed out.
 const SIGNED_OUT = { id: '' };
@@ -143,8 +145,22 @@ export const useFollowing = (hostId: string) => useSession()?.follows.includes(h
 
 const turn = (list: readonly string[], id: string, on: boolean) => (on ? [...new Set([...list, id])] : list.filter((x) => x !== id));
 // Unfollowing forgets the host's Off, so following again starts at All (Notifications decision 3).
-export const setFollowing = (hostId: string, on: boolean) =>
-  current && set({ ...current, follows: turn(current.follows, hostId, on), hostsOff: on ? current.hostsOff : current.hostsOff?.filter((x) => x !== hostId) });
+// `followedHere` only changes this phone's list; `setFollowing` also tells the API (the real hosts' ids are uuids; the
+// mock's aren't, so they stay on the phone), and puts the tap back if it says no.
+let followEpoch = 0; // bumped by every follow tapped here, so an older read of the list can't undo it
+export const followedHere = (hostId: string, on: boolean) =>
+  (followEpoch++, current) && set({ ...current, follows: turn(current.follows, hostId, on), hostsOff: on ? current.hostsOff : current.hostsOff?.filter((x) => x !== hostId) });
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export function setFollowing(hostId: string, on: boolean) {
+  followedHere(hostId, on);
+  if (!current || !UUID.test(hostId)) return;
+  const who = current.me.id;
+  void hostsApi(api).follow(hostId, on).then((r) => {
+    if (r.ok || current?.me.id !== who) return; // signed out, or someone else in: the tap isn't theirs to undo
+    followedHere(hostId, !on);
+    Alert.alert(on ? 'Couldn’t follow' : 'Couldn’t unfollow', r.error.message);
+  });
+}
 // The way you like to pay, ready at checkout (owner, 19 Nov 2026: Payment methods); on this phone only.
 export const usePayWith = () => useSession()?.payWith;
 export const setPayWith = (p: PayWith) => current && set({ ...current, payWith: p });
@@ -210,7 +226,8 @@ export function runPending() {
 }
 
 // Saving (Saved events and lists doc). Only saves of events that can still be opened count toward the 1,000.
-export const canOpen = (id: string) => events.some((e) => e.id === id);
+// A real event (a uuid) counts too: its page opens from the API.
+export const canOpen = (id: string) => UUID.test(id) || events.some((e) => e.id === id);
 
 // Applies a change to the saves: null once done, or the problem to show ("You have 1,000 saved…").
 function apply(change: (s: saves.Saves) => saves.Saves | string): string | null {
@@ -234,6 +251,13 @@ export function tapSave(eventId: string, on: boolean, fromMenu = false) {
   const signingIn = !current;
   const openLists = () => router.push(`/lists/${eventId}`);
   needsAccount(() => {
+    // ponytail: a real event has no lists sheet and isn't drawn in Saved yet; both come with saves in the API (P9). Until
+    // then the star saves on the phone and a note says so.
+    if (UUID.test(eventId)) {
+      if (!on) return removeSaves([eventId]);
+      const problem = saveEvent(eventId);
+      return problem ? Alert.alert(problem) : showNote({ text: 'Saved' });
+    }
     const problem = on ? saveEvent(eventId) : null;
     if (!signingIn) return problem ? Alert.alert(problem) : openLists();
     // Just signed in, the sheet still leaving: a note, drawn over it, says what happened instead.
@@ -309,14 +333,31 @@ export function signIn(done: Extract<AuthStep, { step: 'signedIn' }>, via: Way) 
   const kept = current ? { saved: current.saved, lists: current.lists } : saves.normalise({ saved: savedMock, lists: listsMock }, Date.now());
   // What's kept on this phone carries over, follows to Loved it, as saves do.
   const mine = current && { interests: current.interests, interested: current.interested, loved: current.loved, rooms: current.rooms, asked: current.asked, payWith: current.payWith, upiIds: current.upiIds, read: current.read, hostsOff: current.hostsOff };
-  set({ via, ...kept, ...mine, follows: current?.follows ?? viewer.follows, me: done.me });
+  set({ via, ...kept, ...mine, follows: current?.follows ?? [], me: done.me });
+  void loadFollows();
+}
+
+// The hosts the account follows, as the API has them (ids only; a host gone private is left out there).
+// A follow tapped while it waited has already been sent, so the read goes again (once) rather than being dropped.
+async function loadFollows(retry = true): Promise<void> {
+  const at = followEpoch;
+  const who = current?.me.id; // an answer for an account that has since signed out never lands on the next one
+  const r = await hostsApi(api).follows();
+  if (current?.me.id !== who) return;
+  // ponytail: one re-read after a tap; a follow POST still in flight when that re-read lands can show Follow until the
+  // next launch. Overlay the pending taps on the answer if that ever shows up.
+  if (at !== followEpoch) return retry ? loadFollows(false) : undefined;
+  if (r.ok && current) set({ ...current, follows: r.data.map((h) => h.id) });
 }
 
 // The account as the API has it now (a name, a role or a deletion changed elsewhere). Once at launch.
 export async function refreshAccount() {
   if (!current) return;
   const r = await api.authed<Account>('GET', '/me');
-  if (r.ok && current?.me.id === r.data.id) set({ ...current, me: r.data });
+  if (r.ok && current?.me.id === r.data.id) {
+    set({ ...current, me: r.data });
+    await loadFollows();
+  }
 }
 export const setAccount = (me: Account) => current?.me.id === me.id && set({ ...current, me });
 // A field or two the API changed (a new number or email), onto the account as it is now.

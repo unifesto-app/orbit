@@ -138,6 +138,10 @@ export const TeamEvent = z.object({
   agenda: z.array(z.object({ at: Iso, item: z.string() })),
   faq: z.array(z.object({ q: z.string(), a: z.string() })),
   terms: z.array(z.string()),
+  poster: z.string().nullable(), // the 3:4 link
+  wide: z.string().nullable(), // the optional 4:3 link
+  wideEdge: z.string().nullable(), // the 4:3's top row, #rrggbb
+  tone: z.string().nullable(), // the shown image's dominant colour: the 4:3's, else the poster's
   publishedAt: Iso.nullable(),
   cancelledAt: Iso.nullable(),
   cancelReason: z.string().nullable(),
@@ -204,3 +208,71 @@ export const EditTicketType = TicketTypeFields.partial()
   .refine((b) => Object.keys(b).length > 0, "Change at least one thing")
   .refine(salesOpenBeforeClose, salesWindow);
 export type EditTicketType = z.infer<typeof EditTicketType>;
+
+// A ticket type as the team reads it (H5.4).
+export const TicketType = z.object({
+  id: z.uuid(),
+  name: z.string(),
+  pricePaise: z.number(),
+  quantity: z.number().nullable(),
+  salesStartAt: Iso.nullable(),
+  salesEndAt: Iso.nullable(),
+  note: z.string().nullable(),
+  perPersonLimit: z.number(),
+  sortOrder: z.number(),
+});
+export type TicketType = z.infer<typeof TicketType>;
+
+// POST /events/:id/cancel: the reason every ticket holder gets.
+export const CancelEvent = z.object({ reason: Text(1, 500) });
+export type CancelEvent = z.infer<typeof CancelEvent>;
+
+// What a draft still lacks at publish, one row each in Console with a fix button (H5.3).
+export const PUBLISH_MISSING = ["poster", "when", "where", "category", "tickets"] as const;
+export type PublishMissing = (typeof PUBLISH_MISSING)[number];
+
+// PUT /events/:id/poster and /wide: the saved link and the colour of the image the page shows.
+export type PosterSaved = { poster: string; tone: string };
+export type WideSaved = { wide: string; wideEdge: string; tone: string };
+
+// ---------- The public read (Discover flow) ----------
+
+export type HostCard = { id: string; slug: string; name: string; kind: string; city: string | null; verified: boolean; logo: string | null };
+export type TierCard = {
+  id: string; name: string; pricePaise: number; quantity: number | null; left: number | null;
+  salesStartAt: string | null; salesEndAt: string | null; note: string | null; perPersonLimit: number;
+};
+export type EventCard = {
+  id: string; slug: string; title: string; category: string | null; startsAt: string; endsAt: string; timezone: string;
+  publishedAt: string | null; status: "published" | "cancelled"; visibility: EventVisibility;
+  place: { venue: string; address: string; area: string; city: string; lat: number | null; lng: number | null } | null;
+  online: boolean; poster: string | null; wide: string | null; wideEdge: string | null; tone: string | null;
+  pricePaise: number | null; // the lowest tier price; null with no tiers
+  tiers: TierCard[]; host: HostCard; distanceKm: number | null; // only when a point was given
+};
+export type PublicEvent = EventCard & { about: string | null; agenda: { at: string; item: string }[]; faq: { q: string; a: string }[]; terms: string[] };
+
+// ---------- Search's When chips (Discover decisions 7 and 8), shared by the app and the API ----------
+
+export const WHEN = [
+  { id: "today", label: "Today", phrase: "today" },
+  { id: "weekend", label: "This weekend", phrase: "this weekend" },
+  { id: "week", label: "Next 7 days", phrase: "in the next 7 days" },
+] as const;
+// Not `When`: that name is the instant above.
+export type WhenChip = (typeof WHEN)[number]["id"];
+
+export const MAX_QUERY = 100;
+const DAY = 86_400_000;
+const IST = 5.5 * 3_600_000; // India has one zone and no daylight saving
+
+// [from, to) for a When chip. "This weekend" is Saturday and Sunday; on either day, what's left of it.
+export function span(when: WhenChip, now: number): [number, number] {
+  const today = Math.floor((now + IST) / DAY) * DAY - IST; // midnight in India
+  if (when === "today") return [now, today + DAY];
+  if (when === "week") return [now, now + 7 * DAY];
+  const weekday = new Date(now + IST).getUTCDay(); // 0 Sunday … 6 Saturday
+  if (weekday === 0) return [now, today + DAY];
+  if (weekday === 6) return [now, today + 2 * DAY];
+  return [today + (6 - weekday) * DAY, today + (8 - weekday) * DAY];
+}

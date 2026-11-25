@@ -1,7 +1,7 @@
 import { and, count, desc, eq, ilike, inArray, isNotNull, isNull, or } from "drizzle-orm";
 import { Hono, type Context } from "hono";
 import { createMiddleware } from "hono/factory";
-import { EditHost, type HostPage, SetParent, StaffReason, VerifyHost } from "@orbit/contract";
+import { EditHost, HostSlug, type HostPage, SetParent, StaffReason, VerifyHost } from "@orbit/contract";
 import type { Db } from "../db/index.ts";
 import { auditLog, follows, hosts, hostSlugs, teamRoles, users, venues } from "../db/schema.ts";
 import { type Env, fail, invalid, isUuid, type Notify, listPage, parse, signedIn, taken } from "../http.ts";
@@ -166,6 +166,7 @@ export function hostsRoutes({ db, notify, secret, now = Date.now }: Deps) {
   // redirects when it differs. Public reads live under /public so no host's link can collide with /hosts/:id/<word>.
   // Events come with the events slice.
   app.get("/public/hosts/:slug", maybe, async (c) => {
+    if (!HostSlug.safeParse(c.req.param("slug")).success) return nothing(c); // a NUL or other odd text never reaches the query
     const [row] = await db
       .select({ host: hosts })
       .from(hostSlugs)

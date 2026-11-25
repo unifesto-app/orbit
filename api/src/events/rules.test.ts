@@ -10,7 +10,7 @@ const ok = { ok: true };
 const edit = (p: object) => p as EditEvent;
 
 const nothingStored = { startsAt: null, timezone: "Asia/Kolkata", online: false, onlineLink: null, venue: null, address: null, area: null, city: null, lat: null, lng: null, placeId: null };
-const stored = (status: "draft" | "published" | "cancelled", endsAt: Date | null, more: object = {}) => ({ ...nothingStored, status, endsAt, ...more });
+const stored = (status: "draft" | "published" | "cancelled", endsAt: Date | null, more: object = {}) => ({ ...nothingStored, venue: "Hall", status, endsAt, ...more });
 const hall = { venue: "Hall", address: "Road 1", area: "Jubilee Hills", city: "Hyderabad", lat: 17.4, lng: 78.4, placeId: null };
 const place = { venue: "Hall", address: "Road 1", area: "Jubilee Hills", city: "Hyderabad", lat: 17.4, lng: 78.4 };
 
@@ -25,7 +25,7 @@ test("an ended, published event can't change its date, place or online details; 
   };
   for (const [key, v] of Object.entries(different)) assert.deepEqual(editRule(e, edit({ [key]: v }), NOW), { ok: false, error: "ended" }, key);
   assert.deepEqual(editRule(e, edit({ place: { ...place, venue: "Other" } }), NOW), { ok: false, error: "ended" });
-  for (const key of ["title", "about", "agenda", "faq", "terms", "category", "slug", "visibility"])
+  for (const key of ["title", "about", "agenda", "faq", "terms", "slug", "visibility"])
     assert.deepEqual(editRule(e, edit({ [key]: null }), NOW), ok, key);
   // ends exactly now counts as ended
   assert.deepEqual(editRule(stored("published", new Date(NOW)), edit({ startsAt: "2026-12-01T10:00:00Z" }), NOW), { ok: false, error: "ended" });
@@ -44,8 +44,18 @@ test("a whole form sent back with the same date and place passes on an ended eve
 
 test("drafts, running and open-ended events never lock", () => {
   assert.deepEqual(editRule(stored("draft", past), edit({ startsAt: null }), NOW), ok);
-  assert.deepEqual(editRule(stored("published", future), edit({ place: null }), NOW), ok);
-  assert.deepEqual(editRule(stored("published", null), edit({ place: null }), NOW), ok);
+});
+
+test("a running published event keeps its dates, category and a place or online link", () => {
+  const needed = { ok: false, error: "needed" };
+  const live = stored("published", future, { category: "comedy" });
+  for (const p of [{ startsAt: null }, { endsAt: null }, { category: null }, { place: null }, { online: false, place: null }]) assert.deepEqual(editRule(live, edit(p), NOW), needed, JSON.stringify(p));
+  assert.deepEqual(editRule(live, edit({ place: { ...place, venue: "Other" } }), NOW), ok);
+  // no place, but online with a link
+  const online = stored("published", future, { venue: null, online: true, onlineLink: "https://meet.example.com/x" });
+  assert.deepEqual(editRule(online, edit({ title: "x" }), NOW), ok);
+  assert.deepEqual(editRule(online, edit({ onlineLink: null }), NOW), needed);
+  assert.deepEqual(editRule(online, edit({ place }), NOW), ok);
 });
 
 test("a published event's end can't be moved into the past; a draft's can", () => {
@@ -55,8 +65,7 @@ test("a published event's end can't be moved into the past; a draft's can", () =
   assert.deepEqual(editRule(live, edit({ endsAt: new Date(NOW).toISOString() }), NOW), early);
   assert.deepEqual(editRule(stored("published", null), edit({ endsAt: past.toISOString() }), NOW), early);
   assert.deepEqual(editRule(live, edit({ endsAt: future.toISOString() }), NOW), ok);
-  assert.deepEqual(editRule(live, edit({ endsAt: null }), NOW), ok);
-  assert.deepEqual(editRule(stored("draft", future), edit({ endsAt: past.toISOString() }), NOW), ok);
+    assert.deepEqual(editRule(stored("draft", future), edit({ endsAt: past.toISOString() }), NOW), ok);
 });
 
 test("start and end are checked as merged with what's stored", () => {

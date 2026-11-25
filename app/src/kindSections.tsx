@@ -8,7 +8,7 @@ import { StyleSheet, Text } from 'react-native';
 
 import { Fact, FactCard } from './fact';
 import { acts, festItems, fests, hackathons, jams, meetups, shows, withActs } from './kinds';
-import type { Event } from './mock';
+import type { Event } from './events';
 import { hosts } from './mock';
 import { SECTION, Section } from './rows';
 import { color, font } from './theme';
@@ -24,7 +24,7 @@ export function WithActs({ eventId }: { eventId: string }) {
       {names.map((h, i) => (
         <Fragment key={h.id}>
           {i > 0 && ', '}
-          <Text style={styles.act} onPress={() => router.push(`/host/${h.id}`)} accessibilityRole="link">
+          <Text style={styles.act} onPress={() => router.push(`/host/${h.slug}`)} accessibilityRole="link">
             {h.name}
           </Text>
         </Fragment>

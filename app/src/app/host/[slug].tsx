@@ -7,9 +7,11 @@
 // https://claude.ai/artifact/5dDmrmZ6soDjoe8kro1xAq): the back and menu circles and the Book a slot pill on the tab
 // bar's dark glass with nothing behind the bar, a left-aligned head (the logo seated at the left), Home's Clean rows
 // without their host line, Orbit's bubble when nothing's coming up, sections 40 apart.
-// A host on the API (any link that isn't a mock host's) reads GET /public/hosts/:slug, with "Part of [college]" and its
-// clubs; its events come with the API's events, so it says "No upcoming events" until then.
+// Every host reads the API first: only a 404 on a mock host's id (a place to play, or one the mock's tickets and history
+// link to) draws the mock page, so a real host can never be taken for a mock one. It reads GET /public/hosts/:slug, with "Part of [college]" and its
+// clubs, and its events from GET /public/hosts/:slug/events (upcoming, then the latest past), in the same rows.
 // ponytail: real logos and banners wait for uploads, so a real host draws as its monogram over its colour's glow.
+// ponytail: the mock page goes with the mock (places to play: slots, P17).
 import { formatPrice, type PublicHost } from '@orbit/contract';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
@@ -21,26 +23,25 @@ import { followersLine, hostEvents } from '../../detail';
 import { Fact, FactCard } from '../../fact';
 import { DARK_TINT, Glass } from '../../glass';
 import { Carousel } from '../../home/Carousel';
+import { eventsApi, type Host, toEvent, toHost } from '../../events';
 import { hostsApi, kindLabel, markOf } from '../../hosts';
 import { Icon } from '../../icons';
 import { countLine, fromPricePaise, perHour, startsLine, type Venue, venues } from '../../kinds';
 import { useLoad } from '../../load';
 import { past as history } from '../../account/data';
-import { type Host, events, hosts, now } from '../../mock';
+import { events, hosts, now } from '../../mock';
 import { OrbitSays } from '../../orbitSays';
 import { showNote } from '../../note';
 import { offerPush, PushAsk } from '../../push';
 import { BackBar, EventRow, Failed, Glow, MenuButton, Monogram, NotFound, SECTION, Section, shareLink, Tag, TOP, Verified, Waiting } from '../../rows';
-import { api, needsAccount, setFollowing, setHostOff, useFollowing, useHostOff, useMe, useSignedIn } from '../../session';
+import { api, followedHere, needsAccount, setFollowing, setHostOff, useFollowing, useHostOff, useMe, useSignedIn } from '../../session';
 import { around, color, font, radius, rim, space } from '../../theme';
 
 const LOGO = 80;
 
 export default function HostPage() {
   const { slug } = useLocalSearchParams<{ slug: string }>();
-  // ponytail: a real host whose link is set to a mock host's id would open the mock page; it goes when the mock does.
-  const host = hosts.find((h) => h.id === slug);
-  return host ? <MockHost host={host} /> : <LiveHost slug={slug} />;
+  return <LiveHost slug={slug} />;
 }
 
 function MockHost({ host }: { host: Host }) {
@@ -153,7 +154,7 @@ function MockHost({ host }: { host: Host }) {
         <MenuButton
           tint={DARK_TINT}
           actions={[
-            { label: 'Share', icon: 'share', onPress: () => shareLink(`${host.name} on Orbit`, `/host/${host.id}`) },
+            { label: 'Share', icon: 'share', onPress: () => shareLink(`${host.name} on Orbit`, `/host/${host.slug}`) },
             { label: 'Copy link', icon: 'link' },
             { label: 'Report', icon: 'report' },
           ]}
@@ -200,11 +201,16 @@ function LiveHost({ slug }: { slug: string }) {
   const insets = useSafeAreaInsets();
   const signedIn = useSignedIn();
   const me = useMe();
+  const now = Date.now();
   const page = useLoad(`${slug}|${me.id}`, () => hostsApi(api).publicHost(slug, signedIn));
+  const list = useLoad(`events|${slug}`, () => eventsApi(api).hostEvents(slug));
   // Your tap, shown until the next answer replaces the one it was made on.
   const [mine, setMine] = useState<{ of: PublicHost; on: boolean } | null>(null);
   if (page.loading) return <Waiting />;
-  if (page.status === 404) return <NotFound what="host" />;
+  if (page.status === 404) {
+    const mock = hosts.find((h) => h.id === slug);
+    return mock ? <MockHost host={mock} /> : <NotFound what="host" />;
+  }
   if (!page.data) return <Failed message={page.error!.message} retry={page.reload} />;
 
   const h = page.data;
@@ -219,7 +225,10 @@ function LiveHost({ slug }: { slug: string }) {
       if (!r.ok) {
         setMine(null);
         Alert.alert(on ? 'Couldn’t follow' : 'Couldn’t unfollow', r.error.message);
-      } else if (on) void offerPush(`follow:${h.id}`);
+      } else {
+        followedHere(h.id, on); // Home reads the session's list
+        if (on) void offerPush(`follow:${h.id}`);
+      }
       page.reload();
     });
 
@@ -271,7 +280,22 @@ function LiveHost({ slug }: { slug: string }) {
         )}
 
         <Section top={SECTION} title="Coming up" />
-        <NothingYet name={h.name} following={following} />
+        {!list.data ? (
+          list.loading || !list.error ? <Waiting /> : <Failed message={list.error.message} retry={list.reload} />
+        ) : list.data.upcoming.length > 0 ? (
+          list.data.upcoming.map((c) => <EventRow key={c.id} event={toEvent(c)} host={toHost(c.host)} now={now} found kicker={false} />)
+        ) : (
+          <NothingYet name={h.name} following={following} />
+        )}
+
+        {list.data && list.data.past.length > 0 && (
+          <>
+            <Section top={SECTION} title="Past events" />
+            {list.data.past.map((c) => (
+              <EventRow key={c.id} event={toEvent(c)} host={toHost(c.host)} now={now} found kicker={false} past />
+            ))}
+          </>
+        )}
 
         {h.clubs.length > 0 && (
           <>

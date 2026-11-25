@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { categories } from "./categories.ts";
-import { EditEvent, EditTicketType, EventCategory, EventRow, EventSlug, HostEvents, NewEvent, NewTicketType, Place, TeamEvent, TicketTypeFields } from "./events.ts";
+import { EditEvent, EditTicketType, EventCategory, EventRow, EventSlug, HostEvents, NewEvent, NewTicketType, Place, span, TeamEvent, TicketTypeFields } from "./events.ts";
 
 type S = { safeParse: (v: unknown) => { success: boolean } };
 const ok = (s: S, v: unknown) => assert.equal(s.safeParse(v).success, true, JSON.stringify(v));
@@ -147,7 +147,7 @@ const iso = "2026-12-01T12:00:00.000Z";
 const eventRow = { id, slug: "night-k3f9ab", status: "draft", visibility: "public", title: "Night", category: null, startsAt: null, endsAt: null, timezone: "Asia/Kolkata", area: null, city: null, online: false };
 const teamEvent = {
   ...eventRow, hostId: id, place: null, onlineLink: null, about: null, agenda: [], faq: [], terms: [],
-  publishedAt: null, cancelledAt: null, cancelReason: null, createdAt: iso, updatedAt: iso,
+  poster: null, wide: null, wideEdge: null, tone: null, publishedAt: null, cancelledAt: null, cancelReason: null, createdAt: iso, updatedAt: iso,
 };
 
 test("TeamEvent, EventRow and HostEvents are what the API answers", () => {
@@ -159,4 +159,20 @@ test("TeamEvent, EventRow and HostEvents are what the API answers", () => {
   bad(EventRow, { ...eventRow, visibility: "secret" });
   ok(HostEvents, { drafts: [eventRow], upcoming: [], past: [] });
   bad(HostEvents, { drafts: [], upcoming: [] });
+});
+
+test("span: today, week and the weekend in India time", () => {
+  const ist = (s: string) => Date.parse(`${s}+05:30`);
+  const day = 86_400_000;
+  const sat0 = ist("2026-12-05T00:00:00"), sun10 = ist("2026-12-06T10:00:00"), mon0 = ist("2026-12-07T00:00:00");
+  // A Thursday: the weekend is Saturday and Sunday whole.
+  assert.deepEqual(span("weekend", ist("2026-12-03T12:00:00")), [sat0, mon0]);
+  // Saturday 00:00 exactly: from that moment to Monday 00:00.
+  assert.deepEqual(span("weekend", sat0), [sat0, mon0]);
+  // Sunday: what's left of it.
+  assert.deepEqual(span("weekend", sun10), [sun10, mon0]);
+  // Just before India's midnight it is still Friday, so the weekend is ahead.
+  assert.deepEqual(span("weekend", sat0 - 1), [sat0, mon0]);
+  assert.deepEqual(span("today", ist("2026-12-03T12:00:00")), [ist("2026-12-03T12:00:00"), ist("2026-12-04T00:00:00")]);
+  assert.deepEqual(span("week", sun10), [sun10, sun10 + 7 * day]);
 });

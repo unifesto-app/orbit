@@ -1,19 +1,19 @@
 // An event's Terms & Conditions (owner, 15 Nov 2026: "add Event FAQ & Terms & Conditions Modals"): a full modal on the
-// glass, the host's own terms for the event first, then the ones every event has (defaultTerms in src/mock.ts).
+// glass, the host's own terms for the event first, then the ones every event has (defaultTerms in src/events.ts).
 // Since 19 Nov 2026 (owner approved Take 3 of the detail pages mockup) each set is an outlined card under a small label.
 import { useLocalSearchParams } from 'expo-router';
 import { ScrollView, StyleSheet, Text } from 'react-native';
 
 import { FactCard } from '../../fact';
-import { defaultTerms, events, hosts } from '../../mock';
-import { NotFound, Sheet } from '../../rows';
+import { defaultTerms } from '../../events';
+import { Sheet } from '../../rows';
+import { useEvent } from '../../useEvent';
 import { color, font, space } from '../../theme';
 
 export default function TermsSheet() {
   const { slug } = useLocalSearchParams<{ slug: string }>();
-  const e = events.find((x) => x.id === slug);
-  const host = e && hosts.find((h) => h.id === e.hostId);
-  if (!e || !host) return <NotFound what="event" />;
+  const { e, host, screen } = useEvent(slug);
+  if (!e) return screen;
   const sets = [
     ...(e.terms?.length ? [{ label: `From ${host.name}`, lines: e.terms }] : []),
     { label: 'On every Orbit event', lines: defaultTerms },

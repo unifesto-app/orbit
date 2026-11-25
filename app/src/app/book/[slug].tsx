@@ -276,7 +276,7 @@ export default function Book() {
                 <View style={[styles.box, rules && styles.boxOn]}>{rules && <Icon name="check" size={14} color={color.onAccent} />}</View>
                 <Text style={[styles.grow, styles.text]}>I accept the hackathon’s rules</Text>
               </Pressable>
-              <Pressable onPress={() => router.push(`/terms/${e.id}`)} accessibilityRole="link" hitSlop={8}>
+              <Pressable onPress={() => router.push(`/terms/${e.slug}`)} accessibilityRole="link" hitSlop={8}>
                 <Text style={[styles.meta, styles.link]}>Read</Text>
               </Pressable>
             </View>

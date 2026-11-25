@@ -25,7 +25,8 @@ import { BarGlass, DARK_TINT, Glass } from './glass';
 import { Icon, type IconName } from './icons';
 import { Media, type MediaItem } from './media';
 import { acts, fromPricePaise, perHour, venues } from './kinds';
-import { type Event, type Host, hosts, now } from './mock';
+import type { Event, Host } from './events';
+import { hosts, now as mockNow } from './mock';
 import { showNote } from './note';
 import { followsNow, needsAccount, setFollowing, setLoved, tapSave, useFollowing, useLoved, useSaved, useViewer } from './session';
 import { usePromoted } from './content';
@@ -63,7 +64,8 @@ export function EventRow({
   found = false,
   kicker = true,
   menu,
-  onPress = () => router.push(`/event/${e.id}`),
+  now = mockNow,
+  onPress = () => router.push(`/event/${e.slug}`),
 }: {
   event: Event;
   host: Host;
@@ -73,12 +75,13 @@ export function EventRow({
   found?: boolean;
   kicker?: boolean | string;
   menu?: MenuAction[];
+  now?: number; // the clock for status and labels: the mock's fixed one unless a screen on real events passes Date.now()
   onPress?: () => void;
 }) {
   const st = eventStatus(e, now);
   const promoted = usePromoted();
   if (found) {
-    const label = kicker === true ? eventLabel({ promoted: promoted.has(e.id) }, host, st, now) : undefined;
+    const label = kicker === true ? eventLabel({ promoted: promoted.has(e.slug) || promoted.has(e.id) }, host, st, now) : undefined;
     const kick = typeof kicker === 'string' ? kicker : [host.name, label].filter(Boolean).join(' · ');
     return (
       <View style={[styles.row, styles.foundRow]}>
@@ -147,7 +150,7 @@ export function HostRow({ host }: { host: Host }) {
   return (
     <View style={styles.hostRow}>
       <Pressable
-        onPress={() => router.push(`/host/${host.id}`)}
+        onPress={() => router.push(`/host/${host.slug}`)}
         accessibilityRole="button"
         accessibilityLabel={`${host.name}, ${host.about}`}
         style={({ pressed }) => [styles.grow, styles.rowLink, pressed && styles.pressed]}>
@@ -205,9 +208,9 @@ export function FollowRow({ host, line, onPress }: { host: Host; line: string; o
  * An event's label right now (src/labels.ts), and whether it's Promoted, so a list can move it up (promoteOne).
  * `promoted` is the ids staff marked Promoted in Galaxy's App content (usePromoted in src/content.ts).
  */
-export const labelOf = (e: Event, host: Host, promoted: ReadonlySet<string>) =>
-  eventLabel({ promoted: promoted.has(e.id) }, host, eventStatus(e, now), now);
-export const isPromoted = (e: Event, host: Host, promoted: ReadonlySet<string>) => labelOf(e, host, promoted) === 'Promoted';
+export const labelOf = (e: Event, host: Host, promoted: ReadonlySet<string>, now = mockNow) =>
+  eventLabel({ promoted: promoted.has(e.slug) || promoted.has(e.id) }, host, eventStatus(e, now), now);
+export const isPromoted = (e: Event, host: Host, promoted: ReadonlySet<string>, now = mockNow) => labelOf(e, host, promoted, now) === 'Promoted';
 
 function Price({ event: e, status }: { event: Event; status: Status }) {
   const seats = seatsLine(e, status);

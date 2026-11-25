@@ -35,7 +35,7 @@ export default function FestItem() {
               <Section top={0} title="On stage" />
             </View>
             {/* Closes this sheet on the way, as the person sheet does, so the act's page doesn't open under it. */}
-            <FollowRow host={act} line={act.about} onPress={() => router.dismissTo(`/host/${act.id}`)} />
+            <FollowRow host={act} line={act.about} onPress={() => router.dismissTo(`/host/${act.slug}`)} />
           </View>
         )}
       </ScrollView>

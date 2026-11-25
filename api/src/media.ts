@@ -5,7 +5,7 @@ import { type ContentShape, isSquare, isStrip, mediaRatio } from "@orbit/contrac
 import { fail, isUuid } from "./http.ts";
 
 // Uploaded images (owner, 17 Nov 2026: a private S3 bucket, served by the API behind Cloudflare's cache). Keys are
-// `<kind>/<owner id>/<random>.webp`: people's photos under users/, host logos under hosts/. Every upload gets a new key,
+// `<kind>/<owner id>/<random>.webp`: people's photos under users/, host logos under hosts/, event images under events/. Every upload gets a new key,
 // so a cached copy is never stale, and the file it replaces is deleted, so nothing is left behind (User doc, Profile).
 // A link works for anyone who has it; the random part is what keeps it private.
 
@@ -17,7 +17,7 @@ export type Files = {
 // `url` is where GET /media/... answers, such as https://api.heyorbit.in/media. The database keeps whole links.
 export type Media = { files: Files; url: string };
 
-export type Kind = "users" | "hosts" | "content";
+export type Kind = "users" | "hosts" | "content" | "events";
 export const newKey = (kind: Kind, ownerId: string) => `${kind}/${ownerId}/${randomBytes(16).toString("base64url")}.webp`;
 export const linkOf = (m: Media, key: string) => `${m.url}/${key}`;
 // Only a link this API made for this owner is a file it may delete: never another's, nor one from elsewhere.
@@ -76,25 +76,27 @@ async function resave(input: Uint8Array): Promise<Square> {
 }
 
 // An App content image, in the shape it's for ("Allow 4.5:1 for ads"): a strip 4.5:1 or wide 4:3, never cropped, kept at
-// most 1350 or 1200 wide. `edge` is the saved image's top row, averaged as #rrggbb: it fills the space above a slide
+// most 1350 or 1200 wide. An event's poster is the same pipeline in a third shape, 3:4 (Discover slice 1), and every
+// image also gets a `tone`, its dominant colour as #rrggbb, for tinting a card while the image loads.
+// ponytail: dominant, not "most common vivid"; good enough for a card tint. `edge` is the saved image's top row, averaged as #rrggbb: it fills the space above a slide
 // while the image loads. Same queue as squareImage.
-type Content = { bytes: Uint8Array; edge: string } | { error: "notImage" | "wrongShape" | "tooSmall" };
+type Content = { bytes: Uint8Array; edge: string; tone: string } | { error: "notImage" | "wrongShape" | "tooSmall" };
 // The least an image may be wide, so a phone never stretches a thumbnail across the screen.
-const MIN_WIDTH: Record<ContentShape, number> = { strip: 900, wide: 800 };
-export function contentImage(input: Uint8Array, shape: ContentShape): Promise<Content> {
+const MIN_WIDTH: Record<ContentShape | "poster", number> = { strip: 900, wide: 800, poster: 600 };
+export function contentImage(input: Uint8Array, shape: ContentShape | "poster"): Promise<Content> {
   const mine = turn.then(() => resaveContent(input, shape));
   turn = mine.catch(() => {});
   return mine;
 }
 
-async function resaveContent(input: Uint8Array, shape: ContentShape): Promise<Content> {
+async function resaveContent(input: Uint8Array, shape: ContentShape | "poster"): Promise<Content> {
   const { default: sharp } = await import("sharp");
   try {
     const meta = await sharp(input, { limitInputPixels: MAX_PIXELS }).metadata();
     if (!["jpeg", "png", "webp"].includes(meta.format ?? "")) return { error: "notImage" };
     // Upright, as it's saved and shown: a phone photo can be stored sideways with an orientation tag.
     const { width: w = 0, height: h = 0 } = meta.autoOrient;
-    if (!(shape === "strip" ? isStrip(w, h) : mediaRatio(w, h) === "4:3")) return { error: "wrongShape" };
+    if (!(shape === "strip" ? isStrip(w, h) : mediaRatio(w, h) === (shape === "poster" ? "3:4" : "4:3"))) return { error: "wrongShape" };
     if (w < MIN_WIDTH[shape]) return { error: "tooSmall" };
     const out = await sharp(input, { limitInputPixels: MAX_PIXELS })
       .rotate()
@@ -107,7 +109,9 @@ async function resaveContent(input: Uint8Array, shape: ContentShape): Promise<Co
     const row = await sharp(out).extract({ left: 0, top: 0, width: saved.width!, height: 1 }).flatten({ background: "#121215" }).toBuffer();
     const { channels } = await sharp(row).stats();
     const edge = "#" + channels.slice(0, 3).map((c) => Math.round(c.mean).toString(16).padStart(2, "0")).join("");
-    return { bytes: new Uint8Array(out), edge };
+    const { dominant } = await sharp(out).stats();
+    const tone = "#" + [dominant.r, dominant.g, dominant.b].map((c) => c.toString(16).padStart(2, "0")).join("");
+    return { bytes: new Uint8Array(out), edge, tone };
   } catch {
     return { error: "notImage" };
   }
@@ -150,7 +154,7 @@ export function mediaRoutes(media: Media | undefined) {
   app.get("/media/:kind/:owner/:name", async (c) => {
     const { kind, owner, name } = c.req.param();
     // No query string: Cloudflare would keep a copy per string, each first one a bucket read and a transfer from the box.
-    const ok = !new URL(c.req.url).search && (kind === "users" || kind === "hosts" || kind === "content") && isUuid(owner) && /^[\w-]{22}\.webp$/.test(name);
+    const ok = !new URL(c.req.url).search && (kind === "users" || kind === "hosts" || kind === "content" || kind === "events") && isUuid(owner) && /^[\w-]{22}\.webp$/.test(name);
     const file = ok && media ? await media.files.get(`${kind}/${owner}/${name}`) : null;
     if (!file) return fail(c, 404, "notFound", "There's nothing here.");
     return c.body(file.bytes as Uint8Array<ArrayBuffer>, 200, {

@@ -5,6 +5,7 @@ import type { EditEvent, EventStatus, EventVisibility, Place } from "@orbit/cont
 type Timed = { status: EventStatus; endsAt: Date | null };
 // The columns an edit may be compared with.
 type Stored = Timed & {
+  category?: string | null;
   startsAt: Date | null; timezone: string; online: boolean; onlineLink: string | null;
   venue: string | null; address: string | null; area: string | null; city: string | null; lat: number | null; lng: number | null; placeId: string | null;
 };
@@ -24,13 +25,19 @@ const moved = (e: Stored, p: EditEvent) =>
 // Everything stays editable until the event is cancelled (Hosts flow). Once a published event has ended, its date, place
 // and online details can't change; its text can. A draft never locks. A published event's end can't be moved into the
 // past by an edit (that would lock it by mistake): "End now" is the way to finish early.
-export function editRule(event: Stored, patch: EditEvent, now: number): { ok: true } | { ok: false; error: "cancelled" | "ended" | "endInPast" } {
+export function editRule(event: Stored, patch: EditEvent, now: number): { ok: true } | { ok: false; error: "cancelled" | "ended" | "endInPast" | "needed" } {
   if (event.status === "cancelled") return { ok: false, error: "cancelled" };
   if (event.status === "draft") return { ok: true };
   const ended = event.endsAt !== null && event.endsAt.getTime() <= now;
   if (ended && moved(event, patch)) return { ok: false, error: "ended" };
   const end = "endsAt" in patch ? instant(patch.endsAt) : null;
   if (!ended && end !== null && end <= now) return { ok: false, error: "endInPast" };
+  // What publishing needed stays: no clearing the dates or category, and a place or an online link must remain (H5.3).
+  if (patch.startsAt === null || patch.endsAt === null || patch.category === null) return { ok: false, error: "needed" };
+  const hasPlace = "place" in patch ? patch.place !== null : event.venue !== null;
+  const online = "online" in patch ? patch.online : event.online;
+  const link = "onlineLink" in patch ? patch.onlineLink : event.onlineLink;
+  if (!hasPlace && !(online && link)) return { ok: false, error: "needed" };
   return { ok: true };
 }
 

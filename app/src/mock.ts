@@ -3,71 +3,14 @@
 // shows. Its top-edge colour (sampled once at upload) only fills in while the image loads.
 // Venues and about text match the web's mock (web/src/app/mock.ts); people, links and bios are invented.
 // ponytail: static data and a fixed clock; both go when the discover endpoint lands in @orbit/contract.
-import type { CategorySlug } from '@orbit/contract';
 import type { ImageSourcePropType } from 'react-native';
 
-import type { Credit, Tier } from './detail';
-import type { StatusEvent } from './status';
-import type { Place, PlanEvent, PlanHost, Viewer } from './home/layout';
+import type { Event, Host, Person } from './events';
+import type { Place, Viewer } from './home/layout';
 import type { MediaItem } from './media';
 
-export type Wide = { source: ImageSourcePropType; edge: string };
-export type Host = PlanHost & {
-  name: string;
-  initials: string;
-  bg: string;
-  fg: string;
-  about: string; // the one line on cards
-  kind: string; // "Comedy group", under Hosted by
-  bio: string; // the host page's About
-  followers: number; // shown from 10 (Discover decision 16)
-  lovedBy?: number; // people who tapped Loved it on any of its events, once each; never shown (src/labels.ts)
-  verified: boolean; // Orbit staff's call (Hosts flow)
-  banner?: Wide;
-};
-// Seats, sale dates, a waitlist or a cancellation give the event its status (src/status.ts).
-export type Event = PlanEvent &
-  Omit<StatusEvent, 'startsAt' | 'announced' | 'pricePaise' | 'tiers'> & {
-  title: string;
-  category: CategorySlug; // one per event (Discover decision 12)
-  when: string; // pre-formatted in India time until real timestamps reach the UI
-  repeats?: string; // only for a series, e.g. "Every Sunday" (Discover decision 15)
-  pricePaise: number; // 0 = free
-  poster: MediaItem; // 3:4
-  wide?: Wide; // 4:3, for the carousel
-  // The colour of the poster its page shows (the 4:3 when there is one), sampled once at upload like `edge`: its most
-  // common vivid colour, or its dominant one when it has almost none. It tints that page's cards.
-  tone: string;
-  venue: { name: string; address: string };
-  about: string;
-  people?: Credit[]; // speakers, guests and the rest, in the order the host lists them
-  tiers?: Tier[]; // ticket types, when there's more than one; pricePaise is then the card's price
-  agenda?: { time: string; item: string }[]; // the event's slots, in order, shown when When is tapped
-  faq?: { q: string; a: string }[];
-  terms?: string[]; // the host's own terms for this event, shown above the usual ones (defaultTerms)
-};
-
-// The terms every event's Terms & Conditions ends with. They follow the Booking and Money flows: one QR per booking
-// admitting everyone on it, refunds per booking, a cancelled event refunded in full.
-// ponytail: placeholder wording until Orbit's own terms are written.
-export const defaultTerms = [
-  'Your ticket admits everyone booked on it. Show its QR code at the door.',
-  'Tickets can’t be resold. The host may refuse entry on a ticket that has been.',
-  'Refunds follow the host’s policy. If the host cancels the event, you get your money back in full.',
-  'The host may refuse entry to anyone who breaks the venue’s rules or the host’s code of conduct.',
-  'The event may be photographed or filmed.',
-];
-// Anyone on an event's page: a speaker, a guest, a judge. 1:1 photos come later; the monogram stands in.
-export type Person = {
-  id: string;
-  name: string;
-  initials: string;
-  bg: string;
-  fg: string;
-  headline: string; // one line under the name
-  bio: string;
-  links: { label: string; url: string }[];
-};
+// The types and the default terms live in src/events.ts, so this file can go without touching a screen.
+export { defaultTerms, type Event, type Host, type Person, type Wide } from './events';
 
 const poster = (source: ImageSourcePropType): MediaItem => ({ source, ratio: '3:4' });
 
@@ -75,7 +18,7 @@ const poster = (source: ImageSourcePropType): MediaItem => ({ source, ratio: '3:
 // Friday (the 21st, used until 15 Nov, is a Saturday).
 export const now = Date.parse('2026-11-20T09:00:00+05:30');
 
-export const hosts: Host[] = [
+const hostRows: Omit<Host, 'slug'>[] = [
   { id: 'respawn', name: 'Respawn Club', initials: 'RC', bg: '#12002B', fg: '#22D3EE', area: 'Gachibowli', about: 'Esports · Gachibowli', kind: 'Gaming club', bio: 'A campus esports league for Hyderabad. Cups for college teams every month, with real screens, casters and a proper bracket.', followers: 1240, verified: true, joined: '2026-11-18T09:00:00+05:30', banner: { source: require('../assets/mock/respawn-banner.png'), edge: '#12002B' } },
   { id: 'kickoff', name: 'Kickoff Hyderabad', initials: 'KH', bg: '#166534', fg: '#FFFFFF', area: 'Gachibowli', about: 'Football every Sunday · Gachibowli', kind: 'Sports community', bio: 'Five-a-side every Sunday morning on a floodlit turf. Teams are mixed on the spot, so you can come on your own.', followers: 860, verified: true, joined: '2026-11-19T08:00:00+05:30', banner: { source: require('../assets/mock/kickoff-banner.png'), edge: '#166534' } },
   { id: 'clay-days', name: 'Clay Days', initials: 'CD', bg: '#B5532E', fg: '#FFFFFF', area: 'Banjara Hills', about: 'Pottery every Thursday · Banjara Hills', kind: 'Pottery studio', bio: 'A small pottery studio in Banjara Hills. Beginners’ classes every Thursday, and open wheel time at weekends.', followers: 412, verified: true, joined: '2026-11-15T09:00:00+05:30', banner: { source: require('../assets/mock/clay-days-banner.png'), edge: '#B5532E' } },
@@ -108,7 +51,7 @@ export const people: Person[] = [
   { id: 'farhan-ali', name: 'Farhan Ali', initials: 'FA', bg: '#7A1E28', fg: '#FFF1E6', headline: 'Film critic', bio: 'Farhan writes about cinema and leads the discussion after Reel Society’s screenings.', links: [{ label: 'Website', url: 'https://example.com/farhan-ali' }] },
 ];
 
-export const events: Event[] = [
+const eventRows: Omit<Event, 'slug'>[] = [
   { id: 'open-mic-night', tone: '#F25C2A', category: 'comedy', hostId: 'punchline', area: 'Jubilee Hills', startsAt: '2026-11-20T20:00:00+05:30', announced: '2026-11-09T10:00:00+05:30', title: 'Open Mic Night', when: 'Fri 20 Nov · 8:00 PM', repeats: 'Every Friday', pricePaise: 29900, capacity: 60, left: 9, poster: poster(require('../assets/mock/open-mic.png')), wide: { source: require('../assets/mock/open-mic-4x3.png'), edge: '#F25C2A' }, venue: { name: 'The Green Room', address: 'Road No. 36, Jubilee Hills, Hyderabad' }, about: 'Ten new comics, five minutes each, one very forgiving room. Sign up on the night if you want a spot.', people: [{ personId: 'arjun-rao', role: 'Guest' }], agenda: [{ time: '7:30 PM', item: 'Doors open, sign-ups at the bar' }, { time: '8:00 PM', item: 'First comic on stage' }, { time: '9:15 PM', item: 'Arjun Rao, guest set' }, { time: '10:00 PM', item: 'Close' }], faq: [{ q: 'How do I get a spot?', a: 'Sign up at the bar from 7:30 PM. There are ten spots, first come, first served.' }, { q: 'Is there food?', a: 'The bar serves snacks and drinks. No outside food.' }] },
   { id: 'build-anything-hackathon', tone: '#C7F532', category: 'hackathons', hostId: 'circuitfeed', area: 'Gachibowli', startsAt: '2026-11-21T09:00:00+05:30', announced: '2026-11-19T10:00:00+05:30', title: 'Build Anything Hackathon', when: 'Sat 21 Nov · 9:00 AM', pricePaise: 179900, capacity: 150, left: 8, poster: poster(require('../assets/mock/hackathon-poster.png')), wide: { source: require('../assets/mock/hackathon-4x3.png'), edge: '#0A0F1F' }, venue: { name: 'CircuitFeed Lab', address: 'Financial District, Gachibowli, Hyderabad' }, about: '24 hours to build anything you like: an app, a tool, a game or hardware. Bring a team of two to four. Mentors from Hyderabad’s product teams drop in through the night. Food, power and Wi-Fi are on us.', people: [{ personId: 'vikram-reddy', role: 'Judge' }, { personId: 'ananya-desai', role: 'Mentor' }, { personId: 'kiran-kumar', role: 'Mentor' }], tiers: [{ name: 'Early bird', pricePaise: 149900, soldOut: true }, { name: 'Team of 4', pricePaise: 179900 }], agenda: [{ time: 'Sat 9:00 AM', item: 'Check-in and breakfast' }, { time: 'Sat 10:00 AM', item: 'Kickoff and team formation' }, { time: 'Sat 10:30 AM', item: 'Hacking starts' }, { time: 'Sun 7:00 AM', item: 'Submissions close' }, { time: 'Sun 7:30 AM', item: 'Demos and judging' }, { time: 'Sun 9:00 AM', item: 'Results' }], faq: [{ q: 'Who can take part?', a: 'Anyone 18 or older. Students, working people and first-time builders are all welcome.' }, { q: 'Do I need a team?', a: 'Yes. Every booking is a team of 2 to 4: one of you books, and the others claim their seats by link.' }, { q: 'What should I bring?', a: 'A laptop, a charger and any hardware you want to use. We have extension boards.' }], terms: ['Open to anyone 18 or older. Bring a photo ID.', 'Projects must be started at the event.'] },
   { id: 'campus-esports-cup', tone: '#22D3EE', category: 'gaming', hostId: 'respawn', area: 'Gachibowli', startsAt: '2026-11-21T11:00:00+05:30', announced: '2026-11-11T10:00:00+05:30', title: 'Campus Esports Cup', when: 'Sat 21 Nov · 11:00 AM', pricePaise: 9900, capacity: 32, left: 0, waitlist: true, poster: poster(require('../assets/mock/esports-cup.png')), venue: { name: 'Respawn Club Arena', address: 'Gachibowli, Hyderabad' }, about: 'A one-day knockout for teams of five from any campus in the city. Bring your own peripherals; we bring the screens.' },
@@ -132,11 +75,6 @@ const gachibowli: Place = {
   nearAreas: ['Gachibowli', 'HITEC City', 'Jubilee Hills', 'Banjara Hills', 'KBR Park', 'Kukatpally', 'Gandipet'],
 };
 const maisammaguda: Place = { area: 'Maisammaguda', city: 'Hyderabad', nearAreas: [] };
-
-// ponytail: which mock areas count as near a place chosen on the location screen, standing in for the 25 km check
-// until events and hosts carry coordinates: all of them for a place in Hyderabad, none anywhere else.
-export const nearAreasFor = (p: { area: string; city: string }) =>
-  p.area === 'Hyderabad' || p.city === 'Hyderabad' ? gachibowli.nearAreas : [];
 
 // The four Home states drawn on the Orbit canvas ("Home B · states").
 export const previews = {
@@ -186,3 +124,7 @@ export function interestedBase(id: string): number {
   for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0;
   return 6 + (h % 180);
 }
+
+// Every mock row's link is its id (real events and hosts have their own slugs, src/events.ts).
+export const hosts: Host[] = hostRows.map((h) => ({ ...h, slug: h.id }));
+export const events: Event[] = eventRows.map((e) => ({ ...e, slug: e.id }));

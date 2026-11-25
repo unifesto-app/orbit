@@ -5,7 +5,8 @@ import type { Slide as Featured } from '@orbit/contract';
 
 // source: "gps" when found from the phone's position, "pick" when chosen from the city list (src/app/location.tsx).
 // `state` is a picked city's state or the geocoder's region; older saved places have none.
-export type Place = { area: string; city: string; state?: string; nearAreas: readonly string[]; source?: 'gps' | 'pick' };
+// lat and lng come with a position found from the phone: the API's near is within 25 km of it (src/events.ts whereOf).
+export type Place = { area: string; city: string; state?: string; nearAreas: readonly string[]; source?: 'gps' | 'pick'; lat?: number; lng?: number };
 // The fields of expo-location's LocationGeocodedAddress this reads.
 export type Address = { district: string | null; city: string | null; subregion: string | null; region: string | null };
 
@@ -27,8 +28,10 @@ export type Viewer = {
   tickets?: readonly { eventId: string; label: string }[]; // the viewer's upcoming bookings
   interests?: readonly string[]; // category slugs picked on Account › Interests; unset until picked or skipped
 };
-export type PlanEvent = { id: string; hostId: string; area: string; startsAt: string; announced: string; category?: string; wide?: unknown };
-export type PlanHost = { id: string; area: string; joined: string; banner?: unknown; tile?: string }; // tile: a place to play's
+// `near`: discover's call (within 25 km, or online), which wins over the area list when it's there.
+export type PlanEvent = { id: string; slug?: string; endsAt?: string; hostId: string; area: string; startsAt: string; announced: string; category?: string; wide?: unknown; near?: boolean };
+// tile: a place to play's. `near`: set by the screen for the mock venues, which the API doesn't know yet.
+export type PlanHost = { id: string; slug?: string; area: string; joined: string; banner?: unknown; tile?: string; near?: boolean };
 // `custom`: Orbit's own image slide from Galaxy's App content (owner, 19 Nov 2026: "also add custom ads in carousel").
 export type Slide<E, H> = { kind: 'event'; event: E } | { kind: 'host'; host: H } | { kind: 'custom'; custom: Featured };
 
@@ -51,9 +54,15 @@ export function planHome<E extends PlanEvent, H extends PlanHost>(
   featured: readonly Featured[] = [],
 ) {
   // Compared as times, not strings, so mixed UTC offsets still sort right.
-  const upcoming = events.filter((e) => Date.parse(e.startsAt) >= now).sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt));
-  // ponytail: an area list stands in for the 25 km check until events and hosts carry coordinates.
-  const isNear = (area: string) => viewer.place?.nearAreas.includes(area) ?? false;
+  // Upcoming until it ends (the API's end time); a mock event, with none, until it starts.
+  const upcoming = events.filter((e) => (e.endsAt ? Date.parse(e.endsAt) > now : Date.parse(e.startsAt) >= now)).sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt));
+  // The API says which events are near (`near`); mock events and hosts still use the area list.
+  // ponytail: the area list goes with the mock.
+  const areaNear = (area: string) => viewer.place?.nearAreas.includes(area) ?? false;
+  const isNear = (e: PlanEvent) => e.near ?? areaNear(e.area);
+  // A host is near with at least one near event.
+  const nearHostIds = new Set(upcoming.filter((e) => e.near).map((e) => e.hostId));
+  const hostNear = (h: PlanHost) => h.near ?? (nearHostIds.has(h.id) || areaNear(h.area));
   const following = viewer.signedIn && viewer.follows.length > 0;
   const followed = new Set(following ? viewer.follows : []);
 
@@ -70,7 +79,7 @@ export function planHome<E extends PlanEvent, H extends PlanHost>(
   // Orbit is open across India (owner, 20 Nov 2026), so anywhere with nothing near says so and shows everything coming up.
   const notice: 'noLocation' | 'nothingNear' | null = !viewer.place
     ? 'noLocation'
-    : upcoming.some((e) => isNear(e.area))
+    : upcoming.some(isNear)
       ? null
       : 'nothingNear';
   const shown = new Set([...tickets.map((e) => e.id), ...orbit.map((e) => e.id)]);
@@ -81,7 +90,7 @@ export function planHome<E extends PlanEvent, H extends PlanHost>(
   let list: { title: 'Near you this week' | 'Coming up'; events: E[] };
   if (notice) list = { title: 'Coming up', events: rest };
   else {
-    const near = rest.filter((e) => isNear(e.area));
+    const near = rest.filter(isNear);
     const week = near.filter((e) => Date.parse(e.startsAt) < now + 7 * DAY);
     list = week.length >= 4 ? { title: 'Near you this week', events: week } : { title: 'Coming up', events: near };
   }
@@ -94,19 +103,19 @@ export function planHome<E extends PlanEvent, H extends PlanHost>(
 
   // Places to play, booked by the hour (owner, 19 Nov 2026: "Add to Home too"): near you, or everywhere while Home shows
   // a notice, as the list. They have their own section, so they stay out of Hosts near you.
-  const places = hosts.filter((h) => h.tile && (notice || isNear(h.area))).slice(0, MAX_PLACES);
+  const places = hosts.filter((h) => h.tile && (notice || hostNear(h))).slice(0, MAX_PLACES);
 
   // Promoted events with a 4:3 poster, near you while anything is, not ones you've booked: the first leads the carousel,
   // the second is the banner in the middle of Home (owner, 19 Nov 2026: "promotion banners", "ad banners in middle of
   // home"), so neither shows twice up there.
-  const boosts = upcoming.filter((e) => e.wide && promoted(e) && !booked.has(e.id) && (notice || isNear(e.area)));
+  const boosts = upcoming.filter((e) => e.wide && promoted(e) && !booked.has(e.id) && (notice || isNear(e)));
   const lead = boosts[0];
   // The banner is the next one no section above already shows (your orbit); the screen keeps it out of
   // the list under them. It stays in `list` here, so "All events" still knows when the list is everything.
   const ad = boosts.slice(1).find((e) => !shown.has(e.id));
 
   // Hosts near you: up to three to follow, then ones the viewer already follows (owner, 15 Nov 2026), four at most.
-  const near = hosts.filter((h) => !h.tile && isNear(h.area));
+  const near = hosts.filter((h) => !h.tile && hostNear(h));
   const nearHosts = [...near.filter((h) => !followed.has(h.id)).slice(0, 3), ...near.filter((h) => followed.has(h.id))].slice(0, MAX_HOSTS);
 
   return {
@@ -123,7 +132,7 @@ export function planHome<E extends PlanEvent, H extends PlanHost>(
     // The end of Home (owner, 15 Nov 2026): every upcoming event, everywhere. Skipped when the list above already is that.
     // The list above is always a subset of `upcoming`, so the same length means the same events.
     all: notice || list.events.length === upcoming.length ? [] : upcoming,
-    slides: pickSlides(upcoming.filter((e) => e !== ad), hosts, followed, following, notice === null, isNear, lead, featured),
+    slides: pickSlides(upcoming.filter((e) => e !== ad), hosts, followed, following, notice === null, isNear, hostNear, lead, featured),
     lead, // the carousel's paid slide: the only one marked Promoted there
     ad,
   };
@@ -143,18 +152,20 @@ function pickSlides<E extends PlanEvent, H extends PlanHost>(
   followed: ReadonlySet<string>,
   following: boolean,
   hasNear: boolean,
-  isNear: (area: string) => boolean,
+  isNear: (e: PlanEvent) => boolean,
+  hostNear: (h: PlanHost) => boolean,
   lead: E | undefined,
   featured: readonly Featured[],
 ): Slide<E, H>[] {
   const picked = featured.flatMap((f): Slide<E, H>[] => {
     if (f.kind === 'image') return [{ kind: 'custom', custom: f }];
     const [, page, id] = (f.href ?? '').split('/');
-    const event = page === 'event' ? upcoming.find((e) => e.id === id && e.wide) : undefined;
-    const host = page === 'host' ? hosts.find((h) => h.id === id && h.banner) : undefined;
+    // A pick's link carries the slug (the mock's is its id).
+    const event = page === 'event' ? upcoming.find((e) => (e.slug ?? e.id) === id && e.wide) : undefined;
+    const host = page === 'host' ? hosts.find((h) => (h.slug ?? h.id) === id && h.banner) : undefined;
     return event ? [{ kind: 'event', event }] : host ? [{ kind: 'host', host }] : [];
   });
-  const rest = pickRest(upcoming.filter((e) => e !== lead), hosts, followed, following, hasNear, isNear);
+  const rest = pickRest(upcoming.filter((e) => e !== lead), hosts, followed, following, hasNear, isNear, hostNear);
   const seen = new Set<unknown>();
   const once = (s: Slide<E, H>) => {
     const key = s.kind === 'event' ? s.event : s.kind === 'host' ? s.host : s.custom;
@@ -169,13 +180,14 @@ function pickRest<E extends PlanEvent, H extends PlanHost>(
   followed: ReadonlySet<string>,
   following: boolean,
   hasNear: boolean,
-  isNear: (area: string) => boolean,
+  isNear: (e: PlanEvent) => boolean,
+  hostNear: (h: PlanHost) => boolean,
 ): Slide<E, H>[] {
-  const events = upcoming.filter((e) => e.wide).map((e) => ({ slide: { kind: 'event', event: e } as const, at: e.announced, area: e.area, hostId: e.hostId }));
+  const events = upcoming.filter((e) => e.wide).map((e) => ({ slide: { kind: 'event', event: e } as const, at: e.announced, near: isNear(e), hostId: e.hostId }));
   const hostSlides = hosts
     .filter((h) => h.banner && !followed.has(h.id))
-    .map((h) => ({ slide: { kind: 'host', host: h } as const, at: h.joined, area: h.area }));
-  const nearOnly = <T extends { area: string }>(items: T[]) => items.filter((s) => !hasNear || isNear(s.area));
+    .map((h) => ({ slide: { kind: 'host', host: h } as const, at: h.joined, near: hostNear(h) }));
+  const nearOnly = <T extends { near: boolean }>(items: T[]) => items.filter((s) => !hasNear || s.near);
 
   const fromOrbit = events.filter((s) => followed.has(s.hostId));
   const pool = following && fromOrbit.length ? [...fromOrbit, ...nearOnly(hostSlides)] : nearOnly([...events, ...hostSlides]);

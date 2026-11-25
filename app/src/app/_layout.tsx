@@ -10,6 +10,7 @@ import { useEffect, useState } from 'react';
 import { NoteHost } from '../note';
 import { PushHost } from '../push';
 import { refreshAccount } from '../session';
+import { scrubBreadcrumb, scrubEvent, scrubSpan, scrubTransaction } from '../scrub';
 import { Splash } from '../splash/Splash';
 import { color } from '../theme';
 
@@ -21,6 +22,12 @@ Sentry.init({
   dsn: process.env.EXPO_PUBLIC_SENTRY_DSN,
   environment: __DEV__ ? 'development' : 'production',
   tracesSampleRate: __DEV__ ? 1 : 0.2,
+  // The phone's position rides in discover and search URLs as lat and lng: no URL keeps its query string.
+  enableNetworkBreadcrumbs: false, // the native layer's own, with full URLs, which beforeBreadcrumb never sees
+  beforeBreadcrumb: scrubBreadcrumb,
+  beforeSend: scrubEvent, // backstop: breadcrumbs the native layer merged into an event
+  beforeSendSpan: scrubSpan,
+  beforeSendTransaction: scrubTransaction,
 });
 
 // The tabs always sit under the location sheet, even when the app opens or reloads on /location, so Close has a

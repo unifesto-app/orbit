@@ -2,8 +2,7 @@
 // event page's people: the 1:1 logo, name and kind, opening the host; Following turns back to Follow on a tap, and the
 // row stays until you leave, so it can be followed again. Signed out, a line and Sign in.
 // Hosts on the API come from GET /me/follows, newest first (any that went private or stopped are hidden there, never
-// dropped), read again each time the screen comes back into view, so a follow changed on a host page shows here; the
-// mock's hosts follow on this phone until events reach the API (src/session.ts).
+// dropped), read again each time the screen comes back into view, so a follow changed on a host page shows here.
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -11,9 +10,8 @@ import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Note, Page, Pill, SignInNote } from '../../account/kit';
 import { useFollows } from '../../account/profile';
 import { hostsApi, markOf } from '../../hosts';
-import { hosts } from '../../mock';
 import { Monogram, Verified } from '../../rows';
-import { api, setFollowing, useViewer } from '../../session';
+import { api, followedHere, useViewer } from '../../session';
 import { color, font, space } from '../../theme';
 
 type Line = { id: string; to: string; mark: { initials: string; bg: string; fg: string }; name: string; verified: boolean; meta: string };
@@ -21,49 +19,31 @@ type Line = { id: string; to: string; mark: { initials: string; bg: string; fg: 
 export default function Following() {
   const viewer = useViewer();
   const { real } = useFollows();
-  const [dropped, setDropped] = useState<ReadonlySet<string>>(new Set()); // unfollowed here, kept on screen
   // API hosts unfollowed here, on the answer they were tapped on; a fresh read (back from a host page) starts over.
   const [unfollowed, setUnfollowed] = useState<{ on: unknown; ids: ReadonlySet<string> }>({ on: null, ids: new Set() });
   const off = unfollowed.on === real.data ? unfollowed.ids : new Set<string>();
   const setOff = (next: (ids: ReadonlySet<string>) => ReadonlySet<string>) => setUnfollowed({ on: real.data, ids: next(off) });
   const { reload } = real;
 
-  const mock = hosts.filter((h) => viewer.follows.includes(h.id) || dropped.has(h.id));
-  const lines: (Line & { following: boolean; toggle: () => void })[] = [
-    ...(real.data ?? []).map((h) => ({
-      id: h.id,
-      to: `/host/${h.slug}`,
-      mark: markOf(h),
-      name: h.name,
-      verified: h.verified,
-      meta: h.city,
-      following: !off.has(h.id),
-      toggle: async () => {
-        const on = off.has(h.id);
-        const flip = (yes: boolean) => setOff((s) => (yes ? new Set([...s].filter((x) => x !== h.id)) : new Set([...s, h.id])));
-        flip(on);
-        const r = await hostsApi(api).follow(h.id, on);
-        if (!r.ok) {
-          flip(!on);
-          Alert.alert(on ? 'Couldn’t follow' : 'Couldn’t unfollow', r.error.message);
-        }
-      },
-    })),
-    ...mock.map((h) => ({
-      id: h.id,
-      to: `/host/${h.id}`,
-      mark: h,
-      name: h.name,
-      verified: h.verified,
-      meta: h.kind,
-      following: viewer.follows.includes(h.id),
-      toggle: () => {
-        const on = !viewer.follows.includes(h.id);
-        setFollowing(h.id, on);
-        if (!on) setDropped((s) => new Set([...s, h.id]));
-      },
-    })),
-  ];
+  const lines: (Line & { following: boolean; toggle: () => void })[] = (real.data ?? []).map((h) => ({
+    id: h.id,
+    to: `/host/${h.slug}`,
+    mark: markOf(h),
+    name: h.name,
+    verified: h.verified,
+    meta: h.city,
+    following: !off.has(h.id),
+    toggle: async () => {
+      const on = off.has(h.id);
+      const flip = (yes: boolean) => setOff((s) => (yes ? new Set([...s].filter((x) => x !== h.id)) : new Set([...s, h.id])));
+      flip(on);
+      const r = await hostsApi(api).follow(h.id, on);
+      if (!r.ok) {
+        flip(!on);
+        Alert.alert(on ? 'Couldn’t follow' : 'Couldn’t unfollow', r.error.message);
+      } else followedHere(h.id, on); // Home reads the session's list
+    },
+  }));
   return (
     <Page title="Following">
       {!viewer.signedIn && <SignInNote>Sign in to see the hosts you follow.</SignInNote>}

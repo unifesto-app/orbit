@@ -11,7 +11,7 @@
 // 4:3 poster when the event has one, else the 3:4.
 import { categories, formatPrice } from '@orbit/contract';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -23,7 +23,8 @@ import { DARK_TINT } from '../../glass';
 import { Carousel } from '../../home/Carousel';
 import { KindSections, WithActs } from '../../kindSections';
 import { meetups } from '../../kinds';
-import { type Event, events, type Host, hosts, interestedBase, now, people, type Person, vibes } from '../../mock';
+import type { Event, Host, Person } from '../../events';
+import { interestedBase, people, vibes } from '../../mock';
 import { OrbitSays } from '../../orbitSays';
 import {
   BackBar,
@@ -33,7 +34,6 @@ import {
   loveIt,
   MenuButton,
   Monogram,
-  NotFound,
   SaveButton,
   SECTION,
   Section,
@@ -44,6 +44,7 @@ import {
 } from '../../rows';
 import { addToList, needsAccount, setInterested, useInterested, useLoved, useSaved, useViewer } from '../../session';
 import { bookAction, eventStatus, seatsLine } from '../../status';
+import { useEvent } from '../../useEvent';
 import { around, color, font, radius, space } from '../../theme';
 
 // When and where glows very faintly from the bottom centre in the poster's own colour (owner, 15 Nov 2026: "add very
@@ -58,15 +59,25 @@ const WEEK = 3 * 3_600_000 + 7 * 86_400_000;
 
 export default function EventPage() {
   const { slug } = useLocalSearchParams<{ slug: string }>();
+  const found = useEvent(slug);
+  // An old link: the answer carries the event's current slug, so the page moves there.
+  useEffect(() => {
+    if (found.live && found.slug !== slug) router.replace(`/event/${found.slug}`);
+  }, [found.live, found.slug, slug]);
+  return found.e ? <EventView e={found.e} host={found.host} now={found.now} live={found.live} /> : found.screen;
+}
+
+// `live`: an event from the API. Its page has no fake counts or mock-only sections, and booking opens with the
+// bookings slice (P10.1), so the bar shows the price and "Booking opens soon". Save, Interested and Loved keep
+// today's on-phone behaviour (saves are slice P9).
+function EventView({ e, host, now, live }: { e: Event; host: Host; now: number; live: boolean }) {
   const insets = useSafeAreaInsets();
   const [bar, setBar] = useState(insets.bottom + 108); // room under the page for the ticket bar, a guess until measured
-  const e = events.find((x) => x.id === slug);
-  const host = e && hosts.find((h) => h.id === e.hostId);
   const viewer = useViewer(); // signed out, no tickets and no follows (src/session.ts)
-  const saved = useSaved(e?.id ?? '');
-  if (!e || !host) return <NotFound what="event" />;
+  const saved = useSaved(e.id);
 
-  const past = Date.parse(e.startsAt) < now;
+  // Over once it ends (the API's end time); a mock event, with none, once it starts.
+  const past = e.endsAt ? now >= Date.parse(e.endsAt) : Date.parse(e.startsAt) < now;
   const status = eventStatus(e, now); // the line under the title (src/status.ts)
   const seats = seatsLine(e, status);
   const booked = viewer.signedIn && !!viewer.tickets?.some((t) => t.eventId === e.id);
@@ -76,7 +87,7 @@ export default function EventPage() {
   // The ticket bar: a ticket holder keeps View ticket until the event has ended, while it's on and if it's cancelled;
   // anyone else sees it until the start, never on a cancelled event.
   const showBar = booked ? status.kind !== 'ended' : !past && status.kind !== 'cancelled';
-  const openHost = () => router.push(`/host/${host.id}`);
+  const openHost = () => router.push(`/host/${host.slug}`);
   const price = barPrice(e);
 
   return (
@@ -123,14 +134,14 @@ export default function EventPage() {
               label="When"
               value={`${e.when} IST`}
               note={e.repeats && `${e.repeats} · ${host.name} runs this again and again`}
-              onPress={e.agenda ? () => router.push(`/agenda/${e.id}`) : undefined}
+              onPress={e.agenda ? () => router.push(`/agenda/${e.slug}`) : undefined}
             />
-            <Fact label="Where" value={e.venue.name} note={e.venue.address} onPress={() => router.push(`/venue/${e.id}`)} />
+            <Fact label="Where" value={e.venue.name} note={e.venue.address} onPress={e.venue.address ? () => router.push(`/venue/${e.slug}`) : undefined} />
           </FactCard>
         </View>
 
         {thanks && <Thanks event={e} host={host} />}
-        {!past && status.kind !== 'cancelled' && <Interested event={e} />}
+        {!past && status.kind !== 'cancelled' && <Interested event={e} live={live} />}
 
         <Section top={SECTION} title="About" />
         <Text style={styles.prose}>{e.about}</Text>
@@ -138,13 +149,13 @@ export default function EventPage() {
         {/* What it's like, as small cards: its kind, then the vibe (owner, 19 Nov 2026: interest cards, all four). */}
         <Section top={SECTION} title="What it’s like" />
         <View style={styles.tags}>
-          {[categories.find((c) => c.slug === e.category)?.label ?? e.category, ...(vibes[e.id] ?? [])].map((t) => (
+          {[categories.find((c) => c.slug === e.category)?.label ?? e.category, ...(live ? [] : (vibes[e.id] ?? []))].map((t) => (
             <Tag key={t} text={t} />
           ))}
         </View>
 
         {/* Its kind's own sections: the show, the jam, how a hackathon works, the room, the fest (src/kindSections.tsx). */}
-        <KindSections event={e} past={past} />
+        {!live && <KindSections event={e} past={past} />}
 
         {cast(e.people).map((g) => (
           <View key={g.title}>
@@ -166,10 +177,10 @@ export default function EventPage() {
               <Fact
                 label="FAQ"
                 value={`${e.faq.length} ${e.faq.length === 1 ? 'question' : 'questions'}`}
-                onPress={() => router.push(`/faq/${e.id}`)}
+                onPress={() => router.push(`/faq/${e.slug}`)}
               />
             )}
-            <Fact label="Terms & Conditions" value="Tickets, refunds and entry" onPress={() => router.push(`/terms/${e.id}`)} />
+            <Fact label="Terms & Conditions" value="Tickets, refunds and entry" onPress={() => router.push(`/terms/${e.slug}`)} />
           </FactCard>
         </View>
 
@@ -187,7 +198,7 @@ export default function EventPage() {
           price={formatPrice(price.paise)}
           from={price.from}
           note={booked ? undefined : seats}
-          action={booked ? 'View ticket' : book.label}
+          action={booked ? 'View ticket' : live && book.can ? 'Booking opens soon' : book.label}
           // A booking opens its ticket (src/app/ticket/[id].tsx, keyed by booking id). Signed out, Book and Register open
           // the sign-in sheet over this page and come back to it (Booking doc, step 2).
           onAction={
@@ -196,7 +207,7 @@ export default function EventPage() {
                   const t = ticketFor(e.id);
                   if (t) router.push(`/ticket/${t.id}`);
                 }
-              : !book.can
+              : live || !book.can
                 ? undefined
                 : () => needsAccount(() => router.push(`/book/${e.id}`)) // signed out, sign in first, then on to it
           }
@@ -218,7 +229,7 @@ export default function EventPage() {
             {
               label: 'Share',
               icon: 'share',
-              onPress: () => shareLink(`${e.title} · ${e.when} · ${e.area} · ${formatPrice(e.pricePaise)}`, `/event/${e.id}`),
+              onPress: () => shareLink(`${e.title} · ${e.when} · ${e.area} · ${formatPrice(e.pricePaise)}`, `/event/${e.slug}`),
             },
             { label: 'Copy link', icon: 'link' },
             { label: 'Add to calendar', icon: 'calendar' },
@@ -233,14 +244,14 @@ export default function EventPage() {
 // Interested (owner, 19 Nov 2026: "add interest cards for events"), apart from Save: it says you're thinking of going.
 // Orbit asks, in its bubble, with the answer on your side (Home's Orbit speaks), and says how many are, yours included
 // ("in interested add count too"). Signed out, it asks to sign in first.
-function Interested({ event: e }: { event: Event }) {
+function Interested({ event: e, live }: { event: Event; live: boolean }) {
   const mine = useInterested(e.id);
   const n = interestedBase(e.id) + (mine ? 1 : 0);
   return (
     <OrbitSays
       top={SECTION}
       title={mine ? 'You’re interested' : 'Thinking of going?'}
-      text={`${n} ${n === 1 ? 'person is' : 'people are'} interested.`}
+      text={live ? 'Tell Orbit you might come.' : `${n} ${n === 1 ? 'person is' : 'people are'} interested.`} // no count for a real event until Interested is the API's
       answers={[{ label: mine ? 'Interested' : 'I’m interested', picked: mine, onPress: () => needsAccount(() => setInterested(e.id, !mine)) }]}
     />
   );
