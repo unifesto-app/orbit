@@ -42,14 +42,17 @@ export default function Layout() {
         <Stack.Protected guard={isStation && (demo || (signedIn && seats(session.me).length > 0))}>
           <Stack.Screen name="(station)" />
           <Stack.Screen name="walkin" options={SHEET} />
-          {/* The scanner takes the whole screen, over Today (take 2). */}
-          <Stack.Screen name="scan" options={{ presentation: 'fullScreenModal', contentStyle: { backgroundColor: '#000' } }} />
           <Stack.Screen name="you" options={SHEET} />
           {/* Money's, Admins only (take 3). */}
           <Stack.Screen name="payout" options={SHEET} />
           <Stack.Screen name="bank" options={SHEET} />
           {/* Venue's edits, Admins only (take 4). */}
           <Stack.Screen name="setup" options={SHEET} />
+        </Stack.Protected>
+        {/* The scanner takes the whole screen, over Today (take 2). The demo's only: it lets people in on the mock day.
+            ponytail: signed in it comes back once it looks up and admits real bookings. */}
+        <Stack.Protected guard={isStation && demo}>
+          <Stack.Screen name="scan" options={{ presentation: 'fullScreenModal', contentStyle: { backgroundColor: '#000' } }} />
         </Stack.Protected>
         <Stack.Protected guard={!session}>
           <Stack.Screen name="signin" />

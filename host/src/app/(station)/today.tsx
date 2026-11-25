@@ -174,7 +174,7 @@ function NextUp({ touched, onTouch }: { touched: ReadonlySet<string>; onTouch: (
                     <Text style={styles.meta}>{line}</Text>
                   </View>
                 </View>
-                {['open', 'late', 'noShow'].includes(d) && <Pill label={busy.has(`in:${c.id}`) ? 'Checking in…' : 'Check in'} disabled={busy.has(`in:${c.id}`)} onPress={() => {
+                {['open', 'late', 'noShow'].includes(d) && <Pill label={busy.has(`claim:${c.id}`) ? 'Checking in…' : 'Check in'} disabled={busy.has(`claim:${c.id}`)} onPress={() => {
                       checkIn(c.id);
                       onTouch(c.id);
                     }} />}

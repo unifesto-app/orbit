@@ -20,8 +20,13 @@ export default function WalkIn() {
   const [count, setCount] = useState(1);
   const [pay, setPay] = useState<'cash' | 'qr'>('cash');
   const [why, setWhy] = useState(WHY[0]);
-  const [refused, setRefused] = useState<string | null>(null); // signed in, the API's line when it won't place it
-  useEffect(() => setRefused(null), [hours, count, why, pay]); // changed what's asked: try again
+  // Signed in, the API's line when it won't place it: gone when what's asked changes, or when the day comes back new
+  // after the fetch the refusal itself set off (`skip`), as the sheet's own check then reads the fresh day.
+  const [refused, setRefused] = useState<{ line: string; skip: number } | null>(null);
+  useEffect(() => setRefused(null), [hours, count, why, pay]);
+  useEffect(() => setRefused((r) => r && (r.skip > 0 ? { ...r, skip: r.skip - 1 } : null)), [load?.data]);
+  const up = useRef(true); // closed mid-send: a refusal goes to Today
+  useEffect(() => () => void (up.current = false), []);
   const done = useRef(false); // a second tap while the sheet closes adds nothing
   const t = v.types.find((x) => x.id === type);
   if (!today || !t) return null; // a seat switch while the sheet is up: no day yet
@@ -53,12 +58,13 @@ export default function WalkIn() {
             ? WHY.map((w) => <Chip key={w} label={w} on={why === w} onPress={() => setWhy(w)} />)
             : [
                 <Chip key="cash" label="Cash here" on={pay === 'cash'} onPress={() => setPay('cash')} />,
-                <Chip key="qr" label="Pay now QR" on={pay === 'qr'} onPress={() => setPay('qr')} />,
+                // ponytail: signed in, cash only until Pay now's API exists.
+                !load && <Chip key="qr" label="Pay now QR" on={pay === 'qr'} onPress={() => setPay('qr')} />,
               ]}
         </View>
       </View>
       {refused ? (
-        <SheetSays text={refused} />
+        <SheetSays text={refused.line} />
       ) : !tried.ok ? (
         <SheetSays text={tried.line} />
       ) : (
@@ -76,11 +82,12 @@ export default function WalkIn() {
             return close();
           }
           // Signed in, the API places it from the current step (the day is fetched again either way); a refusal stays
-          // in the sheet. ponytail: Pay now QR sends the same walk-in as cash until the Pay now API exists.
-          const line = await place({ stationId: t.id, hours, count, why: block ? why : undefined });
-          if (!line) return close();
+          // in the sheet.
+          const sent = await place({ stationId: t.id, hours, count, why: block ? why : undefined }, () => !up.current);
+          if ('dropped' in sent) return void (done.current = false); // another send is still on its way: nothing went
+          if (!sent.line) return close();
           done.current = false;
-          setRefused(line);
+          setRefused({ line: sent.line, skip: 1 });
         }}
       />
     </Sheet>
