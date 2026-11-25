@@ -69,7 +69,8 @@ function Bar() {
           ))}
         </Glass>
       </TabList>
-      {desk ? (
+      {/* Scan is the demo's only for now (the app's layout guards it). */}
+      {seats ? null : desk ? (
         <Pressable onPress={() => router.push('/scan')} accessibilityRole="button" style={({ pressed }) => [styles.deskScan, { bottom }, pressed && styles.pressed]}>
           <Glass tint={DARK} style={styles.deskFace}>
             <Image source={SCAN} style={styles.plain} />

@@ -5,7 +5,7 @@
 // - Refunded claims are left out (they take nothing and Today never shows them); released ones keep their time.
 // - Archived stations are left out: nothing new lands on them.
 // - The API's `free` counts aren't read: Today works them out from the claims with taken(), the same rule.
-// ponytail: no ticket codes in the day, so the scanner's typed-code lookup stays on the mock until S4.
+// ponytail: no ticket codes in the day, so the scanner is the demo's only (the app's layout) until it reads the API.
 import type { VenueDay } from '@orbit/contract';
 
 import { type Claim, HOUR, type StationType, type Venue } from './day.ts';

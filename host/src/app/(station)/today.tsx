@@ -70,9 +70,7 @@ function Waiting({ venue, line, refresh }: { venue: Venue; line: string; refresh
 }
 
 function Day({ trouble, refresh }: { trouble: string | null; refresh?: ReactElement }) {
-  const { venue: v, claims, now, hours: h, release, closed, load } = useToday();
-  // ponytail: signed in, the counter's writes are faded until S4 sends them to the API.
-  const locked = !!load;
+  const { venue: v, claims, now, hours: h, release, closed, said } = useToday();
   const insets = useSafeAreaInsets();
   const onScroll = useTabBarScroll();
   const [waited, setWaited] = useState<ReadonlySet<string>>(new Set());
@@ -85,14 +83,16 @@ function Day({ trouble, refresh }: { trouble: string | null; refresh?: ReactElem
       <Head venue={v} title="Today" line={`${dayLabel(h.day)} · ${when}`} />
       {/* The last good day stays on screen under what went wrong. */}
       {trouble && <OrbitSays text={trouble} />}
+      {/* Signed in, why the API refused the last tap here (a 409's line), until the next one. */}
+      {said && <OrbitSays text={said} />}
       {closed ? <OrbitSays text="Closed today. Nothing to run at the counter." /> : v.types.length === 0 && <OrbitSays text="No stations set up yet. An Admin adds them in Venue." />}
-      {late && <NoShow venue={v} claim={late} now={now} locked={locked} onWait={() => setWaited((s) => new Set(s).add(late.id))} onRelease={() => {
+      {late && <NoShow venue={v} claim={late} now={now} onWait={() => setWaited((s) => new Set(s).add(late.id))} onRelease={() => {
             release(late.id);
             touch(late.id);
           }} />}
       {!closed && v.types.length > 0 && (
         <>
-          <NextUp touched={touched} onTouch={touch} locked={locked} />
+          <NextUp touched={touched} onTouch={touch} />
           <Section title="The day" />
           <View style={styles.legend}>
             {(['booking', 'walkin', 'block', 'free'] as const).map((k) => (
@@ -113,7 +113,7 @@ function Day({ trouble, refresh }: { trouble: string | null; refresh?: ReactElem
   );
 }
 
-function NoShow({ venue: v, claim: c, now, locked, onWait, onRelease }: { venue: Venue; claim: Claim; now: number; locked: boolean; onWait: () => void; onRelease: () => void }) {
+function NoShow({ venue: v, claim: c, now, onWait, onRelease }: { venue: Venue; claim: Claim; now: number; onWait: () => void; onRelease: () => void }) {
   const t = v.types.find((x) => x.id === c.type);
   if (!t) return null;
   const mins = Math.round((now - c.start) / MIN);
@@ -122,14 +122,17 @@ function NoShow({ venue: v, claim: c, now, locked, onWait, onRelease }: { venue:
     <OrbitSays
       title={`${first(c.who)} hasn’t come`}
       text={`${c.who} booked ${what(v, c)} from ${timeLabel(c.start)}, ${mins} minutes ago. Release it and ${it} free again; ${first(c.who)} is told, with no refund.`}
-      // Signed in, Wait alone until S4: OrbitSays' answers can't fade, so Release isn't offered.
-      answers={[{ label: 'Wait', onPress: onWait }, ...(locked ? [] : [{ label: 'Release', onPress: onRelease }])]}
+      // A second Release while the first is on its way is dropped by the state's send.
+      answers={[
+        { label: 'Wait', onPress: onWait },
+        { label: 'Release', onPress: onRelease },
+      ]}
     />
   );
 }
 
-function NextUp({ touched, onTouch, locked }: { touched: ReadonlySet<string>; onTouch: (id: string) => void; locked: boolean }) {
-  const { venue: v, claims, now, hours: h, checkIn } = useToday();
+function NextUp({ touched, onTouch }: { touched: ReadonlySet<string>; onTouch: (id: string) => void }) {
+  const { venue: v, claims, now, hours: h, checkIn, busy } = useToday();
   const from = Math.max(now, h.opens);
   const rows = claims.filter(
     (c) =>
@@ -171,7 +174,7 @@ function NextUp({ touched, onTouch, locked }: { touched: ReadonlySet<string>; on
                     <Text style={styles.meta}>{line}</Text>
                   </View>
                 </View>
-                {['open', 'late', 'noShow'].includes(d) && <Pill label="Check in" disabled={locked} onPress={() => {
+                {['open', 'late', 'noShow'].includes(d) && <Pill label={busy.has(`claim:${c.id}`) ? 'Checking in…' : 'Check in'} disabled={busy.has(`claim:${c.id}`)} onPress={() => {
                       checkIn(c.id);
                       onTouch(c.id);
                     }} />}
@@ -189,8 +192,7 @@ function Cell({ kind, style }: { kind: 'booking' | 'walkin' | 'block' | 'free'; 
 }
 
 function TypeCard({ t }: { t: StationType }) {
-  const { venue: v, claims, now, hours: h, freeOne, load } = useToday();
-  const locked = !!load; // signed in: faded until S4
+  const { venue: v, claims, now, hours: h, freeOne, busy } = useToday();
   const [sel, setSel] = useState<number>();
   const [width, setWidth] = useState(0);
   const at = steps(v, t, h.day);
@@ -246,11 +248,11 @@ function TypeCard({ t }: { t: StationType }) {
       <View style={styles.cfoot}>
         <Text style={styles.kick}>Walk-ins now</Text>
         <View style={styles.stepper}>
-          <Round glyph="−" label={`Free a ${t.unit[0]} early`} disabled={!here.walkin || locked} onPress={() => freeOne(t.id)} />
+          <Round glyph="−" label={`Free a ${t.unit[0]} early`} disabled={!here.walkin || busy.has(`free:${t.id}`)} onPress={() => freeOne(t.id)} />
           <Text style={styles.count}>{here.walkin}</Text>
-          <Round glyph="+" label={`Add a walk-in on ${t.name}`} disabled={locked} onPress={() => router.push({ pathname: '/walkin', params: { type: t.id } })} />
+          <Round glyph="+" label={`Add a walk-in on ${t.name}`} onPress={() => router.push({ pathname: '/walkin', params: { type: t.id } })} />
         </View>
-        <Pill label="Block" disabled={locked} onPress={() => router.push({ pathname: '/walkin', params: { type: t.id, mode: 'block' } })} />
+        <Pill label="Block" onPress={() => router.push({ pathname: '/walkin', params: { type: t.id, mode: 'block' } })} />
       </View>
     </View>
   );
