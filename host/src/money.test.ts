@@ -1,31 +1,30 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { bankFrom, introRate, monthOf, monthsAfter, paiseFrom, percent, rupees, twoPart } from './money.ts';
+import { bankFrom, paiseFrom, percent, rupees, twoPart } from './money.ts';
 
 const HOUR = 3_600_000;
 const IST = 330 * 60_000;
 const india = (y: number, m: number, d: number, h = 0, min = 0) => Date.UTC(y, m - 1, d, h, min) - IST;
 
-test("the Money doc's ₹299: ₹310.96 with the fee on top; commission ₹10.47 at 3.5%, ₹20.93 at 7%", () => {
-  assert.deepEqual([twoPart(29900, 0, false).buyerPays, twoPart(29900, 0.035, false).commission, twoPart(29900, 0.07, false).commission], [31096, 1047, 2093]);
-  assert.equal(twoPart(29900, 0.07, false).earnings, 27807);
-  assert.deepEqual([twoPart(29900, 0.07, false).fee, twoPart(29900, 0.07, false).included], [1196, 0]); // on top: none of it the host's
+test("the owner's ₹1,200: 3% + 2% → buyer ₹1,236, host ₹1,176; 5% + 0% → buyer ₹1,260, host ₹1,200; Orbit ₹60 either way", () => {
+  const a = twoPart(120000, '3+2', false);
+  const b = twoPart(120000, '5+0', false);
+  assert.deepEqual(a, { buyerPays: 123600, fee: 3600, included: 0, commission: 2400, refunded: 0, earnings: 117600 });
+  assert.deepEqual(b, { buyerPays: 126000, fee: 6000, included: 0, commission: 0, refunded: 0, earnings: 120000 });
+  assert.deepEqual([a.fee + a.commission, b.fee + b.commission], [6000, 6000]);
 });
 
-test("an included fee: ₹11.50 carved out of ₹299, commission on the ₹287.50 left, and a refund still costs the fee", () => {
-  assert.deepEqual(twoPart(29900, 0, true), { buyerPays: 29900, fee: 1150, included: 1150, commission: 0, refunded: 0, earnings: 28750 });
-  assert.equal(twoPart(29900, 0.07, true).commission, 2013); // ₹20.125 rounds half up
-  assert.deepEqual(twoPart(29900, 0.07, true, true), { buyerPays: 29900, fee: 1150, included: 1150, commission: 0, refunded: 29900, earnings: -1150 });
-  assert.equal(twoPart(29900, 0.07, false, true).earnings, 0); // with the fee on top, the buyer bore it
+test("an included fee: carved out of the price (× b ÷ (1 + b)), commission on what's left, and a refund still costs the fee", () => {
+  assert.deepEqual(twoPart(120000, '3+2', true), { buyerPays: 120000, fee: 3495, included: 3495, commission: 2330, refunded: 0, earnings: 114175 }); // 2% of ₹1,165.05
+  assert.deepEqual(twoPart(120000, '5+0', true), { buyerPays: 120000, fee: 5714, included: 5714, commission: 0, refunded: 0, earnings: 114286 });
+  assert.deepEqual(twoPart(120000, '3+2', true, true), { buyerPays: 120000, fee: 3495, included: 3495, commission: 0, refunded: 120000, earnings: -3495 });
+  assert.equal(twoPart(120000, '3+2', false, true).earnings, 0); // with the fee on top, the buyer bore it
 });
 
-test('the intro: nothing for 3 months, half for 3, then the rate, in whatever unit the rate is', () => {
-  assert.deepEqual([1, 3, 4, 6, 7, 20].map((m) => introRate(0.065, m)), [0, 0, 0.0325, 0.0325, 0.065, 0.065]);
-  assert.equal(introRate(7, 5), 3.5);
-  assert.equal(monthsAfter(india(2027, 1, 31), 1), india(2027, 2, 28)); // February has no 31st
-  assert.equal(monthsAfter(india(2027, 1, 31), 13), india(2028, 2, 29)); // a leap February, a year on
-  assert.equal(monthsAfter(india(2026, 11, 22, 23, 30), 2), india(2027, 1, 22)); // from late evening: still that day
+test('amounts round half up to the paisa', () => {
+  assert.equal(twoPart(125, '3+2', false).commission, 3); // 2.5 paise
+  assert.equal(twoPart(50, '3+2', false).fee, 2); // 1.5 paise
 });
 
 test('a bank account needs a name, 9 to 18 digits and an IFSC, or a UPI ID; it starts Checking for 72 hours', () => {
@@ -55,20 +54,4 @@ test('money reads ₹0, ₹11,063 or ₹49.50; rates read 6.5% or 3.25%', () => 
 
 test('rupees typed for a payout: commas and spaces go, at most 2 places, anything else is nothing', () => {
   assert.deepEqual(['1,000.50', '1,00,050', ' 25 ', '25.5', '1000,50', '1.000,50', '10.999', '', 'abc'].map(paiseFrom), [100050, 10005000, 2500, 2550, undefined, undefined, undefined, undefined, undefined]);
-});
-
-
-test('months turn across a year end, a leap February, and from an onboarding in the evening', () => {
-  assert.equal(monthOf(india(2026, 11, 30), india(2027, 2, 28)), 4); // 30 Nov: 30 Dec, 30 Jan, then Feb's last
-  assert.equal(monthOf(india(2027, 8, 31), india(2028, 2, 29)), 7); // leap year: 29 Feb
-  assert.equal(monthOf(india(2027, 8, 31), india(2028, 2, 28, 23, 59)), 6);
-  assert.equal(monthOf(india(2026, 11, 22, 23), india(2026, 12, 22)), 2); // turns at 00:00, whatever the hour onboarded
-});
-
-
-test("Launch's days must be real YYYY-MM-DD days: no rolling 30 February into March", async () => {
-  const { addMonths, commission } = await import('./launch/money.ts');
-  assert.equal(addMonths('2026-10-18', 3), '2027-01-18');
-  for (const bad of ['2026-02-30', '2026-04-31', '2026-10-00', '2026-10-18T00:00:00+05:30', '']) assert.throws(() => addMonths(bad, 1), /Not a day/);
-  assert.throws(() => commission('2026-02-30', 7, Date.now()), /Not a day/);
 });

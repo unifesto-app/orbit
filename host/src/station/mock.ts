@@ -95,26 +95,29 @@ export function mockDay(v: Venue, now: number): Claim[] {
   return claims.sort((x, y) => x.start - y.start);
 }
 
-// Each venue's money, made up to show the cases: Respawn Zone in its commission-free months with a verified bank and a
-// payout asked for; Kickoff Arena on its full rate, including the buyer fee, its new bank account still being checked;
-// Smash Court on half commission with no bank account yet. Dates are India midnights.
+// Each venue's money, made up to show the cases: Respawn Zone on 3% + 2%, onboarded on 9 Oct, with a verified bank and a
+// payout asked for; Kickoff Arena on 5% + 0%, including the buyer fee, its new bank account still being checked;
+// Smash Court on 3% + 2% with no bank account yet. Dates are India midnights; nothing is sold before onboarding.
 const DAY = 24 * HOUR;
 const india = (y: number, m: number, d: number) => Date.UTC(y, m - 1, d) - 330 * MIN;
-const MONEY: Record<string, { terms: Terms; bank: (now: number) => Bank; asks: number[]; lastOpen: boolean }> = {
+const MONEY: Record<string, { onboarded: number; terms: Terms; bank: (now: number) => Bank; asks: number[]; lastOpen: boolean }> = {
   'respawn-zone': {
-    terms: { onboarded: india(2026, 10, 9), rate: 0.065, feeIncluded: false },
+    onboarded: india(2026, 10, 9),
+    terms: { plan: '3+2', feeIncluded: false },
     bank: () => ({ bank: 'HDFC Bank', last4: '4821', holder: 'Respawn Zone', state: 'verified' }),
     asks: [22, 15, 8, 1], // days ago; the last is still waiting to be paid
     lastOpen: true,
   },
   'kickoff-arena': {
-    terms: { onboarded: india(2026, 5, 11), rate: 0.06, feeIncluded: true },
+    onboarded: india(2026, 5, 11),
+    terms: { plan: '5+0', feeIncluded: true },
     bank: (now) => ({ bank: 'ICICI Bank', last4: '0937', holder: 'Kickoff Arena', state: 'checking', until: now + 52 * HOUR }), // a replacement, 72 hours
     asks: [24, 17, 10], // a week and more since the last: it can ask now
     lastOpen: false,
   },
   'smash-court': {
-    terms: { onboarded: india(2026, 7, 13), rate: 0.065, feeIncluded: false },
+    onboarded: india(2026, 7, 13),
+    terms: { plan: '3+2', feeIncluded: false },
     bank: () => null,
     asks: [],
     lastOpen: false,
@@ -130,7 +133,7 @@ export function mockMoney(v: Venue, now: number, today: readonly Claim[]) {
   const days: { day: number; sold: Sold[] }[] = [];
   for (let k = 0; k < 30; k++) {
     const h = hours(v, now - k * DAY);
-    if (h.day < indiaMidnight(m.terms.onboarded)) break;
+    if (h.day < indiaMidnight(m.onboarded)) break;
     // Past days as they ended; one booking in 16 the player cancelled in time, so its price went back.
     const claims =
       k === 0
@@ -147,14 +150,14 @@ export function mockMoney(v: Venue, now: number, today: readonly Claim[]) {
   const payouts: Payout[] = [];
   m.asks.forEach((ago, i) => {
     const asked = now - ago * DAY;
-    if (asked < m.terms.onboarded + 7 * DAY) return;
+    if (asked < m.onboarded + 7 * DAY) return;
     const ready = all.filter((x) => x.c.end + 3 * DAY <= asked).reduce((a, x) => a + earningsOf(x, m.terms), 0);
     const paise = ready - payouts.reduce((a, p) => a + p.paise, 0);
     if (paise <= 0) return;
     const open = m.lastOpen && i === m.asks.length - 1;
     payouts.push({ id: `p${i}`, asked, paise, status: open ? 'requested' : 'paid', ...(open ? {} : { paid: asked + DAY, utr: `${v.initials}N${(asked / 1000).toString(36).toUpperCase().slice(-8)}` }) });
   });
-  return { terms: m.terms, bank: m.bank(now), payouts, days };
+  return { onboarded: m.onboarded, terms: m.terms, bank: m.bank(now), payouts, days };
 }
 
 // Each venue's page and team as its Admin sees them on Venue (Hosts flow: profile, Team and roles, Performers and

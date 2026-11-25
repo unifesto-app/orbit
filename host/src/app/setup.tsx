@@ -199,7 +199,7 @@ export default function Setup() {
 
   if (p.what === 'cutoff') {
     return (
-      <Sheet title="Players can cancel" note="Their price back, the 4% fee kept">
+      <Sheet title="Players can cancel" note="Their price back, the buyer fee kept">
         {chips('cutoff', [
           [1, '1 hour before'],
           [2, '2 hours'],

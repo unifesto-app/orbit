@@ -1,12 +1,9 @@
 // A host's money as Launch shows it (Money flow: Sales, The buyer fee and the commission, Bank account and payouts),
 // worked out on the server once the money API lands; these stand in until then. Amounts in whole paise, days in India
 // time. Events' rules came from the Orbit app's Console (git 58351ce^1: app/src/console/money.ts); the commission is
-// the Money flow's two-part model of 17 Nov 2026.
+// the Money flow's two-part model, on the fee plans of 25 Nov 2026 (src/money.ts).
 
-// Rupees and the commission's intro months are the host apps' shared rules (src/money.ts); Launch keeps its own names
-// for them below, on days written YYYY-MM-DD.
-import { introRate, monthOf, monthsAfter } from '../money.ts';
-
+// Rupees and the fee plans are the host apps' shared rules (src/money.ts).
 export { rupees } from '../money.ts';
 
 const IST = 19_800_000; // +05:30, all year
@@ -20,7 +17,7 @@ export type Sales = {
   checkedIn: number;
   salesPaise: number; // what buyers paid for tickets, after coupons, before any fee
   commissionPaise: number; // Orbit's commission on these sales, less what refunds handed back
-  feesPaise: number; // the 4% buyer fee
+  feesPaise: number; // the plan's buyer fee, 3% or 5%
   feeBy: 'buyers' | 'host'; // buyers pay it on top, or the host includes it in its price (decision 19)
   refundedPaise: number;
   paidOutPaise: number;
@@ -65,32 +62,4 @@ export function momentLabel(t: number) {
   const h = at.getUTCHours();
   const m = at.getUTCMinutes();
   return `${dayLabel(istDate(t))}, ${h % 12 || 12}${m ? `:${String(m).padStart(2, '0')}` : ''} ${h < 12 ? 'AM' : 'PM'}`;
-}
-
-// The same day `n` calendar months on, or that month's last day when it's shorter (Money flow: "a month turns at 00:00
-// India time on the same day of the month, or on the month's last day when it is shorter").
-// The start of a YYYY-MM-DD day in India time; anything else (no such day, a timestamp) is a mistake to fix at the
-// source, not a date to guess.
-const dayStart = (day: string) => {
-  const [y, m, d] = day.split('-').map(Number);
-  const start = Date.UTC(y, m - 1, d) - IST;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || istDate(start) !== day) throw new Error(`Not a day: ${day}`);
-  return start;
-};
-export const addMonths = (day: string, n: number) => istDate(monthsAfter(dayStart(day), n));
-
-// The host's commission clock (Money decisions 14 to 17): 0% for the first 3 calendar months from its onboarding day,
-// half its rate for the next 3, then its rate (5% to 7%, set per host). `month` counts from 1; `next` lists the changes
-// still to come, each from the start of its day.
-// ponytail: deals (only lower, with an end date) and staff extending or withholding the intro come with the fees API.
-export function commission(onboarded: string, ratePct: number, now: number) {
-  const today = istDate(now);
-  const month = monthOf(dayStart(onboarded), now);
-  const half = ratePct / 2;
-  const pct = introRate(ratePct, month);
-  const next = [
-    { from: addMonths(onboarded, 3), pct: half },
-    { from: addMonths(onboarded, 6), pct: ratePct },
-  ].filter((c) => c.from > today);
-  return { pct, month, next };
 }
