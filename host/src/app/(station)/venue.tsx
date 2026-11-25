@@ -31,9 +31,10 @@ const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Frid
 const CONSOLE = 'https://console.heyorbit.in';
 
 export default function VenueTab() {
-  const { venue: v, setup: s, load, role, now, hours, changeSetup } = useVenue();
-  const [said, setSaid] = useState<string | null>(null); // the walk-ins switch's refusal
+  const { venue: v, setup: s, load, said: told, tell, role, now, hours, changeSetup, archiveKind } = useVenue();
+  const [said, setSaid] = useState<string | null>(null); // the walk-ins switch's or a Restore's refusal
   const [busy, setBusy] = useState(false);
+  const [walkIns, setWalkIns] = useState<boolean | null>(null); // the switch's new value while it's sent
   const insets = useSafeAreaInsets();
   const onScroll = useTabBarScroll();
   // One sheet per tap: a quick second tap doesn't push another.
@@ -44,7 +45,14 @@ export default function VenueTab() {
     router.push(href);
   };
   if (role !== 'admin') return null; // settings are an Admin's
-  const today = new Date(hours.day + 330 * 60_000).getUTCDay();
+  // Signed in, today's India calendar day; the demo keeps its mock opening's.
+  const today = new Date((load ? now : hours.day) + 330 * 60_000).getUTCDay();
+  const write = (run: () => Promise<string | null>) => {
+    setBusy(true);
+    setSaid(null);
+    tell(null);
+    return run().then((line) => (setBusy(false), setSaid(line), line));
+  };
   const toConsole = () => Linking.openURL(CONSOLE).catch(() => {});
   const refresh = load && <RefreshControl refreshing={false} onRefresh={load.reload} tintColor={color.secondary} />;
   const trouble = !load?.error ? null : load.status === 0 ? 'Can’t reach Orbit. Pull to try again.' : load.error.message;
@@ -108,6 +116,7 @@ export default function VenueTab() {
         </View>
       </View>
       {trouble && <OrbitSays text={trouble} />}
+      {told && <OrbitSays text={told} />}
 
       <Section title="What you rent out" aside="New prices, new bookings" />
       <Card>
@@ -118,6 +127,13 @@ export default function VenueTab() {
       <View style={styles.after}>
         <Pill label="Add a kind" onPress={() => open({ pathname: '/setup', params: { what: 'kind' } })} />
       </View>
+      {!!s.archived?.length && (
+        <Card style={styles.gap}>
+          {s.archived.map((t) => (
+            <Row key={t.id} label={t.name} note="Archived · nobody can book it" right={<Pill label="Restore" spoken={`Restore ${t.name}`} disabled={busy} onPress={() => void write(() => archiveKind(t.id, false))} />} />
+          ))}
+        </Card>
+      )}
 
       <Section title="Hours" />
       <Card>
@@ -132,12 +148,11 @@ export default function VenueTab() {
           note="Shows “4 free now” on Orbit"
           right={
             <Switch
-              value={s.logWalkIns}
+              value={walkIns ?? s.logWalkIns}
               disabled={busy}
               onValueChange={(on) => {
-                setBusy(true);
-                setSaid(null);
-                void changeSetup((x) => ({ ...x, logWalkIns: on })).then((line) => (setBusy(false), setSaid(line)));
+                setWalkIns(on); // shown at once, back as it was on a refusal
+                void write(() => changeSetup((x) => ({ ...x, logWalkIns: on }))).then(() => setWalkIns(null));
               }}
               trackColor={{ true: color.accent, false: color.track }}
               thumbColor={color.text}
@@ -197,12 +212,13 @@ export default function VenueTab() {
         {s.invites
           .filter((x) => x.sent === undefined || daysLeft(x.sent, now) > 0) // an invite ends by itself after 14 days (the API leaves lapsed ones out)
           .map((x) => {
+            // ponytail: signed in an invite has no role or sent time; GET /hosts/:id/team would need to send them.
             const left = x.sent === undefined ? 0 : daysLeft(x.sent, now);
             return (
               <Row
                 key={x.id ?? x.contact}
                 label={x.contact}
-                note={x.accepted ? `Accepted by ${x.acceptedBy ?? 'them'} · confirm it’s them` : x.sent === undefined ? 'Waiting' : `Waiting · ${left} day${left === 1 ? '' : 's'} left`}
+                note={x.accepted ? `Accepted by ${x.acceptedBy ?? 'them'} · ${x.byYou ? 'confirm it’s them' : 'waiting for a confirm'}` : x.sent === undefined ? 'Waiting' : `Waiting · ${left} day${left === 1 ? '' : 's'} left`}
                 value={x.role}
                 onPress={() => open({ pathname: '/setup', params: { what: 'invite', contact: x.id ?? x.contact } })}
               />

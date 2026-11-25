@@ -21,15 +21,13 @@ import { mockDay, mockMoney, mockVenue, venues } from './mock';
 import { seats as seatsOf } from './seats';
 import { counter } from './counter';
 import { blank, fromApi } from './live';
-import { fieldWhy, fromStation, refusal, type TeamList, teamFrom, toStation, venueApi, weekSpan } from './venue';
+import { fieldWhy, fromStation, inviteBody, kindBody, putFor, readVenue, refusal, setupFrom, type TeamList, teamFrom, type VenueSetup, venueApi, weekSpan } from './venue';
 import { api, useSession } from '../session';
 import type { Bank } from '../money';
 import type { Payout, Sold } from './money';
 
 export type Role = 'admin' | 'desk';
-// A venue's page and settings as Venue draws them. Signed in there are no followers yet, and the API's area and map pin
-// ride along so a save sends them back.
-export type VenueSetup = Omit<ReturnType<typeof mockVenue>, 'followers'> & { followers?: number; area?: string; pin?: { lat: number; lng: number; placeId: string | null } };
+export type { VenueSetup };
 /** What a Venue write ends with: the line to show, or null when it went in. */
 type Said = Promise<string | null>;
 
@@ -122,6 +120,8 @@ function useStationState() {
     });
   const mockSetup = (f: (s: VenueSetup) => VenueSetup) => setSetups((all) => ({ ...all, [base.id]: f(all[base.id]) }));
   const done = (f: () => void): Said => (f(), Promise.resolve(null));
+  // A write with nowhere to go (the demo has no archive, first setup or confirm; Desk has no Venue) says so.
+  const nope = (): Said => Promise.resolve(seat ? 'Only an Admin changes the venue.' : 'Not in the demo.');
   return {
     now,
     // What Today draws: the API's day when signed in (null until the first answer), the mock's in the demo; and, signed
@@ -164,22 +164,23 @@ function useStationState() {
     // Venue's, Admins only, read through useVenue(): the venue and its setup (signed in, null until it loads or while it
     // isn't set up yet, `load` saying which), and its edits, each answering its line (Said).
     venueTab: real
-      ? { venue: real.venue, setup: real.setup, load: real.load }
-      : { venue: seat ? blank(seat) : venue, setup: seat ? null : setups[base.id], load: null },
-    saveKind: (t: StationType, tile: 'gaming' | 'sports'): Said => (real ? real.saveKind(t, tile) : seat ? Promise.resolve(null) : done(() => mockKind(t))),
-    archiveKind: (id: string): Said => (real ? real.archiveKind(id) : Promise.resolve(null)), // signed in only
-    changeSetup: (f: (s: VenueSetup) => VenueSetup): Said => (real ? real.changeSetup(f) : seat ? Promise.resolve(null) : done(() => mockSetup(f))),
-    firstSetup: (b: PutVenue): Said => (real ? real.put(b) : Promise.resolve(null)), // signed in only
+      ? { venue: real.venue, setup: real.setup, load: real.load, said: real.said }
+      : { venue: seat ? blank(seat) : venue, setup: seat ? null : setups[base.id], load: null, said: null },
+    tell: (line: string | null) => real?.tell(line), // a refusal for the Venue tab, from a sheet closed mid-write
+    saveKind: (t: StationType, tile: 'gaming' | 'sports'): Said => (real ? real.saveKind(t, tile) : seat ? nope() : done(() => mockKind(t))),
+    archiveKind: (id: string, archived = true): Said => (real ? real.archiveKind(id, archived) : nope()), // signed in only
+    changeSetup: (f: (s: VenueSetup) => VenueSetup): Said => (real ? real.changeSetup(f) : seat ? nope() : done(() => mockSetup(f))),
+    firstSetup: (b: PutVenue): Said => (real ? real.first(b) : nope()), // signed in only
     invite: (contact: string, role: 'Admin' | 'Desk'): Said =>
-      real ? real.invite(contact, role) : seat ? Promise.resolve(null) : done(() => mockSetup((x) => ({ ...x, invites: [...x.invites, { contact, role, sent: Date.now() }] }))),
+      real ? real.invite(contact, role) : seat ? nope() : done(() => mockSetup((x) => ({ ...x, invites: [...x.invites, { contact, role, sent: Date.now() }] }))),
     // Removing someone or withdrawing an invite: the seat's id signed in, the name or contact in the demo.
     endSeat: (m: { id?: string; name?: string; contact?: string }): Said =>
       real && m.id
         ? real.endSeat(m.id)
         : seat
-          ? Promise.resolve(null)
+          ? nope()
           : done(() => mockSetup((x) => ({ ...x, team: x.team.filter((y) => y.name !== m.name), invites: x.invites.filter((z) => z.contact !== m.contact) }))),
-    confirmSeat: (id: string): Said => (real ? real.confirmSeat(id) : Promise.resolve(null)), // an accepted Admin invite, signed in
+    confirmSeat: (id: string): Said => (real ? real.confirmSeat(id) : nope()), // an accepted Admin invite, signed in, by its adder
     // Money's, Admins only: ask Orbit for a payout, and add or replace where it's paid.
     // ponytail: a replacement should also send open asks back to be confirmed again; the money API does that.
     money: { ...day.money, ...own, days },
@@ -208,72 +209,95 @@ const readDay = (r: Result<unknown>): Result<VenueDay> => {
   return d.success ? { ok: true, data: d.data } : { ok: false, status: 200, error: { error: 'unreadable', message: 'Orbit sent a day this app can’t read. Update the app.' } };
 };
 
-const readVenue = (r: Result<unknown>): Result<VenueSettings | null> => {
-  if (!r.ok) return r.status === 404 ? { ok: true, data: null } : r; // not set up yet
-  const d = VenueSettings.safeParse(r.data);
-  return d.success ? { ok: true, data: d.data } : { ok: false, status: 200, error: { error: 'unreadable', message: 'Orbit sent a venue this app can’t read. Update the app.' } };
+const checkVenue = (x: unknown) => {
+  const d = VenueSettings.safeParse(x);
+  return d.success ? d.data : undefined;
 };
 
 // Signed in as an Admin: the real venue and team, and their writes. Each write is checked with the contract's schema
-// first (a field error shows before anything is sent), then sent; a refusal answers its line, a success reloads.
+// first (a field error shows before anything is sent), then sent. After every answer, refusals too, the venue (or team)
+// is fetched again; a PUT's answer is the new venue itself. Venue writes fetch Today's day again too, team writes don't.
 function useLiveVenue(admin: { hostId: string; name: string } | undefined, meId: string, reloadDay: () => void) {
   const to = admin ? venueApi(admin.hostId, api.authed) : null;
-  const got = useLoad<VenueSettings | null>(admin ? `venue|${admin.hostId}` : null, () => to!.get().then(readVenue));
+  const got = useLoad<VenueSettings | null>(admin ? `venue|${admin.hostId}` : null, () => to!.get().then((r) => readVenue(r, checkVenue)));
   const crew = useLoad<TeamList>(admin ? `team|${admin.hostId}` : null, () => to!.team());
+  // A PUT's answer, shown until the next fetch lands (it's kept against the answer it replaced).
+  const [put, setPut] = useState<{ over: VenueSettings | null; data: VenueSettings } | null>(null);
+  const v = put && put.over === got.data ? put.data : got.data;
+  // A refusal from a sheet closed mid-write, kept with its venue so another never shows it.
+  const [said, setSaid] = useState<{ hostId: string; line: string } | null>(null);
   const shown = useMemo(() => {
     if (!admin) return null;
-    const v = got.data;
     const team = crew.data ? teamFrom(crew.data, meId) : { team: [], invites: [] };
     const types = v ? v.stations.filter((s) => !s.archived).map(fromStation) : [];
     const venue = { ...blank(admin), area: v?.area ?? '', open: v ? weekSpan(v.week) : ([0, 24] as [number, number]), types };
-    // ponytail: no "at your venue" asks or hosted events yet; they wait for the event-venue links API.
-    const setup: VenueSetup | null = v && {
-      kind: 'Venue', address: v.address, area: v.area, deskPhone: v.deskPhone, logWalkIns: v.logsWalkIns, cutoff: v.cutoffMinutes, week: v.week,
-      pin: { lat: v.lat, lng: v.lng, placeId: v.placeId }, asks: [], hosted: [], ...team,
-    };
-    return { venue, setup };
-  }, [admin, got.data, crew.data, meId]);
+    return { venue, setup: v ? setupFrom(v, team) : null };
+  }, [admin, v, crew.data, meId]);
   if (!admin || !to || !shown) return null;
-  const after = (r: { ok: boolean; status?: number; error?: { message: string } }, reload: () => void) => {
-    if (!r.ok) return refusal(r as { status: number; error: { message: string } });
-    reload();
+  // Every answer: a fresh fetch (a refusal may mean someone else changed it); a write with no answer may have landed.
+  const venueSaid = (r: Result<unknown>) => {
+    got.reload();
+    if (r.ok) reloadDay();
+    return r.ok ? null : refusal(r, true);
+  };
+  const teamSaid = (r: Result<unknown>) => {
+    crew.reload();
+    return r.ok ? null : refusal(r, true);
+  };
+  const send = async (body: unknown): Said => {
+    const ok = PutVenue.safeParse(body);
+    if (!ok.success) return fieldWhy(ok.error);
+    const base = got.data;
+    const r = await to.put(ok.data);
+    const back = r.ok ? checkVenue(r.data) : undefined;
+    if (!back) return venueSaid(r);
+    setPut({ over: base, data: back });
     reloadDay();
     return null;
   };
-  const put = async (b: PutVenue): Said => {
-    const ok = PutVenue.safeParse(b);
-    if (!ok.success) return fieldWhy(ok.error);
-    return after(await to.put(ok.data), got.reload);
+  // The venue as the API has it now, for a PUT made on it.
+  const fresh = async (): Promise<{ v: VenueSettings | null } | { line: string }> => {
+    const r = readVenue(await to.get(), checkVenue);
+    return r.ok ? { v: r.data } : { line: refusal(r) };
   };
   return {
     ...shown,
-    load: { error: got.error ?? crew.error, status: got.error ? got.status : crew.status, notSetUp: got.data === null && !got.loading && !got.error, reload: () => (got.reload(), crew.reload()) },
-    put,
-    // The whole setup goes back each time (PUT), with the stored map pin.
+    load: { error: got.error ?? crew.error, status: got.error ? got.status : crew.status, notSetUp: v === null && !got.loading && !got.error, reload: () => (got.reload(), crew.reload()) },
+    said: said && said.hostId === admin.hostId ? said.line : null,
+    tell: (line: string | null) => setSaid(line ? { hostId: admin.hostId, line } : null),
+    // ponytail: a first save meeting another between this GET and the PUT still lands as an update; telling them apart
+    // needs a create-only error code from the API.
+    first: async (b: PutVenue): Said => {
+      const now = await fresh();
+      if ('line' in now) return now.line;
+      if (now.v) return got.reload(), 'This venue was just set up. Pull to see it.';
+      return send(b);
+    },
+    // Fetched again first, so the edit lands on the venue as it is now (putFor).
     // ponytail: no place search in the host app, so the pin only moves when someone pastes one in (Place sheet).
-    changeSetup: (f: (s: VenueSetup) => VenueSetup): Said => {
-      if (!shown.setup?.pin) return Promise.resolve('Set up the venue first.');
-      const s = f(shown.setup);
-      return put({ address: s.address, area: s.area ?? '', ...s.pin!, deskPhone: s.deskPhone, week: s.week, cutoffMinutes: s.cutoff, logsWalkIns: s.logWalkIns });
+    changeSetup: async (f: (s: VenueSetup) => VenueSetup): Said => {
+      const now = await fresh();
+      if ('line' in now) return now.line;
+      if (!now.v) return got.reload(), 'Set up the venue first.';
+      return send(putFor(now.v, f));
     },
     saveKind: async (t: StationType, tile: 'gaming' | 'sports'): Said => {
-      const body = toStation(t);
-      const known = shown.venue.types.some((x) => x.id === t.id);
-      if (known) {
-        const { unit: _unit, ...edit } = body; // what one is called is set once
-        const ok = EditStation.safeParse(edit);
-        return ok.success ? after(await to.editStation(t.id, ok.data), got.reload) : fieldWhy(ok.error);
+      const b = kindBody(t, shown.venue.types.some((x) => x.id === t.id), tile);
+      if ('edit' in b) {
+        const ok = EditStation.safeParse(b.edit);
+        return ok.success ? venueSaid(await to.editStation(t.id, ok.data)) : fieldWhy(ok.error);
       }
-      const ok = NewStation.safeParse({ ...body, tile });
-      return ok.success ? after(await to.addStation(ok.data), got.reload) : fieldWhy(ok.error);
+      const ok = NewStation.safeParse(b.add);
+      return ok.success ? venueSaid(await to.addStation(ok.data)) : fieldWhy(ok.error);
     },
-    archiveKind: async (id: string): Said => after(await to.editStation(id, { archived: true }), got.reload),
+    // Archive, or Restore (archived false).
+    archiveKind: async (id: string, archived: boolean): Said => venueSaid(await to.editStation(id, { archived })),
     invite: async (contact: string, role: 'Admin' | 'Desk'): Said => {
-      const ok = InviteAdmin.safeParse({ to: contact, role: role === 'Desk' ? 'desk' : 'admin' });
-      return ok.success ? after(await to.invite({ to: ok.data.to, role: ok.data.role ?? 'admin' }), crew.reload) : fieldWhy(ok.error);
+      const ok = InviteAdmin.safeParse(inviteBody(contact, role));
+      return ok.success ? teamSaid(await to.invite(inviteBody(contact, role))) : fieldWhy(ok.error);
     },
-    endSeat: async (id: string): Said => after(await to.remove(id), crew.reload),
-    confirmSeat: async (id: string): Said => after(await to.confirm(id), crew.reload),
+    endSeat: async (id: string): Said => teamSaid(await to.remove(id)),
+    confirmSeat: async (id: string): Said => teamSaid(await to.confirm(id)),
   };
 }
 
@@ -289,12 +313,13 @@ export function useStation() {
   return s;
 }
 
-/** The station state with Today's day on top: the API's when signed in, the mock's in the demo. Today and its sheets. */
+/** The station state with the Venue tab's venue on top: the API's for a signed-in Admin, the mock's in the demo. */
 export function useVenue() {
   const s = useStation();
   return { ...s, ...s.venueTab };
 }
 
+/** The station state with Today's day on top: the API's when signed in, the mock's in the demo. Today and its sheets. */
 export function useToday() {
   const s = useStation();
   return { ...s, ...s.today! };

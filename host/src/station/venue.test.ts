@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { HOUR, type StationType } from './day.ts';
-import { type Authed, contactOk, daysLeft, fieldWhy, fromStation, hoursOk, inTheWay, kindFrom, type KindForm, pinFrom, plural, priceLine, refusal, span, teamFrom, toStation, venueApi, weekSpan } from './venue.ts';
+import { type Authed, contactOk, daysLeft, fieldWhy, fromStation, hoursOk, inTheWay, inviteBody, kindBody, kindFrom, type KindForm, pinFrom, plural, priceLine, putFor, readVenue, refusal, span, type StationRowish, teamFrom, toStation, venueApi, weekSpan } from './venue.ts';
 
 const pc: StationType = { id: 'pc', name: 'Gaming PC', count: 12, unit: ['PC', 'PCs'], step: 30, whole: false, price: 16200, offPeak: { from: 11, to: 16, weekdays: true, price: 12000 }, coop: 35000, games: 'Valorant, CS2' };
 
@@ -99,10 +99,14 @@ test('a map pin from Google Maps: the copied numbers or a link', () => {
   assert.deepEqual(pinFrom('17.4401, 78.3489'), { lat: 17.4401, lng: 78.3489 });
   assert.deepEqual(pinFrom('https://www.google.com/maps/@17.4401,78.3489,17z'), { lat: 17.4401, lng: 78.3489 });
   assert.equal(pinFrom('Gachibowli'), undefined);
+  assert.deepEqual(pinFrom('17, 78'), { lat: 17, lng: 78 }); // whole numbers
+  assert.equal(pinFrom('117.44, 78.35'), undefined); // never 17.44 out of 117.44
+  assert.deepEqual(pinFrom('https://www.google.com/maps/place/X/@17.40,78.30,17z/data=!3m1!4b1!4m6!3m5!8m2!3d17.4401!4d78.3489'), { lat: 17.4401, lng: 78.3489 }); // the place, not the view
 });
 
 test("a refusal says the API's line, or that Orbit can't be reached", () => {
   assert.equal(refusal({ status: 0, error: { message: 'offline' } }), 'Can’t reach Orbit. Try again.');
+  assert.equal(refusal({ status: 0, error: { message: 'offline' } }, true), 'It may have gone through. Check before trying again.');
   assert.equal(refusal({ status: 409, error: { message: '1 booking needs the old hours.' } }), '1 booking needs the old hours.');
   assert.equal(fieldWhy({ issues: [{ code: 'custom', path: ['week'], message: "A day's late close runs into the next day's opening." }] }), "A day's late close runs into the next day's opening.");
   assert.equal(fieldWhy({ issues: [{ code: 'too_big', path: ['lat'], message: 'Too big' }] }), 'Check the map pin.');
@@ -116,7 +120,10 @@ test('the team: Admins and Desk only, the owner first, you marked; invites by se
         { id: 'b', userId: 'u1', name: 'Asha', role: 'admin', owner: true },
         { id: 'c', userId: 'u3', name: null, role: 'curator', owner: false },
       ],
-      invites: [{ id: 'i1', contact: '+919000022010', accepted: true, acceptedBy: 'Nisha' }],
+      invites: [
+        { id: 'i1', contact: '+919000022010', accepted: true, acceptedBy: 'Nisha', addedBy: 'u1' },
+        { id: 'i2', contact: 'x@example.com', accepted: true, acceptedBy: 'Om', addedBy: 'u2' },
+      ],
     },
     'u1',
   );
@@ -124,5 +131,46 @@ test('the team: Admins and Desk only, the owner first, you marked; invites by se
     { id: 'b', name: 'Asha', role: 'Admin', you: true, owner: true },
     { id: 'a', name: 'Ravi K.', role: 'Desk', you: undefined, owner: undefined },
   ]);
-  assert.deepEqual(t.invites, [{ id: 'i1', contact: '+919000022010', accepted: true, acceptedBy: 'Nisha' }]);
+  assert.deepEqual(t.invites, [
+    { id: 'i1', contact: '+919000022010', accepted: true, acceptedBy: 'Nisha', addedBy: 'u1', byYou: true, adder: 'Asha' },
+    { id: 'i2', contact: 'x@example.com', accepted: true, acceptedBy: 'Om', addedBy: 'u2', byYou: false, adder: 'Ravi K.' },
+  ]);
+});
+
+const fresh = {
+  address: 'Above Inorbit Mall, Gachibowli', area: 'Gachibowli', lat: 17.44, lng: 78.35, placeId: 'gp1', deskPhone: '+91 90000 11001',
+  week: Array.from({ length: 7 }, () => [11, 26] as [number, number]), cutoffMinutes: 90, logsWalkIns: true,
+  stations: [] as StationRowish[],
+};
+
+test('the PUT is made on the fresh venue: each edit keeps the pin, place, cutoff and walk-ins it didn’t touch', () => {
+  const kept = { lat: 17.44, lng: 78.35, placeId: 'gp1', cutoffMinutes: 90, logsWalkIns: true };
+  const pick = (b: ReturnType<typeof putFor>) => ({ lat: b.lat, lng: b.lng, placeId: b.placeId, cutoffMinutes: b.cutoffMinutes, logsWalkIns: b.logsWalkIns });
+  assert.deepEqual(pick(putFor(fresh, (x) => ({ ...x, deskPhone: '+91 90000 22222' }))), kept);
+  assert.deepEqual(pick(putFor(fresh, (x) => ({ ...x, week: x.week.map((w, i) => (i === 0 ? null : w)) }))), kept);
+  assert.deepEqual(pick(putFor(fresh, (x) => ({ ...x, address: 'Ground floor', area: 'Kondapur' }))), kept); // the pin unmoved keeps its place
+  assert.deepEqual(putFor(fresh, (x) => ({ ...x, cutoff: 240 })).cutoffMinutes, 240);
+  assert.deepEqual(pick(putFor(fresh, (x) => ({ ...x, logWalkIns: false }))), { ...kept, logsWalkIns: false });
+  const moved = putFor(fresh, (x) => ({ ...x, pin: { lat: 17.45, lng: 78.35, placeId: x.pin?.placeId ?? null } }));
+  assert.deepEqual([moved.lat, moved.placeId, moved.cutoffMinutes, moved.logsWalkIns], [17.45, null, 90, true]); // a moved pin drops its place
+  assert.equal(putFor(fresh, (x) => ({ ...x, deskPhone: '1' })).address, fresh.address);
+});
+
+test('the venue read: a 404 is not set up yet, a payload the contract refuses is an error', () => {
+  const check = (x: unknown) => ((x as { hostId?: string }).hostId ? x : undefined);
+  assert.deepEqual(readVenue({ ok: false, status: 404, error: { error: 'notFound', message: '' } }, check), { ok: true, data: null });
+  assert.deepEqual(readVenue({ ok: true, data: { hostId: 'h1' } }, check), { ok: true, data: { hostId: 'h1' } });
+  const bad = readVenue({ ok: true, data: { nope: 1 } }, check);
+  assert.ok(!bad.ok && bad.error.error === 'unreadable');
+  const down = readVenue({ ok: false, status: 0, error: { error: 'offline', message: '' } }, check);
+  assert.ok(!down.ok && down.status === 0);
+});
+
+test('an edit leaves out what one is called; a new kind says its tile; Desk invites a desk seat, Admin an admin', () => {
+  const edit = kindBody(pc, true, 'gaming');
+  assert.ok('edit' in edit && !('unit' in edit.edit) && !('tile' in edit.edit) && edit.edit.pricePaise === 16200);
+  const add = kindBody(pc, false, 'sports');
+  assert.ok('add' in add && add.add.unit === 'PC' && add.add.tile === 'sports');
+  assert.deepEqual(inviteBody(' ravi@example.com ', 'Desk'), { to: 'ravi@example.com', role: 'desk' });
+  assert.deepEqual(inviteBody('+91 90000 22010', 'Admin'), { to: '+91 90000 22010', role: 'admin' });
 });

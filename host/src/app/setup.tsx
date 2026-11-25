@@ -34,7 +34,15 @@ export default function Setup() {
   const { role, venue: v, setup: s, claims, now, hours, load } = st;
   const live = !!load; // signed in: the API's venue
   const done = useRef(false);
+  const up = useRef(true); // swiped away mid-write: a refusal goes to the Venue tab
+  useEffect(() => () => void (up.current = false), []);
   const [busy, setBusy] = useState(false);
+  const [arming, setArming] = useState(false); // Archive's first tap; a second within 3 seconds archives
+  useEffect(() => {
+    if (!arming) return;
+    const t = setTimeout(() => setArming(false), 3000);
+    return () => clearTimeout(t);
+  }, [arming]);
   const [why, setWhy] = useState<string>();
   // The person or invite as the sheet opened, so it never turns into the next one while it closes. Signed in, by seat id.
   const [who] = useState(() => (p.name ? s?.team.find((m) => (m.id ?? m.name) === p.name) : undefined));
@@ -54,20 +62,20 @@ export default function Setup() {
     opPrice: rupeeText(t?.offPeak?.price),
     games: t?.games ?? '',
     open: day ? 'yes' : 'no',
-    from: day?.[0] ?? v.open[0], // a day that opens at midnight keeps its 0
-    to: day?.[1] ?? v.open[1],
+    from: p.what === 'first' ? 10 : (day?.[0] ?? v.open[0]), // a day that opens at midnight keeps its 0
+    to: p.what === 'first' ? 22 : (day?.[1] ?? v.open[1]),
     cutoff: (s?.cutoff ?? 120) / 60,
     role: p.role ?? 'Desk',
     contact: '',
     value: p.key === 'address' ? (s?.address ?? '') : p.key === 'deskPhone' ? (s?.deskPhone ?? '') : '',
     // A first kind says which it is; the first setup and the Place sheet's other fields.
-    tile: 'gaming',
+    tile: v.types[0]?.whole ? 'sports' : 'gaming',
     area: s?.area ?? '',
     pin: s?.pin ? `${s.pin.lat}, ${s.pin.lng}` : '',
     phone: '',
   }));
-  // A pitch or court is booked whole; a venue's first kind says which it is.
-  const gaming = v.types[0] ? !v.types[0].whole : f.tile === 'gaming';
+  // A pitch or court is booked whole: a kind keeps what it is; a new one says (starting as the venue's first kind).
+  const gaming = t ? !t.whole : f.tile === 'gaming';
   const set = (k: keyof typeof f, val: string | number) => {
     setWhy(undefined);
     setF((x) => ({ ...x, [k]: val }));
@@ -87,6 +95,7 @@ export default function Setup() {
     setBusy(true);
     const line = await run();
     done.current = false;
+    if (!up.current) return void (line && st.tell(line)); // already closed: nothing to close, the tab says it
     setBusy(false);
     if (line) setWhy(line);
     else close();
@@ -133,7 +142,7 @@ export default function Setup() {
     const offTo = Math.min(v.open[1], 24);
     return (
       <Sheet title={t ? t.name : 'Add a kind'} note={gaming ? 'Starts every 30 minutes, each one on its own · Orbit sets these' : 'Booked whole, starting on the hour · Orbit sets these'}>
-        {!v.types[0] &&
+        {!t &&
           chips('tile', [
             ['gaming', 'Gaming'],
             ['sports', 'Sports'],
@@ -142,7 +151,7 @@ export default function Setup() {
         {!t && input('unit', 'What one is called', gaming ? 'PC' : 'pitch')}
         <View style={ui.frow}>
           <Text style={ui.label}>How many</Text>
-          <Stepper n={f.count} min={1} max={60} onChange={(n) => set('count', n)} label={t?.unit[1] ?? 'of them'} />
+          <Stepper n={f.count} min={1} max={200} onChange={(n) => set('count', n)} label={t?.unit[1] ?? 'of them'} />
         </View>
         {input('price', 'Price an hour, ₹', '162', true)}
         {gaming && input('coop', 'Co-op price an hour for two, ₹ (optional)', 'None', true)}
@@ -183,7 +192,14 @@ export default function Setup() {
             void finish(() => st.saveKind(made.kind, gaming ? 'gaming' : 'sports'));
           }}
         />
-        {live && t && <Pill wide label={`Archive ${t.name}`} disabled={busy} onPress={() => void finish(() => st.archiveKind(t.id))} />}
+        {live && t && (
+          <Pill
+            wide
+            label={arming ? 'Archive? Tap again' : `Archive ${t.name}`}
+            disabled={busy}
+            onPress={() => (arming ? void finish(() => st.archiveKind(t.id)) : setArming(true))}
+          />
+        )}
       </Sheet>
     );
   }
@@ -235,7 +251,7 @@ export default function Setup() {
         ])}
         <SheetSays text="After that the ticket says it starts too soon to cancel; you can still refund by hand from the booking on the web Console." />
         {why && <SheetSays text={why} />}
-        <Pill wide label="Save" disabled={busy} onPress={() => void finish(() => st.changeSetup((x) => ({ ...x, cutoff: Number(f.cutoff) * 60 })))} />
+        <Pill wide label="Save" disabled={busy} onPress={() => void finish(() => st.changeSetup((x) => ({ ...x, cutoff: Math.round(Number(f.cutoff) * 60) })))} />
       </Sheet>
     );
   }
@@ -288,9 +304,17 @@ export default function Setup() {
     if (!invite) return null;
     return (
       <Sheet title={invite.contact} note={invite.role ? `Invited as ${invite.role}` : invite.accepted ? `Accepted by ${invite.acceptedBy ?? 'them'}` : 'Invited'}>
-        <SheetSays text={invite.accepted ? 'Their Admin role starts once you confirm it’s them.' : 'It ends by itself after 14 days if they don’t accept.'} />
+        <SheetSays
+          text={
+            !invite.accepted
+              ? 'It ends by itself after 14 days if they don’t accept.'
+              : invite.byYou
+                ? 'Their Admin role starts once you confirm it’s them.'
+                : `${invite.adder ?? 'The Admin who added them'} confirms it.` // only the adder can (confirmSeatRule)
+          }
+        />
         {why && <SheetSays text={why} />}
-        {invite.accepted && invite.id && <Pill wide label="Confirm it’s them" disabled={busy} onPress={() => void finish(() => st.confirmSeat(invite.id!))} />}
+        {invite.accepted && invite.byYou && invite.id && <Pill wide label="Confirm it’s them" disabled={busy} onPress={() => void finish(() => st.confirmSeat(invite.id!))} />}
         <Pill wide label="Withdraw invite" disabled={busy} onPress={() => void finish(() => st.endSeat({ id: invite.id, contact: invite.contact }))} />
       </Sheet>
     );

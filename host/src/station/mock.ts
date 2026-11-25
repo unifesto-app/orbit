@@ -166,7 +166,7 @@ export function mockMoney(v: Venue, now: number, today: readonly Claim[]) {
 // Signed in (S5) they come from GET /hosts/:id/team: `id` is the seat; an invite there has no role or sent time, and an
 // accepted Admin invite waits for a confirm.
 export type Member = { id?: string; name: string; role: 'Admin' | 'Desk'; you?: boolean; owner?: boolean };
-export type Invite = { id?: string; contact: string; role?: 'Admin' | 'Desk'; sent?: number; accepted?: boolean; acceptedBy?: string | null };
+export type Invite = { id?: string; contact: string; role?: 'Admin' | 'Desk'; sent?: number; accepted?: boolean; acceptedBy?: string | null; addedBy?: string; byYou?: boolean; adder?: string | null };
 export type AtAsk = { id: string; title: string; by: string; when: string; series?: boolean };
 const VENUE: Record<string, { kind: string; address: string; deskPhone: string; followers: number; logWalkIns: boolean; cutoff: number; team: Member[]; invites: (now: number) => Invite[]; asks: AtAsk[]; hosted: AtAsk[] }> = {
   'respawn-zone': {
