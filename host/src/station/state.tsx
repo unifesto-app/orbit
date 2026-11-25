@@ -3,12 +3,19 @@
 // new opening (or another venue) starts a fresh mock day.
 // Signed in, the venues and roles are the person's own seats (seats.ts), picked in the You sheet; the role comes with the
 // seat. The dev demo picks a mock venue and either role there instead.
+// Today (S3): signed in, its day is the API's (GET /venues/:hostId/day, live.ts), fetched again on a seat change and when
+// Today asks (pull, every 30 s, back to the foreground). The demo keeps the mock day. Venue, Money and the scanner's
+// lookup stay on the mock until their slices.
+import { VenueDay } from '@orbit/contract';
+import type { Result } from '@orbit/mobile/api';
+import { useLoad } from '@orbit/mobile/load';
 import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from 'react';
 
 import { admit, admitTo, byCode, type Claim, freeOne, hours, type StationType } from './day';
 import { mockDay, mockMoney, mockVenue, venues } from './mock';
 import { seats as seatsOf } from './seats';
-import { useSession } from '../session';
+import { fromApi } from './live';
+import { api, useSession } from '../session';
 import type { Bank } from '../money';
 import type { Payout, Sold } from './money';
 
@@ -27,7 +34,8 @@ function useStationState() {
   const seat = seats ? (seats.find((x) => x.hostId === hostId) ?? seats[0]) : undefined;
   const [demoVenue, setVenueId] = useState(venues[0].id);
   const [demoRole, setRole] = useState<Role>('admin');
-  // ponytail: a seat shows the mock venue at its own index until GET /venues/:hostId/day serves the real one (S3).
+  // ponytail: Venue and Money show the mock venue at the seat's index until their own APIs are wired; Today reads the
+  // real day (`today` below).
   const venueId = seats ? venues[Math.max(0, seats.indexOf(seat!)) % venues.length].id : demoVenue;
   const role: Role = seats ? (seat?.role ?? 'desk') : demoRole;
   // Venue's edits (take 4): each venue's kinds as its Admin set them, over the mock's, and its page, team, asks and
@@ -55,8 +63,8 @@ function useStationState() {
   const keep = (f: (k: { payouts: Payout[]; bank: Bank }) => { payouts: Payout[]; bank: Bank }) => setKept((all) => ({ ...all, [venue.id]: f(all[venue.id] ?? own) }));
   // Today's money comes from the day as it is now (a booking added or refunded today counts at once).
   // Priced as the bookings were made: a new price applies to new bookings only (Play).
-  const today: Sold[] = day.claims.filter((c) => c.kind === 'booking').map((c) => ({ t: base.types.find((t) => t.id === c.type) ?? venue.types.find((t) => t.id === c.type)!, c }));
-  const days = day.money.days.map((d, i) => (i === 0 && d.day === open.day ? { ...d, sold: today } : d));
+  const sold: Sold[] = day.claims.filter((c) => c.kind === 'booking').map((c) => ({ t: base.types.find((t) => t.id === c.type) ?? venue.types.find((t) => t.id === c.type)!, c }));
+  const days = day.money.days.map((d, i) => (i === 0 && d.day === open.day ? { ...d, sold } : d));
   // The other venues' days, for "Not for this venue": made once per opening, like this venue's.
   // `now` only seeds them: a new key (venue or opening) makes new ones.
   const others = useMemo(() => venues.filter((v) => v.id !== venue.id).map((v) => mockDay(v, now)), [key]);
@@ -65,8 +73,16 @@ function useStationState() {
     setNow(Date.now());
     setDay((d) => ({ ...d, claims: f(d.claims) }));
   };
+  // Signed in, Today's day from the API, read through the contract so a payload this app can't read is an error, not a
+  // crash. A failed refetch keeps the last good day (useLoad).
+  const live = useLoad<VenueDay>(seat ? `day|${seat.hostId}` : null, () => api.authed<unknown>('GET', `/venues/${seat!.hostId}/day`).then(readDay));
+  const fromLive = useMemo(() => (seat && live.data ? fromApi(live.data, seat, now) : null), [live.data, seat, now]);
   return {
     now,
+    // What Today draws: the API's day when signed in (null until the first answer), the mock's in the demo; and, signed
+    // in, how the fetch stands. Read through useToday().
+    today: seats ? fromLive : { venue, claims: day.claims, hours: open, closed: false },
+    load: seats ? { error: live.error, status: live.status, reload: live.reload } : null,
     venue,
     role,
     hours: open,
@@ -78,6 +94,8 @@ function useStationState() {
     // The demo's own: any mock venue, either role.
     setVenue: setVenueId,
     setRole,
+    // The counter's writes change the mock day only. Signed in they reach nothing Today draws (its day is the API's, and
+    // the next fetch is the truth); S4 sends them to the API.
     checkIn: (id: string) => change((cs) => cs.map((c) => (c.id === id ? admit(c, c.count - (c.in ?? 0), Date.now(), 'you') : c))),
     release: (id: string) => change((cs) => cs.map((c) => (c.id === id ? { ...c, released: Date.now() } : c))),
     add: (c: Claim) => change((cs) => [...cs, c]),
@@ -114,6 +132,12 @@ function useStationState() {
   };
 }
 
+const readDay = (r: Result<unknown>): Result<VenueDay> => {
+  if (!r.ok) return r;
+  const d = VenueDay.safeParse(r.data);
+  return d.success ? { ok: true, data: d.data } : { ok: false, status: 200, error: { error: 'unreadable', message: 'Orbit sent a day this app can’t read. Update the app.' } };
+};
+
 const Station = createContext<ReturnType<typeof useStationState> | null>(null);
 
 export function StationProvider({ children }: { children: ReactNode }) {
@@ -124,4 +148,10 @@ export function useStation() {
   const s = useContext(Station);
   if (!s) throw new Error('useStation outside StationProvider');
   return s;
+}
+
+/** The station state with Today's day on top: the API's when signed in, the mock's in the demo. Today and its sheets. */
+export function useToday() {
+  const s = useStation();
+  return { ...s, ...s.today! };
 }

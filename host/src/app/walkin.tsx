@@ -7,14 +7,14 @@ import { useRef, useState } from 'react';
 import { Text, View } from 'react-native';
 
 import { HOUR, timeLabel, walkIn, walkInStart } from '../station/day';
-import { useStation } from '../station/state';
+import { useToday } from '../station/state';
 import { Chip, close, Pill, Sheet, SheetSays, Stepper, styles } from '../station/ui';
 
 const WHY = ['Maintenance', 'Private party', 'Closed'];
 
 export default function WalkIn() {
   const { type, mode } = useLocalSearchParams<{ type: string; mode?: string }>();
-  const { venue: v, claims, now, hours: h, add } = useStation();
+  const { venue: v, claims, now, hours: h, add } = useToday(); // signed in, the API's stations and claims
   const block = mode === 'block';
   const [hours, setHours] = useState(block ? 2 : 1);
   const [count, setCount] = useState(1);

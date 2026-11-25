@@ -10,56 +10,96 @@
 import { OrbitSays } from '@orbit/mobile/orbitSays';
 import { useTabBarScroll } from '@orbit/mobile/tabBar';
 import { color, font, space, stoneAt } from '@orbit/mobile/theme';
-import { router } from 'expo-router';
-import { useState } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { router, useFocusEffect } from 'expo-router';
+import { type ReactElement, useCallback, useEffect, useState } from 'react';
+import { AppState, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { type Claim, type Door, type StationType, type Venue, MIN, dayLabel, door, hourWord, steps, taken, timeLabel } from '../../station/day';
-import { useStation } from '../../station/state';
+import { blank } from '../../station/live';
+import { useStation, useToday } from '../../station/state';
 import { Head, Pill, Round, Section } from '../../station/ui';
 import { first, range, units, what } from '../../station/words';
 
 const HATCH = require('../../../assets/tabs/hatch.png');
 const SOON = 2 * 60 * MIN; // Next up looks this far ahead
 
-// Keyed by venue and opening, so a Wait, a row kept after Check in or a picked bar never carries over to another day.
+// Signed in, the day is the API's: fetched again every 30 seconds while Today is open, when the app comes back to the
+// front, and on a pull. The demo's is the mock's and never fetches.
+// ponytail: the loading, empty and can't-reach states are placeholders until the owner's design take.
 export default function Today() {
-  const { venue: v, hours: h } = useStation();
-  return <Day key={`${v.id}:${h.day}`} />;
+  const { today, load, seat } = useStation();
+  const reload = load?.reload;
+  useFocusEffect(
+    useCallback(() => {
+      if (!reload) return;
+      const tick = setInterval(reload, 30_000);
+      const front = AppState.addEventListener('change', (s) => s === 'active' && reload());
+      return () => {
+        clearInterval(tick);
+        front.remove();
+      };
+    }, [reload]),
+  );
+  // The pull's spinner stays until an answer lands: a new day or a new error.
+  const [pulling, setPulling] = useState(false);
+  useEffect(() => setPulling(false), [today, load?.error]);
+  const refresh = reload && <RefreshControl refreshing={pulling} onRefresh={() => (setPulling(true), reload())} tintColor={color.secondary} />;
+  const trouble = load?.error ? (load.status === 0 ? 'Can’t reach Orbit. Pull to try again.' : load.error.message) : null;
+  if (!today) return <Waiting venue={blank(seat!)} line={trouble ?? 'Getting today’s day…'} refresh={refresh} />;
+  // Keyed by venue and opening, so a Wait, a row kept after Check in or a picked bar never carries over to another day.
+  return <Day key={`${today.venue.id}:${today.hours.day}`} trouble={trouble} refresh={refresh} />;
 }
 
-function Day() {
-  const { venue: v, claims, now, hours: h, release } = useStation();
+// Signed in, before the first day lands: the head and one line.
+function Waiting({ venue, line, refresh }: { venue: Venue; line: string; refresh?: ReactElement }) {
+  const insets = useSafeAreaInsets();
+  return (
+    <ScrollView style={styles.page} contentContainerStyle={{ paddingBottom: insets.bottom + space.big }} refreshControl={refresh}>
+      <Head venue={venue} title="Today" line="" />
+      <OrbitSays text={line} />
+    </ScrollView>
+  );
+}
+
+function Day({ trouble, refresh }: { trouble: string | null; refresh?: ReactElement }) {
+  const { venue: v, claims, now, hours: h, release, closed } = useToday();
   const insets = useSafeAreaInsets();
   const onScroll = useTabBarScroll();
   const [waited, setWaited] = useState<ReadonlySet<string>>(new Set());
   const [touched, setTouched] = useState<ReadonlySet<string>>(new Set()); // checked in or released here: their rows stay to say so
   const touch = (id: string) => setTouched((s) => new Set(s).add(id));
   const late = h.state === 'open' ? claims.find((c) => c.kind === 'booking' && door(c, now) === 'noShow' && !waited.has(c.id)) : undefined;
-  const when = h.state === 'before' ? `opens at ${hourWord(v.open[0])}` : h.state === 'open' ? `open till ${hourWord(v.open[1])}` : `closed at ${hourWord(v.open[1])}`;
+  const when = closed ? 'closed today' : h.state === 'before' ? `opens at ${hourWord(v.open[0])}` : h.state === 'open' ? `open till ${hourWord(v.open[1])}` : `closed at ${hourWord(v.open[1])}`;
   return (
-    <ScrollView style={styles.page} contentContainerStyle={{ paddingBottom: insets.bottom + space.big }} onScroll={onScroll} scrollEventThrottle={16}>
+    <ScrollView style={styles.page} contentContainerStyle={{ paddingBottom: insets.bottom + space.big }} onScroll={onScroll} scrollEventThrottle={16} refreshControl={refresh}>
       <Head venue={v} title="Today" line={`${dayLabel(h.day)} · ${when}`} />
+      {/* The last good day stays on screen under what went wrong. */}
+      {trouble && <OrbitSays text={trouble} />}
+      {closed ? <OrbitSays text="Closed today. Nothing to run at the counter." /> : v.types.length === 0 && <OrbitSays text="No stations set up yet. An Admin adds them in Venue." />}
       {late && <NoShow venue={v} claim={late} now={now} onWait={() => setWaited((s) => new Set(s).add(late.id))} onRelease={() => {
             release(late.id);
             touch(late.id);
           }} />}
-      <NextUp touched={touched} onTouch={touch} />
-      <Section title="The day" />
-      <View style={styles.legend}>
-        {(['booking', 'walkin', 'block', 'free'] as const).map((k) => (
-          <View key={k} style={styles.key}>
-            <Cell kind={k} style={styles.swatch} />
-            <Text style={styles.keyText}>{{ booking: 'Booked', walkin: 'Walk-in', block: 'Blocked', free: 'Free' }[k]}</Text>
+      {!closed && v.types.length > 0 && (
+        <>
+          <NextUp touched={touched} onTouch={touch} />
+          <Section title="The day" />
+          <View style={styles.legend}>
+            {(['booking', 'walkin', 'block', 'free'] as const).map((k) => (
+              <View key={k} style={styles.key}>
+                <Cell kind={k} style={styles.swatch} />
+                <Text style={styles.keyText}>{{ booking: 'Booked', walkin: 'Walk-in', block: 'Blocked', free: 'Free' }[k]}</Text>
+              </View>
+            ))}
           </View>
-        ))}
-      </View>
-      <View style={styles.cards}>
-        {v.types.map((t) => (
-          <TypeCard key={`${v.id}:${t.id}`} t={t} />
-        ))}
-      </View>
+          <View style={styles.cards}>
+            {v.types.map((t) => (
+              <TypeCard key={`${v.id}:${t.id}`} t={t} />
+            ))}
+          </View>
+        </>
+      )}
     </ScrollView>
   );
 }
@@ -81,7 +121,7 @@ function NoShow({ venue: v, claim: c, now, onWait, onRelease }: { venue: Venue; 
 }
 
 function NextUp({ touched, onTouch }: { touched: ReadonlySet<string>; onTouch: (id: string) => void }) {
-  const { venue: v, claims, now, hours: h, checkIn } = useStation();
+  const { venue: v, claims, now, hours: h, checkIn } = useToday();
   const from = Math.max(now, h.opens);
   const rows = claims.filter(
     (c) =>
@@ -141,7 +181,7 @@ function Cell({ kind, style }: { kind: 'booking' | 'walkin' | 'block' | 'free'; 
 }
 
 function TypeCard({ t }: { t: StationType }) {
-  const { venue: v, claims, now, hours: h, freeOne } = useStation();
+  const { venue: v, claims, now, hours: h, freeOne } = useToday();
   const [sel, setSel] = useState<number>();
   const [width, setWidth] = useState(0);
   const at = steps(v, t, h.day);
