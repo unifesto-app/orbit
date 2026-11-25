@@ -52,9 +52,10 @@ const WORDS: Partial<Record<NoticeKind, (d: Data) => Words>> = {
     line: `Reason: ${str(d.reason)}. ${d.until ? `Until ${day(d.until)}.` : "No end date."} Reply to this email to ask about it.`,
   }),
   accountLifted: () => ({ subject: "Your Orbit account is open again", line: "You can sign in as before." }),
+  // A fixed subject: the host name is typed by whoever invites, so it stays in the body.
   teamInvite: (d) => ({
-    subject: `${str(d.hostName)} invited you to their team`,
-    line: "Sign in to Orbit with this number or email to answer. The invite lasts 14 days.",
+    subject: "You’re invited to a team on Orbit",
+    line: `${str(d.hostName)} invited you to their team. Sign in to Orbit with this number or email to answer. The invite lasts 14 days.`,
   }),
   teamInviteWithdrawn: (d) => ({ subject: `An invite at ${str(d.hostName)} was withdrawn`, line: `The invite to ${str(d.contact)} is no longer open.` }),
   teamAccepted: (d) => ({ subject: `${str(d.name) || "Someone"} accepted your invite`, line: "Confirm them as Admin to start their role." }),

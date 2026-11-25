@@ -1,7 +1,9 @@
 import { after, before, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
-import { and, eq } from "drizzle-orm";
+import { randomBytes } from "node:crypto";
+import { and, eq, sql } from "drizzle-orm";
 import type { NoticeKind } from "@orbit/contract";
+import { runDeletions } from "./auth/deletion.ts";
 import { NotSent } from "./auth/senders.ts";
 import { deliveries, inboxItems, users } from "./db/schema.ts";
 import type { Notice } from "./http.ts";
@@ -257,6 +259,116 @@ test("cleanup: inbox items and deliveries over 180 days old go", async () => {
   await pruneNotifications(t.db, t.now());
   assert.deepEqual((await rows("accountLifted")).map((d) => d.dedupeKey), ["old-179"]);
   assert.deepEqual((await t.db.select().from(inboxItems).where(and(eq(inboxItems.userId, a.me.id), eq(inboxItems.kind, "accountLifted")))).map((i) => i.dedupeKey), ["old-179"]);
+});
+
+test("email change: the old address is told, the inbox item and log row are the account's", async () => {
+  const a = await join(true);
+  t.tick(30_000);
+  const ne = email();
+  assert.equal((await t.call("POST", "/auth/code", { to: ne })).status, 200);
+  assert.equal((await t.call("PUT", "/me/email", { to: ne, code: t.lastCode(ne) }, a.access)).status, 200);
+  const items = (await inbox(a.me.id)).filter((i) => i.kind === "signInMethodChanged");
+  assert.equal(items.length, 1);
+  const mail = (await rows("signInMethodChanged")).find((d) => d.channel === "email")!;
+  assert.deepEqual([mail.status, mail.target, mail.contact, mail.userId, mail.inboxItemId], ["queued", a.email, a.email, a.me.id, items[0]!.id]);
+});
+
+test("team invites: 20 a day per inviter, 1 a day per address; the subject never carries the host name", async () => {
+  const a = await join();
+  const h = (await t.call("POST", "/hosts", { name: "Free iPhones <b>here</b>", kind: "comedy-group", city: "Hyderabad" }, a.access)).body;
+  const invite = (to: string) => t.call("POST", `/hosts/${h.id}/team`, { to }, a.access);
+  const first = email();
+  const r = await invite(first);
+  assert.equal(r.status, 201);
+  assert.equal((await t.call("DELETE", `/hosts/${h.id}/team/${r.body.id}`, undefined, a.access)).status, 204);
+  const again = await invite(first);
+  assert.deepEqual([again.status, again.body.error], [429, "tooMany"]); // withdrawn, but that address had its one today
+  for (let i = 0; i < 18; i++) assert.equal((await invite(email())).status, 201);
+  const over = await invite(email());
+  assert.deepEqual([over.status, over.body.error], [429, "tooMany"]); // the 21st try today
+  t.tick(DAY);
+  assert.equal((await invite(first)).status, 201);
+
+  await t.deliver();
+  const m = mailed.find((x) => x.to === first)!;
+  assert.equal(m.subject, "You’re invited to a team on Orbit");
+  assert.ok(!m.html.includes("<b>here") && m.html.includes("Free iPhones &#60;b&#62;"));
+});
+
+test("data: a lone surrogate or NUL is mended, not a failed write; welcome carries no name", async () => {
+  const a = await join(true);
+  await t.notify({ to: { userId: a.me.id }, kind: "hostVerified", data: { hostName: "Club \uD800\u0000x" } });
+  const [item] = (await inbox(a.me.id)).filter((i) => i.kind === "hostVerified");
+  assert.equal(item!.text, "Club \uFFFDx is verified");
+  assert.deepEqual((await rows("welcome")).find((d) => d.userId === a.me.id)!.payload, {});
+});
+
+test("notify on its own: a failed write is all or nothing, and never throws at its caller", async () => {
+  const a = await join(true);
+  const items = (await inbox(a.me.id)).length;
+  // An address too big for the deliveries index: the email row's insert fails after the inbox item's.
+  const huge = `${randomBytes(4000).toString("hex")}@example.com`;
+  await t.notify({ to: { contact: huge, userId: a.me.id }, kind: "signInMethodChanged", data: {} }).catch(assert.fail);
+  assert.equal((await inbox(a.me.id)).length, items);
+  assert.equal((await rows("signInMethodChanged")).length, 0);
+});
+
+test("held until PR 6: optional kinds write the inbox but skip the email", async () => {
+  const a = await join(true);
+  await t.notify({ to: { userId: a.me.id }, kind: "teamRoleStarted", data: { hostName: "Club", role: "crew" } });
+  assert.equal((await inbox(a.me.id)).filter((i) => i.kind === "teamRoleStarted").length, 1);
+  const mail = (await rows("teamRoleStarted")).find((d) => d.channel === "email")!;
+  assert.deepEqual([mail.status, mail.reason], ["skipped", "optionalHeld"]);
+});
+
+test("day-30 deletion: inbox gone, old rows scrubbed, nothing queued sends, the goodbye goes to the old address", async () => {
+  const a = await join(true);
+  await t.notify({ to: { userId: a.me.id }, kind: "accountLifted", data: { note: "x" } });
+  await t.deliver(); // one sent row
+  await t.notify({ to: { userId: a.me.id }, kind: "signInMethodChanged", data: { method: "passkey", change: "added" } }); // an inbox item
+  await t.notify({ to: { userId: a.me.id }, kind: "accountSuspended", data: { reason: "Spam" } }); // one still queued
+  assert.ok((await inbox(a.me.id)).length > 0);
+  await t.db.update(users).set({ deletionRequestedAt: new Date(t.now() - 31 * DAY), deletionDueAt: new Date(t.now() - 1) }).where(eq(users.id, a.me.id));
+  assert.equal(await runDeletions(t.db, t.notify, t.now()), 1);
+
+  assert.equal((await inbox(a.me.id)).length, 0);
+  assert.equal((await t.db.select().from(deliveries).where(eq(deliveries.userId, a.me.id))).length, 0);
+  const lifted = (await rows("accountLifted")).find((d) => d.channel === "email")!;
+  assert.deepEqual([lifted.status, lifted.userId, lifted.contact, lifted.payload], ["sent", null, null, {}]);
+  for (const kind of ["accountSuspended", "signInMethodChanged"]) {
+    const held = (await rows(kind)).find((d) => d.channel === "email")!;
+    assert.deepEqual([held.status, held.reason, held.payload], ["skipped", "accountDeleted", {}], kind);
+  }
+  const bye = (await rows("accountDeleted")).find((d) => d.channel === "email")!;
+  assert.deepEqual([bye.status, bye.target, bye.userId], ["queued", a.email, null]);
+  mailed = [];
+  await t.deliver();
+  assert.deepEqual(mailed.map((m) => [m.to, m.subject]), [[a.email, "Your Orbit account is deleted"]]);
+});
+
+test("lease: a row another worker took over is neither sent nor overwritten; each send gets a fresh lock", async () => {
+  await t.notify({ to: { contact: "l1@example.com" }, kind: "accountLifted", data: {} });
+  await t.notify({ to: { contact: "l2@example.com" }, kind: "accountLifted", data: {} });
+  const steal = (to: string) => t.db.update(deliveries).set({ tries: sql`${deliveries.tries} + 1` }).where(eq(deliveries.target, to));
+  sender = async (to, m) => {
+    mailed.push({ to, ...m });
+    await steal(to); // taken over mid-send: the result isn't written over the new claim
+    await steal(to === "l1@example.com" ? "l2@example.com" : "l1@example.com"); // taken over before its turn: not sent
+  };
+  assert.equal(await t.deliver(), 2);
+  assert.equal(mailed.length, 1);
+  assert.deepEqual((await rows("accountLifted")).map((d) => [d.status, d.tries]), [["sending", 2], ["sending", 2]]);
+
+  await t.db.delete(deliveries);
+  await t.notify({ to: { contact: "l3@example.com" }, kind: "accountLifted", data: {} });
+  await t.notify({ to: { contact: "l4@example.com" }, kind: "accountLifted", data: {} });
+  const locks: number[] = [];
+  sender = async (to) => {
+    locks.push((await rows("accountLifted")).find((d) => d.target === to)!.lockedUntil!.getTime() - t.now());
+    t.tick(3 * MIN); // a slow send
+  };
+  await t.deliver();
+  assert.deepEqual(locks, [2 * MIN, 2 * MIN]);
 });
 
 // The data each call site passes today (build plan section 8).

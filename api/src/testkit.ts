@@ -62,7 +62,7 @@ export async function testApp(opts: { send?: Sender; codes?: SendPolicy; ways?: 
   // The code last sent to a phone or email.
   const lastCode = (to: string) => sent.filter((s) => (s.to.kind === "phone" ? s.to.e164 : s.to.email) === to).at(-1)?.code;
 
-  const deliver = () => runDeliveries({ db, mail, now: clock });
+  const deliver = () => runDeliveries({ db, mail, now: () => clock });
 
   return { db, app, store, call, sent, mails, notices, notify, deliver, lastCode, media, close, tick: (ms: number) => void (clock += ms), now: () => clock };
 }

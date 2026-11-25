@@ -157,7 +157,7 @@ let busy = false;
 setInterval(() => {
   if (busy) return;
   busy = true;
-  runDeliveries({ db, mail, now: Date.now() })
+  runDeliveries({ db, mail, now: Date.now })
     .catch((e) => console.error("[deliveries]", e))
     .finally(() => (busy = false));
 }, 5_000).unref();
