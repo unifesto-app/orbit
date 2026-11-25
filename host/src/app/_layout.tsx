@@ -65,5 +65,6 @@ export default function Layout() {
       </Stack>
     </>
   );
-  return isStation ? <StationProvider>{stack}</StationProvider> : stack;
+  // Keyed by account: signing out (or in as someone else) drops the last person's venue, role, day and bank details.
+  return isStation ? <StationProvider key={signedIn ? session.me.id : demo ? 'demo' : 'out'}>{stack}</StationProvider> : stack;
 }

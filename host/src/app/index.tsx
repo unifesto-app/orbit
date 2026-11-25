@@ -3,7 +3,8 @@ import * as Application from 'expo-application';
 import { Redirect } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { useSession } from '../session';
+import { signOut, useSession } from '../session';
+import { Pill } from '../station/ui';
 import { isLaunch, isStation, variant as v } from '../variant';
 
 // Every host app opens on Sign in. Then Orbit Station opens on Today (also its dev demo), Orbit Launch on the no-host
@@ -24,6 +25,9 @@ export default function Index() {
       ) : (
         <Text style={s.name}>{Application.applicationId}</Text>
       )}
+      <View style={s.out}>
+        <Pill label="Sign out" onPress={signOut} />
+      </View>
     </View>
   );
 }
@@ -33,4 +37,5 @@ const s = StyleSheet.create({
   word: { fontFamily: 'Sacramento_400Regular', fontSize: 88, color: role.text },
   name: { fontSize: 20, color: role.text, marginTop: 4 },
   line: { fontSize: 15, color: role.text2, marginTop: 8, textAlign: 'center' },
+  out: { marginTop: 24 },
 });

@@ -134,7 +134,7 @@ export default function SignIn() {
         )}
         {__DEV__ && step.at === 'contact' && (
           <Text style={styles.demo} onPress={openDemo} accessibilityRole="button">
-            Open the Punchline demo (development builds only)
+            Open the demo (development builds only)
           </Text>
         )}
       </ScrollView>

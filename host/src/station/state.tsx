@@ -1,7 +1,7 @@
 // Orbit Station's state while the app is open: which venue and role you're looking as, the clock, and the venue's day of
 // claims. The day is made once per opening and kept, so a check-in, release or walk-in stays as the clock moves on; a
 // new opening (or another venue) starts a fresh mock day.
-// ponytail: mock until sign-in and the slots API (H8.1 to H8.5); the venue and role are picked in the You sheet.
+// ponytail: mock until the slots API (H8.1 to H8.5); the venue and role are picked in the You sheet.
 import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from 'react';
 
 import { admit, admitTo, byCode, type Claim, freeOne, hours, type StationType } from './day';
