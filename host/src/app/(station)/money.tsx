@@ -2,7 +2,7 @@
 // From the Money doc (the buyer fee and the commission, the seven numbers, payouts, the bank account) and Play:
 // - What can be asked for comes first: earnings from bookings 3 or more days past their end, less paid out and asked
 //   for, what's still in its 3 days and when it opens, then Request ₹X (one ask a week per venue).
-// - Orbit says the commission: the rate now, the free or half months left, when it changes, who pays the 4% fee.
+// - Orbit says the venue's fee plan: the buyer fee (3% or 5%), who bears it, and the commission (2% or none).
 // - The seven numbers in the doc's order: the first five for the period picked (Today, 7 days, 30 days, or one day
 //   from By day), then Paid out and Available so far. Cash walk-ins stay off; a released no-show keeps its money.
 // - By day, Payouts (Asked, Paid with its UTR, Cancelled with why) and the bank account, added or replaced in a sheet.
@@ -17,8 +17,8 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { dayLabel, timeLabel } from '../../station/day';
-import { monthOf, percent, rupees } from '../../money';
-import { balance, nextStep, numbers, rateAt, type Terms } from '../../station/money';
+import { PLANS, percent, rupees } from '../../money';
+import { balance, numbers, type Terms } from '../../station/money';
 import { useStation } from '../../station/state';
 import { Head, Pill, Section } from '../../station/ui';
 
@@ -28,15 +28,11 @@ const PERIODS = [
   [30, '30 days'],
 ] as const;
 
-/** What Orbit says about the commission: the rate now, what's left of the intro and when it changes, and the fee. */
-function commissionLine(t: Terms, now: number) {
-  const month = monthOf(t.onboarded, now);
-  const next = nextStep(t, now);
-  const fee = t.feeIncluded ? ' The 4% buyer fee comes out of your prices.' : ' Buyers pay the 4% buyer fee on top of your prices.';
-  if (month <= 3 && next)
-    return `No commission for your first 3 months. From ${dayLabel(next.at)} it’s ${percent(next.rate)} for 3 months, then ${percent(t.rate)}; you’ll hear 7 days before each change.${fee}`;
-  if (month <= 6 && next) return `Half commission for now, ${percent(rateAt(t, now))}. From ${dayLabel(next.at)} it’s ${percent(t.rate)}; you’ll hear 7 days before.${fee}`;
-  return `Your commission is ${percent(t.rate)} of ticket sales.${fee}`;
+/** What Orbit says about the venue's fee plan, in one sentence: the buyer fee and who bears it, and the commission. */
+function commissionLine(t: Terms) {
+  const { buyer, host } = PLANS[t.plan];
+  const fee = t.feeIncluded ? `The ${percent(buyer)} buyer fee comes out of your prices` : `Buyers pay a ${percent(buyer)} fee on top of your prices`;
+  return host ? `${fee} and Orbit’s commission is ${percent(host)}.` : `${fee}; Orbit takes no commission from you.`;
 }
 
 // Keyed by venue and opening, so a picked day never carries over to another venue's money.
@@ -62,7 +58,6 @@ function Body() {
     shown.flatMap((d) => d.sold),
     m.terms,
   );
-  const free = monthOf(m.terms.onboarded, now) <= 3;
   const minus = (p: number) => (p ? `−${rupees(p)}` : rupees(0));
   // One sheet per tap: a quick second tap doesn't push another.
   const last = useRef(0);
@@ -114,7 +109,7 @@ function Body() {
           />
         )
       )}
-      <OrbitSays text={commissionLine(m.terms, now)} />
+      <OrbitSays text={commissionLine(m.terms)} />
 
       <Section title="The numbers" aside={pick !== undefined ? dayLabel(pick) : period === 1 ? 'Today' : `Last ${period} days`} />
       <Glass tint={DARK} style={styles.period}>
@@ -125,7 +120,7 @@ function Body() {
       </Glass>
       <View style={styles.card}>
         <Row label="Ticket sales" value={rupees(n.sales)} note={`${n.bookings} booking${n.bookings === 1 ? '' : 's'}`} />
-        <Row label="Commission" value={minus(n.commission)} note={free ? 'Your first 3 months are free' : undefined} />
+        <Row label="Commission" value={minus(n.commission)} />
         <Row label="Buyer fee you included" value={minus(n.included)} note={m.terms.feeIncluded ? undefined : 'Buyers pay it on top'} />
         <Row label="Refunded" value={minus(n.refunded)} />
         <Row label="Your earnings" value={rupees(n.earnings)} total />

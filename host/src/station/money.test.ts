@@ -2,8 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { type Claim, HOUR, MIN, type StationType } from './day.ts';
-import { monthOf } from '../money.ts';
-import { balance, nextStep, numbers, type Payout, priceOf, rateAt, split, type Terms } from './money.ts';
+import { balance, numbers, type Payout, priceOf, split, type Terms } from './money.ts';
 
 const IST = 330 * MIN;
 const india = (y: number, m: number, d: number, h = 0, min = 0) => Date.UTC(y, m - 1, d, h, min) - IST;
@@ -11,31 +10,18 @@ const ticket: StationType = { id: 'x', name: 'Ticket', count: 1, unit: ['seat', 
 const hour = (start: number, over: Partial<Claim> = {}): Claim => ({ id: 'b', type: 'x', kind: 'booking', count: 1, start, end: start + HOUR, ...over });
 
 
-test("the Money doc's ₹299 at 7%: the buyer pays ₹310.96; commission ₹0, ₹10.47, ₹20.93 by month", () => {
-  const terms: Terms = { onboarded: india(2026, 1, 15), rate: 0.07, feeIncluded: false };
-  const at = (m: number) => split(ticket, hour(india(2026, m, 20, 18)), terms);
-  assert.deepEqual([at(2).buyerPays, at(2).commission, at(2).earnings], [31096, 0, 29900]); // month 2: 0%
-  assert.deepEqual([at(5).commission, at(5).earnings], [1047, 28853]); // month 4 to 6: 3.5%, ₹10.465 rounds up
-  assert.deepEqual([at(8).commission, at(8).earnings], [2093, 27807]); // month 7 on: 7%
+test("the owner's ₹1,200 hour on each plan, from day one: 3% + 2% → ₹1,236 and ₹1,176; 5% + 0% → ₹1,260 and ₹1,200", () => {
+  const court: StationType = { ...ticket, price: 120000 };
+  const at = (plan: Terms['plan']) => split(court, hour(india(2026, 11, 20, 18)), { plan, feeIncluded: false });
+  assert.deepEqual([at('3+2').buyerPays, at('3+2').commission, at('3+2').earnings], [123600, 2400, 117600]);
+  assert.deepEqual([at('5+0').buyerPays, at('5+0').commission, at('5+0').earnings], [126000, 0, 120000]);
 });
 
 
-test('a fee the venue includes is carved out of the price: ₹11.50 on ₹299', () => {
-  const s = split(ticket, hour(india(2026, 1, 20, 18)), { onboarded: india(2026, 1, 15), rate: 0.07, feeIncluded: true });
-  assert.deepEqual([s.buyerPays, s.included, s.earnings], [29900, 1150, 28750]);
-});
-
-
-test('months turn on the onboarding day, or the last day of a shorter month', () => {
-  const jan31 = india(2027, 1, 31);
-  assert.equal(monthOf(jan31, india(2027, 2, 27)), 1);
-  assert.equal(monthOf(jan31, india(2027, 2, 28)), 2); // February has no 31st
-  assert.equal(monthOf(jan31, india(2027, 4, 29, 23, 59)), 3);
-  assert.equal(monthOf(jan31, india(2027, 4, 30)), 4); // April has no 31st: month 4 begins on the 30th
-  const t: Terms = { onboarded: jan31, rate: 0.065, feeIncluded: false };
-  assert.deepEqual([rateAt(t, india(2027, 3, 1)), rateAt(t, india(2027, 5, 1)), rateAt(t, india(2027, 8, 1))], [0, 0.0325, 0.065]);
-  assert.deepEqual(nextStep(t, india(2027, 3, 1)), { at: india(2027, 4, 30), rate: 0.0325 });
-  assert.equal(nextStep(t, india(2027, 9, 1)), null);
+test('a fee the venue includes is carved out of the price: ₹8.71 on ₹299 at 3%, ₹14.24 at 5%', () => {
+  const s = split(ticket, hour(india(2026, 1, 20, 18)), { plan: '3+2', feeIncluded: true });
+  assert.deepEqual([s.buyerPays, s.included, s.commission, s.earnings], [29900, 871, 581, 28448]); // 2% of ₹290.29
+  assert.equal(split(ticket, hour(india(2026, 1, 20, 18)), { plan: '5+0', feeIncluded: true }).included, 1424);
 });
 
 
@@ -48,15 +34,15 @@ test('a slot is priced by the half hour, off-peak where it falls, per station', 
 
 
 test('the seven numbers: a refund gives the price and the commission back, an included fee stays out; commission is on what is left', () => {
-  const terms: Terms = { onboarded: india(2026, 1, 15), rate: 0.07, feeIncluded: true };
+  const terms: Terms = { plan: '3+2', feeIncluded: true };
   const day = india(2026, 9, 20, 18);
   const sold = [{ t: ticket, c: hour(day) }, { t: ticket, c: hour(day, { refunded: true }) }, { t: ticket, c: hour(day, { kind: 'walkin' }) }];
-  assert.deepEqual(numbers(sold, terms), { bookings: 2, sales: 59800, commission: 2013, included: 2300, refunded: 29900, earnings: 59800 - 2013 - 2300 - 29900 });
+  assert.deepEqual(numbers(sold, terms), { bookings: 2, sales: 59800, commission: 581, included: 1742, refunded: 29900, earnings: 59800 - 581 - 1742 - 29900 });
 });
 
 
 test('available: ended 3 days ago, less paid out and less asked for; a week between asks', () => {
-  const terms: Terms = { onboarded: india(2026, 11, 1), rate: 0.07, feeIncluded: false };
+  const terms: Terms = { plan: '5+0', feeIncluded: false }; // no commission: each booking earns its ₹299
   const now = india(2026, 11, 22, 18, 20);
   const sold = [
     { t: ticket, c: hour(india(2026, 11, 15, 18)) }, // 7 days ago: ready
@@ -88,13 +74,13 @@ test("the mock venues' money adds up: payouts never exceed what was ready", asyn
     const b = balance(sold, money.terms, money.payouts, now);
     const ready = sold.filter((x) => x.c.end + 3 * 24 * HOUR <= now).reduce((a, x) => a + split(x.t, x.c, money.terms).earnings, 0);
     assert.ok(b.paidOut + b.asked <= ready, v.id);
-    assert.ok(money.days.length > 0 && money.days.every((d) => d.day >= money.terms.onboarded - 24 * HOUR), v.id);
+    assert.ok(money.days.length > 0 && money.days.every((d) => d.day >= money.onboarded - 24 * HOUR), v.id);
   }
 });
 
 
 test('a refund with the fee on top leaves the venue at nothing; the player bore the fee', () => {
-  const s = split(ticket, hour(india(2026, 9, 20, 18), { refunded: true }), { onboarded: india(2026, 1, 15), rate: 0.07, feeIncluded: false });
+  const s = split(ticket, hour(india(2026, 9, 20, 18), { refunded: true }), { plan: '3+2', feeIncluded: false });
   assert.deepEqual([s.refunded, s.commission, s.earnings], [29900, 0, 0]);
 });
 
@@ -108,9 +94,9 @@ test('off-peak ends at 4 PM sharp, and a café past midnight is priced by the ho
 
 
 test("an included fee: commission on what's left after it, and a cancel still costs the venue the fee (decisions 19, 13)", () => {
-  const terms: Terms = { onboarded: india(2026, 1, 15), rate: 0.07, feeIncluded: true };
-  const kept = split(ticket, hour(india(2026, 9, 20, 18)), terms); // month 9: 7% on ₹287.50 = ₹20.125, rounds up
-  assert.deepEqual([kept.included, kept.commission, kept.earnings], [1150, 2013, 29900 - 1150 - 2013]);
+  const terms: Terms = { plan: '3+2', feeIncluded: true };
+  const kept = split(ticket, hour(india(2026, 9, 20, 18)), terms); // 2% on ₹290.29 = ₹5.8058, to the paisa ₹5.81
+  assert.deepEqual([kept.included, kept.commission, kept.earnings], [871, 581, 29900 - 871 - 581]);
   const back = split(ticket, hour(india(2026, 9, 20, 18), { refunded: true }), terms); // the player gets ₹299 back
-  assert.deepEqual([back.refunded, back.commission, back.earnings], [29900, 0, -1150]);
+  assert.deepEqual([back.refunded, back.commission, back.earnings], [29900, 0, -871]);
 });

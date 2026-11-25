@@ -3,9 +3,7 @@ import { test } from 'node:test';
 
 import {
   type Sales,
-  addMonths,
   available,
-  commission,
   dayLabel,
   earnings,
   hostDecidesRefunds,
@@ -32,7 +30,7 @@ const s = (over: Partial<Sales> = {}): Sales => ({
   checkedIn: 0,
   salesPaise: 299000,
   commissionPaise: 0,
-  feesPaise: 11960,
+  feesPaise: 8970, // 3% on top of ten ₹299 tickets (3% + 2%)
   feeBy: 'buyers',
   refundedPaise: 0,
   paidOutPaise: 0,
@@ -43,8 +41,8 @@ const s = (over: Partial<Sales> = {}): Sales => ({
 
 test('earnings: a fee the buyers paid stays out; commission, a fee the host included and refunds come off', () => {
   assert.equal(earnings(s()), 299000);
-  assert.equal(earnings(s({ commissionPaise: 20930 })), 299000 - 20930);
-  assert.equal(earnings(s({ feeBy: 'host' })), 299000 - 11960);
+  assert.equal(earnings(s({ commissionPaise: 5980 })), 299000 - 5980);
+  assert.equal(earnings(s({ feeBy: 'host', feesPaise: 8710 })), 299000 - 8710);
   assert.equal(earnings(s({ refundedPaise: 29900 })), 299000 - 29900);
 });
 
@@ -73,35 +71,14 @@ test('paise show only when there are some', () => {
   assert.equal(rupees(4950), '₹49.50');
 });
 
-test('a month on is the same day, or the month’s last day when it is shorter', () => {
-  assert.equal(addMonths('2026-10-18', 3), '2027-01-18');
-  assert.equal(addMonths('2026-11-30', 3), '2027-02-28');
-  assert.equal(addMonths('2027-08-31', 6), '2028-02-29'); // a leap year
-});
-
-test('commission: 0% for 3 months, half for 3, then the host’s rate, turning at the start of the day', () => {
-  const at = (iso: string) => Date.parse(`${iso}+05:30`);
-  const on = '2026-10-18';
-  assert.deepEqual(commission(on, 7, at('2026-11-20T18:40:00')), {
-    pct: 0,
-    month: 2,
-    next: [
-      { from: '2027-01-18', pct: 3.5 },
-      { from: '2027-04-18', pct: 7 },
-    ],
-  });
-  assert.equal(commission(on, 7, at('2027-01-17T23:59:00')).pct, 0);
-  assert.deepEqual(commission(on, 7, at('2027-01-18T00:00:00')), { pct: 3.5, month: 4, next: [{ from: '2027-04-18', pct: 7 }] });
-  assert.deepEqual(commission(on, 6, at('2027-05-01T12:00:00')), { pct: 6, month: 7, next: [] });
-});
-
 test('days read as "Mon 18 Jan"', () => {
   assert.equal(dayLabel('2027-01-18'), 'Mon 18 Jan');
   assert.equal(dayLabel('2026-11-23'), 'Mon 23 Nov');
 });
 
+// Ten ₹299 tickets on 3% + 2% with the fee included: ₹8.71 fee and ₹5.81 commission each, one refunded (its commission back).
 test('earnings take off commission and an included fee together', () => {
-  assert.equal(earnings(s({ commissionPaise: 20125, feeBy: 'host', refundedPaise: 29900 })), 299000 - 20125 - 11960 - 29900);
+  assert.equal(earnings(s({ commissionPaise: 5229, feeBy: 'host', feesPaise: 8710, refundedPaise: 29900 })), 299000 - 5229 - 8710 - 29900);
 });
 
 test('what can be asked for never passes the host’s Available, and a payout opens on the dot', () => {
@@ -122,10 +99,3 @@ test('days turn at midnight India time, and moments read with their hour', () =>
   assert.equal(momentLabel(Date.parse('2026-11-24T00:30:00+05:30')), 'Tue 24 Nov, 12:30 AM');
 });
 
-test('a clock started on the 31st turns on each month’s last day, and nothing turns before it starts', () => {
-  const at = (iso: string) => Date.parse(`${iso}+05:30`);
-  assert.equal(addMonths('2026-12-31', 2), '2027-02-28');
-  assert.equal(commission('2026-11-30', 7, at('2027-02-27T23:59:59')).pct, 0);
-  assert.equal(commission('2026-11-30', 7, at('2027-02-28T00:00:00')).pct, 3.5);
-  assert.deepEqual(commission('2026-12-01', 7, at('2026-11-20T12:00:00')).month, 1);
-});
