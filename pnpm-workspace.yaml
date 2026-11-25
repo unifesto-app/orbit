@@ -19,3 +19,8 @@ overrides:
   # drizzle-orm lists expo-sqlite as an optional peer, and pnpm wires it to the app's copy, so the API's install pulled
   # in React Native and Expo (about 500 MB in the API image). The API never uses it.
   drizzle-orm>expo-sqlite: "-"
+
+# @sentry/cli's install script only downloads a fallback binary; the real one comes in @sentry/cli-darwin (an optional
+# dependency), so skipping it is safe and stops pnpm asking on every install.
+ignoredBuiltDependencies:
+  - '@sentry/cli'
