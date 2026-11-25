@@ -4,7 +4,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { variants } from './variants.ts';
 
-const key = process.env.APP_VARIANT;
+// Without APP_VARIANT (Xcode's fingerprint step, expo-doctor, a bare `expo config`), the variant ios/ was prebuilt for.
+const xcodeEnv = path.join(import.meta.dirname, 'ios/.xcode.env');
+const key = process.env.APP_VARIANT || (fs.existsSync(xcodeEnv) ? /^export APP_VARIANT=(\w+)$/m.exec(fs.readFileSync(xcodeEnv, 'utf8'))?.[1] : undefined);
 if (!key || !Object.hasOwn(variants, key)) {
   throw new Error(`APP_VARIANT must be one of ${Object.keys(variants).join(', ')} (got ${key ? `"${key}"` : 'nothing'})`);
 }
