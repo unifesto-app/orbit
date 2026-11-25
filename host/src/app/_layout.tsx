@@ -22,13 +22,14 @@ const SHEET = {
 
 export default function Layout() {
   const [loaded, error] = useFonts({ Sacramento_400Regular, DMSans_400Regular, DMSans_500Medium, DMSans_600SemiBold, PlusJakartaSans_600SemiBold, PlusJakartaSans_700Bold });
-  // Orbit Launch signs in (Station and Crew don't yet): signed out it shows Sign in, signed in the no-host screen until
-  // its tabs read the API, and the Punchline demo only in development builds (session.ts).
+  // Every host app signs in: signed out it shows Sign in. Signed in, Launch shows the no-host screen until its tabs read
+  // the API, Station its tabs, Crew its name (index) until its own screens come. The demo (Launch's Punchline, Station's
+  // mock) opens only in development builds (session.ts).
   const session = useSession();
   const signedIn = !!session && 'me' in session;
   const demo = !!session && 'demo' in session;
   useEffect(() => {
-    if (isLaunch && signedIn) void refreshMe(); // once a launch: the account as the API has it now
+    if (signedIn) void refreshMe(); // once a launch: the account as the API has it now
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once, at launch or sign-in
   }, [signedIn]);
   if (!loaded && !error) return null;
@@ -37,7 +38,7 @@ export default function Layout() {
       <StatusBar style="light" />
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: color.ground } }}>
         {/* Station's own: in Launch and Crew a link to them goes nowhere, since they read Station's state. */}
-        <Stack.Protected guard={isStation}>
+        <Stack.Protected guard={isStation && (signedIn || demo)}>
           <Stack.Screen name="(station)" />
           <Stack.Screen name="walkin" options={SHEET} />
           {/* The scanner takes the whole screen, over Today (take 2). */}
@@ -49,10 +50,10 @@ export default function Layout() {
           {/* Venue's edits, Admins only (take 4). */}
           <Stack.Screen name="setup" options={SHEET} />
         </Stack.Protected>
-        {/* Orbit Launch's own: in Station and Crew a link to them goes nowhere. */}
-        <Stack.Protected guard={isLaunch && !session}>
+        <Stack.Protected guard={!session}>
           <Stack.Screen name="signin" />
         </Stack.Protected>
+        {/* Orbit Launch's own: in Station and Crew a link to them goes nowhere. */}
         <Stack.Protected guard={isLaunch && signedIn}>
           <Stack.Screen name="welcome" />
         </Stack.Protected>

@@ -26,10 +26,9 @@ const config: ExpoConfig = {
     bundleIdentifier: v.id,
     appleTeamId: '9AH3Z5C5DH',
     infoPlist: { ITSAppUsesNonExemptEncryption: false },
-    // App Attest, so a code send proves it comes from Orbit Launch (api/src/auth/proof.ts). Launch alone signs in so
-    // far; Station and Crew get it with their sign-in, once their App IDs have the capability too. The App ID needs App
-    // Attest turned on in Apple's portal, or the build won't sign.
-    ...(key === 'launch' && { entitlements: { 'com.apple.developer.devicecheck.appattest-environment': 'production' } }),
+    // App Attest, so a code send proves it comes from one of Orbit's host apps (api/src/auth/proof.ts); every one signs
+    // in. Each App ID needs App Attest turned on in Apple's portal, or the build won't sign.
+    entitlements: { 'com.apple.developer.devicecheck.appattest-environment': 'production' },
   },
   android: {
     package: v.id,

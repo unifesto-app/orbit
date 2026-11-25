@@ -1,4 +1,4 @@
-// Signing in to Orbit Launch (sign-in take, approved 22 Nov 2026: https://claude.ai/artifact/BwnBQDW2N2hpihmrSSTnsg).
+// Signing in to any of Orbit's host apps, one screen for all three (sign-in take, approved 22 Nov 2026: https://claude.ai/artifact/BwnBQDW2N2hpihmrSSTnsg).
 // Codes only for now (owner, 22 Nov 2026: "Codes first"): one field takes a phone number or an email, a 6-digit code
 // comes on WhatsApp or by email, and the API says what's next (signinSteps.ts): "Is this you?" for a phone code on a new
 // phone, a WhatsApp number for a new account started by email, About you for a new account, or signed in. The steps and
@@ -24,7 +24,11 @@ import { api, openDemo, signIn, thisDevice } from '../session';
 import { type Step, clock, initialsOf, secondsLeft, stepAfter, stepBack } from '../signinSteps';
 import { thisApp } from '../variant';
 
-const ICON = require('../../assets/icons/launch.png');
+const ICON = {
+  launch: require('../../assets/icons/launch.png'),
+  station: require('../../assets/icons/station.png'),
+  crew: require('../../assets/icons/crew.png'),
+}[thisApp.word]; // static requires, for Metro
 const BACK = require('../../assets/tabs/chevron.png');
 const WWW = 'https://heyorbit.in'; // Orbit's terms and privacy pages
 

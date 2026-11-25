@@ -6,12 +6,13 @@ import { StyleSheet, Text, View } from 'react-native';
 import { useSession } from '../session';
 import { isLaunch, isStation, variant as v } from '../variant';
 
-// Orbit Station opens on Today. Orbit Launch opens on Sign in, then the no-host screen (Events in the dev demo). Crew
-// shows its name until its own screens come.
+// Every host app opens on Sign in. Then Orbit Station opens on Today (also its dev demo), Orbit Launch on the no-host
+// screen (Events in the dev demo), and Crew shows its name until its own screens come.
 export default function Index() {
   const session = useSession();
+  if (!session) return <Redirect href="/signin" />;
   if (isStation) return <Redirect href="/today" />;
-  if (isLaunch) return <Redirect href={!session ? '/signin' : 'demo' in session ? '/events' : '/welcome'} />;
+  if (isLaunch) return <Redirect href={'demo' in session ? '/events' : '/welcome'} />;
   return (
     <View style={s.root}>
       {v ? (
