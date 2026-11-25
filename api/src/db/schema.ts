@@ -156,6 +156,13 @@ export const events = pgTable(
     placeId: text("place_id"), // the place search's id: "At [venue]" is offered when it matches a Venue host's place
     online: boolean("online").notNull().default(false), // alone it shows "Online"; with a venue, "Also online"
     onlineLink: text("online_link"), // private: comes with the ticket, never on the page; may be added after `online` is set
+    // Images (Discover slice 1): the 3:4 poster, and an optional 4:3 the page shows instead; `wideEdge` is the 4:3's top
+    // row as #rrggbb; each tone is the image's dominant colour, a card tint while it loads.
+    poster: text("poster"),
+    posterTone: text("poster_tone"),
+    wide: text("wide"),
+    wideEdge: text("wide_edge"),
+    wideTone: text("wide_tone"),
     about: text("about"), // plain text
     agenda: jsonb("agenda").$type<AgendaItem[]>().notNull().default([]),
     faq: jsonb("faq").$type<FaqItem[]>().notNull().default([]),
@@ -179,6 +186,7 @@ export const events = pgTable(
     check("events_point_in_india", sql`${t.lat} is null or (${t.lat} between 6 and 37.5 and ${t.lng} between 68 and 97.5)`),
     index().on(t.hostId, t.startsAt), // a host's events
     index().on(t.status, t.startsAt), // discover lists
+    index().on(t.status, t.endsAt), // "upcoming" is until the end
   ],
 );
 

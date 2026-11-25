@@ -60,7 +60,9 @@ const draft = async (u: P, hostId: string, title = "Open Mic Night") => {
   assert.equal(r.status, 201);
   return TeamEvent.parse(r.body);
 };
-const seed = (id: string, set: Partial<typeof events.$inferInsert>) => t.db.update(events).set(set).where(eq(events.id, id));
+// A published event always has a place (publishing needed one), so a seeded one gets it unless the seed sets its own.
+const seed = (id: string, set: Partial<typeof events.$inferInsert>) =>
+  t.db.update(events).set({ ...(set.status === "published" ? { ...place, placeId: null } : {}), ...set }).where(eq(events.id, id));
 const row = async (id: string) => (await t.db.select().from(events).where(eq(events.id, id)))[0]!;
 const slugsOf = async (id: string) => (await t.db.select().from(eventSlugs).where(eq(eventSlugs.eventId, id))).map((s) => s.slug);
 const place = { venue: "Hall", address: "Road 1", area: "Jubilee Hills", city: "Hyderabad", lat: 17.4, lng: 78.4 };
@@ -177,7 +179,7 @@ test("a cancelled event can't be edited; an ended one keeps its date and place l
   const locked = await as(a)("PATCH", `/events/${done.id}`, { startsAt: ahead(DAY).toISOString() });
   assert.equal(locked.status, 409);
   assert.equal(locked.body.error, "ended");
-  assert.equal((await as(a)("PATCH", `/events/${done.id}`, { place })).status, 409);
+  assert.equal((await as(a)("PATCH", `/events/${done.id}`, { place: { ...place, venue: "Other" } })).status, 409);
   const ok = await as(a)("PATCH", `/events/${done.id}`, { title: "Ended, renamed" });
   assert.equal(ok.status, 200);
   assert.equal(ok.body.title, "Ended, renamed");
@@ -406,7 +408,7 @@ test("a published event can't have its end moved into the past, and a whole form
   const done = await draft(a, h.id, "Done");
   const startsAt = ago(2 * DAY), endsAt = ago(DAY);
   await seed(done.id, { status: "published", publishedAt: ago(3 * DAY), startsAt, endsAt, timezone: "Asia/Kolkata", online: false });
-  const form = await as(a)("PATCH", `/events/${done.id}`, { title: "Renamed", startsAt: startsAt.toISOString(), endsAt: endsAt.toISOString(), timezone: "Asia/Kolkata", place: null, online: false, onlineLink: null });
+  const form = await as(a)("PATCH", `/events/${done.id}`, { title: "Renamed", startsAt: startsAt.toISOString(), endsAt: endsAt.toISOString(), timezone: "Asia/Kolkata", place, online: false, onlineLink: null });
   assert.equal(form.status, 200);
   assert.equal(form.body.title, "Renamed");
 });
@@ -424,7 +426,7 @@ test("a team event carries exactly its documented keys", async () => {
   const h = await start(a);
   const keys = [
     "id", "hostId", "slug", "status", "visibility", "title", "category", "startsAt", "endsAt", "timezone", "place", "online", "onlineLink",
-    "about", "agenda", "faq", "terms", "publishedAt", "cancelledAt", "cancelReason", "createdAt", "updatedAt",
+    "about", "agenda", "faq", "terms", "poster", "wide", "wideEdge", "tone", "publishedAt", "cancelledAt", "cancelReason", "createdAt", "updatedAt",
   ].sort();
   const made = await as(a)("POST", `/hosts/${h.id}/events`, { title: "Keys" });
   assert.deepEqual(Object.keys(made.body).sort(), keys);
