@@ -68,6 +68,10 @@ export const POINTS = 240;
 export const BACK_SCALE = 0.76;
 export const BACK_OPACITY = 0.55;
 export const O_ZOOM_TO = 45;
+/** The Unusual Studios wordmark at the foot (owner, 25 Nov 2026: "add unusual studios logo at the bottom of splash,
+ * small one", then "very very small and use centered one", then "make some big now"): pt wide, and its peak opacity,
+ * quiet under the word. */
+export const LOGO = { width: 60, opacity: 0.6 };
 
 /** GSAP's eases (power1 = quad, power2 = cubic, power3 = quart) and back.out(c). */
 export const P1O = 1;
@@ -286,4 +290,11 @@ export function glowOpacity(run: number, out: number): number {
 export function groundOpacity(out: number): number {
   'worklet';
   return 1 - ease(P1I, 0, phase(out, 1.4, EXIT_END - 1.4));
+}
+
+/** The Unusual Studios wordmark: in once the word has landed (on the intro's clock, so still while loading), out with
+ * the rings as the exit sets off, so it's gone before the ground lifts and never shows on Home. */
+export function logoOpacity(run: number, out: number): number {
+  'worklet';
+  return LOGO.opacity * ease(P1O, 0, phase(run, 1, 1)) * ringsOpacity(out);
 }

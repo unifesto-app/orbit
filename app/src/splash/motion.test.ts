@@ -7,12 +7,14 @@ import {
   EXIT_END,
   INTRO_END,
   LAP,
+  LOGO,
   POINTS,
   along,
   bodyFrame,
   glowOpacity,
   groundOpacity,
   letterFrame,
+  logoOpacity,
   ringDrawn,
   ringsOpacity,
   scene,
@@ -160,6 +162,14 @@ test('the rings are gone before the ground starts to lift', () => {
   let lift = 0;
   while (groundOpacity(lift) === 1) lift += 0.01;
   near(ringsOpacity(lift - 0.01), 0);
+});
+
+test('the Unusual Studios wordmark is in by the end of the intro and gone before the ground starts to lift', () => {
+  near(logoOpacity(0, 0), 0);
+  near(logoOpacity(INTRO_END, 0), LOGO.opacity); // fully in while the intro's clock still runs, so it never stops part-way
+  let lift = 0;
+  while (groundOpacity(lift) === 1) lift += 0.01;
+  near(logoOpacity(INTRO_END, lift - 0.01), 0); // never over Home
 });
 
 test('every constant comes before the worklets, which copy constants to the UI thread where they are defined', () => {

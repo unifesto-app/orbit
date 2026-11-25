@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { Image, type ImageSourcePropType, StyleSheet, View, useWindowDimensions } from 'react-native';
 import Animated, { Easing, type SharedValue, useAnimatedProps, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, Path, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { scheduleOnRN } from 'react-native-worklets';
 
@@ -9,12 +10,14 @@ import {
   BODIES,
   EXIT_END,
   INTRO_END,
+  LOGO,
   RUN_MAX,
   type Scene,
   bodyFrame,
   glowOpacity,
   groundOpacity,
   letterFrame,
+  logoOpacity,
   ringDrawn,
   ringsOpacity,
   scene,
@@ -37,6 +40,8 @@ const BODY_ART: Record<(typeof BODIES)[number]['art'], ImageSourcePropType> = {
   star: require('../../assets/splash/sym-star.png'),
   heartSmall: require('../../assets/splash/sym-heartSmall.png'),
 };
+/** Unusual Studios' silver wordmark, the centred one (Unusual Studios/public/wordmark-original.webp), at 300 x 96. */
+const LOGO_ART: ImageSourcePropType = require('../../assets/splash/unusual-studios.png');
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 
 /** On screen at least this long from mount, even if the app is ready at once. */
@@ -195,6 +200,7 @@ export function Splash({ ready, onLeave, onDone }: { ready: boolean; onLeave: ()
       <Animated.View style={[StyleSheet.absoluteFill, styles.ground, groundStyle]} />
       <Glow s={s} run={intro} out={out} />
       <Rings s={s} run={intro} out={out} />
+      <Logo run={intro} out={out} />
       {s.letters.map((l, i) => (
         <Letter key={l.name} s={s} i={i} run={intro} out={out} onLoad={i === 0 ? artLoaded : undefined} />
       ))}
@@ -282,6 +288,18 @@ function Letter({ s, i, run, out, onLoad }: Props & { i: number; onLoad?: () => 
   );
 }
 
+/** Unusual Studios, small and centred at the foot, above the bottom safe area. On the intro's clock, like the glow. */
+function Logo({ run, out }: Omit<Props, 's'>) {
+  const insets = useSafeAreaInsets();
+  const style = useAnimatedStyle(() => ({ opacity: logoOpacity(run.value, out.value) }));
+  return (
+    <Animated.View style={[styles.logo, { bottom: insets.bottom + 24 }, style]}>
+      {/* Both sides: Image starts from the art's own 300 x 96, so a height left out stays 96 (an aspectRatio is ignored). */}
+      <Image source={LOGO_ART} style={{ width: LOGO.width, height: (LOGO.width * 96) / 300 }} />
+    </Animated.View>
+  );
+}
+
 /** A symbol riding its ring, behind the word round the back, nearer and brighter in front. */
 function Body({ s, k, run, out }: Props & { k: number }) {
   const b = BODIES[k];
@@ -302,4 +320,5 @@ const styles = StyleSheet.create({
   root: { ...StyleSheet.absoluteFill, zIndex: 2000, elevation: 2000 },
   ground: { backgroundColor: color.ground },
   abs: { position: 'absolute', left: 0, top: 0 },
+  logo: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
 });
