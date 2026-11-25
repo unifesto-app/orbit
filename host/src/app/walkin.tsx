@@ -3,7 +3,7 @@
 // the venue is shut. A walk-in pays cash at the counter (the money stays off Orbit) or by the Pay now QR on their own
 // phone; a block says why.
 import { useLocalSearchParams } from 'expo-router';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Text, View } from 'react-native';
 
 import { HOUR, timeLabel, walkIn, walkInStart } from '../station/day';
@@ -14,17 +14,18 @@ const WHY = ['Maintenance', 'Private party', 'Closed'];
 
 export default function WalkIn() {
   const { type, mode } = useLocalSearchParams<{ type: string; mode?: string }>();
-  const { venue: v, claims, now, hours: h, add, today, load } = useToday(); // signed in, the API's stations and claims
+  const { venue: v, claims, now, hours: h, add, place, busy, today, load } = useToday(); // signed in, the API's stations and claims
   const block = mode === 'block';
   const [hours, setHours] = useState(block ? 2 : 1);
   const [count, setCount] = useState(1);
   const [pay, setPay] = useState<'cash' | 'qr'>('cash');
   const [why, setWhy] = useState(WHY[0]);
+  const [refused, setRefused] = useState<string | null>(null); // signed in, the API's line when it won't place it
+  useEffect(() => setRefused(null), [hours, count, why, pay]); // changed what's asked: try again
   const done = useRef(false); // a second tap while the sheet closes adds nothing
   const t = v.types.find((x) => x.id === type);
   if (!today || !t) return null; // a seat switch while the sheet is up: no day yet
-  // ponytail: signed in, the button is faded until S4 sends walk-ins and blocks to the API.
-  const locked = !!load;
+  const sending = busy.has('sheet');
   const tried = walkIn(claims, v, t, now, hours, count);
   const start = walkInStart(t, now);
   const end = Math.min(start + hours * HOUR, h.closes);
@@ -56,20 +57,30 @@ export default function WalkIn() {
               ]}
         </View>
       </View>
-      {!tried.ok ? (
+      {refused ? (
+        <SheetSays text={refused} />
+      ) : !tried.ok ? (
         <SheetSays text={tried.line} />
       ) : (
         !block && pay === 'qr' && <SheetSays text="They scan it and pay on their own phone; it books and checks in once they’ve paid." />
       )}
       <Pill
         wide
-        label={block ? 'Block' : pay === 'qr' ? 'Show Pay now QR' : 'Add walk-in'}
-        disabled={!tried.ok || locked}
-        onPress={() => {
-          if (!tried.ok || locked || done.current) return;
+        label={sending ? 'Sending…' : block ? 'Block' : pay === 'qr' ? 'Show Pay now QR' : 'Add walk-in'}
+        disabled={!tried.ok || sending}
+        onPress={async () => {
+          if (!tried.ok || done.current) return;
           done.current = true;
-          add(block ? { ...tried.claim, id: `b${tried.claim.id}`, kind: 'block', why } : tried.claim);
-          close();
+          if (!load) {
+            add(block ? { ...tried.claim, id: `b${tried.claim.id}`, kind: 'block', why } : tried.claim);
+            return close();
+          }
+          // Signed in, the API places it from the current step (the day is fetched again either way); a refusal stays
+          // in the sheet. ponytail: Pay now QR sends the same walk-in as cash until the Pay now API exists.
+          const line = await place({ stationId: t.id, hours, count, why: block ? why : undefined });
+          if (!line) return close();
+          done.current = false;
+          setRefused(line);
         }}
       />
     </Sheet>

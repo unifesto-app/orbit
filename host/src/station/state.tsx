@@ -6,14 +6,17 @@
 // Today (S3): signed in, its day is the API's (GET /venues/:hostId/day, live.ts), fetched again on a seat change and when
 // Today asks (pull, every 30 s, back to the foreground). The demo keeps the mock day. Venue, Money and the scanner's
 // lookup stay on the mock until their slices.
+// The counter's writes (S4): signed in they go to the API (counter.ts), one at a time per control, then the day is fetched
+// again; nothing changes on screen before the API says so. The demo keeps the mock's handlers.
 import { VenueDay } from '@orbit/contract';
 import type { Result } from '@orbit/mobile/api';
 import { useLoad } from '@orbit/mobile/load';
-import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, type ReactNode, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 import { admit, admitTo, byCode, type Claim, freeOne, hours, type StationType } from './day';
 import { mockDay, mockMoney, mockVenue, venues } from './mock';
 import { seats as seatsOf } from './seats';
+import { counter } from './counter';
 import { fromApi } from './live';
 import { api, useSession } from '../session';
 import type { Bank } from '../money';
@@ -77,6 +80,25 @@ function useStationState() {
   // crash. A failed refetch keeps the last good day (useLoad).
   const live = useLoad<VenueDay>(seat ? `day|${seat.hostId}` : null, () => api.authed<unknown>('GET', `/venues/${seat!.hostId}/day`).then(readDay));
   const fromLive = useMemo(() => (seat && live.data ? fromApi(live.data, seat, now) : null), [live.data, seat, now]);
+  // Writes in flight, by control ("in:<claim>", "free:<station>", "sheet"): the ref stops a second tap before the next
+  // render, the state draws it busy. `said` is the last write's refusal, for Today to show; the sheet shows its own.
+  const flying = useRef(new Set<string>());
+  const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
+  const [said, setSaid] = useState<string | null>(null);
+  const send = async (key: string, run: () => Promise<Result<unknown>>, show = true): Promise<string | null> => {
+    if (flying.current.has(key)) return null;
+    flying.current.add(key);
+    setBusy(new Set(flying.current));
+    if (show) setSaid(null);
+    const r = await run();
+    flying.current.delete(key);
+    setBusy(new Set(flying.current));
+    live.reload();
+    const line = r.ok ? null : r.status === 0 ? 'Can’t reach Orbit. Try again.' : r.error.message;
+    if (show) setSaid(line);
+    return line;
+  };
+  const desk = seat ? counter(seat.hostId) : null; // the API's counter, signed in
   return {
     now,
     // What Today draws: the API's day when signed in (null until the first answer), the mock's in the demo; and, signed
@@ -94,12 +116,22 @@ function useStationState() {
     // The demo's own: any mock venue, either role.
     setVenue: setVenueId,
     setRole,
-    // The counter's writes change the mock day only. Signed in, Today and the walk-in sheet fade their buttons instead
-    // (`load` set), so nobody thinks a walk-in was logged; S4 sends them to the API.
-    checkIn: (id: string) => change((cs) => cs.map((c) => (c.id === id ? admit(c, c.count - (c.in ?? 0), Date.now(), 'you') : c))),
-    release: (id: string) => change((cs) => cs.map((c) => (c.id === id ? { ...c, released: Date.now() } : c))),
+    // The counter's writes: the API's signed in (busy and said as above), the mock day's in the demo. Check in has the
+    // whole booking in, as the mock does: Admit's total is everyone it holds.
+    busy,
+    said,
+    checkIn: (id: string) => {
+      const c = fromLive?.claims.find((x) => x.id === id);
+      if (!desk) return change((cs) => cs.map((c) => (c.id === id ? admit(c, c.count - (c.in ?? 0), Date.now(), 'you') : c)));
+      if (c) void send(`in:${id}`, () => desk.admit(id, { total: c.count }));
+    },
+    release: (id: string) => (desk ? void send(`out:${id}`, () => desk.release(id)) : change((cs) => cs.map((c) => (c.id === id ? { ...c, released: Date.now() } : c)))),
+    freeOne: (type: string) => (desk ? void send(`free:${type}`, () => desk.freeOne({ stationId: type })) : change((cs) => freeOne(cs, type, Date.now()))),
+    // The walk-in sheet's: the demo adds the claim it worked out; signed in, the API places it from the current step
+    // and answers the line to show in the sheet (null when it's in).
     add: (c: Claim) => change((cs) => [...cs, c]),
-    freeOne: (type: string) => change((cs) => freeOne(cs, type, Date.now())),
+    place: (b: { stationId: string; hours: number; count: number; why?: string }) =>
+      desk ? send('sheet', () => (b.why ? desk.block({ ...b, why: b.why }) : desk.walkIn(b)), false) : Promise.resolve(null),
     // The scanner's: have `total` of a booking in (a tap landing twice counts once), log a Let in again, and put a
     // booking back as it was (Undo).
     letIn: (id: string, total: number) => change((cs) => cs.map((c) => (c.id === id ? admitTo(c, total, Date.now(), 'you') : c))),
