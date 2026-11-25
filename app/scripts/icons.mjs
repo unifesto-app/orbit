@@ -73,6 +73,10 @@ const icons = {
   plus: "plus-bold", // the chat's attach button (owner, 19 Nov 2026: "add attachments")
   mic: "microphone-duotone", // the chat's voice button (owner, 19 Nov 2026: "also bring voice chat")
   info: "info-duotone", // the chat header's (i) (owner, 19 Nov 2026: "also add info ( i ) to right on header")
+  // The inbox (owner, 25 Nov 2026: "in notifications, instead of name, use icon"): Settings as a gear, and a reminder's
+  // alarm beside its kind.
+  gear: "gear-duotone",
+  alarm: "alarm-duotone",
 };
 
 // The tab bar's icons, Phosphor filled since our own bar (owner, 15 Nov 2026: "Phosphor duotone even in tab bar"; 19 Nov
