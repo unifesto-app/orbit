@@ -8,18 +8,20 @@
 // - Team: Admins (the owner marked) and Desk, invites waiting with their days left, Add Desk or an Admin;
 // - Venue page (place, desk phone; name, logo and banner on the web Console) and You.
 // Changes that would strand a booking are refused in the sheet, naming the bookings (Play). Desk never comes here.
+// Signed in (S5) it's the API's venue and team (state.tsx useLiveVenue); a venue not set up yet shows only how to start.
 // ponytail: Share page, View, Account, Help and Sign out open nothing yet, as on Launch's Host tab; they wait for
 // sign-in and the web host pages. Launch's Card and Row until a shared host kit holds them.
+import { OrbitSays } from '@orbit/mobile/orbitSays';
 import { useTabBarScroll } from '@orbit/mobile/tabBar';
 import { color, font, space } from '@orbit/mobile/theme';
 import { type Href, router } from 'expo-router';
-import { useRef } from 'react';
-import { Linking, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { useRef, useState } from 'react';
+import { Linking, RefreshControl, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Card, Row } from '../../launch/ui';
 import { signOut } from '../../session';
-import { useStation } from '../../station/state';
+import { useVenue } from '../../station/state';
 import { Pill, Section } from '../../station/ui';
 import { daysLeft, priceLine, span } from '../../station/venue';
 import { units } from '../../station/words';
@@ -29,7 +31,9 @@ const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Frid
 const CONSOLE = 'https://console.heyorbit.in';
 
 export default function VenueTab() {
-  const { venue: v, setup: s, role, now, hours, changeSetup } = useStation();
+  const { venue: v, setup: s, load, role, now, hours, changeSetup } = useVenue();
+  const [said, setSaid] = useState<string | null>(null); // the walk-ins switch's refusal
+  const [busy, setBusy] = useState(false);
   const insets = useSafeAreaInsets();
   const onScroll = useTabBarScroll();
   // One sheet per tap: a quick second tap doesn't push another.
@@ -42,8 +46,42 @@ export default function VenueTab() {
   if (role !== 'admin') return null; // settings are an Admin's
   const today = new Date(hours.day + 330 * 60_000).getUTCDay();
   const toConsole = () => Linking.openURL(CONSOLE).catch(() => {});
+  const refresh = load && <RefreshControl refreshing={false} onRefresh={load.reload} tintColor={color.secondary} />;
+  const trouble = !load?.error ? null : load.status === 0 ? 'Can’t reach Orbit. Pull to try again.' : load.error.message;
+  // Signed in, before the venue lands, or a venue not set up yet: the name and what to do.
+  if (!s)
+    return (
+      <ScrollView style={styles.page} contentContainerStyle={{ paddingTop: insets.top + 12, paddingBottom: insets.bottom + space.big }} refreshControl={refresh || undefined}>
+        <View style={styles.head}>
+          <Text style={styles.name} accessibilityRole="header">
+            {v.name}
+          </Text>
+        </View>
+        {load?.notSetUp ? (
+          <>
+            <OrbitSays text="Set up your venue: where it is, the desk phone and your hours. Then add what you rent out. Nobody can book till then." />
+            <View style={styles.after}>
+              <Pill label="Set up the venue" onPress={() => open({ pathname: '/setup', params: { what: 'first' } })} />
+            </View>
+          </>
+        ) : (
+          <OrbitSays text={trouble ?? 'Getting your venue…'} />
+        )}
+        <Section title="You" />
+        <Card>
+          <Row label="Open the web Console" external onPress={toConsole} />
+          <Row label="Sign out" onPress={signOut} />
+        </Card>
+      </ScrollView>
+    );
   return (
-    <ScrollView style={styles.page} contentContainerStyle={{ paddingTop: insets.top + 12, paddingBottom: insets.bottom + space.big }} onScroll={onScroll} scrollEventThrottle={16}>
+    <ScrollView
+      style={styles.page}
+      contentContainerStyle={{ paddingTop: insets.top + 12, paddingBottom: insets.bottom + space.big }}
+      onScroll={onScroll}
+      scrollEventThrottle={16}
+      refreshControl={refresh || undefined}
+    >
       <View style={styles.head}>
         <View style={styles.top}>
           <View style={[styles.logo, { backgroundColor: v.bg }]}>
@@ -59,7 +97,8 @@ export default function VenueTab() {
               </View>
             </View>
             <Text style={styles.line}>
-              {s.kind} · {v.area} · {s.followers.toLocaleString('en-IN')} followers
+              {s.kind} · {v.area}
+              {s.followers !== undefined && ` · ${s.followers.toLocaleString('en-IN')} followers`}
             </Text>
           </View>
         </View>
@@ -68,6 +107,7 @@ export default function VenueTab() {
           <Pill label="View ↗" spoken="View the venue page" onPress={() => {}} />
         </View>
       </View>
+      {trouble && <OrbitSays text={trouble} />}
 
       <Section title="What you rent out" aside="New prices, new bookings" />
       <Card>
@@ -93,7 +133,12 @@ export default function VenueTab() {
           right={
             <Switch
               value={s.logWalkIns}
-              onValueChange={(on) => changeSetup((x) => ({ ...x, logWalkIns: on }))}
+              disabled={busy}
+              onValueChange={(on) => {
+                setBusy(true);
+                setSaid(null);
+                void changeSetup((x) => ({ ...x, logWalkIns: on })).then((line) => (setBusy(false), setSaid(line)));
+              }}
               trackColor={{ true: color.accent, false: color.track }}
               thumbColor={color.text}
               accessibilityLabel="We log walk-ins"
@@ -101,6 +146,7 @@ export default function VenueTab() {
           }
         />
       </Card>
+      {said && <OrbitSays text={said} />}
       <Text style={styles.note}>{s.logWalkIns ? 'On: people see how many are free right now, so put every walk-in in on Today.' : 'Off: people see your hours and prices, never a free count.'}</Text>
 
       <Section title="At your venue" />
@@ -141,24 +187,24 @@ export default function VenueTab() {
       <Card>
         {s.team.map((m, i) => (
           <Row
-            key={`${m.name}${i}`}
+            key={m.id ?? `${m.name}${i}`}
             label={m.you ? 'You' : m.name}
             note={m.role === 'Desk' ? 'The counter: scan, walk-ins, blocks, no-shows' : undefined}
             value={m.owner ? 'Owner' : m.role}
-            onPress={m.you || m.owner ? undefined : () => open({ pathname: '/setup', params: { what: 'member', name: m.name } })}
+            onPress={m.you || m.owner ? undefined : () => open({ pathname: '/setup', params: { what: 'member', name: m.id ?? m.name } })}
           />
         ))}
         {s.invites
-          .filter((x) => daysLeft(x.sent, now) > 0) // an invite ends by itself after 14 days
+          .filter((x) => x.sent === undefined || daysLeft(x.sent, now) > 0) // an invite ends by itself after 14 days (the API leaves lapsed ones out)
           .map((x) => {
-            const left = daysLeft(x.sent, now);
+            const left = x.sent === undefined ? 0 : daysLeft(x.sent, now);
             return (
               <Row
-                key={x.contact}
+                key={x.id ?? x.contact}
                 label={x.contact}
-                note={`Waiting · ${left} day${left === 1 ? '' : 's'} left`}
+                note={x.accepted ? `Accepted by ${x.acceptedBy ?? 'them'} · confirm it’s them` : x.sent === undefined ? 'Waiting' : `Waiting · ${left} day${left === 1 ? '' : 's'} left`}
                 value={x.role}
-                onPress={() => open({ pathname: '/setup', params: { what: 'invite', contact: x.contact } })}
+                onPress={() => open({ pathname: '/setup', params: { what: 'invite', contact: x.id ?? x.contact } })}
               />
             );
           })}

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { HOUR, type StationType } from './day.ts';
-import { contactOk, daysLeft, hoursOk, inTheWay, kindFrom, type KindForm, plural, priceLine, span } from './venue.ts';
+import { type Authed, contactOk, daysLeft, fieldWhy, fromStation, hoursOk, inTheWay, kindFrom, type KindForm, pinFrom, plural, priceLine, refusal, span, teamFrom, toStation, venueApi, weekSpan } from './venue.ts';
 
 const pc: StationType = { id: 'pc', name: 'Gaming PC', count: 12, unit: ['PC', 'PCs'], step: 30, whole: false, price: 16200, offPeak: { from: 11, to: 16, weekdays: true, price: 12000 }, coop: 35000, games: 'Valorant, CS2' };
 
@@ -54,4 +54,75 @@ test("a kind from Venue's sheet: prices in rupees, off-peak cheaper and inside t
   assert.equal(why({ op: 'weekdays', opPrice: '200', opFrom: 9, opTo: 16 }), 'Off-peak hours sit inside your opening, before midnight.'); // before opening
   assert.equal(why({ op: 'every', opPrice: '200', opFrom: 22, opTo: 26 }), 'Off-peak hours sit inside your opening, before midnight.'); // past midnight
   assert.equal(why({ op: 'every', opPrice: '200', opFrom: 22, opTo: 24 }), 'ok');
+});
+
+test('each venue request sends its method, path and body', async () => {
+  const sent: unknown[][] = [];
+  const authed = (async (...a: unknown[]) => (sent.push(a), { ok: true, data: null })) as Authed;
+  const v = venueApi('h1', authed);
+  await v.get();
+  await v.put({ address: 'x' });
+  await v.addStation({ name: 'PC', tile: 'gaming' });
+  await v.editStation('s1', { archived: true });
+  await v.team();
+  await v.invite({ to: 'ravi@example.com', role: 'desk' });
+  await v.confirm('t1');
+  await v.remove('t1');
+  assert.deepEqual(sent, [
+    ['GET', '/venues/h1'],
+    ['PUT', '/venues/h1', { address: 'x' }],
+    ['POST', '/venues/h1/stations', { name: 'PC', tile: 'gaming' }],
+    ['PATCH', '/venues/h1/stations/s1', { archived: true }],
+    ['GET', '/hosts/h1/team'],
+    ['POST', '/hosts/h1/team', { to: 'ravi@example.com', role: 'desk' }],
+    ['POST', '/hosts/h1/team/t1/confirm'],
+    ['DELETE', '/hosts/h1/team/t1'],
+  ]);
+});
+
+test("a kind goes to the API in paise and comes back the same; the sheet's rupees become paise", () => {
+  const body = toStation(pc);
+  assert.deepEqual(body, { name: 'Gaming PC', unit: 'PC', count: 12, pricePaise: 16200, coopPaise: 35000, offPeak: { from: 11, to: 16, weekdays: true, pricePaise: 12000 }, games: 'Valorant, CS2' });
+  assert.deepEqual(fromStation({ ...body, id: 'pc', whole: false, step: 30, archived: false }), pc);
+  const bare = toStation({ ...pc, coop: undefined, offPeak: undefined, games: undefined });
+  assert.deepEqual([bare.coopPaise, bare.offPeak, bare.games], [null, null, null]);
+  const made = kindFrom({ name: 'PS5', unit: 'PS5', count: 4, price: '250.50', coop: '', op: 'none', opFrom: 11, opTo: 16, opPrice: '', games: '' }, undefined, [11, 26], true, 'k');
+  assert.ok('kind' in made && toStation(made.kind).pricePaise === 25050);
+});
+
+test("the week's span for off-peak: earliest opening to latest close, all closed a full day", () => {
+  assert.deepEqual(weekSpan([null, [11, 26], [10, 23], null, null, null, [12, 24]]), [10, 26]);
+  assert.deepEqual(weekSpan(Array(7).fill(null)), [0, 24]);
+});
+
+test('a map pin from Google Maps: the copied numbers or a link', () => {
+  assert.deepEqual(pinFrom('17.4401, 78.3489'), { lat: 17.4401, lng: 78.3489 });
+  assert.deepEqual(pinFrom('https://www.google.com/maps/@17.4401,78.3489,17z'), { lat: 17.4401, lng: 78.3489 });
+  assert.equal(pinFrom('Gachibowli'), undefined);
+});
+
+test("a refusal says the API's line, or that Orbit can't be reached", () => {
+  assert.equal(refusal({ status: 0, error: { message: 'offline' } }), 'Can’t reach Orbit. Try again.');
+  assert.equal(refusal({ status: 409, error: { message: '1 booking needs the old hours.' } }), '1 booking needs the old hours.');
+  assert.equal(fieldWhy({ issues: [{ code: 'custom', path: ['week'], message: "A day's late close runs into the next day's opening." }] }), "A day's late close runs into the next day's opening.");
+  assert.equal(fieldWhy({ issues: [{ code: 'too_big', path: ['lat'], message: 'Too big' }] }), 'Check the map pin.');
+});
+
+test('the team: Admins and Desk only, the owner first, you marked; invites by seat', () => {
+  const t = teamFrom(
+    {
+      members: [
+        { id: 'a', userId: 'u2', name: 'Ravi K.', role: 'crew', owner: false },
+        { id: 'b', userId: 'u1', name: 'Asha', role: 'admin', owner: true },
+        { id: 'c', userId: 'u3', name: null, role: 'curator', owner: false },
+      ],
+      invites: [{ id: 'i1', contact: '+919000022010', accepted: true, acceptedBy: 'Nisha' }],
+    },
+    'u1',
+  );
+  assert.deepEqual(t.team, [
+    { id: 'b', name: 'Asha', role: 'Admin', you: true, owner: true },
+    { id: 'a', name: 'Ravi K.', role: 'Desk', you: undefined, owner: undefined },
+  ]);
+  assert.deepEqual(t.invites, [{ id: 'i1', contact: '+919000022010', accepted: true, acceptedBy: 'Nisha' }]);
 });
