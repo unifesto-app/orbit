@@ -10,7 +10,7 @@ import { StatusBar } from 'expo-status-bar';
 import { refreshMe, useSession } from '../session';
 import { seats } from '../station/seats';
 import { StationProvider } from '../station/state';
-import { isLaunch, isStation } from '../variant';
+import { isLaunch, isStation, ONE_0 } from '../variant';
 
 // Station's short sheets (walk-in and block, you, payout, bank) are see-through, so their own frosted glass shows, as the Orbit
 // app's venue sheet: as tall as what's in them, with a grabber.
@@ -43,15 +43,17 @@ export default function Layout() {
           <Stack.Screen name="(station)" />
           <Stack.Screen name="walkin" options={SHEET} />
           <Stack.Screen name="you" options={SHEET} />
-          {/* Money's, Admins only (take 3). */}
-          <Stack.Screen name="payout" options={SHEET} />
-          <Stack.Screen name="bank" options={SHEET} />
           {/* Venue's edits, Admins only (take 4). */}
           <Stack.Screen name="setup" options={SHEET} />
+          {/* Money's, Admins only (take 3); not in 1.0 (ONE_0). */}
+          <Stack.Protected guard={!ONE_0}>
+            <Stack.Screen name="payout" options={SHEET} />
+            <Stack.Screen name="bank" options={SHEET} />
+          </Stack.Protected>
         </Stack.Protected>
         {/* The scanner takes the whole screen, over Today (take 2). The demo's only: it lets people in on the mock day.
-            ponytail: signed in it comes back once it looks up and admits real bookings. */}
-        <Stack.Protected guard={isStation && demo}>
+            ponytail: signed in it comes back once it looks up and admits real bookings. Not in 1.0 (ONE_0). */}
+        <Stack.Protected guard={isStation && demo && !ONE_0}>
           <Stack.Screen name="scan" options={{ presentation: 'fullScreenModal', contentStyle: { backgroundColor: '#000' } }} />
         </Stack.Protected>
         <Stack.Protected guard={!session}>

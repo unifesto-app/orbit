@@ -10,3 +10,6 @@ export const isLaunch = variant?.id === variants.launch.id;
 export const isCrew = variant?.id === variants.crew.id;
 // An unknown bundle id (none of the three) falls back to Orbit Event Partner's names.
 export const thisApp = variant ?? variants.launch;
+// Orbit Play Partner 1.0: Today and Venue only. On, Money, the scanner and the walk-in's Pay now QR are gone (each waits
+// on its API); off brings them back. A plain constant: flip it and ship a new build.
+export const ONE_0 = true;

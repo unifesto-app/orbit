@@ -1,7 +1,7 @@
 // A walk-in or a block on one kind of station, from Today's + and Block (Play, At the desk): it starts at the current
 // half hour or hour and runs whole hours, refused while a booking needs the station ("Only 1 free until 7:00 PM") or
 // the venue is shut. A walk-in pays cash at the counter (the money stays off Orbit) or by the Pay now QR on their own
-// phone; a block says why.
+// phone (not in 1.0); a block says why.
 import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Text, View } from 'react-native';
@@ -9,6 +9,7 @@ import { Text, View } from 'react-native';
 import { HOUR, timeLabel, walkIn, walkInStart } from '../station/day';
 import { useToday } from '../station/state';
 import { Chip, close, Pill, Sheet, SheetSays, Stepper, styles } from '../station/ui';
+import { ONE_0 } from '../variant';
 
 const WHY = ['Maintenance', 'Private party', 'Closed'];
 
@@ -58,8 +59,8 @@ export default function WalkIn() {
             ? WHY.map((w) => <Chip key={w} label={w} on={why === w} onPress={() => setWhy(w)} />)
             : [
                 <Chip key="cash" label="Cash here" on={pay === 'cash'} onPress={() => setPay('cash')} />,
-                // ponytail: signed in, cash only until Pay now's API exists.
-                !load && <Chip key="qr" label="Pay now QR" on={pay === 'qr'} onPress={() => setPay('qr')} />,
+                // ponytail: signed in, cash only until Pay now's API exists; 1.0 (ONE_0) is cash only, demo too.
+                !load && !ONE_0 && <Chip key="qr" label="Pay now QR" on={pay === 'qr'} onPress={() => setPay('qr')} />,
               ]}
         </View>
       </View>

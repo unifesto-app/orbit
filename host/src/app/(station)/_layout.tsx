@@ -3,6 +3,7 @@
 // lighter pill that springs to it, Phosphor filled icons beside DM Sans 600 labels (the open tab's in the Sage to Moss
 // gradient), shrinking to the open tab while the page scrolls down. Beside it, the round Scan button ("scan is good, no
 // orb needed"). Desk has no money, prices or settings (Roles by use case), so it gets Today alone and a Scan pill.
+// 1.0 (ONE_0) has no Money tab and no Scan: Today and Venue across the whole width, Desk with no bar at all.
 // ponytail: no drag along the bar (the app's has one); add it if the owner misses it.
 import { DARK_TINT as DARK, Glass } from '@orbit/mobile/glass';
 import { BAR, barAfterScroll, barBottom, SIDE, TabBarScroll, TabBarSmall } from '@orbit/mobile/tabBar';
@@ -14,8 +15,9 @@ import { Animated, Image, LayoutAnimation, Platform, Pressable, StyleSheet, Text
 import { SafeAreaInsetsContext, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useSession } from '../../session';
+import { barTabs, opens } from '../../station/seats';
 import { useStation } from '../../station/state';
-import { isStation } from '../../variant';
+import { isStation, ONE_0 } from '../../variant';
 
 const PAD = 4;
 const GAP = 10;
@@ -25,6 +27,7 @@ const TABS = [
   { name: 'money', href: '/money', label: 'Money', icon: require('../../../assets/tabs/money.png'), on: require('../../../assets/tabs/money-on.png') },
   { name: 'venue', href: '/venue', label: 'Venue', icon: require('../../../assets/tabs/venue.png'), on: require('../../../assets/tabs/venue-on.png') },
 ] as const;
+const BAR_TABS = TABS.filter((t) => barTabs(ONE_0).includes(t.name));
 
 export default function StationTabs() {
   const session = useSession();
@@ -42,13 +45,17 @@ function Bar() {
   const [open, setOpen] = useState(0);
   useEffect(() => setSmall(false), [open, setSmall]); // a tab opens with the bar wide
   const { width } = useWindowDimensions();
-  const slot = (width - SIDE - (SIDE + BAR + GAP) - 2 * PAD) / TABS.length;
+  // Scan is the demo's only for now (the app's layout guards it), and not in 1.0.
+  const scanOn = !ONE_0 && !seats;
+  const right = scanOn ? SIDE + BAR + GAP : SIDE;
+  const slot = (width - SIDE - right - 2 * PAD) / BAR_TABS.length;
   const [x] = useState(() => new Animated.Value(0));
   useEffect(() => {
     Animated.spring(x, { toValue: open * slot, useNativeDriver: true, speed: 18, bounciness: 6 }).start();
   }, [open, slot, x]);
   if (seats?.length === 0) return <Redirect href="/" />; // signed in on no venue: the invites screen
-  if (desk && (path === '/money' || path === '/venue')) return <Redirect href="/today" />;
+  const tab = TABS.find((t) => path === t.href);
+  if (tab && !opens(role, ONE_0).includes(tab.name)) return <Redirect href="/today" />;
   return (
     <Tabs style={styles.root}>
       <SafeAreaInsetsContext.Provider value={{ ...insets, bottom: bottom + BAR }}>
@@ -60,17 +67,16 @@ function Bar() {
       </SafeAreaInsetsContext.Provider>
       <TabList asChild>
         {/* One style object: TabList's Slot refuses an array on its child. Desk keeps the triggers, hidden. */}
-        <Glass tint={DARK} style={StyleSheet.flatten([styles.capsule, { bottom }, small ? styles.small : styles.wide, desk && styles.hidden])}>
+        <Glass tint={DARK} style={StyleSheet.flatten([styles.capsule, { bottom }, small ? styles.small : { right }, desk && styles.hidden])}>
           {!small && <Animated.View style={[styles.pill, styles.slider, { width: slot, transform: [{ translateX: x }] }]} />}
-          {TABS.map((t, i) => (
+          {BAR_TABS.map((t, i) => (
             <TabTrigger key={t.name} name={t.name} href={t.href} asChild>
               <TabButton tab={t} index={i} small={small} onGrow={() => setSmall(false)} onOpen={setOpen} />
             </TabTrigger>
           ))}
         </Glass>
       </TabList>
-      {/* Scan is the demo's only for now (the app's layout guards it). */}
-      {seats ? null : desk ? (
+      {!scanOn ? null : desk ? (
         <Pressable onPress={() => router.push('/scan')} accessibilityRole="button" style={({ pressed }) => [styles.deskScan, { bottom }, pressed && styles.pressed]}>
           <Glass tint={DARK} style={styles.deskFace}>
             <Image source={SCAN} style={styles.plain} />
@@ -141,7 +147,6 @@ function TabButton({ tab, index, small, onGrow, onOpen, isFocused, onPress, ...p
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: color.ground },
   capsule: { position: 'absolute', left: SIDE, height: BAR, borderRadius: BAR / 2, padding: PAD, flexDirection: 'row', overflow: 'hidden' },
-  wide: { right: SIDE + BAR + GAP },
   small: { width: BAR },
   hidden: { display: 'none' },
   tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: (BAR - 2 * PAD) / 2 },
