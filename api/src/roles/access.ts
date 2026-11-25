@@ -43,7 +43,7 @@ export async function rolesOf(db: Db, u: User, now: number): Promise<Roles> {
       ),
     );
   return {
-    teams: seats.map((s) => ({ hostId: s.hostId, kind: s.kind as Team["kind"], name: s.name, owner: s.ownerId === u.id, admin: s.role === "admin", desk: s.role === "crew" && s.kind === "venue", events: {} })),
+    teams: seats.map((s) => ({ hostId: s.hostId, kind: s.kind, name: s.name, owner: s.ownerId === u.id, admin: s.role === "admin", desk: s.role === "crew" && s.kind === "venue", events: {} })),
     staff: a.owner || a.features.length ? { owner: a.owner, features: [...a.features], confirmed: true } : null,
   };
 }

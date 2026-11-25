@@ -25,7 +25,7 @@ export const HostKind = z.enum(Object.keys(HOST_KINDS) as [keyof typeof HOST_KIN
 // Only roles that have started: an invite not yet accepted, or an Admin not yet confirmed, adds nothing.
 export const Team = z.object({
   hostId: z.string(),
-  kind: HostKind,
+  kind: z.string(), // a HostKind; plain text so an older app still reads a kind added later
   name: z.string(),
   owner: z.boolean(),
   admin: z.boolean(),

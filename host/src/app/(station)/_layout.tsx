@@ -47,7 +47,7 @@ function Bar() {
   useEffect(() => {
     Animated.spring(x, { toValue: open * slot, useNativeDriver: true, speed: 18, bounciness: 6 }).start();
   }, [open, slot, x]);
-  if (seats?.length === 0) return <Redirect href="/" />; // signed in on no venue: the no-seat screen, even from a deep link
+  if (seats?.length === 0) return <Redirect href="/" />; // signed in on no venue: the invites screen
   if (desk && (path === '/money' || path === '/venue')) return <Redirect href="/today" />;
   return (
     <Tabs style={styles.root}>
