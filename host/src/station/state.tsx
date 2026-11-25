@@ -1,11 +1,14 @@
 // Orbit Station's state while the app is open: which venue and role you're looking as, the clock, and the venue's day of
 // claims. The day is made once per opening and kept, so a check-in, release or walk-in stays as the clock moves on; a
 // new opening (or another venue) starts a fresh mock day.
-// ponytail: mock until the slots API (H8.1 to H8.5); the venue and role are picked in the You sheet.
+// Signed in, the venues and roles are the person's own seats (seats.ts), picked in the You sheet; the role comes with the
+// seat. The dev demo picks a mock venue and either role there instead.
 import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from 'react';
 
 import { admit, admitTo, byCode, type Claim, freeOne, hours, type StationType } from './day';
 import { mockDay, mockMoney, mockVenue, venues } from './mock';
+import { seats as seatsOf } from './seats';
+import { useSession } from '../session';
 import type { Bank } from '../money';
 import type { Payout, Sold } from './money';
 
@@ -18,8 +21,15 @@ function useStationState() {
     const tick = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(tick);
   }, []);
-  const [venueId, setVenueId] = useState(venues[0].id);
-  const [role, setRole] = useState<Role>('admin');
+  const session = useSession();
+  const seats = useMemo(() => (session && 'me' in session ? seatsOf(session.me) : null), [session]);
+  const [hostId, setSeat] = useState<string | null>(null);
+  const seat = seats ? (seats.find((x) => x.hostId === hostId) ?? seats[0]) : undefined;
+  const [demoVenue, setVenueId] = useState(venues[0].id);
+  const [demoRole, setRole] = useState<Role>('admin');
+  // ponytail: a seat shows the mock venue at its own index until GET /venues/:hostId/day serves the real one (S3).
+  const venueId = seats ? venues[Math.max(0, seats.indexOf(seat!)) % venues.length].id : demoVenue;
+  const role: Role = seats ? (seat?.role ?? 'desk') : demoRole;
   // Venue's edits (take 4): each venue's kinds as its Admin set them, over the mock's, and its page, team, asks and
   // weekly hours. Both outlive a day and a venue switch.
   // ponytail: Today keeps the opening it started with; the slots API serves each day's own hours.
@@ -61,6 +71,11 @@ function useStationState() {
     role,
     hours: open,
     claims: day.claims,
+    // Signed in: the person's seats (null in the demo), the one picked, and picking another.
+    seats,
+    seat,
+    setSeat,
+    // The demo's own: any mock venue, either role.
     setVenue: setVenueId,
     setRole,
     checkIn: (id: string) => change((cs) => cs.map((c) => (c.id === id ? admit(c, c.count - (c.in ?? 0), Date.now(), 'you') : c))),
