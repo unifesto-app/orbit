@@ -7,7 +7,7 @@
 // dark glass, pinned over the page, which scrolls under them with nothing behind the bar. The page's scroll view comes
 // first in the tree, so the tab bar watches it to shrink on scroll. What matches is src/search.ts.
 import { type CategorySlug, categories } from '@orbit/contract';
-import { type ReactNode, useDeferredValue, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Easing,
@@ -25,14 +25,18 @@ import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import { DARK_TINT, Glass } from '../../glass';
 import { useAds, useContent, usePromoted } from '../../content';
-import { type Event, type Host, events, hosts, now } from '../../mock';
+import { type Event, eventsApi, type Host, hostsOf, toEvent, toHost, whereOf } from '../../events';
+import { useLoad } from '../../load';
+import { hosts as mockHosts } from '../../mock';
+import { usePlace } from '../../place';
 import { OrbitAdStrip } from '../../orbitAd';
 import { askOrbit, OrbitSays } from '../../orbitSays';
 import { CategoryGrid } from '../../categories';
 import { tileFor } from '../../kinds';
 import { isNewHost, promoteOne } from '../../labels';
-import { EventRow, HostRow, isPromoted, labelOf, SEARCH_BOX, SearchBox } from '../../rows';
+import { EventRow, Failed, HostRow, isPromoted, labelOf, SEARCH_BOX, SearchBox, Waiting } from '../../rows';
 import { countLine, firstUnseen, MAX_QUERY, search, WHEN, type When } from '../../search';
+import { api } from '../../session';
 import { useTabBarScroll, useTabBarSmall } from '../../tabBar';
 import { color, font, space, stoneAt } from '../../theme';
 
@@ -48,33 +52,57 @@ export default function Search() {
   const [when, setWhen] = useState<When>();
   const [free, setFree] = useState(false);
   const [category, setCategory] = useState<CategorySlug>();
-  // ponytail: filters the mock list on every key, kept smooth by React; the doc's "short pause" (a debounce) comes
-  // with the API.
-  const filters = { q: useDeferredValue(q), when, free, category };
+  // What's typed goes to the API after a 300 ms pause (the doc's "short pause"); chips go at once.
+  const [typed, setTyped] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setTyped(q), 300);
+    return () => clearTimeout(t);
+  }, [q]);
+  const filters = { q: typed, when, free, category };
   const q0 = filters.q.trim();
-  // Places to play sit under their tile: turfs and courts in Sports, gaming cafés in Gaming.
-  const findable = hosts.map((h) => ({ ...h, tile: tileFor(h.id) }));
-  const hostOf = (id: string) => hosts.find((h) => h.id === id) as Host;
-  const result = search(filters, events, findable, now);
-  // One promoted event leads what's found (Boost), only if it matched; nothing is added.
-  const found = { ...result, events: promoteOne(result.events, (e) => isPromoted(e, hostOf(e.hostId), promoted)) };
-  const nothing = found.events.length === 0 && found.hosts.length === 0;
   // Nothing typed or picked: the categories to explore, then everything coming up. Otherwise the results.
   const browsing = !q0 && !when && !free && !category;
+  const place = usePlace();
+  const where = whereOf(place);
+  const now = Date.now();
+  // Browsing reads the same call as Home; anything typed or picked reads /public/search, the last results staying up
+  // while the next load (src/events.ts).
+  const discover = useLoad(browsing ? JSON.stringify(where) : null, () => eventsApi(api).discover(where), { keep: true });
+  const searched = useLoad(browsing ? null : JSON.stringify([filters, where]), () => eventsApi(api).search(filters, where), { keep: true });
+  const cards = browsing
+    ? [...(discover.data?.near ?? []), ...(discover.data?.elsewhere ?? [])].sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt))
+    : (searched.data?.events ?? []);
+  const events = cards.map((c) => toEvent(c));
+  // Places to play sit under their tile: turfs and courts in Sports, gaming cafés in Gaming.
+  // ponytail: the mock venue hosts stay as the places to play until slots reach the API (P17); `search` finds them.
+  const findable = mockHosts.filter((h) => tileFor(h.id)).map((h) => ({ ...h, tile: tileFor(h.id) }));
+  const apiHosts = hostsOf(cards);
+  const hostOf = (id: string) => (apiHosts.find((h) => h.id === id) ?? mockHosts.find((h) => h.id === id)) as Host;
+  // Hosts the API found by what you typed, then the places to play that match.
+  const result = {
+    events,
+    hosts: [...(browsing ? [] : (searched.data?.hosts ?? []).map(toHost)), ...search(filters, [], findable, now).hosts],
+  };
+  // One promoted event leads what's found (Boost), only if it matched; nothing is added.
+  const found = { ...result, events: promoteOne(result.events, (e) => isPromoted(e, hostOf(e.hostId), promoted, now)) };
+  const answer = browsing ? discover : searched;
+  const nothing = !!answer.data && !answer.loading && found.events.length === 0 && found.hosts.length === 0;
+  // The first answer still on its way, or failed with nothing to show: one line in place of the events.
+  const pending = !answer.data && (answer.loading || !answer.error ? <Waiting /> : <Failed message={answer.error.message} retry={answer.reload} />);
   // While browsing, sections between Explore and Coming up (owner, 19 Nov 2026: "add more sections in search screen"):
   // up to three events each, none repeated in a later section; places to play; hosts new on Orbit. Coming up keeps
   // everything.
   const everything = { q: '', free: false };
   const [choice, weekend, freeOnes] = browsing
     ? firstUnseen([
-        found.events.filter((e) => labelOf(e, hostOf(e.hostId), promoted) === 'People’s choice'),
-        search({ ...everything, when: 'weekend' }, events, findable, now).events,
-        search({ ...everything, free: true }, events, findable, now).events,
+        found.events.filter((e) => labelOf(e, hostOf(e.hostId), promoted, now) === 'People’s choice'),
+        search({ ...everything, when: 'weekend' }, events, [], now).events,
+        search({ ...everything, free: true }, events, [], now).events,
       ])
     : [[], [], []];
   const places = browsing ? findable.filter((h) => h.tile) : [];
   const newHosts = browsing
-    ? hosts.filter((h) => !tileFor(h.id) && isNewHost(h, now)).sort((a, b) => Date.parse(b.joined) - Date.parse(a.joined)).slice(0, 4)
+    ? apiHosts.filter((h) => isNewHost(h, now)).sort((a, b) => Date.parse(b.joined) - Date.parse(a.joined)).slice(0, 4)
     : [];
   const picked = categories.find((c) => c.slug === category);
   // The chips' full height under the box, first a guess until it's measured; it grows when a category adds a line.
@@ -109,6 +137,8 @@ export default function Search() {
           paddingBottom: insets.bottom + space.big,
         }}
       >
+        {/* A failed read with last results still up: the failure over them, with a way to retry. */}
+        {answer.error && answer.data && <Failed message={answer.error.message} retry={answer.reload} />}
         {browsing ? (
           <View>
             {/* Orbit offers the chat first, its own four questions as your answers (the Orbit speaks take, 19 Nov). */}
@@ -119,8 +149,8 @@ export default function Search() {
             />
             <CenteredHeading title="Explore" script />
             <CategoryGrid onPress={setCategory} />
-            <EventSection title="People’s choice" events={choice} hostOf={hostOf} />
-            <EventSection title="This weekend" events={weekend} hostOf={hostOf} onMore={() => setWhen('weekend')} />
+            <EventSection title="People’s choice" events={choice} hostOf={hostOf} now={now} />
+            <EventSection title="This weekend" events={weekend} hostOf={hostOf} now={now} onMore={() => setWhen('weekend')} />
             {/* One of Orbit's own ads, before the places to play (owner, 19 Nov 2026: "add one strip in search"). */}
             {/* A link to Search itself goes nowhere from here, so the strip is only read. */}
             {ad && <OrbitAdStrip ad={{ ...ad, href: ad.href === '/search' ? undefined : ad.href }} width={width - 40} />}
@@ -134,7 +164,7 @@ export default function Search() {
                 </View>
               </>
             )}
-            <EventSection title="Free" events={freeOnes} hostOf={hostOf} onMore={() => setFree(true)} />
+            <EventSection title="Free" events={freeOnes} hostOf={hostOf} now={now} onMore={() => setFree(true)} />
             {newHosts.length > 0 && (
               <>
                 <CenteredHeading title="New on Orbit" />
@@ -145,11 +175,13 @@ export default function Search() {
                 </View>
               </>
             )}
-            <CenteredHeading title="Coming up" />
+            {answer.data ? <CenteredHeading title="Coming up" /> : pending}
             {found.events.map((e) => (
-              <EventRow key={e.id} event={e} host={hostOf(e.hostId)} found />
+              <EventRow key={e.id} event={e} host={hostOf(e.hostId)} now={now} found />
             ))}
           </View>
+        ) : !answer.data ? (
+          pending
         ) : nothing ? (
           // Orbit says so, as in the chat, 40 under the bar as a section; what you typed can go to the chat as it is.
           <OrbitSays
@@ -165,7 +197,7 @@ export default function Search() {
           <View>
             <View style={styles.summary}>
               <Text style={styles.summaryText} accessibilityLiveRegion="polite">
-                {countLine(found.events.length, filters)}
+                {answer.loading ? 'Searching…' : countLine(found.events.length, filters)}
               </Text>
               <Pressable onPress={seeAll} accessibilityRole="button" accessibilityLabel="Clear the search" hitSlop={6}>
                 <Glass style={styles.chip} tint={DARK_TINT}>
@@ -187,7 +219,7 @@ export default function Search() {
               <View style={styles.rowsTop} />
             )}
             {found.events.map((e) => (
-              <EventRow key={e.id} event={e} host={hostOf(e.hostId)} found />
+              <EventRow key={e.id} event={e} host={hostOf(e.hostId)} now={now} found />
             ))}
           </View>
         )}
@@ -270,13 +302,13 @@ function CenteredHeading({ title, script = false }: { title: string; script?: bo
 
 // A browsing section of event rows under a centred heading; nothing when it's empty. `onMore` adds a See all under it
 // that turns on the matching chip.
-function EventSection({ title, events: list, hostOf, onMore }: { title: string; events: Event[]; hostOf: (id: string) => Host; onMore?: () => void }) {
+function EventSection({ title, events: list, hostOf, now, onMore }: { title: string; events: Event[]; hostOf: (id: string) => Host; now: number; onMore?: () => void }) {
   if (list.length === 0) return null;
   return (
     <>
       <CenteredHeading title={title} />
       {list.map((e) => (
-        <EventRow key={e.id} event={e} host={hostOf(e.hostId)} found />
+        <EventRow key={e.id} event={e} host={hostOf(e.hostId)} now={now} found />
       ))}
       {onMore && (
         <View style={styles.more}>

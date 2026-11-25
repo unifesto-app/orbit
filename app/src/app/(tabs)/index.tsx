@@ -19,16 +19,18 @@ import { DARK_TINT, Glass } from '../../glass';
 import { planHome, type Viewer } from '../../home/layout';
 import { Icon } from '../../icons';
 import { useAds, useFeatured, usePromoted } from '../../content';
-import { type Event, type Host, events, hosts, now } from '../../mock';
+import { type Event, eventsApi, type Host, hostsOf, toEvent, whereOf } from '../../events';
+import { useLoad } from '../../load';
+import { events as mockEvents, hosts as mockHosts, now as mockNow } from '../../mock';
 import { useUnread } from '../../inboxStore';
 import { OrbitAdStrip } from '../../orbitAd';
 import { OrbitSays } from '../../orbitSays';
 import { refreshPlace, usePlace } from '../../place';
 import { meetups, tileFor } from '../../kinds';
 import { promoteOne } from '../../labels';
-import { EventRow, HostRow, isPromoted, loveIt, Monogram, Poster, SEAT, SeatCard, Section, StatusLine } from '../../rows';
+import { EventRow, Failed, HostRow, isPromoted, loveIt, Monogram, Poster, SEAT, SeatCard, Section, StatusLine, Waiting } from '../../rows';
 import { bookAction, eventStatus } from '../../status';
-import { needsAccount, setFollowing, setInterest, skipInterests, useLoved, useViewer } from '../../session';
+import { api, needsAccount, setFollowing, setInterest, skipInterests, useLoved, useViewer } from '../../session';
 import { useTabBarScroll, useTabBarSmall } from '../../tabBar';
 import { around, color, font, radius, rim, space, stoneAt } from '../../theme';
 
@@ -71,17 +73,31 @@ export default function Home() {
   const onTabScroll = useTabBarScroll(); // shrinks the tab bar on the way down
   const { width } = useWindowDimensions();
   const signed = useViewer();
-  const v: Viewer = { ...signed, place: usePlace(signed.place) }; // the place chosen on the location screen, if any
+  const v: Viewer = { ...signed, place: usePlace() }; // the place chosen on the location screen, if any
   useEffect(() => {
     refreshPlace(); // once a launch, only if location is already allowed (src/place.ts)
   }, []);
-  const hostOf = (id: string) => hosts.find((h) => h.id === id) as Host;
+  // What's coming up from the API, near the place and then the rest (GET /public/discover, src/events.ts); nothing sent
+  // with no place, so everything is "elsewhere" and Home says to set a location.
+  const where = whereOf(v.place);
+  const page = useLoad(JSON.stringify(where), () => eventsApi(api).discover(where), { keep: true }); // keep: a new place never blanks the page
+  const now = Date.now();
+  const cards = page.data ? [...page.data.near, ...page.data.elsewhere] : [];
+  const events = page.data ? [...page.data.near.map((c) => toEvent(c, true)), ...page.data.elsewhere.map((c) => toEvent(c, false))] : [];
+  // The hosts of those events, and the mock's places to play.
+  // ponytail: Places to play stay on the mock venue hosts (with tileFor) until slots reach the API (P17); mock hosts
+  // also stay in hostOf, for the mock's Thanks for coming below (bookings slice).
+  const apiHosts = hostsOf(cards);
+  // Their nearness the old way (Hyderabad only), since the API doesn't know them.
+  const hyderabad = v.place?.area === 'Hyderabad' || v.place?.city === 'Hyderabad';
+  const hosts = [...apiHosts, ...mockHosts.filter((h) => tileFor(h.id)).map((h) => ({ ...h, near: hyderabad }))];
+  const hostOf = (id: string) => (apiHosts.find((h) => h.id === id) ?? mockHosts.find((h) => h.id === id)) as Host;
   // Staff's picks from Galaxy's App content (src/content.ts): the events marked Promoted, the carousel's featured
   // slides, and Orbit's own strips.
   const promoted = usePromoted();
   const featured = useFeatured();
   const ads = useAds('home');
-  const boosted = (e: Event) => isPromoted(e, hostOf(e.hostId), promoted);
+  const boosted = (e: Event) => isPromoted(e, hostOf(e.hostId), promoted, now);
   const plan = planHome(v, events, hosts.map((h) => ({ ...h, tile: tileFor(h.id) })), now, boosted, featured);
   const ticketLabel = (id: string) => v.tickets?.find((t) => t.eventId === id)?.label ?? '';
 
@@ -90,9 +106,9 @@ export default function Home() {
   const card = (width - 40 - space.big) / 2; // All events and host cards: two columns on the 20px margins, a big gap apart
   const slides: CarouselSlide[] = plan.slides.map((s, i) =>
     s.kind === 'event'
-      ? { key: `e:${s.event.id}`, image: s.event.wide!.source, edge: s.event.wide!.edge, label: `${s.event === plan.lead ? 'Promoted. ' : ''}Poster for ${s.event.title}`, action: slideAction(s.event), href: `/event/${s.event.id}`, mark: s.event === plan.lead ? 'Promoted' : undefined }
+      ? { key: `e:${s.event.id}`, image: s.event.wide!.source, edge: s.event.wide!.edge, label: `${s.event === plan.lead ? 'Promoted. ' : ''}Poster for ${s.event.title}`, action: slideAction(s.event, now), href: `/event/${s.event.slug}`, mark: s.event === plan.lead ? 'Promoted' : undefined }
       : s.kind === 'host'
-        ? { key: `h:${s.host.id}`, image: s.host.banner!.source, edge: s.host.banner!.edge, label: `Banner for ${s.host.name}`, action: 'View events', href: `/host/${s.host.id}` }
+        ? { key: `h:${s.host.id}`, image: s.host.banner!.source, edge: s.host.banner!.edge, label: `Banner for ${s.host.name}`, action: 'View events', href: `/host/${s.host.slug}` }
         : // Orbit's own image slide: no mark (not a host's paid boost). A pill only with somewhere to go: its words, or
           // "Open"; with nowhere to go it's a still picture.
           { key: `c:${i}:${s.custom.image}`, image: { uri: s.custom.image }, edge: s.custom.edge!, label: s.custom.label!, action: s.custom.href ? (s.custom.action ?? 'Open') : undefined, href: s.custom.href },
@@ -124,6 +140,14 @@ export default function Home() {
         {/* The header is pinned over the page (below); the carousel still starts at the top, under it. */}
         {slides.length ? <Carousel slides={slides} top={posterTop} dark /> : <View style={{ height: headerTop + HEADER }} />}
 
+        {/* Until the first answer: the header and the featured slides above, then an empty ground, or the failure with a
+            way to retry. */}
+        {/* A failed read for a new place, with the last place's events still up: the failure over them. */}
+        {page.error && page.data && <Failed message={page.error.message} retry={page.reload} />}
+        {!page.data && <View style={{ marginTop: SECTION }}>{page.loading || !page.error ? <Waiting /> : <Failed message={page.error.message} retry={page.reload} />}</View>}
+        {page.data && (
+          <>
+
         {plan.tickets.length > 0 && (
           <>
             <Section top={SECTION} title="Your tickets" />
@@ -149,14 +173,14 @@ export default function Home() {
         {/* Thanks for coming, for each event you were let in at in the last week, newest first (two at most). */}
         {v.signedIn &&
           // Two in a row read as one thread: the second sits a big gap under the first.
-          thanksFor(now).map((e, i) => <Thanks key={e.id} event={e} host={hostOf(e.hostId)} top={i ? space.big : SECTION} />)}
+          thanksFor(mockNow).map((e, i) => <Thanks key={e.id} event={e} host={hostOf(e.hostId)} top={i ? space.big : SECTION} />)}
 
         {plan.orbit.length > 0 && (
           <>
             <Section top={SECTION} title="Next from your orbit" />
             <View style={styles.feed}>
               {plan.orbit.map((e) => (
-                <FeedRow key={e.id} event={e} host={hostOf(e.hostId)} />
+                <FeedRow key={e.id} event={e} host={hostOf(e.hostId)} now={now} />
               ))}
             </View>
           </>
@@ -179,7 +203,7 @@ export default function Home() {
             {/* One promoted event leads the list (Boost); it's still one of the list's own events, never an extra. The
                 banner's event is the banner just below, so it isn't a row too. */}
             {promoteOne(plan.list.events.filter((e) => e !== plan.ad), boosted).map((e) => (
-              <EventRow key={e.id} event={e} host={hostOf(e.hostId)} found />
+              <EventRow key={e.id} event={e} host={hostOf(e.hostId)} now={now} found />
             ))}
           </>
         )}
@@ -216,6 +240,8 @@ export default function Home() {
             <View style={styles.grid}>
               {plan.all.map((e) => <GridCard key={e.id} event={e} width={card} />)}
             </View>
+          </>
+        )}
           </>
         )}
       </ScrollView>
@@ -414,10 +440,10 @@ function TicketCard({ event: e, host, label }: { event: Event; host: Host; label
 // one plain row per followed host, its next event's 3:4 poster with the host's 1:1 logo seated on the poster's corner,
 // so the row reads like an event row: the host as a small grey label, the title, the date, then the status as a dot
 // and words (StatusLine). 20 between rows, no rules. Not a card, but kept icon-free like one.
-function FeedRow({ event: e, host }: { event: Event; host: Host }) {
+function FeedRow({ event: e, host, now }: { event: Event; host: Host; now: number }) {
   return (
     <Pressable
-      onPress={() => router.push(`/event/${e.id}`)}
+      onPress={() => router.push(`/event/${e.slug}`)}
       accessibilityRole="button"
       style={({ pressed }) => [styles.feedRow, pressed && styles.pressed]}>
       <View>
@@ -442,7 +468,7 @@ function FeedRow({ event: e, host }: { event: Event; host: Host }) {
 // icons. Same face and frosted rim as All events.
 function HostCard({ host, width, following }: { host: Host; width: number; following: boolean }) {
   return (
-    <Pressable onPress={() => router.push(`/host/${host.id}`)} accessibilityRole="button" accessibilityLabel={host.name}>
+    <Pressable onPress={() => router.push(`/host/${host.slug}`)} accessibilityRole="button" accessibilityLabel={host.name}>
       <SeatCard width={width} seat={<Monogram mark={host} size={SEAT} />}>
         <Text style={styles.hostCardName} numberOfLines={1}>{host.name}</Text>
         <Text style={styles.hostCardAbout} numberOfLines={1}>{host.about}</Text>
@@ -458,7 +484,7 @@ function HostCard({ host, width, following }: { host: Host; width: number; follo
 }
 
 // An event slide's pill follows its status: Book ticket or Register while open, Join waitlist, else View event.
-function slideAction(e: Event) {
+function slideAction(e: Event, now: number) {
   const book = bookAction(eventStatus(e, now), !e.pricePaise);
   return book.can ? book.label : 'View event';
 }
@@ -471,7 +497,7 @@ const WEEK = 3 * 3_600_000 + 7 * 86_400_000; // the event (about three hours), t
 function thanksFor(at: number): Event[] {
   return history
     .filter((h) => h.status === 'Went')
-    .map((h) => events.find((e) => e.id === h.eventId))
+    .map((h) => mockEvents.find((e) => e.id === h.eventId))
     .filter((e): e is Event => !!e && at >= Date.parse(e.startsAt) && at < Date.parse(e.startsAt) + WEEK)
     .sort((a, b) => Date.parse(b.startsAt) - Date.parse(a.startsAt))
     .slice(0, 2);
@@ -552,7 +578,7 @@ function AdBanner({ event: e, host, width }: { event: Event; host: Host; width: 
   const tall = (inner * 3) / 4;
   return (
     <Pressable
-      onPress={() => router.push(`/event/${e.id}`)}
+      onPress={() => router.push(`/event/${e.slug}`)}
       accessibilityRole="button"
       accessibilityLabel={`Promoted. ${e.title}, ${e.when}, by ${host.name}`}
       style={({ pressed }) => [styles.ad, pressed && styles.pressed]}>
@@ -590,7 +616,7 @@ function AdBanner({ event: e, host, width }: { event: Event; host: Host; width: 
 
 function GridCard({ event: e, width }: { event: Event; width: number }) {
   return (
-    <Pressable onPress={() => router.push(`/event/${e.id}`)} accessibilityRole="button">
+    <Pressable onPress={() => router.push(`/event/${e.slug}`)} accessibilityRole="button">
       <Glass style={[styles.gridRim, { width }]}>
         <View style={styles.gridCard}>
           <Poster media={e.poster} width={width - 2 * FRAME} label={e.title} corner={0} />

@@ -9,18 +9,17 @@ import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { CitySheet } from '../citySheet';
 import { Glass } from '../glass';
-import { nearAreasFor, viewer } from '../mock';
 import { Blocked, locate, setPlace, usePlace } from '../place';
 import { color, font, space } from '../theme';
 
 type Status = 'idle' | 'locating' | 'blocked' | 'failed';
 
 export default function LocationScreen() {
-  const place = usePlace(viewer.place);
+  const place = usePlace();
   const [status, setStatus] = useState<Status>('idle');
 
-  function choose(name: { area: string; city: string; state?: string }, source: 'gps' | 'pick') {
-    setPlace({ ...name, source, nearAreas: nearAreasFor(name) });
+  function choose(name: { area: string; city: string; state?: string; lat?: number; lng?: number }, source: 'gps' | 'pick') {
+    setPlace({ ...name, source, nearAreas: [] }); // the API decides what's near (src/events.ts)
     if (router.canGoBack()) router.back(); // not if it was swiped away while locating
   }
 

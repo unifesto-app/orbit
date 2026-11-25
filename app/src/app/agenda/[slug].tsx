@@ -7,13 +7,13 @@ import { useLocalSearchParams } from 'expo-router';
 import { ScrollView } from 'react-native';
 
 import { Fact, FactCard } from '../../fact';
-import { events } from '../../mock';
-import { NotFound, Sheet } from '../../rows';
+import { Sheet } from '../../rows';
+import { useEvent } from '../../useEvent';
 
 export default function AgendaSheet() {
   const { slug } = useLocalSearchParams<{ slug: string }>();
-  const e = events.find((x) => x.id === slug);
-  if (!e) return <NotFound what="event" />;
+  const { e, screen } = useEvent(slug);
+  if (!e) return screen;
   return (
     <Sheet title="Agenda" note={`${e.when} IST`} full>
       <ScrollView showsVerticalScrollIndicator={false}>

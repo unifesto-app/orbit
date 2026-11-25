@@ -6,15 +6,14 @@
 import { useLocalSearchParams } from 'expo-router';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { events, hosts } from '../../mock';
-import { HostSays, NotFound, Sheet } from '../../rows';
+import { HostSays, Sheet } from '../../rows';
+import { useEvent } from '../../useEvent';
 import { color, font, space, stoneAt } from '../../theme';
 
 export default function FaqSheet() {
   const { slug } = useLocalSearchParams<{ slug: string }>();
-  const e = events.find((x) => x.id === slug);
-  const host = e && hosts.find((h) => h.id === e.hostId);
-  if (!e || !host) return <NotFound what="event" />;
+  const { e, host, screen } = useEvent(slug);
+  if (!e) return screen;
   return (
     <Sheet title="FAQ" note={`${e.title} · answered by ${host.name}`} full>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.list}>

@@ -7,6 +7,7 @@
 // A free event says Registration where a paid one says Booking. Pure, so status.test.ts runs it on Node.
 export type StatusEvent = {
   startsAt: string;
+  endsAt?: string; // when it ends, once the API gives one: the one clock (upcoming until it ends)
   announced: string;
   pricePaise: number; // 0 = free
   capacity?: number; // seats in all; none means no cap worth showing
@@ -35,7 +36,7 @@ export type StatusKind =
 // `short` is the label on a row's tag, where the page's line is too long ("Opens Sat 21 Nov").
 export type Status = { kind: StatusKind; label: string; short: string; tone: 'open' | 'soon' | 'closed' };
 
-// ponytail: events carry no end time yet, so one is "on" for LASTS after it starts; the end time replaces it.
+// ponytail: mock events carry no end time, so one is "on" for LASTS after it starts; an end time replaces it.
 const LASTS = 3 * 3_600_000;
 // Almost full with a tenth of the room left, or 10 or fewer once three quarters are booked (so 10 of 20 isn't); filling
 // fast once 60% are booked.
@@ -64,7 +65,7 @@ export function eventStatus(e: StatusEvent, now: number): Status {
   const book = e.pricePaise ? 'Booking' : 'Registration';
   const s = (kind: StatusKind, label: string, tone: Status['tone'], short = label): Status => ({ kind, label, short, tone });
   if (e.cancelled) return s('cancelled', 'Cancelled', 'closed');
-  if (now >= start + LASTS) return s('ended', 'Ended', 'closed');
+  if (now >= (e.endsAt ? Date.parse(e.endsAt) : start + LASTS)) return s('ended', 'Ended', 'closed');
   if (now >= start) return s('onNow', 'On now', 'open');
   if (e.salesOpen && now < Date.parse(e.salesOpen)) return s('opensSoon', `${book} opens ${indiaWhen(e.salesOpen)}`, 'soon', `Opens ${indiaDay(e.salesOpen)}`);
   // Closed beats a waitlist: once sales close there's nothing to join.

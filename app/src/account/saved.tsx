@@ -4,7 +4,8 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, Text } from 'react-native';
 
 import { Icon } from '../icons';
-import { type Event, hosts } from '../mock';
+import type { Event } from '../events';
+import { hosts } from '../mock';
 import { EventRow, type MenuAction } from '../rows';
 import { addToList, removeSaves, tickList } from '../session';
 import { color, font, space } from '../theme';

@@ -11,7 +11,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { past as history } from '../../account/data';
 import { appearances } from '../../detail';
 import { Glass } from '../../glass';
-import { events, type Host, hosts, now, people } from '../../mock';
+import type { Host } from '../../events';
+import { events, hosts, now, people } from '../../mock';
 import { CloseButton, EventRow, GlassFill, Monogram, NotFound, SECTION, Section } from '../../rows';
 import { useSignedIn } from '../../session';
 import { around, color, font, rim, space } from '../../theme';
@@ -75,7 +76,7 @@ export default function PersonSheet() {
                 went={a.past && went(a.event.id)}
                 // Back to that event if it's under this sheet; otherwise the event takes the sheet's place, so the page
                 // never opens inside the sheet. Event pages match by slug (dangerouslySingular in src/app/_layout.tsx).
-                onPress={() => router.dismissTo(`/event/${a.event.id}`)}
+                onPress={() => router.dismissTo(`/event/${a.event.slug}`)}
               />
             ))}
           </>

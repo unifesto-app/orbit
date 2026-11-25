@@ -8,8 +8,8 @@ import { useState } from 'react';
 import { Linking, Platform, Pressable, Share, StyleSheet, Text, View } from 'react-native';
 
 import { Glass } from '../../glass';
-import { events } from '../../mock';
-import { CircleButton, NotFound, Sheet } from '../../rows';
+import { CircleButton, Sheet } from '../../rows';
+import { useEvent } from '../../useEvent';
 import { color, font, space } from '../../theme';
 
 // Google Maps only (owner, 15 Nov 2026: "use only google maps"), searched by the venue's name and address, never its
@@ -29,8 +29,8 @@ const getDirections = (place: string) =>
 export default function VenueSheet() {
   const { slug } = useLocalSearchParams<{ slug: string }>();
   const [copied, setCopied] = useState(false);
-  const e = events.find((x) => x.id === slug);
-  if (!e) return <NotFound what="event" />;
+  const { e, screen } = useEvent(slug);
+  if (!e) return screen;
   const place = `${e.venue.name}, ${e.venue.address}`;
 
   // expo-clipboard is native (added 15 Nov 2026), so it works only once the app is rebuilt with it. Until then the

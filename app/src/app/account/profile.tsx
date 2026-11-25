@@ -26,10 +26,9 @@ const LOGO_GAP = 12; // from the logo to the name, as from an Account row's icon
 export default function Profile() {
   const signedIn = useSignedIn();
   const viewer = useViewer();
-  const { real, data, mock, count } = useFollows();
+  const { real, data, count } = useFollows();
   const following = [
     ...(data ?? []).map((h) => ({ id: h.id, to: `/host/${h.slug}` as Href, mark: markOf(h), name: h.name, verified: h.verified })),
-    ...mock.map((h) => ({ id: h.id, to: `/host/${h.id}` as Href, mark: h, name: h.name, verified: h.verified })),
   ];
   // Signed out while here (on another device, or the session ended): nothing of the account stays on screen.
   if (!signedIn)

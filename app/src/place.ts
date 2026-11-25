@@ -3,12 +3,11 @@
 // (web/src/app/location-button.tsx).
 // Saved on the phone (owner, 15 Nov 2026: "save the location to the phone") and read back synchronously when the app
 // starts, so Home never shows another place first. Unlike the web's cookie it needs no consent: it stays on the phone.
-// A saved place wins over the mock viewer's, so the "no location" preview in src/mock.ts shows only on a fresh install.
+// A fresh install has none, and Home says so ("See what’s near you").
 import Storage from 'expo-sqlite/kv-store';
 import { useSyncExternalStore } from 'react';
 
 import { type Place, placeName } from './home/layout';
-import { nearAreasFor } from './mock';
 
 const KEY = 'orbit.place';
 
@@ -29,7 +28,9 @@ export function setPlace(place: Place) {
   chosen = place;
   for (const fn of listeners) fn();
   try {
-    Storage.setItemSync(KEY, JSON.stringify(place));
+    // Names only: the phone's position stays in memory (it's looked up again each launch, below).
+    const { lat: _lat, lng: _lng, ...names } = place;
+    Storage.setItemSync(KEY, JSON.stringify(names));
   } catch {
     // Not saved this time: Home still shows it until the app closes.
   }
@@ -42,9 +43,9 @@ function subscribe(fn: () => void) {
   };
 }
 
-// The chosen place, else `fallback`: the mock viewer's, so the preview states in src/mock.ts still show.
-export function usePlace(fallback: Place | null): Place | null {
-  return useSyncExternalStore(subscribe, () => chosen) ?? fallback;
+// The chosen place; null until one is chosen.
+export function usePlace(): Place | null {
+  return useSyncExternalStore(subscribe, () => chosen) ?? null;
 }
 
 // Location isn't allowed for Orbit (or, with `ask: false`, not allowed yet).
@@ -69,7 +70,8 @@ export async function locate({ ask = true } = {}) {
   const [address] = await Location.reverseGeocodeAsync({ latitude: +latitude.toFixed(3), longitude: +longitude.toFixed(3) });
   const name = address && placeName(address);
   if (!name) throw new Error('no place name');
-  return name;
+  // The position rides along (rounded as above): the API's near is 25 km from it.
+  return { ...name, lat: +latitude.toFixed(3), lng: +longitude.toFixed(3) };
 }
 
 // The quiet refresh (the web's, once a launch here instead of once a visit; owner, 15 Nov 2026: "add the quiet location
@@ -84,7 +86,7 @@ export async function refreshPlace() {
   try {
     const name = await locate({ ask: false });
     // A city picked while this ran wins.
-    if (!picked()) setPlace({ ...name, source: 'gps', nearAreas: nearAreasFor(name) });
+    if (!picked()) setPlace({ ...name, source: 'gps', nearAreas: [] });
   } catch {
     // Not allowed, no fix or no name: keep what's there.
   }

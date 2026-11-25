@@ -367,3 +367,43 @@ test('a featured pick of the event that is the banner stays out of the slides, a
   assert.ok(!slideIds(p.slides).includes('ad2'));
   assert.equal(slideIds(p.slides)[0], 'ad1');
 });
+
+test('the API\'s near wins over the area list: hosts near are the ones with a near event', () => {
+  const apiPlace = { area: 'Gachibowli', city: 'Hyderabad', nearAreas: [] }; // the API decides, so no area list
+  const events = [
+    { ...ev('a', 'h1', 'Somewhere', 16, 1), near: true },
+    { ...ev('b', 'h2', 'Somewhere', 17, 1), near: false },
+  ];
+  const hosts = [host('h1', ''), host('h2', '')];
+  const p = planHome({ signedIn: false, follows: [], place: apiPlace }, events, hosts, NOW);
+  assert.equal(p.notice, null); // one is near
+  assert.deepEqual(ids(p.list.events), ['a']);
+  assert.deepEqual(ids(p.hosts), ['h1']);
+  assert.deepEqual(ids(p.all), ['a', 'b']); // everything coming up, everywhere
+  const none = planHome({ signedIn: false, follows: [], place: apiPlace }, [events[1]!], hosts, NOW);
+  assert.equal(none.notice, 'nothingNear');
+  // an event with no `near` still reads the area list
+  const old = planHome(signedOut, [ev('x', 'h1', NEAR, 16, 1)], [], NOW);
+  assert.equal(old.notice, null);
+});
+
+test('staff picks and promoted events match a real event by its slug', () => {
+  const real = { ...ev('uuid-1', 'h1', 'Somewhere', 18, 1, true), slug: 'open-mic', near: true };
+  const realHost = { ...host('uuid-h', '', 1, true), slug: 'punchline' };
+  const picks = [{ kind: 'pick' as const, href: '/event/open-mic' }, { kind: 'pick' as const, href: '/host/punchline' }];
+  const p = planHome({ signedIn: false, follows: [], place: { area: 'A', city: 'B', nearAreas: [] } }, [real], [realHost], NOW, () => false, picks);
+  assert.deepEqual(slideIds(p.slides), ['uuid-1', 'uuid-h']);
+});
+
+test('upcoming lasts until the end time when there is one', () => {
+  const going = { ...ev('going', 'h1', NEAR, 15, 1), startsAt: '2026-11-15T04:00:00+05:30', endsAt: '2026-11-16T04:00:00+05:30' };
+  const p = planHome(signedOut, [going, ev('over', 'h1', NEAR, 14, 1)], [], NOW);
+  assert.deepEqual(ids(p.all.length ? p.all : p.list.events), ['going']);
+});
+
+test('a mock venue host carries its own nearness', () => {
+  const venue = { ...host('v', 'Gachibowli', 1), tile: 'sports', near: true };
+  const apiPlace = { area: 'Hyderabad', city: 'Telangana', nearAreas: [] };
+  const p = planHome({ signedIn: false, follows: [], place: apiPlace }, [{ ...ev('a', 'h1', 'X', 16, 1), near: true }], [venue], NOW);
+  assert.deepEqual(ids(p.places), ['v']);
+});

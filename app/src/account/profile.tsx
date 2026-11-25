@@ -11,7 +11,6 @@ import { year } from './rules';
 import { Glass } from '../glass';
 import { type Followed, hostsApi, markOf } from '../hosts';
 import { useLoad } from '../load';
-import { hosts } from '../mock';
 import { Monogram } from '../rows';
 import { api, useMe, useSession, useViewer } from '../session';
 import { around, color, font, space } from '../theme';
@@ -41,7 +40,7 @@ export function Photo({ me, size }: { me: Pick<Account, 'id' | 'name' | 'photo'>
 let lastGood: { key: string; data: Followed[] } | null = null;
 
 // The hosts you follow: the API's (GET /me/follows), read again each time the screen comes back into view so a follow
-// changed on a host page counts, and the mock's, followed on this phone until events reach the API (src/session.ts).
+// changed on a host page counts.
 // `data` is the API's list, or the last good one while this screen's read is out.
 export function useFollows() {
   const viewer = useViewer();
@@ -60,8 +59,7 @@ export function useFollows() {
       else reload();
     }, [reload]),
   );
-  const mock = hosts.filter((h) => viewer.follows.includes(h.id));
-  return { real, data, mock, count: (data?.length ?? 0) + mock.length };
+  return { real, data, count: data?.length ?? 0 };
 }
 
 // Account's head shows View profile, the way in (owner, 19 Nov 2026: "replace swipe down, and change to button"; it was
