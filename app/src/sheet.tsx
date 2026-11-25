@@ -1,27 +1,93 @@
 // What the sign-in sheet (src/app/login.tsx) and the confirm-it's-you sheet (src/app/account/verify.tsx) share: the
-// glass frame with its wordmark, title and X, the WhatsApp number, two-answer questions, and the Continue with Google or
+// glass frame with its scene, title and X, the WhatsApp number, two-answer questions, and the Continue with Google or
 // Apple pills (confirm-it's-you only now: sign-in's ways in are rows in a card). The 6-digit code is Account's (Code in
 // src/account/kit.tsx).
 import { type ComponentRef, type ReactNode, useEffect, useRef, useState } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Path } from 'react-native-svg';
+import Svg, { Ellipse, G, Path } from 'react-native-svg';
 
 import { Field, Pill, styles as kit } from './account/kit';
 import { Glass } from './glass';
 import { OrbitSays } from './orbitSays';
 import { CloseButton, GlassFill, Glow } from './rows';
 import { readPhone } from './signin';
+import { BACK_OPACITY, BACK_SCALE, MARK, RINGS } from './splash/motion';
 import { color, font, space } from './theme';
 import { Wordmark } from './wordmark';
 
+// The sheet's scene (sign-in Take 1 "In orbit", owner, 25 Nov 2026: "Build Take 1"): the splash's 3D word in its three
+// tilted rings, with the star, pearl, spark and heart at rest on them, two on the near side below the word and two
+// round the back above it, smaller and dimmer as on the splash. Still: nothing moves. Full size on a sheet's first step
+// (`big`), 0.6 after it, so a code or a number still clears the keyboard. Drawn on a 390-wide box, centred.
+const SCENE = 390;
+const AT_REST = [
+  { art: require('../assets/splash/sym-star.png'), ring: 2, at: 150, size: 40 },
+  { art: require('../assets/splash/sym-pearl.png'), ring: 2, at: -20, size: 40 },
+  { art: require('../assets/splash/sym-spark.png'), ring: 1, at: 60, size: 40 },
+  { art: require('../assets/splash/sym-heartSmall.png'), ring: 1, at: 240, size: 36 },
+];
+const rad = (deg: number) => (deg * Math.PI) / 180;
+function Scene({ big }: { big: boolean }) {
+  const s = big ? 1 : 0.6;
+  const height = Math.round(170 * s);
+  const [cx, cy] = [SCENE / 2, 84 * s];
+  const wordW = 180 * s;
+  const wordH = (MARK.h * wordW) / MARK.w;
+  const rings = RINGS.map((g) => {
+    const rx = g.r * SCENE * 0.42 * s; // the splash's ring sizes, brought in round the word
+    return { ...g, rx, ry: rx * Math.cos(rad(g.tilt)) };
+  });
+  return (
+    <View style={[styles.scene, { height }]}>
+      <Svg style={StyleSheet.absoluteFill} width={SCENE} height={height} pointerEvents="none">
+        {rings.map((g) => (
+          <G key={g.turn} rotation={g.turn} origin={`${cx}, ${cy}`}>
+            <Ellipse cx={cx} cy={cy} rx={g.rx} ry={g.ry} stroke={color.accent} strokeOpacity={g.opacity} strokeWidth={1} fill="none" />
+          </G>
+        ))}
+      </Svg>
+      <View style={[styles.sceneWord, { left: cx - wordW / 2, top: cy - wordH / 2 }]}>
+        <Wordmark width={wordW} />
+      </View>
+      {AT_REST.map((b) => {
+        const g = rings[b.ring]!;
+        const [c, sin, turn] = [Math.cos(rad(b.at)), Math.sin(rad(b.at)), rad(g.turn)];
+        const near = sin > 0; // the lower half of a ring is its near side, in front of the word
+        const size = b.size * s * (near ? 1 : BACK_SCALE);
+        const x = cx + g.rx * c * Math.cos(turn) - g.ry * sin * Math.sin(turn);
+        const y = cy + g.rx * c * Math.sin(turn) + g.ry * sin * Math.cos(turn);
+        return (
+          <Image
+            key={b.at}
+            source={b.art}
+            accessible={false}
+            style={{ position: 'absolute', left: x - size / 2, top: y - size / 2, width: size, height: size, zIndex: near ? 3 : 1, opacity: near ? 1 : BACK_OPACITY }}
+          />
+        );
+      })}
+    </View>
+  );
+}
 
 // The sheet, made as Account's panel is (owner, 17 Nov 2026: "feels generic. bring app screens kind
-// ui"): the accent glowing from the top under the glass (no space dots since 19 Nov 2026) and the
-// ORBIT wordmark over the title, centred, the X pinned at the wordmark's right. A gap
+// ui"): the accent glowing from the top under the glass (no space dots since 19 Nov 2026), the scene over the title,
+// centred, the X pinned at its top right. A gap
 // at its top on iOS, full screen on Android clear of the status bar (as Sheet in rows.tsx), then the API's message when
 // it said no. It scrolls, so the keyboard never covers a field or the Continue under it on a small phone.
-export function Frame({ title, note, error, children }: { title: string; note?: string; error?: string | null; children: ReactNode }) {
+export function Frame({
+  title,
+  note,
+  error,
+  big = false,
+  children,
+}: {
+  title: string;
+  note?: string;
+  error?: string | null;
+  big?: boolean; // the full scene, on the first step
+  children: ReactNode;
+}) {
   const insets = useSafeAreaInsets();
   // The API's message shows under the title: scrolled down to a button (keyboard up on a small phone), go back up to it.
   const scroller = useRef<ComponentRef<typeof ScrollView>>(null);
@@ -34,7 +100,7 @@ export function Frame({ title, note, error, children }: { title: string; note?: 
       <Glow />
       <GlassFill />
       {/* Before the page, so a screen reader reaches Close first; zIndex keeps it over the scroll. */}
-      <View style={[styles.close, { top: top + (MARK - CLOSE) / 2 }]}>
+      <View style={[styles.close, { top }]}>
         <CloseButton />
       </View>
       <ScrollView
@@ -43,14 +109,14 @@ export function Frame({ title, note, error, children }: { title: string; note?: 
         keyboardShouldPersistTaps="handled"
         automaticallyAdjustKeyboardInsets
         contentContainerStyle={[styles.content, { paddingTop: top, paddingBottom: insets.bottom + space.big }]}>
-        <View style={styles.head}>
-          <View style={styles.mark}>
-            <Wordmark width={112} />
+        <View>
+          <Scene big={big} />
+          <View style={styles.head}>
+            <Text style={styles.title} accessibilityRole="header">
+              {title}
+            </Text>
+            {note && <Text style={styles.note}>{note}</Text>}
           </View>
-          <Text style={styles.title} accessibilityRole="header">
-            {title}
-          </Text>
-          {note && <Text style={styles.note}>{note}</Text>}
         </View>
         {/* The API's message, said by Orbit in its bubble (the detail pages' Take 6, owner, 19 Nov 2026). */}
         {error && (
@@ -106,8 +172,9 @@ export function Phone({ busy, onPhone }: { busy: boolean; onPhone: (e164: string
       <View style={styles.block}>
         <Field
           label="WhatsApp number"
+          prefix="+91"
           value={text}
-          onChangeText={setText}
+          onChangeText={(t) => setText(t.replace(/^\s*\+91\s*/, ''))} // autofill brings its own +91; the field shows one already
           placeholder="98765 43210"
           keyboardType="phone-pad"
           autoComplete="tel"
@@ -116,7 +183,7 @@ export function Phone({ busy, onPhone }: { busy: boolean; onPhone: (e164: string
         />
         {read === 'abroad' && <Text style={styles.line}>Orbit takes Indian (+91) numbers only.</Text>}
       </View>
-      <Pill label="Send code" size="wide" disabled={!phone || busy} onPress={go} />
+      <Pill label="Send code on WhatsApp" size="wide" disabled={!phone || busy} onPress={go} />
     </View>
   );
 }
@@ -125,9 +192,12 @@ export function Phone({ busy, onPhone }: { busy: boolean; onPhone: (e164: string
 // Home's asks do (the detail pages' Take 6, owner, 19 Nov 2026): `say` in Orbit's bubble, the answers yours to tap. They
 // were a wide pill and a grey one. While the tapped one is going (`busy`), it shows as your bubble with Orbit's "One
 // moment…" and the answers go, so nothing else can be tapped; if it fails they come back (with the API's message).
+// `ask` is the question itself, at the top of the bubble, when the sheet's title is something else (Take 1: after
+// signing in the title says you're in, and Orbit asks).
 export function Choice({
   yes,
   no,
+  ask,
   say,
   busy,
   onYes,
@@ -136,6 +206,7 @@ export function Choice({
 }: {
   yes: string;
   no: string;
+  ask?: string;
   say: string;
   busy: boolean;
   onYes: () => void;
@@ -154,6 +225,7 @@ export function Choice({
       {children}
       <OrbitSays
         top={0}
+        title={ask}
         text={say}
         then={going ? { mine: tapped, reply: 'One moment…' } : undefined}
         answers={going ? [] : [{ label: yes, onPress: pick(yes, onYes) }, { label: no, onPress: pick(no, onNo) }]}
@@ -163,16 +235,15 @@ export function Choice({
 }
 
 const WAY = 50; // as tall as the wide pills
-const MARK = 44; // the wordmark's row, as tall as a back bar's circle
-const CLOSE = 32; // the X's circle (closeGlass in rows.tsx)
 
 export const styles = StyleSheet.create({
   screen: { flex: 1 },
   content: { gap: space.big },
+  scene: { width: SCENE, alignSelf: 'center', marginBottom: space.small },
+  sceneWord: { position: 'absolute', zIndex: 2 },
   head: { marginHorizontal: 20, alignItems: 'center' },
-  mark: { height: MARK, justifyContent: 'center', marginBottom: space.small },
-  close: { position: 'absolute', right: 20, zIndex: 1 },
-  title: { fontFamily: font.headline, fontSize: 22, lineHeight: 28, color: color.text, textAlign: 'center' },
+  close: { position: 'absolute', right: 20, zIndex: 4 },
+  title: { fontFamily: font.headline, fontSize: 24, lineHeight: 30, color: color.text, textAlign: 'center' },
   note: { marginTop: 2, fontFamily: font.medium, fontSize: 14, color: color.secondary, textAlign: 'center' },
   body: { gap: space.small + 4 },
   block: { marginHorizontal: 20, gap: 6 },

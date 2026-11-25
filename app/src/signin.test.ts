@@ -2,7 +2,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { ageOn, maskName, readContact, readDob, readPhone, showPhone, typeDob } from './signin.ts';
+import { ageOn, maskName, readContact, readDob, readPhone, showPhone, typeDob, welcomeOf } from './signin.ts';
+
+test('says you’re in, or welcome back, by first name', () => {
+  assert.equal(welcomeOf('  Keerthi  Rao ', true), 'You’re in, Keerthi');
+  assert.equal(welcomeOf('Keerthi Rao', false), 'Welcome back, Keerthi');
+  assert.equal(welcomeOf(null, false), 'Welcome back');
+  assert.equal(welcomeOf('   ', true), 'You’re in');
+});
 
 test('reads an Indian mobile however it is typed, and nothing else', () => {
   for (const t of ['9876543210', '98765 43210', '+91 98765-43210', '919876543210', '09876543210', '(+91) 98765 43210'])
