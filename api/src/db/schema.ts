@@ -267,6 +267,43 @@ export const ticketTypes = pgTable(
   ],
 );
 
+// ---------- Bookings (Orbit flows: Booking and tickets): one ticket type, one QR admitting `quantity` ----------
+
+// A booking is its ticket (P12.1). `qr`, `code` (the 8 characters the crew types when a QR won't scan) and `link`
+// (heyorbit.in/t/<link>) are random, unsigned and unique: scanners look them up. The link changes on a cancel (null).
+// Rows stay for good, an account's deletion included (the user row stays too).
+export const bookings = pgTable(
+  "bookings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    eventId: uuid("event_id")
+      .notNull()
+      .references(() => events.id),
+    ticketTypeId: uuid("ticket_type_id")
+      .notNull()
+      .references(() => ticketTypes.id), // no cascade: a ticket type with bookings can't be deleted
+    quantity: integer("quantity").notNull(),
+    status: text("status", { enum: ["confirmed", "cancelled", "cancelledByHost"] }).notNull().default("confirmed"),
+    source: text("source", { enum: ["orbit", "host", "other"] }).notNull().default("orbit"), // where it came from (Booking d16); never shown to the buyer
+    qr: text("qr").notNull().unique(),
+    code: text("code").notNull().unique(),
+    link: text("link").unique(),
+    createdAt: at("created_at").notNull().defaultNow(),
+    cancelledAt: at("cancelled_at"),
+  },
+  (t) => [
+    check("bookings_quantity_range", sql`${t.quantity} between 1 and 10`),
+    index().on(t.userId, t.createdAt),
+    index().on(t.ticketTypeId, t.status),
+    index().on(t.eventId, t.status),
+    // One live booking per person per ticket type (another type of the same event is a second booking, d12).
+    uniqueIndex("bookings_one_live_per_type").on(t.userId, t.ticketTypeId).where(sql`${t.status} = 'confirmed'`),
+  ],
+);
+
 // ---------- Play (Orbit flows: Play): a Venue's stations and every claim on them ----------
 
 // One row per Venue host that takes bookings by the hour.

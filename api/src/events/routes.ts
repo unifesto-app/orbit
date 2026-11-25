@@ -6,7 +6,8 @@ import {
   type TeamEvent, type TicketType, type WideSaved,
 } from "@orbit/contract";
 import type { Db } from "../db/index.ts";
-import { events, eventSlugs, hosts, teamRoles, ticketTypes } from "../db/schema.ts";
+import { bookings, events, eventSlugs, hosts, teamRoles, ticketTypes } from "../db/schema.ts";
+import { seatsTaken } from "../bookings.ts";
 import { fail, invalid, isUuid, type Notify, parse, signedIn, taken, type Env } from "../http.ts";
 import { contentImage, drop, linkOf, type Media, newKey } from "../media.ts";
 import { changeable, teamOf } from "../roles/access.ts";
@@ -284,17 +285,21 @@ export function eventsRoutes({ db, secret, media, now = Date.now }: Deps) {
 
   // POST /events/:id/cancel: a published event that hasn't ended, with the reason its ticket holders get. An ended one
   // stays as it happened: cancelling would hide it from the host's page.
-  // ponytail: refunds, notices and the cancel-with-bookings rules come with the bookings slice (H13.5).
+  // Its confirmed free bookings are cancelled with it, in the same transaction (the event's lock keeps a booking from
+  // landing in between).
+  // ponytail: refunds for paid bookings and the notices to holders come with H13.5; there are no paid bookings yet.
   app.post("/events/:id/cancel", auth, async (c) => {
     const b = await parse(c, CancelEvent);
     if (!b) return invalid(c);
-    return move(c, async (cur) =>
-      cur.status !== "published"
-        ? fail(c, 409, "notNow", `You can't cancel an event that is ${cur.status}.`)
-        : stageOf(cur, now()) === "past"
-          ? fail(c, 409, "ended", "This event has ended, so it can't be cancelled.")
-          : { status: "cancelled", cancelledAt: at(), cancelledBy: c.var.user.id, cancelReason: b.reason },
-    );
+    return move(c, async (cur, tx) => {
+      if (cur.status !== "published") return fail(c, 409, "notNow", `You can't cancel an event that is ${cur.status}.`);
+      if (stageOf(cur, now()) === "past") return fail(c, 409, "ended", "This event has ended, so it can't be cancelled.");
+      await tx
+        .update(bookings)
+        .set({ status: "cancelledByHost", cancelledAt: at(), link: null })
+        .where(and(eq(bookings.eventId, cur.id), eq(bookings.status, "confirmed")));
+      return { status: "cancelled", cancelledAt: at(), cancelledBy: c.var.user.id, cancelReason: b.reason };
+    });
   });
 
   // ---------- Poster and 4:3 (Discover slice 1) ----------
@@ -387,8 +392,9 @@ export function eventsRoutes({ db, secret, media, now = Date.now }: Deps) {
     e.status === "cancelled" ? fail(c, 409, "cancelled", "A cancelled event can't be edited.")
     : stageOf(e, now()) === "past" ? fail(c, 409, "ended", "This event has ended, so its tickets are locked.")
     : null;
-  // ponytail: once bookings exist (P10.1, H13.5), price and quantity lock on a ticket type that has bookings, and a
-  // type with bookings can't be deleted; the check goes in ticketsOpen's callers below.
+  // Once a ticket type has confirmed bookings its price can't change and its quantity can't drop below the seats taken;
+  // one with any booking can't be deleted (the bookings keep it). Counted under the event's lock, which a booking
+  // shares, so none lands mid-check.
 
   // POST /events/:id/tickets: goes last in the order; at most 20 on an event.
   // ponytail: 20 is a guess; the flow doc sets none.
@@ -433,6 +439,9 @@ export function eventsRoutes({ db, secret, media, now = Date.now }: Deps) {
       const from = "salesStartAt" in b ? b.salesStartAt : iso(old.salesStartAt);
       const to = "salesEndAt" in b ? b.salesEndAt : iso(old.salesEndAt);
       if (from && to && Date.parse(to) <= Date.parse(from)) return invalid(c);
+      const sold = (await seatsTaken(tx, [tid])).get(tid) ?? 0;
+      if (sold && b.pricePaise !== undefined && b.pricePaise !== old.pricePaise) return fail(c, 409, "hasBookings", "People have booked this ticket, so its price can't change.");
+      if (b.quantity != null && b.quantity < sold) return fail(c, 409, "belowTaken", `${sold} ${sold === 1 ? "seat is" : "seats are"} already booked, so it can't go below that.`);
       const { salesStartAt, salesEndAt, ...rest } = b;
       const set: Partial<typeof ticketTypes.$inferInsert> = { ...rest, updatedAt: at() };
       if (salesStartAt !== undefined) set.salesStartAt = salesStartAt ? new Date(salesStartAt) : null;
@@ -456,6 +465,8 @@ export function eventsRoutes({ db, secret, media, now = Date.now }: Deps) {
       const mine = await tx.select({ id: ticketTypes.id }).from(ticketTypes).where(eq(ticketTypes.eventId, cur.id));
       if (!mine.some((t) => t.id === tid)) return nothing(c);
       if (cur.status === "published" && mine.length <= 1) return fail(c, 409, "lastTicket", "A published event needs at least one ticket type. Add another before removing this one.");
+      const [booked] = await tx.select({ id: bookings.id }).from(bookings).where(eq(bookings.ticketTypeId, tid)).limit(1);
+      if (booked) return fail(c, 409, "hasBookings", "This ticket has had bookings, so it can't be removed.");
       await tx.delete(ticketTypes).where(eq(ticketTypes.id, tid));
       return null;
     });
