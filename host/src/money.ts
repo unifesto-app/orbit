@@ -2,7 +2,8 @@
 // fee plans, the two-part price, and the bank account and amount forms. Station builds a venue's numbers on these per
 // booking (src/station/money.ts), Launch a host's per event (src/launch/money.ts). Pure, so money.test.ts runs on Node.
 // - Each host picks one of two fee plans, from day one with no intro months: 3% from the buyer + 2% commission from the
-//   host, or 5% from the buyer + 0% from the host. Orbit keeps 5% of the price either way (₹60 on ₹1,200).
+//   host, or 5% from the buyer + 0% from the host. With the fee on top Orbit keeps ₹60 on ₹1,200 either way; with it
+//   included a little less (₹58.25 on 3+2, ₹57.14 on 5+0).
 // - Two parts on every paid sale: the plan's buyer fee with no cap, on top of the price, or carved out of it
 //   (price × b ÷ (1 + b)) where staff set the host to include it; and the plan's commission out of the host's sales, on
 //   what's left after an included fee (decision 19). A refund hands the commission back; an included fee stays the

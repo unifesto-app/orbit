@@ -55,3 +55,13 @@ test('money reads ₹0, ₹11,063 or ₹49.50; rates read 6.5% or 3.25%', () => 
 test('rupees typed for a payout: commas and spaces go, at most 2 places, anything else is nothing', () => {
   assert.deepEqual(['1,000.50', '1,00,050', ' 25 ', '25.5', '1000,50', '1.000,50', '10.999', '', 'abc'].map(paiseFrom), [100050, 10005000, 2500, 2550, undefined, undefined, undefined, undefined, undefined]);
 });
+
+test('every paisa is accounted for: fee + commission + earnings + refund back = what the buyer paid', () => {
+  for (const price of [0, 1, 99, 9900, 14950, 29900, 120000, 1234567])
+    for (const plan of ['3+2', '5+0'] as const)
+      for (const feeIncluded of [false, true])
+        for (const refunded of [false, true]) {
+          const t = twoPart(price, plan, feeIncluded, refunded);
+          assert.equal(t.fee + t.commission + t.earnings + t.refunded, t.buyerPays, `${price} ${plan} ${feeIncluded} ${refunded}`);
+        }
+});
