@@ -3,7 +3,6 @@
 // times as ISO strings in India time, every paid booking with its frozen price and fee.
 // ponytail: static data, like src/mock.ts; it goes when the account endpoints land in @orbit/contract.
 import type { RefundStatus } from './rules';
-import type { List } from './saves';
 
 // A paid booking, with the terms it sold under. The fee is the buyer's, paid on top.
 export type Payment = { id: string; eventId: string; paidAt: string; pricePaise: number; feePaise: number; via: string };
@@ -13,13 +12,6 @@ export type Past = { eventId: string; status: 'Went' | 'Missed' | 'Cancelled' | 
 
 // The account itself is the API's (/me, src/session.ts). What's left here: the number the mock's sign-in methods show.
 export const profile = { phone: '+919876543210' };
-
-// Saved events, oldest save first, and two lists over them (Saved events and lists doc).
-export const saved = ['build-anything-hackathon', 'sunday-jam', 'udaan-cultural-fest', 'open-mic-night-13-nov'];
-export const lists: List[] = [
-  { id: 'l_weekend', name: 'This weekend', events: ['build-anything-hackathon', 'sunday-jam'], touched: Date.parse('2026-11-18T21:00:00+05:30') },
-  { id: 'l_friends', name: 'With the gang', events: ['udaan-cultural-fest', 'open-mic-night-13-nov'], touched: Date.parse('2026-11-10T19:30:00+05:30') },
-];
 
 export const past: Past[] = [
   { eventId: 'design-critique-18-nov', status: 'Went' },

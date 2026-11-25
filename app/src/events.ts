@@ -5,8 +5,9 @@ import type { CategorySlug, EventCard, HostCard, PublicEvent, WhenChip } from '@
 import type { ImageSourcePropType } from 'react-native';
 
 import type { Credit, Tier } from './detail';
+import { remember } from './account/seen.ts';
 import { kindLabel, markOf } from './hosts.ts';
-import type { makeApi } from './api.ts';
+import type { makeApi, Result } from './api.ts';
 import type { PlanEvent, PlanHost, Place } from './home/layout';
 import type { MediaItem } from './media';
 import { indiaDay, indiaWhen } from './status.ts';
@@ -156,16 +157,24 @@ const query = (o: Record<string, string | number | boolean | undefined>) => {
 };
 
 type Api = Pick<ReturnType<typeof makeApi>, 'call'>;
+// What a public read returned is remembered for the Saved screens and the list sheet (src/account/seen.ts).
+const keep = async <T>(read: Promise<Result<T>>, cards: (d: T) => EventCard[]) => {
+  const r = await read;
+  if (r.ok) remember(cards(r.data));
+  return r;
+};
 // Public reads: `call`, never `authed`, so a visitor's read can't touch (or end) a session.
 export function eventsApi(api: Api) {
   return {
-    discover: (w: Where) => api.call<{ near: EventCard[]; elsewhere: EventCard[] }>('GET', `/public/discover${query(w)}`),
+    discover: (w: Where) =>
+      keep(api.call<{ near: EventCard[]; elsewhere: EventCard[] }>('GET', `/public/discover${query(w)}`), (d) => [...d.near, ...d.elsewhere]),
     search: (f: Filters, w: Where) =>
-      api.call<{ events: EventCard[]; hosts: HostCard[] }>(
-        'GET',
-        `/public/search${query({ q: f.q.trim(), when: f.when, free: f.free, category: f.category, ...w })}`,
+      keep(
+        api.call<{ events: EventCard[]; hosts: HostCard[] }>('GET', `/public/search${query({ q: f.q.trim(), when: f.when, free: f.free, category: f.category, ...w })}`),
+        (d) => d.events,
       ),
-    event: (slug: string) => api.call<PublicEvent>('GET', `/public/events/${encodeURIComponent(slug)}`),
-    hostEvents: (slug: string) => api.call<{ upcoming: EventCard[]; past: EventCard[] }>('GET', `/public/hosts/${encodeURIComponent(slug)}/events`),
+    event: (slug: string) => keep(api.call<PublicEvent>('GET', `/public/events/${encodeURIComponent(slug)}`), (d) => [d]),
+    hostEvents: (slug: string) =>
+      keep(api.call<{ upcoming: EventCard[]; past: EventCard[] }>('GET', `/public/hosts/${encodeURIComponent(slug)}/events`), (d) => [...d.upcoming, ...d.past]),
   };
 }

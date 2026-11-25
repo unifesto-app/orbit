@@ -7,10 +7,10 @@ import { View } from 'react-native';
 import { Group, Note, Page, Pill, Row, SignInNote, TONE } from '../../account/kit';
 import { PastFold, SavedRows } from '../../account/saved';
 import { MAX_LISTS, MAX_SAVED, TOO_MANY, byTouched, split } from '../../account/saves';
-import { events, now } from '../../mock';
+import { drawn } from '../../account/savesApi';
 import { showNote } from '../../note';
-import { Section } from '../../rows';
-import { canOpen, useSession } from '../../session';
+import { Failed, Section, Waiting } from '../../rows';
+import { canOpen, reloadSaves, useSavesOnFocus, useSavesStatus, useSession } from '../../session';
 import { space } from '../../theme';
 
 const FIRST = 5; // All saved shows the next five upcoming, then See all
@@ -20,6 +20,8 @@ const TONES = Object.values(TONE);
 
 export default function Saved() {
   const session = useSession();
+  const status = useSavesStatus();
+  useSavesOnFocus();
   if (!session) {
     return (
       <Page title="Saved">
@@ -27,6 +29,16 @@ export default function Saved() {
       </Page>
     );
   }
+  // Until the saves are read there's nothing to count: a wait, not "Nothing saved yet" (or Failed, with Try again).
+  if (status !== 'ready') {
+    return (
+      <Page title="Saved">
+        {status === 'failed' ? <Failed message="Can’t load your saved events. Check your connection and try again." retry={reloadSaves} /> : <Waiting />}
+      </Page>
+    );
+  }
+  const events = drawn(session.saved.map((x) => x.id));
+  const now = Date.now();
   const { upcoming, past } = split(session.saved.map((x) => x.id), events, now);
   const counted = session.saved.filter((x) => canOpen(x.id)).length; // hidden saves don't count
   const lists = byTouched(session.lists);

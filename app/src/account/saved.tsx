@@ -4,15 +4,16 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, Text } from 'react-native';
 
 import { Icon } from '../icons';
-import type { Event } from '../events';
-import { hosts } from '../mock';
+import { type Event, toHost } from '../events';
 import { EventRow, type MenuAction } from '../rows';
 import { addToList, removeSaves, tickList } from '../session';
 import { color, font, space } from '../theme';
 import { Pill } from './kit';
 import type { List } from './saves';
+import { cardOf } from './seen';
 
-const hostOf = (id: string) => hosts.find((h) => h.id === id)!;
+// The host of a saved event, from the card the API sent with it (only events with a card are drawn).
+const hostOf = (e: Event) => toHost(cardOf(e.id)!.host);
 
 // A saved row's ⋯. On a list's screen it can also take the event out of that list, leaving it saved.
 function menuFor(e: Event, list?: List): MenuAction[] {
@@ -28,7 +29,7 @@ export function SavedRows({ events, list }: { events: readonly Event[]; list?: L
     <>
       {events.map((e) => (
         // Its tag is the event's status where that's news (doc: Sold out, Cancelled…; src/status.ts), else the series.
-        <EventRow key={e.id} event={e} host={hostOf(e.hostId)} menu={menuFor(e, list)} />
+        <EventRow key={e.id} event={e} host={hostOf(e)} now={Date.now()} menu={menuFor(e, list)} />
       ))}
     </>
   );
@@ -51,7 +52,7 @@ export function PastFold({ events, list }: { events: readonly Event[]; list?: Li
         <Text style={styles.count}>{events.length}</Text>
         <Icon name={open ? 'chevronDown' : 'chevron'} size={14} color={color.secondary} />
       </Pressable>
-      {open && events.map((e) => <EventRow key={e.id} event={e} host={hostOf(e.hostId)} past menu={menuFor(e, list)} />)}
+      {open && events.map((e) => <EventRow key={e.id} event={e} host={hostOf(e)} now={Date.now()} past menu={menuFor(e, list)} />)}
       {open && !list && <Pill label="Remove all past" size="wide" muted onPress={() => removeSaves(events.map((e) => e.id))} />}
     </>
   );

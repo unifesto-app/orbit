@@ -13,12 +13,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Field, Group, Pill, Row, TONE } from '../../account/kit';
 import { MAX_LISTS, TOO_MANY, byTouched } from '../../account/saves';
+import { cardOf } from '../../account/seen';
+import { toEvent } from '../../events';
 import { Icon } from '../../icons';
-import { events, now } from '../../mock';
+import { events as mockEvents, now as mockNow } from '../../mock';
 import { OrbitSays } from '../../orbitSays';
 import { offerPush, PushAsk } from '../../push';
 import { CloseButton, GlassFill } from '../../rows';
-import { newList, removeSaves, tickList, useSaved, useSession } from '../../session';
+import { newList, real, removeSaves, tickList, useSaved, useSession } from '../../session';
 import { eventStatus } from '../../status';
 import { color, font, space } from '../../theme';
 
@@ -37,8 +39,12 @@ export default function ListModal() {
   const [naming, setNaming] = useState(false);
   const [name, setName] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
-  const e = events.find((x) => x.id === event); // only events that can be opened are saved: a made-up link adds nothing
-  // Saving an event whose booking hasn't opened yet may ask for push (Notifications doc; src/push.tsx).
+  // The event from the cards the API sent (or a page read), else the old mock's: only events that can be opened are
+  // saved, so a made-up link adds nothing. A real event's card is always here once its page or the saves were read.
+  const card = cardOf(event);
+  const e = card ? toEvent(card) : real(event) ? undefined : mockEvents.find((x) => x.id === event);
+  const now = card ? Date.now() : mockNow;
+  const known = !!e || real(event); // a real event is never "not on Orbit"; the API says no when it can't be saved  // Saving an event whose booking hasn't opened yet may ask for push (Notifications doc; src/push.tsx).
   const opensLater = !!e && eventStatus(e, now).kind === 'opensSoon';
   useEffect(() => {
     if (saved && opensLater) void offerPush(`save:${event}`);
@@ -77,20 +83,20 @@ export default function ListModal() {
             {saved ? 'Saved' : 'Add to a list'}
           </Text>
           <Text style={styles.event} numberOfLines={1}>
-            {e?.title ?? 'This event isn’t on Orbit'}
+            {e?.title ?? (known ? '' : 'This event isn’t on Orbit')}
           </Text>
         </View>
         <CloseButton />
       </View>
 
-      {e && (
+      {known && (
         <ScrollView
           style={styles.grow}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
           automaticallyAdjustKeyboardInsets
           showsVerticalScrollIndicator={false}>
-          <PushAsk moment={`save:${event}`} line={`Hear when ${e.pricePaise ? 'booking opens' : 'registrations open'}?`} top={0} />
+          <PushAsk moment={`save:${event}`} line={`Hear when ${e?.pricePaise ? 'booking opens' : 'registrations open'}?`} top={0} />
           {naming && (
             <View style={styles.naming}>
               <View style={styles.inset}>

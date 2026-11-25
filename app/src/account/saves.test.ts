@@ -100,6 +100,14 @@ test('split: upcoming soonest first, past latest first, unknown ids hidden', () 
   assert.deepEqual(r.past.map((e) => e.id), ['p2', 'p1']);
 });
 
+test('split: an event is upcoming until it ends, so a running one is not past', () => {
+  const run = { id: 'run', startsAt: '2026-11-16T10:00:00Z', endsAt: '2026-11-16T20:00:00Z' };
+  const done = { id: 'done', startsAt: '2026-11-15T10:00:00Z', endsAt: '2026-11-15T12:00:00Z' };
+  const r = split(['run', 'done'], [run, done], Date.parse('2026-11-16T15:00:00Z'));
+  assert.deepEqual(r.upcoming.map((e) => e.id), ['run']);
+  assert.deepEqual(r.past.map((e) => e.id), ['done']);
+});
+
 test('rename: gone list, duplicate name, own name in another case, trimming', () => {
   const s: Saves = { saved: [], lists: [list('l1', 'Music'), list('l2', 'Food')] };
   assert.equal(rename(s, 'nope', 'X'), GONE);
