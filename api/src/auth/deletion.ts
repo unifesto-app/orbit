@@ -142,7 +142,7 @@ export async function runDeletions(db: Db, notify: Notify, now: number, revokeAp
         // nobody and holding no data, and nothing still waiting sends. The accountDeleted email is queued after this.
         await tx.delete(inboxItems).where(eq(inboxItems.userId, u.id));
         await tx.update(deliveries).set({ status: "skipped", reason: "accountDeleted" }).where(and(eq(deliveries.userId, u.id), eq(deliveries.status, "queued")));
-        await tx.update(deliveries).set({ userId: null, contact: null, payload: {} }).where(eq(deliveries.userId, u.id));
+        await tx.update(deliveries).set({ userId: null, contact: null, payload: {}, target: sql`'deleted:' || ${deliveries.id}` }).where(eq(deliveries.userId, u.id));
         const seats = await tx
           .update(teamRoles)
           .set({ endedAt: at, endReason: "deleted" })

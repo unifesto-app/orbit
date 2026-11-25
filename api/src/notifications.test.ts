@@ -334,7 +334,7 @@ test("day-30 deletion: inbox gone, old rows scrubbed, nothing queued sends, the 
   assert.equal((await inbox(a.me.id)).length, 0);
   assert.equal((await t.db.select().from(deliveries).where(eq(deliveries.userId, a.me.id))).length, 0);
   const lifted = (await rows("accountLifted")).find((d) => d.channel === "email")!;
-  assert.deepEqual([lifted.status, lifted.userId, lifted.contact, lifted.payload], ["sent", null, null, {}]);
+  assert.deepEqual([lifted.status, lifted.userId, lifted.contact, lifted.payload, lifted.target], ["sent", null, null, {}, `deleted:${lifted.id}`]);
   for (const kind of ["accountSuspended", "signInMethodChanged"]) {
     const held = (await rows(kind)).find((d) => d.channel === "email")!;
     assert.deepEqual([held.status, held.reason, held.payload], ["skipped", "accountDeleted", {}], kind);
