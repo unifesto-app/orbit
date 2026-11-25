@@ -163,8 +163,10 @@ export function mockMoney(v: Venue, now: number, today: readonly Claim[]) {
 // Each venue's page and team as its Admin sees them on Venue (Hosts flow: profile, Team and roles, Performers and
 // venues; Play: setting up a venue). Desk names match the scanner's "first at 6:12 PM by Ravi".
 // ponytail: mock until GET /hosts/:id, the team and invites, the "at" links and the venue settings come from the API.
-export type Member = { name: string; role: 'Admin' | 'Desk'; you?: boolean; owner?: boolean };
-export type Invite = { contact: string; role: 'Admin' | 'Desk'; sent: number };
+// Signed in (S5) they come from GET /hosts/:id/team: `id` is the seat; an invite there has no role or sent time, and an
+// accepted Admin invite waits for a confirm.
+export type Member = { id?: string; name: string; role: 'Admin' | 'Desk'; you?: boolean; owner?: boolean };
+export type Invite = { id?: string; contact: string; role?: 'Admin' | 'Desk'; sent?: number; accepted?: boolean; acceptedBy?: string | null; addedBy?: string; byYou?: boolean; adder?: string | null };
 export type AtAsk = { id: string; title: string; by: string; when: string; series?: boolean };
 const VENUE: Record<string, { kind: string; address: string; deskPhone: string; followers: number; logWalkIns: boolean; cutoff: number; team: Member[]; invites: (now: number) => Invite[]; asks: AtAsk[]; hosted: AtAsk[] }> = {
   'respawn-zone': {

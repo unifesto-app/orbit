@@ -8,7 +8,10 @@
 // lookup stay on the mock until their slices.
 // The counter's writes (S4): signed in they go to the API (counter.ts), one at a time per control, then the day is fetched
 // again; nothing changes on screen before the API says so. The demo keeps the mock's handlers.
-import { VenueDay } from '@orbit/contract';
+// Venue (S5): signed in as an Admin, the real venue (GET /venues/:hostId; a 404 is a venue not set up yet) and the host's
+// team (GET /hosts/:id/team), edited through the API (useLiveVenue below). Each write answers the line to show, or null
+// when it went in, and then the venue (or team) and Today's day are fetched again. The demo keeps the mock's edits.
+import { EditStation, InviteAdmin, NewStation, VenueDay, VenueSettings, VenueSetup as PutVenue } from '@orbit/contract';
 import type { Result } from '@orbit/mobile/api';
 import { useLoad } from '@orbit/mobile/load';
 import { createContext, type ReactNode, useContext, useEffect, useMemo, useRef, useState } from 'react';
@@ -17,13 +20,16 @@ import { admit, admitTo, byCode, type Claim, freeOne, hours, type StationType } 
 import { mockDay, mockMoney, mockVenue, venues } from './mock';
 import { seats as seatsOf } from './seats';
 import { counter } from './counter';
-import { fromApi } from './live';
+import { blank, fromApi } from './live';
+import { fieldWhy, fromStation, inviteBody, kindBody, putFor, readVenue, refusal, setupFrom, type TeamList, teamFrom, type VenueSetup, venueApi, weekSpan } from './venue';
 import { api, useSession } from '../session';
 import type { Bank } from '../money';
 import type { Payout, Sold } from './money';
 
 export type Role = 'admin' | 'desk';
-export type VenueSetup = ReturnType<typeof mockVenue>;
+export type { VenueSetup };
+/** What a Venue write ends with: the line to show, or null when it went in. */
+type Said = Promise<string | null>;
 
 function useStationState() {
   const [now, setNow] = useState(Date.now);
@@ -45,7 +51,7 @@ function useStationState() {
   // weekly hours. Both outlive a day and a venue switch.
   // ponytail: Today keeps the opening it started with; the slots API serves each day's own hours.
   const [kinds, setKinds] = useState<Record<string, StationType[]>>({});
-  const [setups, setSetups] = useState(() => Object.fromEntries(venues.map((v) => [v.id, mockVenue(v, Date.now())])));
+  const [setups, setSetups] = useState<Record<string, VenueSetup>>(() => Object.fromEntries(venues.map((v) => [v.id, mockVenue(v, Date.now())])));
   const base = venues.find((v) => v.id === venueId)!;
   const venue = kinds[base.id] ? { ...base, types: kinds[base.id] } : base;
   const open = hours(venue, now);
@@ -104,6 +110,18 @@ function useStationState() {
     return { line };
   };
   const desk = seat ? counter(seat.hostId, api.authed) : null; // the API's counter, signed in
+  const meId = session && 'me' in session ? session.me.id : '';
+  const real = useLiveVenue(seat?.role === 'admin' ? seat : undefined, meId, live.reload);
+  // The demo's Venue edits: the mock's, at once.
+  const mockKind = (t: StationType) =>
+    setKinds((all) => {
+      const cur = all[base.id] ?? base.types;
+      return { ...all, [base.id]: cur.some((x) => x.id === t.id) ? cur.map((x) => (x.id === t.id ? t : x)) : [...cur, t] };
+    });
+  const mockSetup = (f: (s: VenueSetup) => VenueSetup) => setSetups((all) => ({ ...all, [base.id]: f(all[base.id]) }));
+  const done = (f: () => void): Said => (f(), Promise.resolve(null));
+  // A write with nowhere to go (the demo has no archive, first setup or confirm; Desk has no Venue) says so.
+  const nope = (): Said => Promise.resolve(seat ? 'Only an Admin changes the venue.' : 'Not in the demo.');
   return {
     now,
     // What Today draws: the API's day when signed in (null until the first answer), the mock's in the demo; and, signed
@@ -143,14 +161,26 @@ function useStationState() {
     letIn: (id: string, total: number) => change((cs) => cs.map((c) => (c.id === id ? admitTo(c, total, Date.now(), 'you') : c))),
     again: (id: string) => change((cs) => cs.map((c) => (c.id === id ? { ...c, again: (c.again ?? 0) + 1 } : c))),
     put: (claim: Claim) => change((cs) => cs.map((c) => (c.id === claim.id ? claim : c))),
-    // Venue's, Admins only: a kind saved (or added), and the venue's setup changed.
-    setup: setups[base.id],
-    saveKind: (t: StationType) =>
-      setKinds((all) => {
-        const cur = all[base.id] ?? base.types;
-        return { ...all, [base.id]: cur.some((x) => x.id === t.id) ? cur.map((x) => (x.id === t.id ? t : x)) : [...cur, t] };
-      }),
-    changeSetup: (f: (s: VenueSetup) => VenueSetup) => setSetups((all) => ({ ...all, [base.id]: f(all[base.id]) })),
+    // Venue's, Admins only, read through useVenue(): the venue and its setup (signed in, null until it loads or while it
+    // isn't set up yet, `load` saying which), and its edits, each answering its line (Said).
+    venueTab: real
+      ? { venue: real.venue, setup: real.setup, load: real.load, said: real.said }
+      : { venue: seat ? blank(seat) : venue, setup: seat ? null : setups[base.id], load: null, said: null },
+    tell: (line: string | null) => real?.tell(line), // a refusal for the Venue tab, from a sheet closed mid-write
+    saveKind: (t: StationType, tile: 'gaming' | 'sports'): Said => (real ? real.saveKind(t, tile) : seat ? nope() : done(() => mockKind(t))),
+    archiveKind: (id: string, archived = true): Said => (real ? real.archiveKind(id, archived) : nope()), // signed in only
+    changeSetup: (f: (s: VenueSetup) => VenueSetup): Said => (real ? real.changeSetup(f) : seat ? nope() : done(() => mockSetup(f))),
+    firstSetup: (b: PutVenue): Said => (real ? real.first(b) : nope()), // signed in only
+    invite: (contact: string, role: 'Admin' | 'Desk'): Said =>
+      real ? real.invite(contact, role) : seat ? nope() : done(() => mockSetup((x) => ({ ...x, invites: [...x.invites, { contact, role, sent: Date.now() }] }))),
+    // Removing someone or withdrawing an invite: the seat's id signed in, the name or contact in the demo.
+    endSeat: (m: { id?: string; name?: string; contact?: string }): Said =>
+      real && m.id
+        ? real.endSeat(m.id)
+        : seat
+          ? nope()
+          : done(() => mockSetup((x) => ({ ...x, team: x.team.filter((y) => y.name !== m.name), invites: x.invites.filter((z) => z.contact !== m.contact) }))),
+    confirmSeat: (id: string): Said => (real ? real.confirmSeat(id) : nope()), // an accepted Admin invite, signed in, by its adder
     // Money's, Admins only: ask Orbit for a payout, and add or replace where it's paid.
     // ponytail: a replacement should also send open asks back to be confirmed again; the money API does that.
     money: { ...day.money, ...own, days },
@@ -179,6 +209,98 @@ const readDay = (r: Result<unknown>): Result<VenueDay> => {
   return d.success ? { ok: true, data: d.data } : { ok: false, status: 200, error: { error: 'unreadable', message: 'Orbit sent a day this app can’t read. Update the app.' } };
 };
 
+const checkVenue = (x: unknown) => {
+  const d = VenueSettings.safeParse(x);
+  return d.success ? d.data : undefined;
+};
+
+// Signed in as an Admin: the real venue and team, and their writes. Each write is checked with the contract's schema
+// first (a field error shows before anything is sent), then sent. After every answer, refusals too, the venue (or team)
+// is fetched again; a PUT's answer is the new venue itself. Venue writes fetch Today's day again too, team writes don't.
+function useLiveVenue(admin: { hostId: string; name: string } | undefined, meId: string, reloadDay: () => void) {
+  const to = admin ? venueApi(admin.hostId, api.authed) : null;
+  const got = useLoad<VenueSettings | null>(admin ? `venue|${admin.hostId}` : null, () => to!.get().then((r) => readVenue(r, checkVenue)));
+  const crew = useLoad<TeamList>(admin ? `team|${admin.hostId}` : null, () => to!.team());
+  // A PUT's answer, shown until the next fetch lands (it's kept against the answer it replaced).
+  const [put, setPut] = useState<{ over: VenueSettings | null; data: VenueSettings } | null>(null);
+  const v = put && put.over === got.data ? put.data : got.data;
+  // A refusal from a sheet closed mid-write, kept with its venue so another never shows it.
+  const [said, setSaid] = useState<{ hostId: string; line: string } | null>(null);
+  const shown = useMemo(() => {
+    if (!admin) return null;
+    const team = crew.data ? teamFrom(crew.data, meId) : { team: [], invites: [] };
+    const types = v ? v.stations.filter((s) => !s.archived).map(fromStation) : [];
+    const venue = { ...blank(admin), area: v?.area ?? '', open: v ? weekSpan(v.week) : ([0, 24] as [number, number]), types };
+    return { venue, setup: v ? setupFrom(v, team) : null };
+  }, [admin, v, crew.data, meId]);
+  if (!admin || !to || !shown) return null;
+  // Every answer: a fresh fetch (a refusal may mean someone else changed it); a write with no answer may have landed.
+  const venueSaid = (r: Result<unknown>) => {
+    got.reload();
+    if (r.ok) reloadDay();
+    return r.ok ? null : refusal(r, true);
+  };
+  const teamSaid = (r: Result<unknown>) => {
+    crew.reload();
+    return r.ok ? null : refusal(r, true);
+  };
+  const send = async (body: unknown): Said => {
+    const ok = PutVenue.safeParse(body);
+    if (!ok.success) return fieldWhy(ok.error);
+    const base = got.data;
+    const r = await to.put(ok.data);
+    const back = r.ok ? checkVenue(r.data) : undefined;
+    if (!back) return venueSaid(r);
+    setPut({ over: base, data: back });
+    reloadDay();
+    return null;
+  };
+  // The venue as the API has it now, for a PUT made on it.
+  const fresh = async (): Promise<{ v: VenueSettings | null } | { line: string }> => {
+    const r = readVenue(await to.get(), checkVenue);
+    return r.ok ? { v: r.data } : { line: refusal(r) };
+  };
+  return {
+    ...shown,
+    load: { error: got.error ?? crew.error, status: got.error ? got.status : crew.status, notSetUp: v === null && !got.loading && !got.error, reload: () => (got.reload(), crew.reload()) },
+    said: said && said.hostId === admin.hostId ? said.line : null,
+    tell: (line: string | null) => setSaid(line ? { hostId: admin.hostId, line } : null),
+    // ponytail: a first save meeting another between this GET and the PUT still lands as an update; telling them apart
+    // needs a create-only error code from the API.
+    first: async (b: PutVenue): Said => {
+      const now = await fresh();
+      if ('line' in now) return now.line;
+      if (now.v) return got.reload(), 'This venue was just set up. Pull to see it.';
+      return send(b);
+    },
+    // Fetched again first, so the edit lands on the venue as it is now (putFor).
+    // ponytail: no place search in the host app, so the pin only moves when someone pastes one in (Place sheet).
+    changeSetup: async (f: (s: VenueSetup) => VenueSetup): Said => {
+      const now = await fresh();
+      if ('line' in now) return now.line;
+      if (!now.v) return got.reload(), 'Set up the venue first.';
+      return send(putFor(now.v, f));
+    },
+    saveKind: async (t: StationType, tile: 'gaming' | 'sports'): Said => {
+      const b = kindBody(t, shown.venue.types.some((x) => x.id === t.id), tile);
+      if ('edit' in b) {
+        const ok = EditStation.safeParse(b.edit);
+        return ok.success ? venueSaid(await to.editStation(t.id, ok.data)) : fieldWhy(ok.error);
+      }
+      const ok = NewStation.safeParse(b.add);
+      return ok.success ? venueSaid(await to.addStation(ok.data)) : fieldWhy(ok.error);
+    },
+    // Archive, or Restore (archived false).
+    archiveKind: async (id: string, archived: boolean): Said => venueSaid(await to.editStation(id, { archived })),
+    invite: async (contact: string, role: 'Admin' | 'Desk'): Said => {
+      const ok = InviteAdmin.safeParse(inviteBody(contact, role));
+      return ok.success ? teamSaid(await to.invite(inviteBody(contact, role))) : fieldWhy(ok.error);
+    },
+    endSeat: async (id: string): Said => teamSaid(await to.remove(id)),
+    confirmSeat: async (id: string): Said => teamSaid(await to.confirm(id)),
+  };
+}
+
 const Station = createContext<ReturnType<typeof useStationState> | null>(null);
 
 export function StationProvider({ children }: { children: ReactNode }) {
@@ -189,6 +311,12 @@ export function useStation() {
   const s = useContext(Station);
   if (!s) throw new Error('useStation outside StationProvider');
   return s;
+}
+
+/** The station state with the Venue tab's venue on top: the API's for a signed-in Admin, the mock's in the demo. */
+export function useVenue() {
+  const s = useStation();
+  return { ...s, ...s.venueTab };
 }
 
 /** The station state with Today's day on top: the API's when signed in, the mock's in the demo. Today and its sheets. */
