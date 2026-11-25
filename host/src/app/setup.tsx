@@ -8,20 +8,18 @@
 //   bookings fall outside them;
 // - invites: Desk starts on Accept and never ends on its own; an Admin starts once you confirm it's them; 14 days.
 // Cancelling and refunding a booking by hand is on the web Console (Play: Admins refund a slot by hand). Admins only.
-// Signed in (S5) each save goes to the API and the sheet stays up until it answers: a refusal (a 409 naming the bookings
-// in the way, a field the contract refuses, no answer) shows here, a success closes it. The API checks bookings in the
-// way itself, so the mock day's checks run in the demo only. Signed in there's also the first setup (`first`), a kind's
-// Archive, and confirming an accepted Admin.
+// Each save goes to the API (S5) and the sheet stays up until it answers: a refusal (a 409 naming the bookings in the
+// way, a field the contract refuses, no answer) shows here, a success closes it. The API checks bookings in the way
+// itself. There's also the first setup (`first`), a kind's Archive, and confirming an accepted Admin.
 // ponytail: a station's 4:3 photo waits for uploads.
 import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Text, TextInput, View } from 'react-native';
 
-import { hourWord, outside, stranded } from '../station/day';
+import { hourWord } from '../station/day';
 import { useVenue } from '../station/state';
 import { Chip, close, Pill, Round, Sheet, SheetSays, Stepper, styles as ui } from '../station/ui';
-import { contactOk, hoursOk, inTheWay, type KindForm, kindFrom, pinFrom } from '../station/venue';
-import { range, what as whatOf } from '../station/words';
+import { contactOk, hoursOk, type KindForm, kindFrom, pinFrom } from '../station/venue';
 import { variants } from '../../variants';
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -31,8 +29,7 @@ const phoneOk = (text: string) => /^\+?[\d\s-]+$/.test(text.trim()) && contactOk
 export default function Setup() {
   const p = useLocalSearchParams<{ what: string; type?: string; dow?: string; name?: string; contact?: string; role?: string; key?: string }>();
   const st = useVenue();
-  const { role, venue: v, setup: s, claims, now, hours, load } = st;
-  const live = !!load; // signed in: the API's venue
+  const { role, venue: v, setup: s, now } = st;
   const done = useRef(false);
   const up = useRef(true); // swiped away mid-write: a refusal goes to the Venue tab
   useEffect(() => () => void (up.current = false), []);
@@ -44,9 +41,9 @@ export default function Setup() {
     return () => clearTimeout(t);
   }, [arming]);
   const [why, setWhy] = useState<string>();
-  // The person or invite as the sheet opened, so it never turns into the next one while it closes. Signed in, by seat id.
-  const [who] = useState(() => (p.name ? s?.team.find((m) => (m.id ?? m.name) === p.name) : undefined));
-  const [invite] = useState(() => (p.contact ? s?.invites.find((x) => (x.id ?? x.contact) === p.contact) : undefined));
+  // The person or invite as the sheet opened, so it never turns into the next one while it closes. By seat id.
+  const [who] = useState(() => (p.name ? s?.team.find((m) => m.id === p.name) : undefined));
+  const [invite] = useState(() => (p.contact ? s?.invites.find((x) => x.id === p.contact) : undefined));
   const t = p.type ? v.types.find((x) => x.id === p.type) : undefined;
   const day = p.dow !== undefined ? s?.week[Number(p.dow)] : null;
   // The form, from what's there now. One state object, so each mode keeps its own fields.
@@ -134,8 +131,6 @@ export default function Setup() {
       </View>
     </View>
   );
-  const blocked = (list: ReturnType<typeof stranded>) => inTheWay(list, (c) => `${c.who}, ${whatOf(v, c)}, ${range(c.start, c.end)}`);
-  const them = (n: number) => (n > 1 ? 'enough of them' : 'it');
 
   if (p.what === 'kind') {
     if (p.type && !t) return null; // a kind that's gone
@@ -184,15 +179,10 @@ export default function Setup() {
           onPress={() => {
             const made = kindFrom(f, t, v.open, gaming, `k${Date.now()}`);
             if ('why' in made) return setWhy(made.why);
-            if (t && !live) {
-              const inWay = stranded(claims, t, f.count, now);
-              if (inWay.length)
-                return setWhy(`${inWay.length} booking${inWay.length > 1 ? 's' : ''} need more than ${f.count}: ${blocked(inWay)}. Cancel and refund ${them(inWay.length)} on the web Console first, or keep ${t.count}.`);
-            }
             void finish(() => st.saveKind(made.kind, gaming ? 'gaming' : 'sports'));
           }}
         />
-        {live && t && (
+        {t && (
           <Pill
             wide
             label={arming ? 'Archive? Tap again' : `Archive ${t.name}`}
@@ -206,7 +196,7 @@ export default function Setup() {
 
   if (p.what === 'day' && p.dow !== undefined) {
     const dow = Number(p.dow);
-    const today = new Date(hours.day + 330 * 60_000).getUTCDay();
+    const today = new Date(now + 330 * 60_000).getUTCDay(); // today's India calendar day
     return (
       <Sheet title={DAY_NAMES[dow]} note={dow === today ? 'Today' : 'Every week'}>
         {chips('open', [
@@ -227,11 +217,6 @@ export default function Setup() {
           onPress={() => {
             const open: [number, number] | null = f.open === 'yes' ? [f.from, f.to] : null;
             if (open && !hoursOk(open)) return setWhy('It opens before it closes, for a day at most, closing by 6 AM.');
-            if (dow === today && !live) {
-              const inWay = outside(claims, hours.day, open, now);
-              if (inWay.length)
-                return setWhy(`${inWay.length} booking${inWay.length > 1 ? 's' : ''} today would be left outside: ${blocked(inWay)}. Cancel and refund ${inWay.length > 1 ? 'them' : 'it'} on the web Console first.`);
-            }
             void finish(() => st.changeSetup((x) => ({ ...x, week: x.week.map((w, i) => (i === dow ? open : w)) })));
           }}
         />
@@ -295,7 +280,7 @@ export default function Setup() {
       <Sheet title={who.name} note={who.role}>
         <SheetSays text={`Removing ${who.name} ends their ${who.role === 'Desk' ? 'counter' : 'Admin'} role at once.`} />
         {why && <SheetSays text={why} />}
-        <Pill wide label={`Remove ${who.name}`} disabled={busy} onPress={() => void finish(() => st.endSeat({ id: who.id, name: who.name }))} />
+        <Pill wide label={`Remove ${who.name}`} disabled={busy} onPress={() => void finish(() => st.endSeat(who.id))} />
       </Sheet>
     );
   }
@@ -314,8 +299,8 @@ export default function Setup() {
           }
         />
         {why && <SheetSays text={why} />}
-        {invite.accepted && invite.byYou && invite.id && <Pill wide label="Confirm it’s them" disabled={busy} onPress={() => void finish(() => st.confirmSeat(invite.id!))} />}
-        <Pill wide label="Withdraw invite" disabled={busy} onPress={() => void finish(() => st.endSeat({ id: invite.id, contact: invite.contact }))} />
+        {invite.accepted && invite.byYou && <Pill wide label="Confirm it’s them" disabled={busy} onPress={() => void finish(() => st.confirmSeat(invite.id))} />}
+        <Pill wide label="Withdraw invite" disabled={busy} onPress={() => void finish(() => st.endSeat(invite.id))} />
       </Sheet>
     );
   }
@@ -325,7 +310,7 @@ export default function Setup() {
     return (
       <Sheet title={key === 'address' ? 'Place' : 'Desk phone'} note={key === 'address' ? 'Where people come to play' : 'For players who call the counter'}>
         {input('value', key === 'address' ? 'Address' : 'Phone', '')}
-        {live && key === 'address' && (
+        {key === 'address' && (
           <>
             {input('area', 'Area', 'Gachibowli')}
             {input('pin', 'Map pin', '17.4401, 78.3489')}
@@ -333,11 +318,8 @@ export default function Setup() {
         )}
         {key === 'address' && (
           <SheetSays
-            text={
-              live
-                ? 'For the map pin, press and hold your entrance in Google Maps and paste the numbers it shows. Events whose Where matches can ask to be at your venue.'
-                : 'The map pin moves with it once the place search is in; events whose Where matches can ask to be at your venue.'
-            }
+            text="For the map pin, press and hold your entrance in Google Maps and paste the numbers it shows. Events whose Where matches can ask to be at your venue."
+
           />
         )}
         {why && <SheetSays text={why} />}
@@ -348,7 +330,7 @@ export default function Setup() {
           onPress={() => {
             if (!f.value.trim()) return setWhy(key === 'address' ? 'Where is it?' : 'A phone number, please.');
             if (key === 'deskPhone' && !phoneOk(f.value)) return setWhy('A phone number, please.');
-            if (live && key === 'address') {
+            if (key === 'address') {
               const pin = pinFrom(f.pin);
               if (!f.area.trim()) return setWhy('Which area is it in?');
               if (!pin) return setWhy('Paste the map pin from Google Maps, like 17.4401, 78.3489.');
@@ -360,7 +342,7 @@ export default function Setup() {
       </Sheet>
     );
   }
-  if (p.what === 'first' && live && !s) {
+  if (p.what === 'first' && !s) {
     // Signed in, a venue with no setup yet: where it is, the desk phone, and one opening for every day (each day can be
     // changed after). Cancelling up to 2 hours before and no walk-in count, as the API starts them.
     return (

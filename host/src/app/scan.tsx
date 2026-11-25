@@ -4,15 +4,17 @@
 //   at the foot.
 // - One result at a time slides up over the camera, its colour a dot and a glow, never the words: In and How many are
 //   here? in Sage, Already in and Too early in amber, the rest in the app's red.
-// - One station, or a pitch or court booked whole, is in on the scan, with Undo for 5 seconds. Several ask how many
-//   are here and let nobody in until the tap (Event day decision 2); the rest come in on a second scan.
+// - One station, or a pitch or court booked whole, is in on the scan. Several ask how many are here and let nobody in
+//   until the tap (Event day decision 2); the rest come in on a second scan.
 // - Each code is ignored for 2.5 seconds after it was last seen, so two tickets held up together don't take turns; a new
-//   ticket replaces the result, but not while the desk is counting (How many) or Undo is up. A haptic on every result:
+//   ticket replaces the result, but not while the desk is counting (How many). A haptic on every result:
 //   success, warning (Already in, Too early) or error.
 // - Find: name, phone, email or the 8-character code, from 2 letters. Without the camera it says how to allow it.
 // - Find, then a booking, is the same as scanning its ticket.
-// ponytail: no sound yet (the switch is kept; the sounds come with expo-audio), and no offline saved list or phone and
-// email search until the slots API: the mock looks up names and codes, and its QR holds the code.
+// Not in 1.0 (ONE_0). Letting in is the API's Admit, as Check in on Today; a refusal shows on Today.
+// ponytail: no sound yet (the switch is kept; the sounds come with expo-audio). The day has no ticket codes, so a scan
+// finds nothing until the API looks tickets up; Find by name works on today's day. No Undo (the API has no un-admit),
+// no log of Let in again, no offline saved list, no phone or email search.
 import { DARK_TINT as DARK, Glass, useAccessibility } from '@orbit/mobile/glass';
 import { OrbitSays } from '@orbit/mobile/orbitSays';
 import { color, font, groundAt, space, stoneAt } from '@orbit/mobile/theme';
@@ -33,7 +35,6 @@ import { first, range, spaced, what } from '../station/words';
 const AMBER = '#FF9F0A';
 const toneOf = (k: Result['kind']) => (k === 'in' || k === 'ask' ? color.accent : k === 'already' || k === 'early' ? AMBER : functional.love);
 const SAME_MS = 2500; // the same code, held up again within this, is ignored
-const UNDO_S = 5;
 const ICON = {
   close: require('../../assets/tabs/close.png'),
   find: require('../../assets/tabs/find.png'),
@@ -49,7 +50,7 @@ const feel = (k: Result['kind']) =>
   );
 
 export default function Scanner() {
-  const { venue: v, lookup, letIn, again, put } = useStation();
+  const { venue: v, lookup, letIn } = useStation();
   const insets = useSafeAreaInsets();
   // Asked on the first open, so Scan goes straight to the camera; read again on coming back from Settings.
   const [perm, ask, get] = useCameraPermissions({ request: true });
@@ -59,29 +60,19 @@ export default function Scanner() {
   }, [get]);
   const [shown, setShown] = useState<Shown | null>(null);
   const [n, setN] = useState(1);
-  const [undo, setUndo] = useState<{ before: Claim; left: number } | null>(null);
   const [finding, setFinding] = useState(false);
   const [sound, setSound] = useState(true);
   const seen = useRef(new Map<string, number>());
-
-  // Undo counts down from 5, then goes.
-  useEffect(() => {
-    if (!undo) return;
-    const tick = setTimeout(() => setUndo((u) => (u && u.left > 1 ? { ...u, left: u.left - 1 } : null)), 1000);
-    return () => clearTimeout(tick);
-  }, [undo]);
 
   // Have `total` of the booking in, from the booking as it was shown: a second tap asks for the same total, so it
   // counts once.
   const admitNow = (claim: Claim, total: number) => {
     letIn(claim.id, total);
-    setUndo({ before: claim, left: UNDO_S });
     setShown({ scan: { kind: 'in', n: total - (claim.in ?? 0) }, claim: admitTo(claim, total, Date.now(), 'you') });
   };
   const show = (found: ReturnType<typeof lookup>) => {
     const r = scan(found, v, Date.now());
     feel(r.kind);
-    setUndo(null);
     setFinding(false);
     if (r.kind === 'in' && found) return admitNow(found.claim, (found.claim.in ?? 0) + r.n);
     if (r.kind === 'ask') setN(r.left);
@@ -92,8 +83,8 @@ export default function Scanner() {
     if (shown?.claim && byCode([shown.claim], data)) return; // the ticket on the card, seen again
     show(lookup(data));
   };
-  // Not while the desk counts heads or can still Undo: a ticket seen then would take the card from under their thumb.
-  const listening = !finding && shown?.scan.kind !== 'ask' && !undo;
+  // Not while the desk counts heads: a ticket seen then would take the card from under their thumb.
+  const listening = !finding && shown?.scan.kind !== 'ask';
 
   return (
     <View style={styles.root}>
@@ -152,21 +143,9 @@ export default function Scanner() {
             shown={shown}
             n={n}
             onN={setN}
-            undo={undo?.left}
-            onUndo={() => {
-              if (undo) put(undo.before);
-              setUndo(null);
-              setShown(null);
-            }}
             onLetIn={() => shown.claim && admitNow(shown.claim, (shown.claim.in ?? 0) + n)}
-            onAgain={() => {
-              if (shown.claim) again(shown.claim.id);
-              setShown({ ...shown, again: true });
-            }}
-            onNext={() => {
-              setUndo(null);
-              setShown(null);
-            }}
+            onAgain={() => setShown({ ...shown, again: true })}
+            onNext={() => setShown(null)}
             onFind={() => {
               setShown(null);
               setFinding(true);
@@ -193,8 +172,6 @@ function Card(p: {
   shown: Shown;
   n: number;
   onN: (n: number) => void;
-  undo?: number;
-  onUndo: () => void;
   onLetIn: () => void;
   onAgain: () => void;
   onNext: () => void;
@@ -230,7 +207,7 @@ function Card(p: {
     line = `${c.who} booked ${c.count} × ${t.name}${c.in ? ` · ${c.in} already in` : ''}`;
   } else if (r.kind === 'already') {
     word = 'Already in';
-    line = `${several ? `All ${c?.count} in` : 'In'} · first at ${timeLabel(r.first)} by ${r.by ?? 'the desk'}${p.shown.again ? ' · let in again, logged' : ''}`;
+    line = `${several ? `All ${c?.count} in` : 'In'} · first at ${timeLabel(r.first)} by ${r.by ?? 'the desk'}${p.shown.again ? ' · let in again' : ''}`;
   } else if (r.kind === 'early') {
     word = 'Too early';
     line = `Starts ${timeLabel(r.starts)} · check-in opens at ${timeLabel(r.starts - 15 * MIN)}`;
@@ -291,11 +268,6 @@ function Card(p: {
       <View style={styles.actions}>
         {r.kind === 'ask' ? (
           button(`Let ${p.n} in`, p.onLetIn)
-        ) : r.kind === 'in' ? (
-          <>
-            {next}
-            {p.undo !== undefined && button(`Undo · ${p.undo}`, p.onUndo)}
-          </>
         ) : r.kind === 'already' ? (
           <>
             {button('Let in again', p.onAgain)}

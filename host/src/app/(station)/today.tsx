@@ -24,15 +24,14 @@ import { first, range, units, what } from '../../station/words';
 const HATCH = require('../../../assets/tabs/hatch.png');
 const SOON = 2 * 60 * MIN; // Next up looks this far ahead
 
-// Signed in, the day is the API's: fetched again every 30 seconds while Today is open, when the app comes back to the
-// front, and on a pull. The demo's is the mock's and never fetches.
+// The day is the API's: fetched again every 30 seconds while Today is open, when the app comes back to the front, and on
+// a pull.
 // ponytail: the loading, empty and can't-reach states are placeholders until the owner's design take.
 export default function Today() {
   const { today, load, seat } = useStation();
-  const reload = load?.reload;
+  const { reload } = load;
   useFocusEffect(
     useCallback(() => {
-      if (!reload) return;
       reload(); // back on Today: fresh at once (useLoad drops an answer still on its way)
       const tick = setInterval(reload, 30_000);
       const front = AppState.addEventListener('change', (s) => s === 'active' && reload());
@@ -44,9 +43,9 @@ export default function Today() {
   );
   // The pull's spinner stays until the fetch settles: each answer is a new day or a new error (not the clock's tick).
   const [pulling, setPulling] = useState(false);
-  useEffect(() => setPulling(false), [load?.data, load?.error]);
-  const refresh = reload && <RefreshControl refreshing={pulling} onRefresh={() => (setPulling(true), reload())} tintColor={color.secondary} />;
-  const trouble = !load?.error
+  useEffect(() => setPulling(false), [load.data, load.error]);
+  const refresh = <RefreshControl refreshing={pulling} onRefresh={() => (setPulling(true), reload())} tintColor={color.secondary} />;
+  const trouble = !load.error
     ? null
     : load.status === 0
       ? 'Can’t reach Orbit. Pull to try again.'
@@ -58,7 +57,7 @@ export default function Today() {
   return <Day key={`${today.venue.id}:${today.hours.day}`} trouble={trouble} refresh={refresh} />;
 }
 
-// Signed in, before the first day lands: the head and one line.
+// Before the first day lands: the head and one line.
 function Waiting({ venue, line, refresh }: { venue: Venue; line: string; refresh?: ReactElement }) {
   const insets = useSafeAreaInsets();
   return (

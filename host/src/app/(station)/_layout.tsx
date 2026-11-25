@@ -45,15 +45,14 @@ function Bar() {
   const [open, setOpen] = useState(0);
   useEffect(() => setSmall(false), [open, setSmall]); // a tab opens with the bar wide
   const { width } = useWindowDimensions();
-  // Scan is the demo's only for now (the app's layout guards it), and not in 1.0.
-  const scanOn = !ONE_0 && !seats;
+  const scanOn = !ONE_0; // not in 1.0 (the app's layout guards its route too)
   const right = scanOn ? SIDE + BAR + GAP : SIDE;
   const slot = (width - SIDE - right - 2 * PAD) / BAR_TABS.length;
   const [x] = useState(() => new Animated.Value(0));
   useEffect(() => {
     Animated.spring(x, { toValue: open * slot, useNativeDriver: true, speed: 18, bounciness: 6 }).start();
   }, [open, slot, x]);
-  if (seats?.length === 0) return <Redirect href="/" />; // signed in on no venue: the invites screen
+  if (seats.length === 0) return <Redirect href="/" />; // signed in on no venue: the invites screen
   const tab = TABS.find((t) => path === t.href);
   if (tab && !opens(role, ONE_0).includes(tab.name)) return <Redirect href="/today" />;
   return (

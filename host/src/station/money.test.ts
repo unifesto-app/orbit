@@ -66,7 +66,7 @@ test('available: ended 3 days ago, less paid out and less asked for; a week betw
 
 
 test("the mock venues' money adds up: payouts never exceed what was ready", async () => {
-  const { mockDay, mockMoney, venues } = await import('./mock.ts');
+  const { mockDay, mockMoney, venues } = await import('./fixtures.ts');
   const now = Date.UTC(2026, 10, 22, 18, 20) - IST;
   for (const v of venues) {
     const money = mockMoney(v, now, mockDay(v, now));

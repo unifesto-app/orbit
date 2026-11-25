@@ -1,30 +1,24 @@
-// Orbit Station's state while the app is open: which venue and role you're looking as, the clock, and the venue's day of
-// claims. The day is made once per opening and kept, so a check-in, release or walk-in stays as the clock moves on; a
-// new opening (or another venue) starts a fresh mock day.
-// Signed in, the venues and roles are the person's own seats (seats.ts), picked in the You sheet; the role comes with the
-// seat. The dev demo picks a mock venue and either role there instead.
-// Today (S3): signed in, its day is the API's (GET /venues/:hostId/day, live.ts), fetched again on a seat change and when
-// Today asks (pull, every 30 s, back to the foreground). The demo keeps the mock day. Venue, Money and the scanner's
-// lookup stay on the mock until their slices.
-// The counter's writes (S4): signed in they go to the API (counter.ts), one at a time per control, then the day is fetched
-// again; nothing changes on screen before the API says so. The demo keeps the mock's handlers.
-// Venue (S5): signed in as an Admin, the real venue (GET /venues/:hostId; a 404 is a venue not set up yet) and the host's
-// team (GET /hosts/:id/team), edited through the API (useLiveVenue below). Each write answers the line to show, or null
-// when it went in, and then the venue (or team) and Today's day are fetched again. The demo keeps the mock's edits.
+// Orbit Play Partner's state while the app is open, signed in only (S6: no demo, no mock): which of your venues you're
+// looking as (your seats, seats.ts, picked in the You sheet; the role comes with the seat), the clock, and the venue's day.
+// Today (S3): its day is the API's (GET /venues/:hostId/day, live.ts), fetched again on a seat change and when Today
+// asks (pull, every 30 s, back to the foreground).
+// The counter's writes (S4) go to the API (counter.ts), one at a time per control, then the day is fetched again;
+// nothing changes on screen before the API says so.
+// Venue (S5): as an Admin, the real venue (GET /venues/:hostId; a 404 is a venue not set up yet) and the host's team
+// (GET /hosts/:id/team), edited through the API (useLiveVenue below). Each write answers the line to show, or null when
+// it went in, and then the venue (or team) and Today's day are fetched again.
+// ponytail: no Money here; it waits on the Money API (payouts, bank account), and 1.0 hides its tab (ONE_0).
 import { EditStation, InviteAdmin, NewStation, VenueDay, VenueSettings, VenueSetup as PutVenue } from '@orbit/contract';
 import type { Result } from '@orbit/mobile/api';
 import { useLoad } from '@orbit/mobile/load';
 import { createContext, type ReactNode, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
-import { admit, admitTo, byCode, type Claim, freeOne, hours, type StationType } from './day';
-import { mockDay, mockMoney, mockVenue, venues } from './mock';
+import { byCode, type StationType } from './day';
 import { seats as seatsOf } from './seats';
 import { counter } from './counter';
 import { blank, fromApi } from './live';
 import { fieldWhy, fromStation, inviteBody, kindBody, putFor, readVenue, refusal, setupFrom, type TeamList, teamFrom, type VenueSetup, venueApi, weekSpan } from './venue';
 import { api, useSession } from '../session';
-import type { Bank } from '../money';
-import type { Payout, Sold } from './money';
 
 export type Role = 'admin' | 'desk';
 export type { VenueSetup };
@@ -38,55 +32,15 @@ function useStationState() {
     return () => clearInterval(tick);
   }, []);
   const session = useSession();
-  const seats = useMemo(() => (session && 'me' in session ? seatsOf(session.me) : null), [session]);
+  // Signed out (or Launch's dev demo) there are no seats, and Station's screens are closed (the app's layout).
+  const seats = useMemo(() => (session && 'me' in session ? seatsOf(session.me) : []), [session]);
   const [hostId, setSeat] = useState<string | null>(null);
-  const seat = seats ? (seats.find((x) => x.hostId === hostId) ?? seats[0]) : undefined;
-  const [demoVenue, setVenueId] = useState(venues[0].id);
-  const [demoRole, setRole] = useState<Role>('admin');
-  // ponytail: Venue and Money show the mock venue at the seat's index until their own APIs are wired; Today reads the
-  // real day (`today` below).
-  const venueId = seats ? venues[Math.max(0, seats.indexOf(seat!)) % venues.length].id : demoVenue;
-  const role: Role = seats ? (seat?.role ?? 'desk') : demoRole;
-  // Venue's edits (take 4): each venue's kinds as its Admin set them, over the mock's, and its page, team, asks and
-  // weekly hours. Both outlive a day and a venue switch.
-  // ponytail: Today keeps the opening it started with; the slots API serves each day's own hours.
-  const [kinds, setKinds] = useState<Record<string, StationType[]>>({});
-  const [setups, setSetups] = useState<Record<string, VenueSetup>>(() => Object.fromEntries(venues.map((v) => [v.id, mockVenue(v, Date.now())])));
-  const base = venues.find((v) => v.id === venueId)!;
-  const venue = kinds[base.id] ? { ...base, types: kinds[base.id] } : base;
-  const open = hours(venue, now);
-  const key = `${venue.id}:${open.day}`;
-  // The day and its money (Money's last 30 days, terms, bank account and payouts), made together.
-  // From the venue as it was, so an edited price never reaches past bookings and a new kind has none yet.
-  const fresh = () => {
-    const claims = mockDay(base, now);
-    return { key, claims, money: mockMoney(base, now, claims) };
-  };
-  const [day, setDay] = useState(fresh);
-  // A new opening or venue: React's way of resetting state from a render (no effect, so no frame of the old day).
-  if (day.key !== key) setDay(fresh());
-  // A venue's payouts and bank account outlive its days: they're kept apart, so switching venue or a new opening never
-  // undoes an ask or a new account.
-  const [kept, setKept] = useState<Record<string, { payouts: Payout[]; bank: Bank }>>({});
-  const own = kept[venue.id] ?? { payouts: day.money.payouts, bank: day.money.bank };
-  const keep = (f: (k: { payouts: Payout[]; bank: Bank }) => { payouts: Payout[]; bank: Bank }) => setKept((all) => ({ ...all, [venue.id]: f(all[venue.id] ?? own) }));
-  // Today's money comes from the day as it is now (a booking added or refunded today counts at once).
-  // Priced as the bookings were made: a new price applies to new bookings only (Play).
-  const sold: Sold[] = day.claims.filter((c) => c.kind === 'booking').map((c) => ({ t: base.types.find((t) => t.id === c.type) ?? venue.types.find((t) => t.id === c.type)!, c }));
-  const days = day.money.days.map((d, i) => (i === 0 && d.day === open.day ? { ...d, sold } : d));
-  // The other venues' days, for "Not for this venue": made once per opening, like this venue's.
-  // `now` only seeds them: a new key (venue or opening) makes new ones.
-  const others = useMemo(() => venues.filter((v) => v.id !== venue.id).map((v) => mockDay(v, now)), [key]);
-  // The clock moves with every change, so what the desk just did shows at once, not at the next 30-second tick.
-  const change = (f: (claims: Claim[]) => Claim[]) => {
-    setNow(Date.now());
-    setDay((d) => ({ ...d, claims: f(d.claims) }));
-  };
-  // Signed in, Today's day from the API, read through the contract so a payload this app can't read is an error, not a
-  // crash. A failed refetch keeps the last good day (useLoad).
-  // One flag for signed in: a seat. Without one (the demo) everything below is the mock's.
+  const seat = seats.find((x) => x.hostId === hostId) ?? seats[0];
+  const role: Role = seat?.role ?? 'desk';
+  // Today's day from the API, read through the contract so a payload this app can't read is an error, not a crash. A
+  // failed refetch keeps the last good day (useLoad).
   const live = useLoad<VenueDay>(seat ? `day|${seat.hostId}` : null, () => api.authed<unknown>('GET', `/venues/${seat!.hostId}/day`).then(readDay));
-  const fromLive = useMemo(() => (seat && live.data ? fromApi(live.data, seat, now) : null), [live.data, seat, now]);
+  const today = useMemo(() => (seat && live.data ? fromApi(live.data, seat, now) : null), [live.data, seat, now]);
   // Writes in flight, by control ("claim:<id>" for Check in and Release alike, "free:<station>", "sheet"): the ref stops a
   // second tap before the next render, the state draws it busy. `said` is the last write's refusal for Today, kept with
   // its seat so another venue never shows it. The sheet shows its own while it's up (`toToday` false), Today's after.
@@ -109,94 +63,58 @@ function useStationState() {
     if (line && (o.toToday ?? (() => true))()) setSaid({ hostId, line });
     return { line };
   };
-  const desk = seat ? counter(seat.hostId, api.authed) : null; // the API's counter, signed in
+  const desk = seat ? counter(seat.hostId, api.authed) : null;
   const meId = session && 'me' in session ? session.me.id : '';
   const real = useLiveVenue(seat?.role === 'admin' ? seat : undefined, meId, live.reload);
-  // The demo's Venue edits: the mock's, at once.
-  const mockKind = (t: StationType) =>
-    setKinds((all) => {
-      const cur = all[base.id] ?? base.types;
-      return { ...all, [base.id]: cur.some((x) => x.id === t.id) ? cur.map((x) => (x.id === t.id ? t : x)) : [...cur, t] };
-    });
-  const mockSetup = (f: (s: VenueSetup) => VenueSetup) => setSetups((all) => ({ ...all, [base.id]: f(all[base.id]) }));
-  const done = (f: () => void): Said => (f(), Promise.resolve(null));
-  // A write with nowhere to go (the demo has no archive, first setup or confirm; Desk has no Venue) says so.
-  const nope = (): Said => Promise.resolve(seat ? 'Only an Admin changes the venue.' : 'Not in the demo.');
+  const nope = (): Said => Promise.resolve('Only an Admin changes the venue.');
+  const venue = today?.venue ?? blank(seat ?? { hostId: '', name: '' });
+  const claims = today?.claims ?? [];
   return {
     now,
-    // What Today draws: the API's day when signed in (null until the first answer), the mock's in the demo; and, signed
-    // in, how the fetch stands. Read through useToday().
-    today: seat ? fromLive : { venue, claims: day.claims, hours: open, closed: false },
-    load: seat ? { data: live.data, error: live.error, status: live.status, reload: live.reload } : null,
+    // What Today draws (null until the first answer), and how the fetch stands. Read through useToday().
+    today,
+    load: { data: live.data, error: live.error, status: live.status, reload: live.reload },
     venue,
+    claims,
     role,
-    hours: open,
-    claims: day.claims,
-    // Signed in: the person's seats (null in the demo), the one picked, and picking another.
+    // The person's seats, the one picked, and picking another.
     seats,
     seat,
     setSeat,
-    // The demo's own: any mock venue, either role.
-    setVenue: setVenueId,
-    setRole,
-    // The counter's writes: the API's signed in (busy and said as above), the mock day's in the demo. Check in has the
-    // whole booking in, as the mock does: Admit's total is everyone it holds.
+    // The counter's writes (busy and said as above). Check in has the whole booking in: Admit's total is everyone it holds.
     busy,
     said: said && said.hostId === seat?.hostId ? said.line : null,
     checkIn: (id: string) => {
-      const c = fromLive?.claims.find((x) => x.id === id);
-      if (!desk) return change((cs) => cs.map((c) => (c.id === id ? admit(c, c.count - (c.in ?? 0), Date.now(), 'you') : c)));
-      if (c) void send(`claim:${id}`, () => desk.admit(id, { total: c.count }));
+      const c = claims.find((x) => x.id === id);
+      if (desk && c) void send(`claim:${id}`, () => desk.admit(id, { total: c.count }));
     },
-    release: (id: string) => (desk ? void send(`claim:${id}`, () => desk.release(id)) : change((cs) => cs.map((c) => (c.id === id ? { ...c, released: Date.now() } : c)))),
-    freeOne: (type: string) => (desk ? void send(`free:${type}`, () => desk.freeOne({ stationId: type }), { unsure: true }) : change((cs) => freeOne(cs, type, Date.now()))),
-    // The walk-in sheet's: the demo adds the claim it worked out; signed in, the API places it from the current step
-    // and answers the line to show in the sheet (null when it's in); `gone` says the sheet was closed, so a refusal goes
-    // to Today instead.
-    add: (c: Claim) => change((cs) => [...cs, c]),
+    release: (id: string) => void (desk && send(`claim:${id}`, () => desk.release(id))),
+    freeOne: (type: string) => void (desk && send(`free:${type}`, () => desk.freeOne({ stationId: type }), { unsure: true })),
+    // The walk-in sheet's: the API places it from the current step and answers the line to show in the sheet (null when
+    // it's in); `gone` says the sheet was closed, so a refusal goes to Today instead.
     place: (b: { stationId: string; hours: number; count: number; why?: string }, gone: () => boolean): Promise<Sent> =>
       desk ? send('sheet', () => (b.why ? desk.block({ ...b, why: b.why }) : desk.walkIn(b)), { unsure: true, toToday: gone }) : Promise.resolve({ dropped: true }),
-    // The scanner's: have `total` of a booking in (a tap landing twice counts once), log a Let in again, and put a
-    // booking back as it was (Undo).
-    letIn: (id: string, total: number) => change((cs) => cs.map((c) => (c.id === id ? admitTo(c, total, Date.now(), 'you') : c))),
-    again: (id: string) => change((cs) => cs.map((c) => (c.id === id ? { ...c, again: (c.again ?? 0) + 1 } : c))),
-    put: (claim: Claim) => change((cs) => cs.map((c) => (c.id === claim.id ? claim : c))),
-    // Venue's, Admins only, read through useVenue(): the venue and its setup (signed in, null until it loads or while it
-    // isn't set up yet, `load` saying which), and its edits, each answering its line (Said).
-    venueTab: real
-      ? { venue: real.venue, setup: real.setup, load: real.load, said: real.said }
-      : { venue: seat ? blank(seat) : venue, setup: seat ? null : setups[base.id], load: null, said: null },
-    tell: (line: string | null) => real?.tell(line), // a refusal for the Venue tab, from a sheet closed mid-write
-    saveKind: (t: StationType, tile: 'gaming' | 'sports'): Said => (real ? real.saveKind(t, tile) : seat ? nope() : done(() => mockKind(t))),
-    archiveKind: (id: string, archived = true): Said => (real ? real.archiveKind(id, archived) : nope()), // signed in only
-    changeSetup: (f: (s: VenueSetup) => VenueSetup): Said => (real ? real.changeSetup(f) : seat ? nope() : done(() => mockSetup(f))),
-    firstSetup: (b: PutVenue): Said => (real ? real.first(b) : nope()), // signed in only
-    invite: (contact: string, role: 'Admin' | 'Desk'): Said =>
-      real ? real.invite(contact, role) : seat ? nope() : done(() => mockSetup((x) => ({ ...x, invites: [...x.invites, { contact, role, sent: Date.now() }] }))),
-    // Removing someone or withdrawing an invite: the seat's id signed in, the name or contact in the demo.
-    endSeat: (m: { id?: string; name?: string; contact?: string }): Said =>
-      real && m.id
-        ? real.endSeat(m.id)
-        : seat
-          ? nope()
-          : done(() => mockSetup((x) => ({ ...x, team: x.team.filter((y) => y.name !== m.name), invites: x.invites.filter((z) => z.contact !== m.contact) }))),
-    confirmSeat: (id: string): Said => (real ? real.confirmSeat(id) : nope()), // an accepted Admin invite, signed in, by its adder
-    // Money's, Admins only: ask Orbit for a payout, and add or replace where it's paid.
-    // ponytail: a replacement should also send open asks back to be confirmed again; the money API does that.
-    money: { ...day.money, ...own, days },
-    ask: (paise: number) => keep((k) => ({ ...k, payouts: [...k.payouts, { id: `p${Date.now()}`, asked: Date.now(), paise, status: 'requested' }] })),
-    setBank: (bank: Bank) => keep((k) => ({ ...k, bank })),
-    // A scanned QR or a typed code: this venue's booking, or another venue's (Not for this venue).
-    // ponytail: the mock's QR holds the 8-character code; the slots API will look up the booking's own QR.
+    // The scanner's (not in 1.0): have `total` of a booking in, through the same Admit as Check in; a refusal shows on
+    // Today. A scanned QR or typed code is looked up in today's day.
+    // ponytail: the day carries no ticket codes yet, so a scan finds nothing (Find by name works) and another venue's
+    // ticket reads as not an Orbit ticket; both wait on the API's ticket lookup.
+    letIn: (id: string, total: number) => void (desk && send(`claim:${id}`, () => desk.admit(id, { total }))),
     lookup: (text: string) => {
-      const ours = byCode(day.claims, text);
-      if (ours) return { claim: ours, ours: true };
-      for (const cs of others) {
-        const theirs = byCode(cs, text);
-        if (theirs) return { claim: theirs, ours: false };
-      }
-      return undefined;
+      const claim = byCode(claims, text);
+      return claim ? { claim, ours: true } : undefined;
     },
+    // Venue's, Admins only, read through useVenue(): the venue and its setup (null until it loads or while it isn't set
+    // up yet, `load` saying which), and its edits, each answering its line (Said).
+    venueTab: real ? { venue: real.venue, setup: real.setup, load: real.load, said: real.said } : { venue, setup: null, load: null, said: null },
+    tell: (line: string | null) => real?.tell(line), // a refusal for the Venue tab, from a sheet closed mid-write
+    saveKind: (t: StationType, tile: 'gaming' | 'sports'): Said => (real ? real.saveKind(t, tile) : nope()),
+    archiveKind: (id: string, archived = true): Said => (real ? real.archiveKind(id, archived) : nope()),
+    changeSetup: (f: (s: VenueSetup) => VenueSetup): Said => (real ? real.changeSetup(f) : nope()),
+    firstSetup: (b: PutVenue): Said => (real ? real.first(b) : nope()),
+    invite: (contact: string, role: 'Admin' | 'Desk'): Said => (real ? real.invite(contact, role) : nope()),
+    // Removing someone or withdrawing an invite, by its seat id.
+    endSeat: (id: string): Said => (real ? real.endSeat(id) : nope()),
+    confirmSeat: (id: string): Said => (real ? real.confirmSeat(id) : nope()), // an accepted Admin invite, by its adder
   };
 }
 
@@ -313,13 +231,13 @@ export function useStation() {
   return s;
 }
 
-/** The station state with the Venue tab's venue on top: the API's for a signed-in Admin, the mock's in the demo. */
+/** The station state with the Venue tab's venue on top: the API's, for an Admin. */
 export function useVenue() {
   const s = useStation();
   return { ...s, ...s.venueTab };
 }
 
-/** The station state with Today's day on top: the API's when signed in, the mock's in the demo. Today and its sheets. */
+/** The station state with Today's day on top (once it's loaded). Today and its sheets. */
 export function useToday() {
   const s = useStation();
   return { ...s, ...s.today! };

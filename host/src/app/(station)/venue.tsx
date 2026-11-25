@@ -1,14 +1,14 @@
 // Venue, for Admins (Station take 4, approved 22 Nov 2026: https://claude.ai/artifact/Me5XbAzWHUYi6muYwwSZrP, Take 4),
 // laid out as Launch's Host tab with the Orbit app's Account-style cards. From the Play and Hosts flow docs:
-// - the venue as people see it: logo, name with the tick, kind, area and followers; Share page and View;
+// - the venue as people see it: logo, name with the tick, kind and area; Share page and View;
 // - What you rent out: a row per kind (how many, the price an hour, off-peak, co-op, games), each edited in a sheet;
 //   Orbit sets how bookings start and whether it's booked whole; Add a kind;
 // - Hours: each day of the week, open or closed; how long before the start players can cancel; We log walk-ins;
-// - At your venue: events asking to be at the venue (Accept or Decline) and Hosted here;
 // - Team: Admins (the owner marked) and Desk, invites waiting with their days left, Add Desk or an Admin;
 // - Venue page (place, desk phone; name, logo and banner on the web Console) and You.
 // Changes that would strand a booking are refused in the sheet, naming the bookings (Play). Desk never comes here.
-// Signed in (S5) it's the API's venue and team (state.tsx useLiveVenue); a venue not set up yet shows only how to start.
+// It's the API's venue and team (state.tsx useLiveVenue); a venue not set up yet shows only how to start.
+// ponytail: no followers count: it waits for the follows API.
 // ponytail: Share page, View, Account, Help and Sign out open nothing yet, as on Launch's Host tab; they wait for
 // sign-in and the web host pages. Launch's Card and Row until a shared host kit holds them.
 import { OrbitSays } from '@orbit/mobile/orbitSays';
@@ -31,7 +31,7 @@ const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Frid
 const CONSOLE = 'https://console.heyorbit.in';
 
 export default function VenueTab() {
-  const { venue: v, setup: s, load, said: told, tell, role, now, hours, changeSetup, archiveKind } = useVenue();
+  const { venue: v, setup: s, load, said: told, tell, role, now, changeSetup, archiveKind } = useVenue();
   const [said, setSaid] = useState<string | null>(null); // the walk-ins switch's or a Restore's refusal
   const [busy, setBusy] = useState(false);
   const [walkIns, setWalkIns] = useState<boolean | null>(null); // the switch's new value while it's sent
@@ -45,8 +45,7 @@ export default function VenueTab() {
     router.push(href);
   };
   if (role !== 'admin') return null; // settings are an Admin's
-  // Signed in, today's India calendar day; the demo keeps its mock opening's.
-  const today = new Date((load ? now : hours.day) + 330 * 60_000).getUTCDay();
+  const today = new Date(now + 330 * 60_000).getUTCDay(); // today's India calendar day
   const write = (run: () => Promise<string | null>) => {
     setBusy(true);
     setSaid(null);
@@ -106,7 +105,6 @@ export default function VenueTab() {
             </View>
             <Text style={styles.line}>
               {s.kind} · {v.area}
-              {s.followers !== undefined && ` · ${s.followers.toLocaleString('en-IN')} followers`}
             </Text>
           </View>
         </View>
@@ -164,49 +162,18 @@ export default function VenueTab() {
       {said && <OrbitSays text={said} />}
       <Text style={styles.note}>{s.logWalkIns ? 'On: people see how many are free right now, so put every walk-in in on Today.' : 'Off: people see your hours and prices, never a free count.'}</Text>
 
-      <Section title="At your venue" />
-      {s.asks.length > 0 ? (
-        <>
-          <Card>
-            {s.asks.map((a) => (
-              <View key={a.id} style={styles.ask}>
-                <Row label={a.title} note={`By ${a.by} · ${a.when}${a.series ? ' · one yes covers the series' : ''}`} />
-                <View style={styles.pills}>
-                  <Pill
-                    label="Accept"
-                    spoken={`Accept ${a.title}`}
-                    onPress={() => changeSetup((x) => ({ ...x, asks: x.asks.filter((y) => y.id !== a.id), hosted: x.hosted.some((y) => y.id === a.id) ? x.hosted : [...x.hosted, a] }))}
-                  />
-                  <Pill label="Decline" spoken={`Decline ${a.title}`} onPress={() => changeSetup((x) => ({ ...x, asks: x.asks.filter((y) => y.id !== a.id) }))} />
-                </View>
-              </View>
-            ))}
-          </Card>
-          <Text style={styles.note}>Nothing shows till you accept. A link gives no role or money; either side can end it, and after a sale its ticket holders hear.</Text>
-        </>
-      ) : (
-        <Text style={styles.note}>When an event at your place asks to be at your venue, it shows here for you to accept.</Text>
-      )}
-      {s.hosted.length > 0 && (
-        <>
-          <Section title="Hosted here" />
-          <Card>
-            {s.hosted.map((a) => (
-              <Row key={a.id} label={a.title} note={`By ${a.by} · ${a.when}`} />
-            ))}
-          </Card>
-        </>
-      )}
+      {/* ponytail: no "At your venue" (events asking to be here, Accept or Decline) or "Hosted here": they wait for the
+          event-venue links API. */}
 
       <Section title="Team" />
       <Card>
-        {s.team.map((m, i) => (
+        {s.team.map((m) => (
           <Row
-            key={m.id ?? `${m.name}${i}`}
+            key={m.id}
             label={m.you ? 'You' : m.name}
             note={m.role === 'Desk' ? 'The counter: scan, walk-ins, blocks, no-shows' : undefined}
             value={m.owner ? 'Owner' : m.role}
-            onPress={m.you || m.owner ? undefined : () => open({ pathname: '/setup', params: { what: 'member', name: m.id ?? m.name } })}
+            onPress={m.you || m.owner ? undefined : () => open({ pathname: '/setup', params: { what: 'member', name: m.id } })}
           />
         ))}
         {s.invites
@@ -216,11 +183,11 @@ export default function VenueTab() {
             const left = x.sent === undefined ? 0 : daysLeft(x.sent, now);
             return (
               <Row
-                key={x.id ?? x.contact}
+                key={x.id}
                 label={x.contact}
                 note={x.accepted ? `Accepted by ${x.acceptedBy ?? 'them'} · ${x.byYou ? 'confirm it’s them' : 'waiting for a confirm'}` : x.sent === undefined ? 'Waiting' : `Waiting · ${left} day${left === 1 ? '' : 's'} left`}
                 value={x.role}
-                onPress={() => open({ pathname: '/setup', params: { what: 'invite', contact: x.id ?? x.contact } })}
+                onPress={() => open({ pathname: '/setup', params: { what: 'invite', contact: x.id } })}
               />
             );
           })}
@@ -265,5 +232,4 @@ const styles = StyleSheet.create({
   after: { marginTop: 12, marginHorizontal: 20, flexDirection: 'row', flexWrap: 'wrap', gap: space.small },
   gap: { marginTop: 12 },
   note: { marginTop: 10, marginHorizontal: 20, fontFamily: font.text, fontSize: 13, lineHeight: 18, color: color.secondary },
-  ask: { gap: space.small },
 });

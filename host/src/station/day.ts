@@ -8,7 +8,7 @@
 // - The scanner (Event day doc, slots, decision 16): the same QR at the counter, from 15 minutes before the start to the
 //   booked end, counted in stations. One station, or a pitch or court booked whole, is in on the scan; several ask how
 //   many are here and let nobody in until the desk taps (Event day decision 2).
-// ponytail: mock until the slots API (H8.1 to H8.5); the time labels repeat app/src/booking.ts until shared code moves
+// ponytail: the time labels repeat app/src/booking.ts until shared code moves
 // to mobile/ (host apps plan, decision 14).
 
 export const MIN = 60_000;
