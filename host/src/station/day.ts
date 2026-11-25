@@ -57,6 +57,7 @@ export type Claim = {
   released?: number; // when the desk released it as a no-show
   refunded?: boolean;
   again?: number; // times the desk let someone in again after Already in (logged)
+  held?: boolean; // a booking still being paid for (the API's held): it takes its stations but nobody's due yet
 };
 
 /** Where a booking stands at the counter. */
@@ -113,6 +114,9 @@ export function taken(claims: readonly Claim[], t: StationType, at: number) {
   for (const c of claims) if (c.type === t.id && covers(c, at)) n[c.kind] += c.count;
   return { ...n, free: Math.max(t.count - n.booking - n.walkin - n.block, 0) };
 }
+
+/** A booking the counter waits for: in Next up, the no-show banner, Check in and Release. Not one still being paid for. */
+export const atDoor = (c: Claim) => c.kind === 'booking' && !c.held;
 
 export function door(c: Claim, now: number): Door {
   if (c.released) return 'released';
