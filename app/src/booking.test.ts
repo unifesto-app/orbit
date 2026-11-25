@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { answered, bookingDays, firstTeam, freeAt, holdLeft, teamFits, teamNameOk, maxGuests, maxTickets, mmss, slotLine, slotPrice, startTimes, ticketMax } from './booking.ts';
+import { answered, bookingDays, firstTeam, freeAt, holdLeft, liveTiers, teamFits, teamNameOk, maxGuests, maxTickets, mmss, slotLine, slotPrice, startTimes, ticketMax } from './booking.ts';
 import { venues } from './kinds.ts';
 
 const NOW = Date.parse('2026-11-20T09:00:00+05:30'); // a Friday morning in India
@@ -113,4 +113,22 @@ test('a hackathon starts on the biggest team that fits, and on none when nothing
   assert.equal(teamFits(tiers, 2, { left: 3 }), false);
   assert.equal(firstTeam(tiers, { left: 0 }), -1);
   assert.equal(firstTeam([{ soldOut: true }], {}), -1);
+});
+
+test('liveTiers: why a type is off, the first that holds, and the most one booking takes', () => {
+  const now = Date.parse('2026-11-24T09:00:00+05:30');
+  const base = { id: 't', name: 'General', pricePaise: 0, quantity: 50, left: 50, salesStartAt: null, salesEndAt: null, note: null, perPersonLimit: 4 };
+  const off = (t: Partial<typeof base> | Record<string, unknown>) => liveTiers([{ ...base, ...t } as typeof base], now)[0]!.off;
+  const later = '2026-11-28T10:00:00+05:30';
+  const before = '2026-11-20T10:00:00+05:30';
+  assert.equal(off({}), undefined);
+  assert.equal(off({ pricePaise: 29900, salesStartAt: later, left: 0 }), 'Coming soon'); // paid beats the rest
+  assert.equal(off({ salesStartAt: later, left: 0 }), 'Opens Sat 28 Nov'); // not open yet beats sold out
+  assert.equal(off({ salesEndAt: before, left: 0 }), 'Closed');
+  assert.equal(off({ left: 0 }), 'Sold out');
+  const max = (t: Record<string, unknown>) => liveTiers([{ ...base, ...t } as typeof base], now)[0]!.max;
+  assert.equal(max({}), 4); // the per-person limit
+  assert.equal(max({ left: 2 }), 2); // the seats left
+  assert.equal(max({ left: null, quantity: null, perPersonLimit: 10 }), 10); // no limit: 10, a booking's most
+  assert.equal(max({ left: -1 }), 0);
 });

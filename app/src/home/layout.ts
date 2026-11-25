@@ -25,7 +25,7 @@ export type Viewer = {
   initial?: string;
   follows: readonly string[]; // host ids
   place: Place | null;
-  tickets?: readonly { eventId: string; label: string }[]; // the viewer's upcoming bookings
+  tickets?: readonly { eventId: string; label: string; id?: string }[]; // the viewer's upcoming bookings; `id` opens the ticket
   interests?: readonly string[]; // category slugs picked on Account › Interests; unset until picked or skipped
 };
 // `near`: discover's call (within 25 km, or online), which wins over the area list when it's there.
