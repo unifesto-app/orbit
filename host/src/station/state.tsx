@@ -13,7 +13,7 @@ import type { Result } from '@orbit/mobile/api';
 import { useLoad } from '@orbit/mobile/load';
 import { createContext, type ReactNode, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
-import { byCode, type StationType } from './day';
+import type { StationType } from './day';
 import { seats as seatsOf } from './seats';
 import { counter } from './counter';
 import { blank, fromApi } from './live';
@@ -94,15 +94,6 @@ function useStationState() {
     // it's in); `gone` says the sheet was closed, so a refusal goes to Today instead.
     place: (b: { stationId: string; hours: number; count: number; why?: string }, gone: () => boolean): Promise<Sent> =>
       desk ? send('sheet', () => (b.why ? desk.block({ ...b, why: b.why }) : desk.walkIn(b)), { unsure: true, toToday: gone }) : Promise.resolve({ dropped: true }),
-    // The scanner's (not in 1.0): have `total` of a booking in, through the same Admit as Check in; a refusal shows on
-    // Today. A scanned QR or typed code is looked up in today's day.
-    // ponytail: the day carries no ticket codes yet, so a scan finds nothing (Find by name works) and another venue's
-    // ticket reads as not an Orbit ticket; both wait on the API's ticket lookup.
-    letIn: (id: string, total: number) => void (desk && send(`claim:${id}`, () => desk.admit(id, { total }))),
-    lookup: (text: string) => {
-      const claim = byCode(claims, text);
-      return claim ? { claim, ours: true } : undefined;
-    },
     // Venue's, Admins only, read through useVenue(): the venue and its setup (null until it loads or while it isn't set
     // up yet, `load` saying which), and its edits, each answering its line (Said).
     venueTab: real ? { venue: real.venue, setup: real.setup, load: real.load, said: real.said } : { venue, setup: null, load: null, said: null },

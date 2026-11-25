@@ -10,7 +10,7 @@ import { StatusBar } from 'expo-status-bar';
 import { refreshMe, useSession } from '../session';
 import { seats } from '../station/seats';
 import { StationProvider } from '../station/state';
-import { isLaunch, isStation, ONE_0 } from '../variant';
+import { isLaunch, isStation } from '../variant';
 
 // Station's short sheets (walk-in and block, you, Venue's edits) are see-through, so their own frosted glass shows, as the Orbit
 // app's venue sheet: as tall as what's in them, with a grabber.
@@ -45,10 +45,6 @@ export default function Layout() {
           <Stack.Screen name="you" options={SHEET} />
           {/* Venue's edits, Admins only (take 4). */}
           <Stack.Screen name="setup" options={SHEET} />
-          {/* The scanner takes the whole screen, over Today (take 2). Not in 1.0 (ONE_0). */}
-          <Stack.Protected guard={!ONE_0}>
-            <Stack.Screen name="scan" options={{ presentation: 'fullScreenModal', contentStyle: { backgroundColor: '#000' } }} />
-          </Stack.Protected>
         </Stack.Protected>
         <Stack.Protected guard={!session || (isStation && !signedIn)}>
           <Stack.Screen name="signin" />
@@ -65,6 +61,6 @@ export default function Layout() {
       </Stack>
     </>
   );
-  // Keyed by account: signing out (or in as someone else) drops the last person's venue, role, day and bank details.
+  // Keyed by account: signing out (or in as someone else) drops the last person's seat, day and writes in flight.
   return isStation ? <StationProvider key={signedIn ? session.me.id : 'out'}>{stack}</StationProvider> : stack;
 }

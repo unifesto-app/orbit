@@ -44,7 +44,7 @@ export default function VenueTab() {
     last.current = Date.now();
     router.push(href);
   };
-  if (role !== 'admin') return null; // settings are an Admin's
+  if (role !== 'admin' || !load) return null; // settings are an Admin's
   const today = new Date(now + 330 * 60_000).getUTCDay(); // today's India calendar day
   const write = (run: () => Promise<string | null>) => {
     setBusy(true);
@@ -53,18 +53,18 @@ export default function VenueTab() {
     return run().then((line) => (setBusy(false), setSaid(line), line));
   };
   const toConsole = () => Linking.openURL(CONSOLE).catch(() => {});
-  const refresh = load && <RefreshControl refreshing={false} onRefresh={load.reload} tintColor={color.secondary} />;
-  const trouble = !load?.error ? null : load.status === 0 ? 'Can’t reach Orbit. Pull to try again.' : load.error.message;
-  // Signed in, before the venue lands, or a venue not set up yet: the name and what to do.
+  const refresh = <RefreshControl refreshing={false} onRefresh={load.reload} tintColor={color.secondary} />;
+  const trouble = !load.error ? null : load.status === 0 ? 'Can’t reach Orbit. Pull to try again.' : load.error.message;
+  // Before the venue lands, or a venue not set up yet: the name and what to do.
   if (!s)
     return (
-      <ScrollView style={styles.page} contentContainerStyle={{ paddingTop: insets.top + 12, paddingBottom: insets.bottom + space.big }} refreshControl={refresh || undefined}>
+      <ScrollView style={styles.page} contentContainerStyle={{ paddingTop: insets.top + 12, paddingBottom: insets.bottom + space.big }} refreshControl={refresh}>
         <View style={styles.head}>
           <Text style={styles.name} accessibilityRole="header">
             {v.name}
           </Text>
         </View>
-        {load?.notSetUp ? (
+        {load.notSetUp ? (
           <>
             <OrbitSays text="Set up your venue: where it is, the desk phone and your hours. Then add what you rent out. Nobody can book till then." />
             <View style={styles.after}>
@@ -87,7 +87,7 @@ export default function VenueTab() {
       contentContainerStyle={{ paddingTop: insets.top + 12, paddingBottom: insets.bottom + space.big }}
       onScroll={onScroll}
       scrollEventThrottle={16}
-      refreshControl={refresh || undefined}
+      refreshControl={refresh}
     >
       <View style={styles.head}>
         <View style={styles.top}>
@@ -171,7 +171,7 @@ export default function VenueTab() {
           <Row
             key={m.id}
             label={m.you ? 'You' : m.name}
-            note={m.role === 'Desk' ? 'The counter: scan, walk-ins, blocks, no-shows' : undefined}
+            note={m.role === 'Desk' ? 'The counter: walk-ins, blocks, no-shows' : undefined}
             value={m.owner ? 'Owner' : m.role}
             onPress={m.you || m.owner ? undefined : () => open({ pathname: '/setup', params: { what: 'member', name: m.id } })}
           />
@@ -196,7 +196,7 @@ export default function VenueTab() {
         <Pill label="Add Desk" onPress={() => open({ pathname: '/setup', params: { what: 'add', role: 'Desk' } })} />
         <Pill label="Add an Admin" onPress={() => open({ pathname: '/setup', params: { what: 'add', role: 'Admin' } })} />
       </View>
-      <Text style={styles.note}>Desk works the counter and never sees money, prices or settings. Admins run everything here, the bank account too.</Text>
+      <Text style={styles.note}>Desk works the counter and never sees money, prices or settings. Admins run everything here.</Text>
 
       <Section title="Venue page" />
       <Card>

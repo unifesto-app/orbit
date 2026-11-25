@@ -254,8 +254,8 @@ export default function Setup() {
         <SheetSays
           text={
             desk
-              ? `They start when they accept, in ${variants.station.name}: scan, walk-ins, blocks and no-shows, with names, stations and hours. Never money, prices or settings. Desk never ends on its own; remove them here.`
-              : 'They start once you confirm it’s them after they accept. Admins see everything, the bank account too.'
+              ? `They start when they accept, in ${variants.station.name}: walk-ins, blocks and no-shows, with names, stations and hours. Never money, prices or settings. Desk never ends on its own; remove them here.`
+              : 'They start once you confirm it’s them after they accept. Admins see everything.'
           }
         />
         <Pill
@@ -319,7 +319,6 @@ export default function Setup() {
         {key === 'address' && (
           <SheetSays
             text="For the map pin, press and hold your entrance in Google Maps and paste the numbers it shows. Events whose Where matches can ask to be at your venue."
-
           />
         )}
         {why && <SheetSays text={why} />}
