@@ -341,7 +341,9 @@ export function signIn(done: Extract<AuthStep, { step: 'signedIn' }>, via: Way) 
 // A follow tapped while it waited has already been sent, so the read goes again (once) rather than being dropped.
 async function loadFollows(retry = true): Promise<void> {
   const at = followEpoch;
+  const who = current?.me.id; // an answer for an account that has since signed out never lands on the next one
   const r = await hostsApi(api).follows();
+  if (current?.me.id !== who) return;
   // ponytail: one re-read after a tap; a follow POST still in flight when that re-read lands can show Follow until the
   // next launch. Overlay the pending taps on the answer if that ever shows up.
   if (at !== followEpoch) return retry ? loadFollows(false) : undefined;
