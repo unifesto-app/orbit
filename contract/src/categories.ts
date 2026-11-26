@@ -1,5 +1,5 @@
 // Orbit's categories, fixed in code (Galaxy flow), one per event (Discover decision 12). No alcohol or nightlife.
-// The Discover flow's eight tiles, in its order (owner, 19 Nov 2026: "The eight tiles", replacing the ten): Jams is
+// The Discover flow's tiles, in its order (owner, 19 Nov 2026: "The eight tiles"; ten since 26 Nov with Workshops and Run clubs): Jams is
 // jamming sessions to start; Events holds everything else, band gigs included (Discover 24). The category decides
 // one-tap Fests, Loved it and slots (Discover 21). api/drizzle/0014_eight_tiles.sql moved stored events off the old
 // slugs (music to jams; workshops, film and startups to events). Owner, 26 Nov 2026: workshops and run clubs go on
