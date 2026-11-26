@@ -39,6 +39,13 @@ export const sections: { title: string; items: NavItem[] }[] = [
       { label: "PM board", href: "/pm-board" },
     ],
   },
+  {
+    title: "Platform",
+    items: [
+      // Notification kinds with their kill switches, and the delivery log by person (notifications build plan, PR 7).
+      { label: "Notifications", href: "/notifications" },
+    ],
+  },
 ];
 
 export const isActive = (item: NavItem, path: string) =>
