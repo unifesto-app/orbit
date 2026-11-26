@@ -11,7 +11,8 @@
 // The host switcher and New event head it; the host's own colour glows from the top, as on its page in the Orbit app.
 // From GET /hosts/:id/events (plan F31, L4): its drafts, and its upcoming and past events, sorted here by check-in.
 // New event opens the editor (src/app/edit.tsx), as do a draft's Continue and a coming published card's Edit event.
-// ponytail: Scan, Find someone and the rows open nothing yet; each is a later take. Refund
+// - Scan and Find someone open the scanner (src/app/scan.tsx, X6) on that event.
+// ponytail: the rows open nothing yet; each is a later take. Refund
 // requests, payouts and event roles wait for their APIs. Admins'
 // view only. Past lists every past event; add See all when it's long.
 import type { EventRow, HostEvents } from '@orbit/contract';
@@ -69,14 +70,14 @@ export default function Events() {
         {groups.map((g) => (
           <Cards key={g.word} title={g.word}>
             {g.events.map((e) => (
-              <Card key={e.id} event={e} stage="open" now={now} />
+              <Card key={e.id} event={e} stage="open" now={now} hostId={host.id} />
             ))}
           </Cards>
         ))}
         {next.length > 0 && (
           <Cards title={next.length === 1 ? 'Next' : 'Upcoming'}>
             {next.map((e) => (
-              <Card key={e.id} event={e} stage="next" now={now} />
+              <Card key={e.id} event={e} stage="next" now={now} hostId={host.id} />
             ))}
           </Cards>
         )}
@@ -90,7 +91,7 @@ export default function Events() {
         {past.length > 0 && (
           <Cards title="Past">
             {past.map((e) => (
-              <Card key={e.id} event={e} stage="past" now={now} />
+              <Card key={e.id} event={e} stage="past" now={now} hostId={host.id} />
             ))}
           </Cards>
         )}
@@ -110,7 +111,8 @@ function Cards({ title, children }: { title: string; children: ReactNode }) {
 }
 
 // One event and what's waiting on it.
-function Card({ event: e, stage, now }: { event: Listed; stage: Stage; now: number }) {
+function Card({ event: e, stage, now, hostId }: { event: Listed; stage: Stage; now: number; hostId: string }) {
+  const scan = (find: boolean) => router.push({ pathname: '/scan', params: { hostId, eventId: e.id, title: e.title, ...(find ? { find: '1' } : {}) } });
   // ponytail: `checkedIn` stays hidden while it's always 0 (nothing records check-in yet). Once the door does, past
   // cards read "35 of 38 came" and the open card's row "In 3 of 31", as take 1 draws them.
   const sold = `${e.sold} sold`;
@@ -126,8 +128,8 @@ function Card({ event: e, stage, now }: { event: Listed; stage: Stage; now: numb
           label="Check-in open"
           right={
             <>
-              <Pill label="Scan" />
-              <Pill label="Find someone" />
+              <Pill label="Scan" onPress={() => scan(false)} />
+              <Pill label="Find someone" onPress={() => scan(true)} />
             </>
           }
         />

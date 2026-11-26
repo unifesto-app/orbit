@@ -1,5 +1,5 @@
 {
-  "id": "c1390426-5172-42f0-a4ed-71d3493a1556",
+  "id": "70cd59d3-9879-48d3-8183-60acf0d1b3ff",
   "prevId": "2d7cd291-53b7-4f68-9c5d-f2d7926abdf5",
   "version": "7",
   "dialect": "postgresql",
@@ -673,6 +673,25 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "admitted": {
+          "name": "admitted",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "checked_in_at": {
+          "name": "checked_in_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "checked_in_by": {
+          "name": "checked_in_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -801,6 +820,19 @@
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
+        },
+        "bookings_checked_in_by_users_id_fk": {
+          "name": "bookings_checked_in_by_users_id_fk",
+          "tableFrom": "bookings",
+          "tableTo": "users",
+          "columnsFrom": [
+            "checked_in_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -832,6 +864,10 @@
         "bookings_quantity_range": {
           "name": "bookings_quantity_range",
           "value": "\"bookings\".\"quantity\" between 1 and 10"
+        },
+        "bookings_admitted_in_quantity": {
+          "name": "bookings_admitted_in_quantity",
+          "value": "\"bookings\".\"admitted\" between 0 and \"bookings\".\"quantity\""
         }
       },
       "isRLSEnabled": false
@@ -1974,13 +2010,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "fee_plan": {
-          "name": "fee_plan",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'3+2'"
         },
         "created_at": {
           "name": "created_at",
