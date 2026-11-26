@@ -17,7 +17,7 @@ const KEY = { keyId: "rzp_test_abc", keySecret: "key-secret-for-tests", webhookS
 const sign = (secret: string, data: string) => createHmac("sha256", secret).update(data).digest("hex");
 
 // Razorpay as these tests need it: orders, payments captured on them, refunds (pending until a test processes them).
-const rzState = { orders: 0, refunds: [] as RzRefund[], captured: new Map<string, RzPayment[]>(), refundFails: false, calls: [] as string[] };
+const rzState = { orders: 0, refunds: [] as RzRefund[], captured: new Map<string, RzPayment[]>(), refundFails: false, ordersDown: false, calls: [] as string[] };
 const fakeFetch = (async (url: string | URL, init?: RequestInit) => {
   const path = new URL(String(url)).pathname.replace(/^\/v1/, "");
   const method = init?.method ?? "GET";
@@ -30,6 +30,7 @@ const fakeFetch = (async (url: string | URL, init?: RequestInit) => {
     return json({ id: `order_${++rzState.orders}`, amount: body.amount, receipt: body.receipt });
   }
   let m = path.match(/^\/orders\/([^/]+)\/payments$/);
+  if (m && rzState.ordersDown) return json({ error: { code: "SERVER_ERROR" } }, 500);
   if (m) return json({ items: rzState.captured.get(m[1]!) ?? [] });
   m = path.match(/^\/payments\/([^/]+)$/);
   if (m) {
@@ -689,4 +690,40 @@ test("Galaxy cancel with Razorpay off: a paid booking is refused, a free one sti
   assert.equal((await t.db.select().from(bookings).where(eq(bookings.id, paid)))[0]!.status, "confirmed");
   assert.equal((await cancel(tk.id)).status, 200);
   assert.equal((await t.db.select().from(bookings).where(eq(bookings.id, tk.id)))[0]!.status, "cancelled");
+});
+
+test("GET /payments/:orderId: Razorpay down is a 502; open attempts are pending; late money on an expired order settles; a day on, the DB answers; 10 a minute", async () => {
+  const a = await join(), b = await join();
+  const e = await publish(a);
+  const o = (await pay(b, e)).body;
+  const status = () => as(b)("GET", `/payments/${o.orderId}`);
+  rzState.ordersDown = true;
+  const down = await status();
+  rzState.ordersDown = false;
+  assert.deepEqual([down.status, down.body.error], [502, "paymentsDown"]);
+  // A UPI request sent, not answered: Razorpay's attempt is still created.
+  const open = capture(o.orderId, o.amountPaise, "created");
+  assert.deepEqual((await status()).body, { status: "pending", bookingId: null });
+  // A failed one beside it: nothing was taken.
+  capture(o.orderId, o.amountPaise, "failed");
+  assert.equal((await status()).body.status, "created");
+  // The order expired, then the money landed late: a seat.
+  await t.db.update(payments).set({ status: "expired" }).where(eq(payments.razorpayOrderId, o.orderId));
+  rzState.captured.set(o.orderId, [{ ...open, status: "captured" }]);
+  const late = await status();
+  assert.equal(late.body.status, "paid");
+  assert.equal((await bookingsOf(b)).length, 1);
+
+  // An open order over a day old: no call to Razorpay.
+  const c = await join();
+  const oc = (await pay(c, e)).body;
+  t.tick(25 * HOUR);
+  const before = rzState.calls.length;
+  assert.deepEqual((await as(c)("GET", `/payments/${oc.orderId}`)).body, { status: "created", bookingId: null });
+  assert.equal(rzState.calls.length, before);
+  // Ten a minute each.
+  for (let i = 0; i < 9; i++) assert.equal((await as(c)("GET", `/payments/${oc.orderId}`)).status, 200);
+  assert.equal((await as(c)("GET", `/payments/${oc.orderId}`)).status, 429);
+  t.tick(MIN);
+  assert.equal((await as(c)("GET", `/payments/${oc.orderId}`)).status, 200);
 });

@@ -56,7 +56,8 @@ export const PAYMENT_STATUSES = ["created", "paid", "refundPending", "refunded",
 export type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
 // "confirming": Razorpay hasn't captured it yet (or couldn't be asked); the webhook or the poller settles it.
 // `reason`, when it went back with no seat: seatCheck's code (fewLeft is sold out; cancelled, ended, closed, tooMany, booked…).
-export type Verified = { status: PaymentStatus | "confirming"; bookingId: string | null; reason?: string };
+// "pending" (GET /payments/:orderId only): Razorpay has the attempt open, not paid, not failed (a UPI request unanswered).
+export type Verified = { status: PaymentStatus | "confirming" | "pending"; bookingId: string | null; reason?: string };
 
 // Galaxy's Money pages (staff with Money).
 export const REFUND_STATUSES = ["requested", "sent", "processed", "failed"] as const;

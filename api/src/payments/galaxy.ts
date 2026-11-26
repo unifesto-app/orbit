@@ -390,6 +390,9 @@ export function moneyRoutes({ db, secret, notify, razorpay: rz, now = Date.now }
   // didn't go). Locks: the holder, then the booking, then its payment (refundPaid), as mine() and account deletion take
   // them (a booking's holder never changes, so reading it unlocked first is safe). Razorpay off: a free one still goes.
   // ponytail: no notice to the holder yet (bookingCancelled has no wording); they hear of the refund when it lands.
+  // ponytail: a second payment landing on this booking's order at the same moment (paid twice: settle locks the payment,
+  // then nothing else) can deadlock with this, as with a holder's cancel or account deletion; Postgres aborts one with
+  // 40P01, no money moves wrongly, and pressing Cancel again works. Lock the payment first everywhere if it's ever seen.
   app.post("/galaxy/bookings/:id/cancel", cap, ...staff, async (c) => {
     const id = c.req.param("id");
     if (!isUuid(id)) return fail(c, 404, "notFound", "There's nothing here.");

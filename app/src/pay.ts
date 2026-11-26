@@ -134,6 +134,8 @@ export const PAY_SAYS = {
   confirming: 'We’re confirming your payment. Your ticket appears here within a few minutes.',
   refunded: 'That sold out while you were paying. We’ve refunded you in full.',
   off: 'Orbit isn’t taking payments yet, so nothing was charged.',
+  pending: 'If you approved it, your ticket appears here shortly. Otherwise nothing was charged.',
+  unknown: 'We couldn’t check that payment. Pull down on Your tickets in a minute, or try again.',
 };
 
 /** Why a payment went back with no ticket (settle's reason, api/src/payments/routes.ts), in a short true line. */
@@ -181,14 +183,19 @@ export function orderNext(r: Result<PayOrder>, ours: ReadonlySet<string>): PayNe
 }
 
 /** Where a payment stands once checkout is done: verify's answer after Razorpay took it (`closed` unset), or the order's
- * status after checkout closed without it (`closed`: how). Only a bad signature, or an order still open, failed or
- * expired, lets Pay go again; anything unknown is confirming, so checkout never reopens on money that may have gone. */
+ * status after checkout closed without it (`closed`: how). After verify, a bad signature says the server's line and Pay
+ * stays; any other trouble is confirming, so checkout never reopens on money that went. After a close, an attempt still
+ * open at Razorpay ("pending") or a status we couldn't get ("unknown") keeps Pay on the same order. */
 export function paidNext(r: Result<Verified>, closed?: 'dismissed' | 'failed'): PayDone {
   const confirming: PayDone = { next: 'confirming', say: PAY_SAYS.confirming };
-  if (!r.ok) return !closed && r.error.error === 'badSignature' ? { next: 'again', say: PAY_SAYS.failed } : confirming;
+  if (!r.ok) {
+    if (closed) return { next: 'again', say: PAY_SAYS.unknown };
+    return r.error.error === 'badSignature' ? { next: 'again', say: r.error.message } : confirming;
+  }
   const v = r.data;
   if (v.status === 'paid' && v.bookingId) return { next: 'ticket', bookingId: v.bookingId };
   if (v.status === 'refundPending' || v.status === 'refunded') return { next: 'refunded', say: refundSays(v.reason) };
+  if (closed && v.status === 'pending') return { next: 'again', say: PAY_SAYS.pending };
   if (closed && (v.status === 'created' || v.status === 'failed' || v.status === 'expired')) return { next: 'again', say: PAY_SAYS[closed] };
   return confirming;
 }

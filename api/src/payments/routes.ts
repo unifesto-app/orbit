@@ -261,7 +261,7 @@ type Hook = {
   payload?: { payment?: { entity: RzPayment }; refund?: { entity: RzRefund } };
 };
 
-export function paymentsRoutes({ db, secret, notify, razorpay: rz, now = Date.now }: Deps) {
+export function paymentsRoutes({ db, store, secret, notify, razorpay: rz, now = Date.now }: Deps) {
   const app = new Hono<Env>();
   const auth = signedIn(db, secret, now);
   const refused = { minute: 0, n: 0 }; // refused webhooks kept this minute
@@ -352,29 +352,30 @@ export function paymentsRoutes({ db, secret, notify, razorpay: rz, now = Date.no
   });
 
   // GET /payments/:orderId: where the payer's order stands, for the app when checkout closes without an answer (closed,
-  // or failed). Razorpay is asked about an open one: money captured settles here as the poller would; a payment only
-  // authorized, or no answer from Razorpay, is "confirming". Only created, failed or expired means nothing was taken.
+  // or failed). Razorpay is asked about an open one under a day old (older ones are the DB's word; the poller stops
+  // then too): money captured settles here as the poller would; a payment only authorized is "confirming"; attempts
+  // all still open at Razorpay (created, a UPI request unanswered) are "pending"; no answer from Razorpay is a 502. Only
+  // created, failed or expired means nothing was taken. 10 a minute a person, so a tapping app can't hammer Razorpay.
   app.get("/payments/:orderId", auth, async (c) => {
     if (!rz) return off(c);
+    if ((await store.incr(`paystatus:${c.var.user.id}`, MIN)) > 10) return fail(c, 429, "tooMany", "Too many tries. Wait a minute.");
     const orderId = c.req.param("orderId");
     const [p] = await db.select().from(payments).where(and(eq(payments.razorpayOrderId, orderId), eq(payments.userId, c.var.user.id)));
     if (!p) return nothing(c);
-    const confirming: Verified = { status: "confirming", bookingId: null };
-    if (p.status === "paid" || p.status === "refundPending" || p.status === "refunded") {
-      const out: Verified = { status: p.status, bookingId: p.bookingId, reason: p.bookingId ? undefined : await reasonOf(db, p.id) };
-      return c.json(out);
-    }
-    const tried = await rz.orderPayments(orderId).catch((e: Error) => (console.error("[payments] status", e.message), null));
-    if (!tried) return c.json(confirming);
-    const got = tried.find((x) => x.status === "captured");
-    if (got) {
-      const s = (await settleAndSend(db, rz, notify, orderId, got, now()))!;
+    const said = async (s: Pick<Settled, "status" | "bookingId" | "reason">) => {
       const out: Verified = { status: s.status, bookingId: s.bookingId, reason: s.reason };
       return c.json(out);
-    }
-    if (tried.some((x) => x.status === "authorized")) return c.json(confirming);
-    const out: Verified = { status: p.status, bookingId: null };
-    return c.json(out);
+    };
+    if (p.status === "paid" || p.status === "refundPending" || p.status === "refunded")
+      return said({ status: p.status, bookingId: p.bookingId, reason: p.bookingId ? undefined : await reasonOf(db, p.id) });
+    if (p.createdAt.getTime() < now() - LATE_FOR) return said({ status: p.status, bookingId: null });
+    const tried = await rz.orderPayments(orderId).catch((e: Error) => (console.error("[payments] status", e.message), null));
+    if (!tried) return fail(c, 502, "paymentsDown", "We couldn't check that payment right now.");
+    const got = tried.find((x) => x.status === "captured");
+    if (got) return said((await settleAndSend(db, rz, notify, orderId, got, now()))!);
+    if (tried.some((x) => x.status === "authorized")) return c.json({ status: "confirming", bookingId: null } satisfies Verified);
+    if (tried.length && tried.every((x) => x.status === "created")) return c.json({ status: "pending", bookingId: null } satisfies Verified);
+    return said({ status: p.status, bookingId: null });
   });
 
   // POST /razorpay/webhook: Razorpay's word, the source of truth. Signed over the raw body; each event id is taken once

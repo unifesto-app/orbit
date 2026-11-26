@@ -93,7 +93,10 @@ test('paying: what the sheet does with each answer', () => {
   assert.deepEqual(paidNext(v('refundPending', null, 'fewLeft')), { next: 'refunded', say: PAY_SAYS.refunded });
   assert.deepEqual(paidNext(v('refundPending', null, 'cancelled')), { next: 'refunded', say: 'This event was cancelled. We’ve refunded you in full.' });
   assert.deepEqual(paidNext(v('refunded', null, 'booked')), { next: 'refunded', say: 'You already have this ticket. We’ve refunded this payment in full.' });
-  assert.deepEqual(paidNext(no(400, 'badSignature')), { next: 'again', say: PAY_SAYS.failed });
+  assert.deepEqual(paidNext(no(400, 'badSignature', 'If money left your account, we’ll confirm or refund it on our own.')), {
+    next: 'again',
+    say: 'If money left your account, we’ll confirm or refund it on our own.',
+  });
   assert.deepEqual(paidNext(no(404, 'notFound')), { next: 'confirming', say: PAY_SAYS.confirming }); // any other 4xx
   assert.deepEqual(paidNext(no(0, 'offline')), { next: 'confirming', say: PAY_SAYS.confirming });
   assert.deepEqual(paidNext(no(502, 'server')), { next: 'confirming', say: PAY_SAYS.confirming });
@@ -103,6 +106,10 @@ test('paying: what the sheet does with each answer', () => {
   assert.deepEqual(paidNext(v('failed'), 'failed'), { next: 'again', say: PAY_SAYS.failed });
   assert.deepEqual(paidNext(v('paid', 'b2'), 'dismissed'), { next: 'ticket', bookingId: 'b2' });
   assert.deepEqual(paidNext(v('confirming'), 'dismissed'), { next: 'confirming', say: PAY_SAYS.confirming });
-  assert.deepEqual(paidNext(no(0, 'offline'), 'dismissed'), { next: 'confirming', say: PAY_SAYS.confirming });
+  // Still open at Razorpay: pending; no status at all (offline, 5xx, 429): unknown. Pay stays on the same order.
+  assert.deepEqual(paidNext(v('pending'), 'dismissed'), { next: 'again', say: PAY_SAYS.pending });
+  assert.deepEqual(paidNext(no(0, 'offline'), 'dismissed'), { next: 'again', say: PAY_SAYS.unknown });
+  assert.deepEqual(paidNext(no(502, 'paymentsDown'), 'failed'), { next: 'again', say: PAY_SAYS.unknown });
+  assert.deepEqual(paidNext(no(429, 'tooMany'), 'dismissed'), { next: 'again', say: PAY_SAYS.unknown });
   assert.equal(refundSays(undefined), 'We couldn’t give you this ticket, so we’ve refunded you in full.');
 });

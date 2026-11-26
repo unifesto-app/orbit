@@ -16,8 +16,8 @@
 // How many of a type fit is ticketMax (src/booking.ts): the booking's limit and the seats left, a team ticket taking its
 // team's seats. Free or paid is the event's prices, not what's picked.
 // A real event (the API's, P10.1) books for real: one type per booking, up to its per-person limit and the seats left,
-// then its ticket opens. A free type registers; a paid one (X3) gets its order from the API when Pay is tapped (Review
-// then shows the server's price, fee and total), Razorpay's checkout opens on it (the native SDK, so UPI apps open from
+// then its ticket opens. A free type registers; a paid one (X3) gets its order from the API on Review, so the server's
+// price, fee and total show before Pay (a failed request is made again by Pay), Razorpay's checkout opens on it (the native SDK, so UPI apps open from
 // Orbit) on the way you picked, and the API confirms it; what each answer does is paidNext/orderNext (src/pay.ts). The mock's steps (questions, teams, Add people, waitlists) and the mock's
 // paid events stay the mock's until their slices.
 import { formatPrice, type PayOrder, type PublicEvent } from '@orbit/contract';
@@ -134,9 +134,9 @@ function Booking({ slug, e, live, now, reload }: { slug: string; e: Event; live?
   const total = lines.reduce((n, l) => n + l.count * l.pricePaise, 0);
   // A real event's booking is one type: free when that type is (or, nothing picked yet, when every type is).
   const free = live && count > 0 ? total === 0 : tiers.every((t) => t.pricePaise === 0);
-  // A real event's paid pick: its order once Pay has made one, shown on Review while the pick stays the same.
+  // A real event's paid pick on Review: its order, made once per pick (the same pick again reuses it).
   const at = qty.findIndex((q) => q > 0);
-  const orderKey = live && !free && tiers[at]?.id ? `${tiers[at]!.id}|${qty[at]}` : null;
+  const orderKey = live && !free && step === 'review' && tiers[at]?.id ? `${tiers[at]!.id}|${qty[at]}` : null;
   const ready = order && order.key === orderKey ? order.o : undefined;
   // A paid event with nothing picked shows ₹0, not Free.
   const price = ready ? formatPrice(ready.amountPaise) : !free && total === 0 ? '₹0' : formatPrice(total);
@@ -164,6 +164,46 @@ function Booking({ slug, e, live, now, reload }: { slug: string; e: Event; live?
     say(r.error.message);
   };
 
+
+  // Paying's next step (src/pay.ts): the ticket, confirming (the bar goes to the tickets, checkout never reopens), money
+  // back with why, the event read again, or a line and Pay again.
+  const act = (n: PayDone) => {
+    if (n.next === 'ticket') {
+      void loadTickets();
+      router.dismiss();
+      router.push(`/ticket/${n.bookingId}`);
+      return;
+    }
+    if (n.next === 'confirming') {
+      void loadTickets();
+      setConfirming(true);
+    }
+    if (n.next === 'refunded') {
+      setOrder(undefined);
+      reload?.();
+    }
+    if (n.next === 'reread') {
+      reload?.();
+      setStep('pick');
+    }
+    say(n.say);
+  };
+  // The pick's order from the API, kept for Review's lines and Pay. One this sheet made never says "already paying"; one
+  // from before is said once and then used. A refusal is said and Pay asks again.
+  const getOrder = async (key: string) => {
+    const got = orderNext(await paymentsApi(api).order(live!.id, tiers[at]!.id!, qty[at]!), ours.current);
+    if (got.next !== 'open' && got.next !== 'already') return act(got);
+    setOrder({ key, o: got.order });
+    ours.current.add(got.order.orderId);
+    if (got.next === 'already') say(got.say);
+  };
+
+  // Review's order. A hook, so above the waitlist's early return.
+  useEffect(() => {
+    if (!orderKey || !live || !me || order?.key === orderKey) return;
+    void getOrder(orderKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `orderKey` says when
+  }, [orderKey]);
 
   if (eventStatus(e, now).kind === 'waitlist') {
     return (
@@ -219,35 +259,10 @@ function Booking({ slug, e, live, now, reload }: { slug: string; e: Event; live?
       router.push(`/ticket/${r.data.id}`);
     });
   };
-  // Paying's next step (src/pay.ts): the ticket, confirming (the bar goes to the tickets, checkout never reopens), money
-  // back with why, the event read again, or a line and Pay again.
-  const act = (n: PayDone) => {
-    if (n.next === 'ticket') {
-      void loadTickets();
-      router.dismiss();
-      router.push(`/ticket/${n.bookingId}`);
-      return;
-    }
-    if (n.next === 'confirming') {
-      void loadTickets();
-      setConfirming(true);
-    }
-    if (n.next === 'refunded') {
-      setOrder(undefined);
-      reload?.();
-    }
-    if (n.next === 'reread') {
-      reload?.();
-      setStep('pick');
-    }
-    say(n.say);
-  };
-  // A paid pick: an order from the API (a failed request is said, and Pay works again), Razorpay's checkout on it, then
+  // Pay: Razorpay's checkout on the order Review shows (none yet: it's asked for again, to show before paying), then
   // the API's word: verify when checkout says paid, the order's status when it closed without (closed, or failed).
   const checkout = () => {
-    const t = tiers[at];
-    if (!live || !t?.id || !orderKey || sendingNow.current) return;
-    const n = qty[at]!;
+    if (!live || !orderKey || sendingNow.current) return;
     const key = orderKey;
     needsAccount(async () => {
       if (sendingNow.current) return;
@@ -256,12 +271,8 @@ function Booking({ slug, e, live, now, reload }: { slug: string; e: Event; live?
       sendingNow.current = true;
       setSending(true);
       try {
-        const got = orderNext(await paymentsApi(api).order(live.id, t.id!, n), ours.current);
-        if (got.next !== 'open' && got.next !== 'already') return act(got);
-        const o = got.order;
-        setOrder({ key, o });
-        ours.current.add(o.orderId); // said once; the next tap opens it
-        if (got.next === 'already') return say(got.say);
+        const o = order?.key === key ? order.o : undefined;
+        if (!o) return void (await getOrder(key));
         let paid;
         let closed: 'dismissed' | 'failed' | undefined;
         try {
