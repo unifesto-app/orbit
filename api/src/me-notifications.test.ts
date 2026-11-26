@@ -65,17 +65,16 @@ test("each switch off skips its channel's row; master push off skips every non-M
     await settings(a, { switches: { [`push.${sw}`]: true } });
   }
   // Email: the switches with an "always" kind behind them. Reminders and follows only govern "fallback" email (PR 4),
-  // written above when their push was switched off. Optional email is held until PR 6 either way; a switch off says why
-  // first.
+  // written above when their push was switched off. Optional email queues (PR 6) until its switch is off.
   for (const [sw, kind] of [["announcements", "hostAnnouncement"], ["orbit", "orbitNews"], ["yourHosts", "teamRoleStarted"]] as const) {
     await tell(a, kind);
-    assert.equal((await last(a, kind, "email")).reason, "optionalHeld", sw);
+    assert.equal((await last(a, kind, "email")).status, "queued", sw);
     await settings(a, { switches: { [`email.${sw}`]: false } });
     await tell(a, kind);
     assert.deepEqual([(await last(a, kind, "email")).status, (await last(a, kind, "email")).reason], ["skipped", "switchOff"], sw);
   }
   for (const kind of ["eventTomorrow", "followedHostEvent"] as const)
-    assert.deepEqual((await sent(a, kind, "email")).map((d) => d.reason), ["optionalHeld"], kind); // the push couldn't land
+    assert.deepEqual((await sent(a, kind, "email")).map((d) => d.status), ["queued"], kind); // the push couldn't land
 
   const b = await ready({ city: "Hyderabad" });
   await settings(b, { push: false });
@@ -184,9 +183,8 @@ test("caps: a sixth Low push in a day is inbox only, Normal isn't counted; one f
   await tell(b, "followedHostEvent", { hostId: h1, title: "One" });
   await tell(b, "followedHostEvent", { hostId: h1, title: "Two" });
   await tell(b, "followedHostEvent", { hostId: h2, title: "Three" });
-  assert.deepEqual((await sent(b, "followedHostEvent", "push")).map((d) => [d.payload.title, d.status, d.reason]), [
-    ["One", "queued", null], ["Two", "skipped", "capReached"], ["Three", "queued", null],
-  ]);
+  const byTitle = (await sent(b, "followedHostEvent", "push")).map((d) => [d.payload.title, d.status, d.reason]).sort((x, y) => String(x[0]).localeCompare(String(y[0])));
+  assert.deepEqual(byTitle, [["One", "queued", null], ["Three", "queued", null], ["Two", "skipped", "capReached"]]); // no row order in SQL
 });
 
 test("caps count by the day a push delivers: five held overnight fill the morning", async () => {

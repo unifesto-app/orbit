@@ -1,7 +1,7 @@
 import { serve } from "@hono/node-server";
 import { createApp } from "./app.ts";
 import { runDeletions } from "./auth/deletion.ts";
-import { codeSender, emailSender, type Mail, sesClient, sesMail, whatsappSender } from "./auth/senders.ts";
+import { codeSender, emailSender, type Mail, sesClient, sesMail, sesRawClient, whatsappSender } from "./auth/senders.ts";
 import { readContact } from "@orbit/contract";
 import { appsFrom, type ProofConfig } from "./auth/proof.ts";
 import { memoryStore, redisStore } from "./auth/store.ts";
@@ -37,7 +37,9 @@ const phone =
     : production
       ? undefined
       : logCode;
-const ses = env.SES_REGION ? { from: env.EMAIL_FROM ?? "Orbit <no-reply@updates.heyorbit.in>", send: sesClient(env.SES_REGION) } : null;
+const ses = env.SES_REGION
+  ? { from: env.EMAIL_FROM ?? "Orbit <no-reply@updates.heyorbit.in>", send: sesClient(env.SES_REGION), sendRaw: sesRawClient(env.SES_REGION) }
+  : null;
 const email = ses ? emailSender(ses) : production ? undefined : logCode;
 // Other emails (the waitlist's welcome) go the same way; off production without SES they're only logged.
 const mail: Mail | undefined = ses ? sesMail(ses) : production ? undefined : async (to, m) => console.log(`[mail] ${to}: ${m.subject}`);
@@ -179,7 +181,7 @@ let busy = false;
 setInterval(() => {
   if (busy) return;
   busy = true;
-  runDeliveries({ db, mail, push, now: Date.now })
+  runDeliveries({ db, mail, push, now: Date.now, unsubscribe: { secret, url: apiUrl } })
     .catch((e) => console.error("[deliveries]", e))
     .finally(() => (busy = false));
 }, 5_000).unref();
@@ -200,6 +202,11 @@ const pruneCareers = () => pruneApplications(db, media, Date.now()).catch((e) =>
 void pruneCareers();
 setInterval(pruneCareers, 60 * 60 * 1000).unref();
 
-serve({ fetch: createApp({ db, store, send, notify, secret, codes, ways: waysConfig, media, proof, mail }).fetch, port }, (info) => {
+// SES bounces and complaints (email-hygiene.ts): SES notifies the SNS topic SES_SNS_TOPIC_ARN, whose HTTPS subscription
+// is <API_URL>/hooks/ses. Unset, the hook is off (404).
+const sesTopic = env.SES_SNS_TOPIC_ARN?.trim() || undefined;
+console.log(`[ses-hook] ${sesTopic ? `on for ${sesTopic}` : "off"}`);
+
+serve({ fetch: createApp({ db, store, send, notify, secret, codes, ways: waysConfig, media, proof, mail, sesTopic }).fetch, port }, (info) => {
   console.log(`orbit-api listening on :${info.port}`);
 });

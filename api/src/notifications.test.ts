@@ -314,12 +314,12 @@ test("notify on its own: a failed write is all or nothing, and never throws at i
   assert.equal((await rows("signInMethodChanged")).length, 0);
 });
 
-test("held until PR 6: optional kinds write the inbox but skip the email", async () => {
+test("optional kinds write the inbox and queue the email (held until PR 6)", async () => {
   const a = await join(true);
   await t.notify({ to: { userId: a.me.id }, kind: "teamRoleStarted", data: { hostName: "Club", role: "crew" } });
   assert.equal((await inbox(a.me.id)).filter((i) => i.kind === "teamRoleStarted").length, 1);
   const mail = (await rows("teamRoleStarted")).find((d) => d.channel === "email")!;
-  assert.deepEqual([mail.status, mail.reason], ["skipped", "optionalHeld"]);
+  assert.deepEqual([mail.status, mail.reason], ["queued", null]);
 });
 
 test("day-30 deletion: inbox gone, old rows scrubbed, nothing queued sends, the goodbye goes to the old address", async () => {
@@ -558,7 +558,7 @@ test("fallback: no device emails at once; with two devices, only once the second
   const emails = async (userId: string) => (await rows(kind)).filter((d) => d.userId === userId && d.channel === "email");
   assert.equal((await pushRows(a.me.id, kind))[0]!.reason, "noDevice");
   const [mail] = await emails(a.me.id);
-  assert.deepEqual([mail!.status, mail!.reason], ["skipped", "optionalHeld"]); // held until PR 6, as optional "always" mail
+  assert.deepEqual([mail!.status, mail!.reason], ["queued", null]);
 
   const b = await join(true);
   await addDevice(b.access);
@@ -581,7 +581,7 @@ test("fallback: no device emails at once; with two devices, only once the second
   await t.deliver(fakePush(() => { throw new NotSent("push", "refused", "x"); }).push);
   assert.deepEqual((await pushRows(b.me.id, kind)).map((d) => d.status), ["failed", "failed"]);
   const [late] = await emails(b.me.id);
-  assert.deepEqual([late!.status, late!.reason, late!.inboxItemId !== null], ["skipped", "optionalHeld", true]);
+  assert.deepEqual([late!.status, late!.reason, late!.inboxItemId !== null], ["queued", null, true]);
   assert.equal((await emails(b.me.id)).length, 1);
 });
 

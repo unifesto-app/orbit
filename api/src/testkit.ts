@@ -27,6 +27,7 @@ export async function testApp(opts: { send?: Sender; codes?: SendPolicy; ways?: 
   await migrateDb(db);
 
   let clock = Date.now();
+  const secret = "test-secret-that-is-at-least-32-characters";
   const sent: { to: Contact; code: string }[] = [];
   const mails: { to: string; subject: string; html: string; text: string; replyTo?: string }[] = []; // the welcome emails (prelaunch.ts)
   const notices: Notice[] = [];
@@ -41,7 +42,7 @@ export async function testApp(opts: { send?: Sender; codes?: SendPolicy; ways?: 
   const app = createApp({
     db,
     store,
-    secret: "test-secret-that-is-at-least-32-characters",
+    secret,
     now: () => clock,
     send: opts.send ?? (async (to, code) => void sent.push({ to, code })),
     mail,
@@ -63,7 +64,7 @@ export async function testApp(opts: { send?: Sender; codes?: SendPolicy; ways?: 
   // The code last sent to a phone or email.
   const lastCode = (to: string) => sent.filter((s) => (s.to.kind === "phone" ? s.to.e164 : s.to.email) === to).at(-1)?.code;
 
-  const deliver = (push?: Push) => runDeliveries({ db, mail, push, now: () => clock });
+  const deliver = (push?: Push) => runDeliveries({ db, mail, push, now: () => clock, unsubscribe: { secret, url: "https://api.test" } });
 
-  return { db, app, store, call, sent, mails, notices, notify, deliver, lastCode, media, close, tick: (ms: number) => void (clock += ms), now: () => clock };
+  return { db, app, store, call, sent, mails, notices, notify, deliver, lastCode, media, secret, close, tick: (ms: number) => void (clock += ms), now: () => clock };
 }

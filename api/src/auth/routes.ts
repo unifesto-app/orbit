@@ -45,7 +45,7 @@ import { defaultWays, type Identity, relay, ways, type WaysConfig } from "./ways
 // `media` is where uploads go; without it (no bucket set) photo uploads say they aren't set up. Without `proof` (tests,
 // a laptop) nothing checks that requests come from Orbit itself.
 // `mail`: other emails than codes (the waitlist's welcome); without it they're skipped.
-export type Deps = { db: Db; store: Store; send: Sender; notify: Notify; secret: string; now?: () => number; codes?: SendPolicy; ways?: WaysConfig; media?: Media; proof?: ProofConfig; mail?: Mail };
+export type Deps = { db: Db; store: Store; send: Sender; notify: Notify; secret: string; now?: () => number; codes?: SendPolicy; ways?: WaysConfig; media?: Media; proof?: ProofConfig; mail?: Mail; sesTopic?: string };
 
 // ponytail: the terms version is a constant until Galaxy's Legal documents keeps them in the database. The migration
 // must leave every copied Unifesto acceptance below it, so each migrated person accepts Orbit's terms at About you.

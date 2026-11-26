@@ -2,9 +2,9 @@ import { and, count, countDistinct, eq, gt, gte, inArray, isNull, lt, lte, notIn
 import { inboxApp, type InboxApp, isMust, KINDS, type NoticeKind, type NotificationSettings, SWITCH_KEYS, type SwitchKey } from "@orbit/contract";
 import { type Mail, NotSent } from "./auth/senders.ts";
 import type { Db } from "./db/index.ts";
-import { deliveries, events, inboxItems, notificationPrefs, pushDevices, sessions, users } from "./db/schema.ts";
+import { deliveries, emailSuppressions, events, inboxItems, notificationPrefs, pushDevices, sessions, users } from "./db/schema.ts";
 import { isUuid, type Notice, type Notify, type Tx } from "./http.ts";
-import { emailFor, inboxFor } from "./notification-emails.ts";
+import { emailFor, inboxFor, optionalSwitch, unsubscribeToken } from "./notification-emails.ts";
 import type { Push } from "./push.ts";
 import { holdersOf, tell } from "./roles/access.ts";
 
@@ -103,21 +103,26 @@ const heldAt = (p: typeof users.$inferSelect, at: Date) => !!((p.suspendedAt && 
 const addressOf = (contact: string | null, person: typeof users.$inferSelect | undefined) =>
   contact ? (contact.includes("@") ? contact : null) : person?.emailVerifiedAt ? person.email : null;
 
+// An address SES reported as a hard bounce or complaint (ses-hook.ts).
+const suppressed = async (q: Tx | Db, address: string) =>
+  (await q.select({ a: emailSuppressions.address }).from(emailSuppressions).where(eq(emailSuppressions.address, address.toLowerCase()))).length > 0;
+
 type Base = Pick<typeof deliveries.$inferInsert, "userId" | "contact" | "kind" | "dedupeKey" | "payload" | "runAt" | "createdAt" | "inboxItemId">;
-// The email row for a notice: switched off, held (optional), queued to its address, or no address. `s` is null for Must
+// The email row for a notice: switched off, held, queued to its address, suppressed, or no address. `s` is null for Must
 // kinds and notices with no account. Used by "always" kinds in write() and by "fallback" kinds when the push can't land.
-const writeEmail = (q: Tx | Db, row: Base, s: NotificationSettings | null, address: string | null) => {
+// Held: optional email (not Must, not the one-off welcome) with no email switch to unsubscribe from, or no account.
+const writeEmail = async (q: Tx | Db, row: Base, s: NotificationSettings | null, address: string | null) => {
   const kind = row.kind as NoticeKind;
-  const must = isMust(kind);
   const v: Pick<typeof deliveries.$inferInsert, "status" | "reason" | "target"> =
     s && switchedOff(s, kind, "email")
       ? { status: "skipped", reason: "switchOff", target: "" }
-      : // ponytail: optional email (not Must, not the one-off welcome) waits for unsubscribe links; lifts in PR 6.
-        !must && kind !== "welcome"
+      : !isMust(kind) && kind !== "welcome" && (!optionalSwitch(kind) || !row.userId)
         ? { status: "skipped", reason: "optionalHeld", target: "" }
-        : address
-          ? { status: "queued", target: address }
-          : { status: "skipped", reason: "noEmail", target: "" };
+        : !address
+          ? { status: "skipped", reason: "noEmail", target: "" }
+          : (await suppressed(q, address))
+            ? { status: "skipped", reason: "suppressed", target: address }
+            : { status: "queued", target: address };
   return q.insert(deliveries).values({ ...row, channel: "email", ...v }).onConflictDoNothing({ target: [deliveries.dedupeKey, deliveries.channel, deliveries.target] });
 };
 
@@ -270,8 +275,22 @@ const stale = async (db: Db, eventId: unknown, at: Date) => {
 
 // One pass of the worker: releases due held pushes, then claims due rows (queued, or stuck in sending past their lock) in
 // one statement, so the claim commits before any send, then sends each. Retries after 1, 5 and 30 minutes, then failed.
-// Returns rows handled.
-export async function runDeliveries({ db, mail, push, now, limit = 20 }: { db: Db; mail: Mail | undefined; push?: Push; now: () => number; limit?: number }) {
+// Returns rows handled. `unsubscribe`: AUTH_SECRET and the API's public URL, for optional emails' links.
+export async function runDeliveries({
+  db,
+  mail,
+  push,
+  now,
+  limit = 20,
+  unsubscribe,
+}: {
+  db: Db;
+  mail: Mail | undefined;
+  push?: Push;
+  now: () => number;
+  limit?: number;
+  unsubscribe?: { secret: string; url: string };
+}) {
   await releaseHeld({ db, now });
   const at = new Date(now());
   const due = db
@@ -334,13 +353,20 @@ export async function runDeliveries({ db, mail, push, now, limit = 20 }: { db: D
       if (ended) await fallBack(db, d, at);
       continue;
     }
-    if (!mail) {
+    // An optional email carries its one-click unsubscribe link; without the means to make one it doesn't go.
+    const sw = optionalSwitch(d.kind as NoticeKind);
+    const link = sw && d.userId && unsubscribe && `${unsubscribe.url}/public/unsubscribe?t=${unsubscribeToken(unsubscribe.secret, d.userId, sw)}`;
+    if (!mail || (sw && !link)) {
       await done({ status: "skipped", reason: "notSetUp" });
       continue;
     }
+    if (await suppressed(db, d.target)) {
+      await done({ status: "skipped", reason: "suppressed" }); // bounced or complained since it was queued
+      continue;
+    }
     try {
-      await mail(d.target, emailFor(d.kind, d.payload));
-      await done({ status: "sent", reason: null, sentAt: new Date(now()) });
+      const providerId = await mail(d.target, emailFor(d.kind, d.payload, undefined, sw && link ? { s: sw, link } : undefined));
+      await done({ status: "sent", reason: null, sentAt: new Date(now()), providerId: providerId || null });
     } catch (e) {
       await settle(e);
     }
