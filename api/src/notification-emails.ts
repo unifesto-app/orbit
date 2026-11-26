@@ -92,6 +92,13 @@ const WORDS: Partial<Record<NoticeKind, (d: Data) => Words>> = {
   eventTomorrow: (d) => ({ subject: `Coming up: ${str(d.title)}`, line: `${str(d.title)} starts tomorrow at ${time(d.startsAt)}.` }),
   eventStartingSoon: (d) => ({ subject: `${str(d.title)} starts soon`, line: `${str(d.title)} starts in an hour.` }),
   thanksForComing: (d) => ({ subject: `Thanks for coming to ${str(d.title)}`, line: `Thanks for coming to ${str(d.title)}. Loved it? Say so on the event page.` }),
+  // Broadcasts (broadcasts.ts): the staff's own title and text.
+  orbitNews: (d) => ({ subject: str(d.title), line: str(d.text) }),
+  orbitNotice: (d) => ({ subject: str(d.title), line: str(d.text) }),
+  broadcastWaiting: (d) => ({
+    subject: "A broadcast is waiting for a second person",
+    line: `“${str(d.title)}” to ${str(d.audienceCount)} people. Confirm or cancel it in Galaxy, Notifications, Broadcasts.`,
+  }),
   followedHostEvent: (d) => ({ subject: `${str(d.hostName) || "A host you follow"} has a new event`, line: str(d.title) }),
   staffGrantAdded: (d) => ({
     subject: "Staff access was given",
@@ -164,6 +171,8 @@ const BRANCHES: Partial<Record<NoticeKind, readonly Channel[]>> = {
   hostAnnouncement: ["email"],
   followedHostEvent: ["email"],
   providerFailing: ALL,
+  orbitNews: ALL, // a broadcast's words are its own title and text
+  orbitNotice: ALL,
 };
 export const branches = (kind: string, channel: Channel) => BRANCHES[kind as NoticeKind]?.includes(channel) ?? false;
 export const samplesOf = (kind: string): Data => Object.fromEntries(Object.entries(varsOf(kind)).map(([n, [v]]) => [n, v]));
@@ -290,11 +299,18 @@ export function opensFor(kind: NoticeKind, data: Data = {}) {
 // `w`: Galaxy's inbox wording, if any. The sender stays the code's.
 export function inboxFor(kind: NoticeKind, data: Data = {}, w?: Wording | null) {
   const { subject, line } = words(kind, data);
-  return { text: w ? filled(kind, w.body, data) : line || subject, fromName: str(data.hostName) || "Orbit", opens: opensFor(kind, data) };
+  const base: { text: string; fromName: string; opens: ReturnType<typeof opensFor>; title?: string; body?: string } = {
+    text: w ? filled(kind, w.body, data) : line || subject,
+    fromName: str(data.hostName) || "Orbit",
+    opens: opensFor(kind, data),
+  };
+  // A broadcast's title leads: "Title: text" in the inbox, the push's title.
+  if (kind === "orbitNews" || kind === "orbitNotice") return { ...base, text: `${subject}: ${line}`, title: subject, body: line };
+  return base;
 }
 
-// A push: the sender as its title and the inbox's words, or Galaxy's push wording.
+// A push: the sender as its title and the inbox's words (a broadcast: its title and text), or Galaxy's push wording.
 export function pushFor(kind: NoticeKind, data: Data = {}, w?: Wording | null) {
   const i = inboxFor(kind, data);
-  return { title: w?.title ? filled(kind, w.title, data) : i.fromName, body: w ? filled(kind, w.body, data) : i.text, opens: i.opens };
+  return { title: w?.title ? filled(kind, w.title, data) : i.title ?? i.fromName, body: w ? filled(kind, w.body, data) : i.body ?? i.text, opens: i.opens };
 }

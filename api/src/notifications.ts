@@ -2,7 +2,7 @@ import { and, count, countDistinct, eq, gt, gte, inArray, isNull, lt, lte, notIn
 import { inboxApp, type InboxApp, isMust, KINDS, type NoticeKind, type NotificationSettings, SWITCH_KEYS, type SwitchKey } from "@orbit/contract";
 import { type Mail, NotSent } from "./auth/senders.ts";
 import type { Db } from "./db/index.ts";
-import { deliveries, emailSuppressions, events, inboxItems, notificationPrefs, notificationSwitches, pushDevices, sessions, users } from "./db/schema.ts";
+import { broadcasts, deliveries, emailSuppressions, events, inboxItems, notificationPrefs, notificationSwitches, pushDevices, sessions, users } from "./db/schema.ts";
 import { isUuid, type Notice, type Notify, type Tx } from "./http.ts";
 import { emailFor, inboxFor, optionalSwitch, pushFor, unsubscribeToken, wordingFor } from "./notification-emails.ts";
 import type { Push } from "./push.ts";
@@ -126,7 +126,7 @@ export const stops = (sw: { kind: string; channel: string }, kind: string) =>
 export const killedFor = async (q: Tx | Db, kind: string) =>
   new Set((await q.select().from(notificationSwitches).where(inArray(notificationSwitches.kind, [kind, "*"]))).filter((sw) => stops(sw, kind)).map((r) => r.channel));
 
-type Base = Pick<typeof deliveries.$inferInsert, "userId" | "contact" | "kind" | "dedupeKey" | "payload" | "runAt" | "createdAt" | "inboxItemId">;
+type Base = Pick<typeof deliveries.$inferInsert, "userId" | "contact" | "kind" | "dedupeKey" | "payload" | "runAt" | "createdAt" | "inboxItemId" | "broadcastId">;
 // The email row for a notice: switched off, held, queued to its address, suppressed, or no address. `s` is null for Must
 // kinds and notices with no account. Used by "always" kinds in write() and by "fallback" kinds when the push can't land.
 // Held: optional email (not Must, not the one-off welcome) with no email switch to unsubscribe from, or no account.
@@ -163,7 +163,7 @@ const fallBack = async (db: Db, d: typeof deliveries.$inferSelect, at: Date) => 
   if (!person || person.deletedAt) return;
   if (!isMust(kind) && heldAt(person, at)) return; // suspended or waiting for deletion since: Must only, as in write()
   const s = isMust(kind) ? null : await settingsOf(db, person.id, person.city);
-  const row = { userId: d.userId, contact: d.contact, kind, dedupeKey: d.dedupeKey, payload: d.payload, runAt: at, createdAt: at, inboxItemId: d.inboxItemId };
+  const row = { userId: d.userId, contact: d.contact, kind, dedupeKey: d.dedupeKey, payload: d.payload, runAt: at, createdAt: at, inboxItemId: d.inboxItemId, broadcastId: d.broadcastId };
   await writeEmail(db, row, s, addressOf(d.contact, person), (await killedFor(db, kind)).has("email"));
 };
 
@@ -190,7 +190,7 @@ export function createNotifier({ db, now }: { db: Db; now: () => number }): Noti
     const address = addressOf(contact, person);
     const dedupeKey = n.key ? `${n.kind}:${contact ?? userId}:${n.key}` : crypto.randomUUID(); // no key: no dedupe (D3)
     const payload = clean(n.data);
-    const row = { userId, contact, kind: n.kind, dedupeKey, payload, runAt: at, createdAt: at };
+    const row = { userId, contact, kind: n.kind, dedupeKey, payload, runAt: at, createdAt: at, broadcastId: n.broadcastId ?? null };
     const log = (v: Pick<typeof deliveries.$inferInsert, "channel" | "status" | "reason" | "target" | "inboxItemId"> & { runAt?: Date }) =>
       q.insert(deliveries).values({ ...row, ...v }).onConflictDoNothing({ target: [deliveries.dedupeKey, deliveries.channel, deliveries.target] });
     // Written before: nothing again. (The caps would count the first and log a second row otherwise.)
@@ -223,8 +223,8 @@ export function createNotifier({ db, now }: { db: Db; now: () => number }): Noti
     const must = isMust(n.kind);
     const s = person && !must ? await settingsOf(q, person.id, person.city) : null;
     const email = () => writeEmail(q, { ...row, inboxItemId }, s, address, killed.has("email"));
-    if (def.email === "always") await email();
-    if (!def.push || !person) return;
+    if (def.email === "always" && (!n.channels || n.channels.includes("email"))) await email();
+    if (!def.push || !person || (n.channels && !n.channels.includes("push"))) return;
     // No push for a "fallback" kind (switched off, no device): its email goes now. A cap or quiet hours isn't that.
     const skip = async (reason: string) => {
       await log({ channel: "push", status: "skipped", reason, target: "", inboxItemId });
@@ -320,7 +320,10 @@ export async function runDeliveries({
     .select({ id: deliveries.id })
     .from(deliveries)
     .where(or(and(eq(deliveries.status, "queued"), lte(deliveries.runAt, at)), and(eq(deliveries.status, "sending"), lt(deliveries.lockedUntil, at))))
-    .orderBy(deliveries.runAt)
+    // Broadcast rows last, so a big broadcast can't hold up anyone's ticket or code.
+    // ponytail: the leading sort key means deliveries_due_idx no longer gives the order, so the due rows are sorted;
+    // fine at today's sizes, an index on (broadcast_id is not null, run_at) if a broadcast queues hundreds of thousands.
+    .orderBy(sql`${deliveries.broadcastId} is not null`, deliveries.runAt)
     .limit(limit)
     .for("update", { skipLocked: true });
   const claimed = await db
@@ -330,6 +333,13 @@ export async function runDeliveries({
     .returning();
   // Galaxy's kill switches, read once a pass: a claimed row on a channel switched off since it was queued is skipped.
   const off = await db.select().from(notificationSwitches);
+  // Broadcasts cancelled since their rows were written: those rows are dropped, not sent.
+  const fromBroadcasts = [...new Set(claimed.flatMap((d) => (d.broadcastId ? [d.broadcastId] : [])))];
+  const cancelled = new Set(
+    fromBroadcasts.length
+      ? (await db.select({ id: broadcasts.id }).from(broadcasts).where(and(inArray(broadcasts.id, fromBroadcasts), eq(broadcasts.status, "cancelled")))).map((b) => b.id)
+      : [],
+  );
 
   for (const d of claimed) {
     // Only while the row is still this pass's: a slow pass whose lock lapsed has lost it to another worker's claim.
@@ -351,6 +361,10 @@ export async function runDeliveries({
     const relet = await db.update(deliveries).set({ lockedUntil: new Date(now() + 2 * MIN) }).where(ours).returning({ id: deliveries.id });
     if (!relet.length) continue;
 
+    if (d.broadcastId && cancelled.has(d.broadcastId)) {
+      await done({ status: "dropped", reason: "cancelled" });
+      continue;
+    }
     if (off.some((sw) => sw.channel === d.channel && stops(sw, d.kind))) {
       if ((await done({ status: "skipped", reason: "killSwitch" })) && d.channel === "push") await fallBack(db, d, at);
       continue;

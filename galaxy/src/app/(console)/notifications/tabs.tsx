@@ -5,11 +5,12 @@ import { me } from "../../../api";
 import { PageHeader, ui } from "../../ui";
 
 // Notifications' pages, each its own address, as the PM board's tabs. Kinds and the log open to Platform or People;
-// Wording to Platform only, so its tab shows to them alone.
+// Wording and Broadcasts to Platform only, so their tabs show to them alone.
 const TABS = [
   { key: "kinds", label: "Kinds", href: "/notifications" },
   { key: "log", label: "Delivery log", href: "/notifications/log" },
   { key: "wording", label: "Wording", href: "/notifications/wording" },
+  { key: "broadcasts", label: "Broadcasts", href: "/notifications/broadcasts" },
 ] as const;
 type Key = (typeof TABS)[number]["key"];
 
@@ -18,9 +19,15 @@ const Tab = ({ t, current }: { t: (typeof TABS)[number]; current: Key }) => (
     {t.label}
   </Link>
 );
-async function WordingTab({ current }: { current: Key }) {
+async function PlatformTabs({ current }: { current: Key }) {
   const who = await me();
-  return who.ok && who.data.staff?.features.includes("platform") ? <Tab t={TABS[2]} current={current} /> : null;
+  if (!(who.ok && who.data.staff?.features.includes("platform"))) return null;
+  return (
+    <>
+      <Tab t={TABS[2]} current={current} />
+      <Tab t={TABS[3]} current={current} />
+    </>
+  );
 }
 
 export function NotificationsHeader({ current, description }: { current: Key; description: string }) {
@@ -31,7 +38,7 @@ export function NotificationsHeader({ current, description }: { current: Key; de
         <Tab t={TABS[0]} current={current} />
         <Tab t={TABS[1]} current={current} />
         <Suspense fallback={null}>
-          <WordingTab current={current} />
+          <PlatformTabs current={current} />
         </Suspense>
       </nav>
     </>
