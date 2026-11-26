@@ -21,6 +21,8 @@ export const sections: { title: string; items: NavItem[] }[] = [
       { label: "Requests", href: "/requests" },
       // People's reports of events and hosts, for holders of Queues (X15).
       { label: "Reports", href: "/reports" },
+      // Help's Write to us from the Orbit app, Event Partner and Play Partner, for holders of Queues (X16).
+      { label: "Support", href: "/support" },
       // Players' holds at venues and their freed-slot alerts (Track X7).
       { label: "Slot holds", href: "/slot-holds" },
       // Every host's events: unpublish, cancel, promote (X1).

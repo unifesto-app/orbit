@@ -1,0 +1,13 @@
+.messages {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-m);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.body {
+  margin: var(--space-xxs) 0 0;
+  white-space: pre-wrap;
+}
