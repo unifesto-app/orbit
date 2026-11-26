@@ -5,23 +5,28 @@ import {
   atIst,
   bodyOf,
   canSkip,
+  dayName,
   dayOpen,
+  editDraft,
   emptyDraft,
   errorText,
   fromRequest,
   monthDays,
   monthLabel,
+  newDraft,
+  partsOf,
   readDraft,
   sentLabel,
   shiftMonth,
   slots,
   stepOk,
+  stepWhy,
   welcomeState,
   whenLabel,
 } from './request.ts';
 
 const NOW = Date.parse('2026-11-26T11:40:00+05:30'); // a Thursday, 11:40 AM in India
-const host = { ...emptyDraft('Hyderabad'), name: 'Punchline Comedy', kind: 'comedy-group' };
+const host = { ...emptyDraft('u1', 'Hyderabad'), name: 'Punchline Comedy', kind: 'comedy-group' };
 const full = { ...host, title: 'Open Mic Friday', category: 'comedy', startsAt: '2026-12-12T19:30:00+05:30', paid: true, size: '80' };
 
 test('welcome follows the latest request', () => {
@@ -36,7 +41,7 @@ test('welcome follows the latest request', () => {
 });
 
 test('each step goes on once the contract accepts it', () => {
-  assert.equal(stepOk(emptyDraft('Hyderabad'), 1, NOW), false);
+  assert.equal(stepOk(emptyDraft('u1', 'Hyderabad'), 1, NOW), false);
   assert.equal(stepOk({ ...host, city: 'Atlantis' }, 1, NOW), false); // not on the list
   assert.equal(stepOk({ ...host, name: '   ' }, 1, NOW), false);
   assert.equal(stepOk(host, 1, NOW), true);
@@ -65,19 +70,45 @@ test('the body sent, and a sent request back in the steps', () => {
     host: { name: 'Punchline Comedy', kind: 'comedy-group', city: 'Hyderabad', about: null },
     event: { title: 'Open Mic Friday', category: 'comedy', startsAt: '2026-12-12T19:30:00+05:30', venue: 'Hitech City', paid: true, expectedSize: 80 },
   });
-  const back = fromRequest(body as Parameters<typeof fromRequest>[0], true);
+  const back = fromRequest({ ...(body as Parameters<typeof fromRequest>[0]), id: 'r1', updatedAt: 'x' }, true, 'u1');
   assert.equal(back.edit, true);
   assert.equal(back.size, '80');
   assert.deepEqual(bodyOf(back), body);
-  assert.equal(readDraft(JSON.stringify(full))?.title, 'Open Mic Friday');
-  assert.equal(readDraft('{bad'), null);
-  assert.equal(readDraft('{"x":1}'), null);
+});
+
+test('a kept draft is read only for its account, its shape, and its round of changes', () => {
+  assert.equal(readDraft(JSON.stringify(full), 'u1')?.title, 'Open Mic Friday');
+  assert.equal(readDraft(JSON.stringify(full), 'u2'), null); // someone else signed in on this phone
+  assert.equal(readDraft('{bad', 'u1'), null);
+  assert.equal(readDraft('{"x":1}', 'u1'), null);
+  assert.equal(readDraft(JSON.stringify({ ...full, startsAt: 5 }), 'u1'), null);
+  assert.equal(readDraft(JSON.stringify({ ...full, startsAt: 'soon' }), 'u1'), null);
+  assert.equal(readDraft(JSON.stringify({ ...full, paid: 'yes' }), 'u1'), null);
+
+  assert.equal(newDraft(full, 'u1', null), full);
+  assert.equal(newDraft({ ...full, edit: true }, 'u1', 'Pune').city, 'Pune'); // an edit draft never starts a new one
+  const r = { id: 'r1', updatedAt: '2026-11-26T08:00:00Z', host: { name: 'Sent name', kind: 'comedy-group' as const, city: 'Hyderabad', about: null }, event: null };
+  const editing = { ...full, edit: true, requestId: 'r1', requestAt: '2026-11-26T08:00:00Z' };
+  assert.equal(editDraft(editing, r, 'u1'), editing);
+  assert.equal(editDraft({ ...editing, requestAt: '2026-11-25T08:00:00Z' }, r, 'u1').name, 'Sent name'); // an older round
+  assert.equal(editDraft({ ...editing, requestId: 'r0' }, r, 'u1').name, 'Sent name');
+  assert.equal(editDraft(null, r, 'u1').requestId, 'r1');
+});
+
+test('step 2 says why Continue is off', () => {
+  assert.equal(stepWhy(full, NOW), null);
+  assert.equal(stepWhy({ ...full, size: '' }, NOW), null);
+  assert.match(stepWhy({ ...full, size: '0' }, NOW)!, /whole number, 1 or more/);
+  assert.match(stepWhy({ ...full, size: '8.5' }, NOW)!, /whole number/);
+  assert.match(stepWhy({ ...full, startsAt: '2026-11-26T11:30:00+05:30' }, NOW)!, /still ahead/);
+  assert.equal(stepWhy({ ...full, title: '' }, NOW), null); // missing, not wrong: nothing to say
 });
 
 test('API refusals in plain words', () => {
   assert.match(errorText({ error: 'requestOpen', message: '' }), /One at a time/);
   assert.match(errorText({ error: 'tooMany', message: '' }), /five requests a day/);
   assert.match(errorText({ error: 'past', message: '' }), /still ahead/);
+  assert.match(errorText({ error: 'notChanges', message: '' }), /can’t be edited now/);
   assert.equal(errorText({ error: 'offline', message: 'Can’t reach Orbit.' }), 'Can’t reach Orbit.');
 });
 
@@ -96,4 +127,8 @@ test('the When sheet: a Monday-first month, past days and times left out, India 
   assert.equal(dayOpen('2026-11-26', Date.parse('2026-11-26T23:45:00+05:30')), false); // nothing left tonight
   assert.equal(atIst('2026-12-12', 19 * 60 + 30), '2026-12-12T19:30:00+05:30');
   assert.equal(whenLabel('2026-12-12T14:00:00Z'), 'Sat 12 Dec · 7:30 PM');
+  // 23:30 in India is 18:00 UTC the same day; 00:30 in India is still the day before in UTC.
+  assert.deepEqual(partsOf('2026-12-12T18:00:00Z'), { day: '2026-12-12', min: 23 * 60 + 30 });
+  assert.deepEqual(partsOf('2026-12-12T19:00:00Z'), { day: '2026-12-13', min: 30 });
+  assert.equal(dayName('2026-12-12'), '12 December');
 });

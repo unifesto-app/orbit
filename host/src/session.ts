@@ -49,11 +49,16 @@ export const kept = {
     memory.set(name, v);
     return v;
   },
-  set(name: string, next: string | null) {
+  // `orDrop`: a write that fails deletes the key, so an older value can't come back at the next launch (the Event
+  // Request's draft; this launch keeps the new one in memory).
+  set(name: string, next: string | null, { orDrop = false } = {}) {
     memory.set(name, next);
     const store = secure;
     if (!store) return;
-    writes = writes.then(() => (next ? store.setItemAsync(name, next, KEYCHAIN) : store.deleteItemAsync(name, KEYCHAIN))).catch(() => {});
+    writes = writes
+      .then(() => (next ? store.setItemAsync(name, next, KEYCHAIN) : store.deleteItemAsync(name, KEYCHAIN)))
+      .catch(() => (orDrop && next ? store.deleteItemAsync(name, KEYCHAIN) : undefined))
+      .catch(() => {});
   },
 };
 
@@ -97,6 +102,7 @@ export const api = makeApi({
 if (Platform.OS === 'ios' && Settings.get(INSTALLED) !== 1) {
   if (kept.get(REFRESH)) api.signOut(); // the API hears with the old token; the Keychain's copy goes
   kept.set(ME, null);
+  kept.set(REQUEST_DRAFT, null); // the last install's unsent Event Request goes with its account
   Settings.set({ [INSTALLED]: 1 });
 }
 current = readKept();

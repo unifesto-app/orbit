@@ -24,10 +24,15 @@ export function sentLabel(iso: string, now: number) {
 
 // ---------- The draft ----------
 
-// What the three steps hold, as typed. `edit`: it rewrites a request Orbit asked changes on (PATCH), not a new one.
-// `skip`: a Venue or Performer chose "Skip, no event yet".
+// What the three steps hold, as typed. `owner`: the account that typed it; another account signed in on this phone never
+// sees it. `edit`: it rewrites a request Orbit asked changes on (PATCH), not a new one, and `requestId` and `requestAt`
+// (its updatedAt) say which round of changes, so a later round never sends old words. `skip`: a Venue or Performer
+// chose "Skip, no event yet".
 export type Draft = {
+  owner: string;
   edit: boolean;
+  requestId: string | null;
+  requestAt: string | null;
   skip: boolean;
   name: string;
   kind: string | null;
@@ -41,8 +46,11 @@ export type Draft = {
   size: string;
 };
 
-export const emptyDraft = (city: string | null): Draft => ({
+export const emptyDraft = (owner: string, city: string | null): Draft => ({
+  owner,
   edit: false,
+  requestId: null,
+  requestAt: null,
   skip: false,
   name: '',
   kind: null,
@@ -57,8 +65,11 @@ export const emptyDraft = (city: string | null): Draft => ({
 });
 
 // A sent request back in the steps: to read it (See request) or to change it (Edit request).
-export const fromRequest = (r: Pick<EventRequest, 'host' | 'event'>, edit: boolean): Draft => ({
+export const fromRequest = (r: Pick<EventRequest, 'id' | 'updatedAt' | 'host' | 'event'>, edit: boolean, owner: string): Draft => ({
+  owner,
   edit,
+  requestId: r.id,
+  requestAt: r.updatedAt,
   skip: r.event === null,
   name: r.host.name,
   kind: r.host.kind,
@@ -72,16 +83,42 @@ export const fromRequest = (r: Pick<EventRequest, 'host' | 'event'>, edit: boole
   size: r.event?.expectedSize ? String(r.event.expectedSize) : '',
 });
 
-// A kept draft, if it still reads as one (an older app's shape is dropped, not half-read).
-export function readDraft(json: string | null): Draft | null {
+// Each field's type in a kept draft; `?` may also be null.
+const SHAPE: Record<keyof Draft, string> = {
+  owner: 'string',
+  edit: 'boolean',
+  requestId: 'string?',
+  requestAt: 'string?',
+  skip: 'boolean',
+  name: 'string',
+  kind: 'string?',
+  city: 'string?',
+  about: 'string',
+  title: 'string',
+  category: 'string?',
+  startsAt: 'string?',
+  venue: 'string',
+  paid: 'boolean',
+  size: 'string',
+};
+// A kept draft, if it's this account's and still reads as one field by field (an older app's shape, or a broken one,
+// is dropped, not half-read).
+export function readDraft(json: string | null, owner: string): Draft | null {
   if (!json) return null;
   try {
-    const d = JSON.parse(json) as Draft;
-    return typeof d === 'object' && d && typeof d.name === 'string' && typeof d.edit === 'boolean' ? { ...emptyDraft(null), ...d } : null;
+    const d = JSON.parse(json) as Record<string, unknown>;
+    if (typeof d !== 'object' || !d || d.owner !== owner) return null;
+    const fits = Object.entries(SHAPE).every(([k, t]) => (d[k] === null && t.endsWith('?')) || typeof d[k] === t.replace('?', ''));
+    return fits && (d.startsAt === null || !Number.isNaN(Date.parse(d.startsAt as string))) ? (d as Draft) : null;
   } catch {
     return null;
   }
 }
+// Where Start a request begins: the kept new draft, else a blank one in the account's city.
+export const newDraft = (kept: Draft | null, owner: string, city: string | null) => (kept && !kept.edit ? kept : emptyDraft(owner, city));
+// Where Edit request begins: the kept edit of this very round of changes, else the request as sent.
+export const editDraft = (kept: Draft | null, r: Pick<EventRequest, 'id' | 'updatedAt' | 'host' | 'event'>, owner: string) =>
+  kept?.edit && kept.requestId === r.id && kept.requestAt === r.updatedAt ? kept : fromRequest(r, true, owner);
 
 const hostOf = (d: Draft) => ({ name: d.name, kind: d.kind, city: d.city, about: d.about.trim() || null });
 const eventOf = (d: Draft) => ({
@@ -101,6 +138,14 @@ export function stepOk(d: Draft, step: 1 | 2 | 3, now: number): boolean {
   if (step === 1) return RequestHost.safeParse(hostOf(d)).success;
   if (step === 2) return RequestEvent.safeParse(eventOf(d)).success && Date.parse(d.startsAt!) > now;
   return NewEventRequest.safeParse(bodyOf(d)).success && (d.skip || Date.parse(d.startsAt!) > now);
+}
+
+// Why step 2's Continue is off, when a typed answer is wrong rather than missing.
+export function stepWhy(d: Draft, now: number): string | null {
+  const n = Number(d.size.trim()); // as the body reads it
+  if (d.size.trim() && !(Number.isInteger(n) && n >= 1 && n <= 1_000_000)) return 'How many people is a whole number, 1 or more.';
+  if (d.startsAt && Date.parse(d.startsAt) <= now) return 'That time has passed. Pick a time that’s still ahead.';
+  return null;
 }
 
 // "Skip, no event yet": only kinds the contract lets come without an event (Venue and Performer).
@@ -151,4 +196,6 @@ export const shiftMonth = (month: string, n: number) => {
   return new Date(Date.UTC(y, m - 1 + n, 1)).toISOString().slice(0, 7);
 };
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+// "12 December", a calendar day as a screen reader says it.
+export const dayName = (day: string) => `${Number(day.slice(8))} ${MONTHS[Number(day.slice(5, 7)) - 1]}`;
 export const monthLabel = (month: string) => `${MONTHS[Number(month.slice(5)) - 1]} ${month.slice(0, 4)}`;

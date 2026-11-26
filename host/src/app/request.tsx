@@ -2,17 +2,16 @@
 // event-request-take1.html): the host, its first event (a Venue or Performer may skip it), then check and send
 // (POST /event-requests, or PATCH /me/event-request when Orbit asked for changes). `?mode=see` shows a sent request
 // read-only; `?mode=edit` reopens it to change. The rules and words are in src/launch/request.ts.
-// What's typed stays on this phone until it's sent, under one Keychain key (REQUEST_DRAFT), gone on sign-out.
-// ponytail: the draft is one JSON value in expo-secure-store; a full About (2,000 characters) can pass the 2,048 bytes
-// older Androids' secure store takes, and that write fails quietly (the draft then lasts only until the app closes).
-// Move it to a file if Android drafts go missing.
-import { allCities, categories, type EventRequest, HOST_KINDS, popularCities, searchCities } from '@orbit/contract';
+// What's typed stays on this phone until it's sent, under one Keychain key (REQUEST_DRAFT), for the account that typed
+// it (and, for an edit, that round of changes), gone on sign-out. A write that fails deletes the key, so an older draft
+// never comes back. It's kept a moment after each change, and at once when the screen goes away.
+import { allCities, categories, type EventRequest, HOST_KINDS, type RequestStatus, popularCities, searchCities } from '@orbit/contract';
 import { Glass } from '@orbit/mobile/glass';
 import { useLoad } from '@orbit/mobile/load';
 import { color, font, space, stoneAt } from '@orbit/mobile/theme';
-import { router, useLocalSearchParams } from 'expo-router';
-import { type ReactNode, useEffect, useRef, useState } from 'react';
-import { FlatList, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { AccessibilityInfo, ActivityIndicator, BackHandler, FlatList, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { istDate } from '../launch/money';
@@ -21,17 +20,20 @@ import {
   bodyOf,
   canSkip,
   type Draft,
+  dayName,
   dayOpen,
-  emptyDraft,
+  editDraft,
   errorText,
   fromRequest,
   monthDays,
   monthLabel,
+  newDraft,
   partsOf,
   readDraft,
   shiftMonth,
   slots,
   stepOk,
+  stepWhy,
   timeLabel,
   whenLabel,
 } from '../launch/request';
@@ -47,57 +49,128 @@ export default function Request() {
   const mode = useLocalSearchParams<{ mode?: string }>().mode;
   const me = useSession()?.me;
   // Read once: the screen saves into the same key while it's open.
-  const [saved] = useState(() => readDraft(kept.get(REQUEST_DRAFT)));
-  const load = mode === 'see' || (mode === 'edit' && !saved?.edit);
+  const [saved] = useState(() => (me ? readDraft(kept.get(REQUEST_DRAFT), me.id) : null));
+  const load = mode === 'see' || mode === 'edit';
   const sent = useLoad<EventRequest | null>(load && me ? `request|${me.id}` : null, () => api.authed('GET', '/me/event-request'));
+  const gone = load && !sent.loading && !sent.error && !sent.data;
+  useEffect(() => {
+    if (gone) router.back(); // nothing to see or edit: welcome shows what's there
+  }, [gone]);
+  if (!me) return null;
 
   if (load) {
     if (!sent.data)
       return (
         <Frame step={null} onBack={() => router.back()}>
-          {sent.error && <Note>{sent.error.message}</Note>}
+          {sent.error ? (
+            <>
+              <Note live>{sent.error.message}</Note>
+              <View style={s.retry}>
+                <Pill label="Try again" onPress={sent.reload} />
+              </View>
+            </>
+          ) : (
+            <ActivityIndicator style={s.spinner} color={color.secondary} accessibilityLabel="Loading your request" />
+          )}
         </Frame>
       );
-    return <Steps initial={fromRequest(sent.data, mode === 'edit')} see={mode === 'see'} />;
+    if (mode === 'see') return <Steps initial={fromRequest(sent.data, false, me.id)} see={sent.data.status} />;
+    if (sent.data.status !== 'changes')
+      return (
+        <Frame step={null} onBack={() => router.back()}>
+          <Note live>{errorText({ error: 'notChanges', message: '' })}</Note>
+        </Frame>
+      );
+    return <Steps initial={editDraft(saved, sent.data, me.id)} />;
   }
-  if (mode === 'edit') return <Steps initial={saved!} see={false} />;
-  const city = me?.city && allCities.some((c) => c.name === me.city) ? me.city : null;
-  return <Steps initial={saved && !saved.edit ? saved : emptyDraft(city)} see={false} />;
+  const city = me.city && allCities.some((c) => c.name === me.city) ? me.city : null;
+  return <Steps initial={newDraft(saved, me.id, city)} />;
 }
 
-function Steps({ initial, see }: { initial: Draft; see: boolean }) {
+// What a sent request's own screen says under its title, by where it stands.
+const SEE_LINE: Record<RequestStatus, string> = {
+  open: 'Orbit is checking it, usually within a day.',
+  changes: 'Orbit asked for a change before your host goes live.',
+  declined: 'Orbit didn’t approve this one.',
+  approved: 'Approved.',
+  withdrawn: 'You withdrew this request.',
+};
+
+// `see`: a sent request, read-only, with where it stands.
+function Steps({ initial, see = null }: { initial: Draft; see?: RequestStatus | null }) {
   const [d, setD] = useState(initial);
   const [step, setStep] = useState<1 | 2 | 3>(see ? 3 : 1);
   const [sheet, setSheet] = useState<'city' | 'when' | null>(null);
   const [busy, setBusy] = useState(false);
   const [said, setSaid] = useState<string | null>(null);
+  const sending = useRef(false); // a second tap before the first answer sends nothing
   const sentOk = useRef(false);
   const put = (p: Partial<Draft>) => setD((x) => ({ ...x, ...p }));
   const now = Date.now();
   const ok = stepOk(d, step, now);
+  const why = step === 2 ? stepWhy(d, now) : null;
 
-  // Kept a moment after each change, not on every keystroke.
+  // Kept a moment after each change, not on every keystroke; at once when the screen goes or loses focus.
+  const latest = useRef(d);
+  latest.current = d;
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const save = useCallback(() => {
+    timer.current = null;
+    if (!see && !sentOk.current) kept.set(REQUEST_DRAFT, JSON.stringify(latest.current), { orDrop: true });
+  }, [see]);
+  const flush = useCallback(() => {
+    if (!timer.current) return;
+    clearTimeout(timer.current);
+    save();
+  }, [save]);
   useEffect(() => {
     if (see) return;
-    const t = setTimeout(() => !sentOk.current && kept.set(REQUEST_DRAFT, JSON.stringify(d)), 400);
-    return () => clearTimeout(t);
-  }, [d, see]);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(save, 400);
+  }, [d, see, save]);
+  useEffect(() => flush, [flush]);
+
+  // Android's back goes a step back, and leaves only from the first step (or a sent request's screen).
+  const at = useRef(step);
+  at.current = step;
+  useFocusEffect(
+    useCallback(() => {
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+        if (see || at.current === 1) return false;
+        setStep(at.current === 3 ? 2 : 1);
+        return true;
+      });
+      return () => {
+        sub.remove();
+        flush();
+      };
+    }, [see, flush]),
+  );
 
   async function send() {
+    if (sending.current) return;
+    sending.current = true;
     setBusy(true);
     setSaid(null);
     const r = await api.authed<EventRequest>(d.edit ? 'PATCH' : 'POST', d.edit ? '/me/event-request' : '/event-requests', bodyOf(d));
     setBusy(false);
-    if (!r.ok) return setSaid(errorText(r.error));
+    sending.current = false;
+    if (!r.ok) {
+      const text = errorText(r.error);
+      setSaid(text);
+      if (Platform.OS === 'ios') AccessibilityInfo.announceForAccessibility(text);
+      return;
+    }
     sentOk.current = true;
+    if (timer.current) clearTimeout(timer.current);
     kept.set(REQUEST_DRAFT, null);
-    router.back(); // welcome reads the request again and shows it waiting
+    router.back(); // welcome reads the request again, showing no card until it's in
   }
 
   const head = {
     1: ['Who’s hosting?', 'Your club, group, venue or you. People see this name on every event.'],
     2: ['Your first event', 'A rough plan is enough. You’ll finish it as a draft once you’re live.'],
-    3: see ? ['Your request', 'Orbit is checking it, usually within a day.'] : ['Check and send', 'Orbit checks it, usually within a day. We’ll tell you by notification and email.'],
+    3: see ? ['Your request', SEE_LINE[see]] : ['Check and send', 'Orbit checks it, usually within a day. We’ll tell you by notification and email.'],
   }[step];
 
   const foot =
@@ -141,14 +214,14 @@ function Steps({ initial, see }: { initial: Draft; see: boolean }) {
         <View style={s.fields}>
           <Field label="Name" value={d.name} onChangeText={(name) => put({ name })} placeholder="Punchline Comedy" autoCapitalize="words" maxLength={100} />
           <Label text="Kind">
-            <View style={s.chips}>
+            <View style={s.chips} accessibilityRole="radiogroup" accessibilityLabel="Kind">
               {KINDS.map(([k, label]) => (
                 <Chip key={k} label={label} on={d.kind === k} onPress={() => put({ kind: k })} />
               ))}
             </View>
           </Label>
           <Label text="City">
-            <Opens value={d.city} placeholder="Pick your city" onPress={() => setSheet('city')} />
+            <Opens label="City" value={d.city} placeholder="Pick your city" onPress={() => setSheet('city')} />
           </Label>
           <Label text="About" optional>
             <Glass style={s.area}>
@@ -172,24 +245,24 @@ function Steps({ initial, see }: { initial: Draft; see: boolean }) {
         <View style={s.fields}>
           <Field label="Title" value={d.title} onChangeText={(title) => put({ title })} placeholder="Open Mic Friday" autoCapitalize="words" maxLength={120} />
           <Label text="Category">
-            <View style={s.chips}>
+            <View style={s.chips} accessibilityRole="radiogroup" accessibilityLabel="Category">
               {categories.map((c) => (
                 <Chip key={c.slug} label={c.label} on={d.category === c.slug} onPress={() => put({ category: c.slug })} />
               ))}
             </View>
           </Label>
           <Label text="When">
-            <Opens value={d.startsAt && whenLabel(d.startsAt)} placeholder="Pick a day and time" onPress={() => setSheet('when')} />
+            <Opens label="When" value={d.startsAt && whenLabel(d.startsAt)} placeholder="Pick a day and time" onPress={() => setSheet('when')} />
           </Label>
           <Field label="Where · optional" value={d.venue} onChangeText={(venue) => put({ venue })} placeholder="Venue name or area" maxLength={120} />
           <Label text="Tickets">
-            <Glass style={s.seg}>
+            <Glass style={s.seg} accessibilityRole="radiogroup" accessibilityLabel="Tickets">
               {[false, true].map((paid) => (
                 <Pressable
                   key={String(paid)}
                   onPress={() => put({ paid })}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: d.paid === paid }}
+                  accessibilityRole="radio"
+                  accessibilityState={{ checked: d.paid === paid }}
                   style={[s.segPart, d.paid === paid && s.segOn]}
                 >
                   <Text style={[s.segText, d.paid === paid && s.segTextOn]}>{paid ? 'Paid' : 'Free'}</Text>
@@ -202,6 +275,7 @@ function Steps({ initial, see }: { initial: Draft; see: boolean }) {
           </View>
         </View>
       )}
+      {why && <Note live>{why}</Note>}
 
       {step === 3 && (
         <>
@@ -235,7 +309,7 @@ function Steps({ initial, see }: { initial: Draft; see: boolean }) {
             </>
           )}
           {!d.skip && d.paid && <Note>Paid tickets go on sale once payments open on Orbit.</Note>}
-          {said && <Note>{said}</Note>}
+          {said && <Note live>{said}</Note>}
         </>
       )}
 
@@ -306,7 +380,7 @@ function Label({ text, optional = false, children }: { text: string; optional?: 
 // A text-only choice: a Sage outline and dot when picked (the accent on the element, never the words).
 function Chip({ label, on, onPress }: { label: string; on: boolean; onPress: () => void }) {
   return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityState={{ selected: on }} style={[s.chip, on && s.chipOn]}>
+    <Pressable onPress={onPress} accessibilityRole="radio" accessibilityState={{ checked: on }} style={[s.chip, on && s.chipOn]}>
       {on && <View style={s.dot} />}
       <Text style={[s.chipText, on && s.chipTextOn]}>{label}</Text>
     </Pressable>
@@ -314,9 +388,9 @@ function Chip({ label, on, onPress }: { label: string; on: boolean; onPress: () 
 }
 
 // A field that opens a sheet (City, When): its value, or grey words, and a >.
-function Opens({ value, placeholder, onPress }: { value: string | null; placeholder: string; onPress: () => void }) {
+function Opens({ label, value, placeholder, onPress }: { label: string; value: string | null; placeholder: string; onPress: () => void }) {
   return (
-    <Pressable onPress={onPress} accessibilityRole="button" style={({ pressed }) => pressed && ui.pressed}>
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`${label}, ${(value || placeholder).replace(' · ', ', ')}`} style={({ pressed }) => pressed && ui.pressed}>
       <Glass style={[ui.input, s.opens]}>
         <Text style={[s.opensText, !value && s.muted]}>{value || placeholder}</Text>
         <Image source={CHEVRON} style={s.mark} />
@@ -362,7 +436,7 @@ function CitySheet({ chosen, onPick, onClose }: { chosen: string | null; onPick:
             searching ? undefined : (
               <>
                 <Text style={s.sheetSection}>Popular cities</Text>
-                <View style={[s.chips, s.sheetChips]}>
+                <View style={[s.chips, s.sheetChips]} accessibilityRole="radiogroup" accessibilityLabel="Popular cities">
                   {popularCities.map((c) => (
                     <Chip key={c.name} label={c.name} on={chosen === c.name} onPress={() => onPick(c.name)} />
                   ))}
@@ -406,7 +480,7 @@ function WhenSheet({ startsAt, onDone, onClose }: { startsAt: string | null; onD
   const ready = day !== null && min !== null && times.includes(min);
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={s.dim} onPress={onClose} accessibilityLabel="Close" />
+      <Pressable style={s.dim} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" />
       <View style={[s.when, { paddingBottom: insets.bottom + 12 }]}>
         <View style={s.grab} />
         <View style={s.calHead}>
@@ -430,6 +504,7 @@ function WhenSheet({ startsAt, onDone, onClose }: { startsAt: string | null; onD
                 disabled={!open}
                 onPress={() => setDay(x)}
                 accessibilityRole="button"
+                accessibilityLabel={dayName(x)}
                 accessibilityState={{ selected: on, disabled: !open }}
                 style={s.cell}
               >
@@ -442,7 +517,7 @@ function WhenSheet({ startsAt, onDone, onClose }: { startsAt: string | null; onD
         </View>
         <Text style={s.sheetSection}>Starts at</Text>
         {day ? (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.times}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.times} accessibilityRole="radiogroup" accessibilityLabel="Starts at">
             {times.map((t) => (
               <Chip key={t} label={timeLabel(t)} on={t === min} onPress={() => setMin(t)} />
             ))}
@@ -479,6 +554,8 @@ const s = StyleSheet.create({
   seg3On: { backgroundColor: color.accent }, // progress is an element, so the accent is allowed
   stepWord: { fontFamily: font.medium, fontSize: 12, color: color.secondary },
   scroll: { paddingBottom: space.big },
+  spinner: { marginTop: 48 },
+  retry: { marginTop: 16, marginHorizontal: 20, flexDirection: 'row' },
   title: { marginTop: 20, marginHorizontal: 20, fontFamily: font.headline, fontSize: 28, lineHeight: 34, letterSpacing: -0.3, color: color.text },
   line: { marginTop: space.small, marginHorizontal: 20, fontFamily: font.text, fontSize: 15, lineHeight: 22, color: color.secondary },
   fields: { marginTop: 20, marginHorizontal: 20, gap: 16 },

@@ -117,9 +117,13 @@ export function HostHead({ host, right }: { host: Host; right?: ReactNode }) {
   );
 }
 
-/** Grey words under a card, as a note on what it holds. */
-export function Note({ children }: { children: string }) {
-  return <Text style={styles.note}>{children}</Text>;
+/** Grey words under a card, as a note on what it holds. `live`: an error that appears, read out on Android as it does. */
+export function Note({ children, live = false }: { children: string; live?: boolean }) {
+  return (
+    <Text style={styles.note} accessibilityLiveRegion={live ? 'polite' : undefined}>
+      {children}
+    </Text>
+  );
 }
 
 /** A person's round initials (people are circles, hosts rounded squares); your own on Forest, as in the Orbit app. */

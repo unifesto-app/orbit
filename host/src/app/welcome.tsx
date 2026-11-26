@@ -14,7 +14,7 @@ import type { EventRequest } from '@orbit/contract';
 import { useLoad } from '@orbit/mobile/load';
 import { Redirect, router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Image, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { AccessibilityInfo, Alert, Image, Platform, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { adminHosts, mustPick } from '../launch/host';
@@ -22,7 +22,7 @@ import { useInvites } from '../launch/invites';
 import { dayLabel, istDate } from '../launch/money';
 import { errorText, sentLabel, welcomeState } from '../launch/request';
 import { Monogram, Note, Pill, Section, Tag, styles as ui } from '../launch/ui';
-import { api, refreshMe, signOut, useSession } from '../session';
+import { api, kept, refreshMe, REQUEST_DRAFT, signOut, useSession } from '../session';
 import { seats } from '../station/seats';
 import { isStation, thisApp } from '../variant';
 
@@ -43,19 +43,55 @@ export default function Welcome() {
   const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
   const request = useLoad<EventRequest | null>(me && !isStation ? `request|${me.id}` : null, () => api.authed('GET', '/me/event-request'));
   const [said, setSaid] = useState<string | null>(null); // a refused withdraw
+  const [withdrawing, setWithdrawing] = useState(false);
   const r = request.data;
   const state = welcomeState(r);
-  // Back from the form (sent, or left mid-way): read the request again. Not on the first focus, which the load covers.
+  const approved = useRef(false);
+  approved.current = state === 'approved';
+  // Back from the form (sent, or left mid-way): read the request again, showing no card until it's in, so a request
+  // just sent never shows as what it was. Not on the first focus, which the load covers. Approved, the account too.
+  const [stale, setStale] = useState(false);
+  useEffect(() => setStale(false), [request.data, request.error]); // each answer, good or not, is a new object
   const seen = useRef(false);
   useFocusEffect(
     useCallback(() => {
-      if (seen.current) request.reload();
+      if (seen.current) {
+        setStale(true);
+        setSaid(null);
+        request.reload();
+        if (approved.current) void refreshMe();
+      }
       seen.current = true;
     }, [request.reload]),
   );
   useEffect(() => {
     if (state === 'approved') void refreshMe(); // the new Admin seat, so the redirect to Events takes over
   }, [state, r?.id]);
+  // The card shows only on an answer read this visit; while loading or after a failure, only the error (pull retries).
+  const loaded = !request.loading && !request.error && !stale;
+
+  function withdraw() {
+    Alert.alert('Withdraw your request?', 'Orbit stops checking it. You can send a new one later.', [
+      { text: 'Keep it', style: 'cancel' },
+      {
+        text: 'Withdraw',
+        style: 'destructive',
+        onPress: async () => {
+          setWithdrawing(true);
+          setSaid(null);
+          const out = await api.authed('DELETE', '/me/event-request');
+          setWithdrawing(false);
+          if (out.ok) kept.set(REQUEST_DRAFT, null); // an edit in progress goes with it
+          else {
+            const why = errorText(out.error);
+            setSaid(why);
+            if (Platform.OS === 'ios') AccessibilityInfo.announceForAccessibility(why);
+          }
+          request.reload();
+        },
+      },
+    ]);
+  }
   if (!me) return null;
   if (isStation && seats(me).length) return <Redirect href="/today" />; // an accepted seat opens Today
   if (!isStation && adminHosts(me).length) return <Redirect href={mustPick(me) ? '/pick' : '/events'} />; // an Admin opens Events
@@ -74,6 +110,7 @@ export default function Welcome() {
           refreshing={invites.loading && !!invites.data}
           onRefresh={() => {
             invites.reload();
+            setSaid(null);
             request.reload();
             void refreshMe();
           }}
@@ -128,7 +165,15 @@ export default function Welcome() {
       {invites.error && <Note>{invites.error.message}</Note>}
       {error && <Note>{error}</Note>}
 
-      {!isStation && !request.loading && (r && (state === 'waiting' || state === 'changes' || state === 'declined') ? (
+      {!isStation && loaded && state === 'approved' && (
+        <>
+          <Section title="Your request" />
+          <View style={[ui.card, styles.invite]}>
+            <Text style={styles.cardLine}>Approved. Opening your host…</Text>
+          </View>
+        </>
+      )}
+      {!isStation && loaded && state !== 'approved' && (r && (state === 'waiting' || state === 'changes' || state === 'declined') ? (
         <>
           <Section title={state === 'declined' ? 'Your last request' : 'Your request'} />
           <View style={[ui.card, styles.invite]}>
@@ -148,24 +193,7 @@ export default function Welcome() {
               {state === 'changes' && <Pill label="Edit request" onPress={() => router.push('/request?mode=edit')} />}
               {state === 'declined' && <Pill label="Start a new request" onPress={() => router.push('/request')} />}
               {state !== 'declined' && (
-                <Pill
-                  label="Withdraw"
-                  onPress={() =>
-                    Alert.alert('Withdraw your request?', 'Orbit stops checking it. You can send a new one later.', [
-                      { text: 'Keep it', style: 'cancel' },
-                      {
-                        text: 'Withdraw',
-                        style: 'destructive',
-                        onPress: async () => {
-                          setSaid(null);
-                          const out = await api.authed('DELETE', '/me/event-request');
-                          if (!out.ok) setSaid(errorText(out.error));
-                          request.reload();
-                        },
-                      },
-                    ])
-                  }
-                />
+                <Pill label={withdrawing ? 'Withdrawing…' : 'Withdraw'} onPress={withdrawing ? undefined : withdraw} />
               )}
             </View>
           </View>
@@ -181,8 +209,8 @@ export default function Welcome() {
           </View>
         </>
       ))}
-      {request.error && <Note>{request.error.message}</Note>}
-      {said && <Note>{said}</Note>}
+      {request.error && <Note live>{request.error.message}</Note>}
+      {said && <Note live>{said}</Note>}
       {contacts ? <Note>{`Expecting an invite? Ask ${isStation ? 'the venue' : 'your host'} to add ${contacts}.`}</Note> : null}
 
       <View style={styles.foot}>
