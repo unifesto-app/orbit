@@ -6,7 +6,7 @@ import { ACCESS, apiFetch, type Result } from "./session";
 // A signed-in call to the Orbit API, from a page or a Server Action. proxy.ts has already renewed the access token.
 // Signed out or suspended goes to sign-in. Every Galaxy route answers 404 to staff without its feature, as if it
 // didn't exist (api/src/roles/access.ts, requireFeature).
-export async function galaxy<T>(method: "GET" | "POST" | "PUT" | "DELETE", path: string, body?: unknown): Promise<Result<T>> {
+export async function galaxy<T>(method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE", path: string, body?: unknown): Promise<Result<T>> {
   const access = (await cookies()).get(ACCESS)?.value;
   if (!access) redirect("/login");
   const r = await apiFetch<T>(method, path, { body, access, xff: (await headers()).get("x-forwarded-for") });

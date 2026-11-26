@@ -12,7 +12,7 @@ export type Done = { error?: string; ok?: number };
 const text = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
 const path = (f: FormData, k: string) => encodeURIComponent(text(f, k));
 
-async function run(method: "POST" | "PUT" | "DELETE", url: string, body: unknown): Promise<Done> {
+async function run(method: "POST" | "PUT" | "PATCH" | "DELETE", url: string, body: unknown): Promise<Done> {
   const r = await galaxy(method, url, body);
   if (!r.ok) return { error: r.error.message };
   refresh(); // the page reads again, so it shows what changed
@@ -128,6 +128,78 @@ export async function promoteEvent(_: Done, f: FormData) {
   const list = r.data.content.promoted.filter((p) => p.href !== href);
   if (on && list.length >= 10) return { error: "Promoted holds 10 events. Take one out in App content first." };
   return run("PUT", "/galaxy/app-content/promoted", { value: on ? [...list, { href }] : list, at: r.data.saved.promoted?.at ?? null });
+}
+
+// ─── An event's people and what's inside a fest (X14) ───
+// Each move sends the lineup the page showed, changed: the API replaces the whole list, and refuses it when the list it
+// has isn't the one the page showed (`shown`). No reason: these are page content, logged without telling anyone.
+type Credit = { personId: string; role: string };
+const isCredit = (x: unknown): x is Credit => typeof x === "object" && x !== null && typeof (x as Credit).personId === "string" && typeof (x as Credit).role === "string";
+const isId = (x: unknown): x is string => typeof x === "string";
+// A hidden field's JSON list, or null when it isn't one of the right things.
+const list = <T,>(f: FormData, k: string, is: (x: unknown) => x is T): T[] | null => {
+  try {
+    const v: unknown = JSON.parse(text(f, k));
+    return Array.isArray(v) && v.every(is) ? v : null;
+  } catch {
+    return null;
+  }
+};
+const BROKEN = { error: "Something on this page didn't load right. Reload and try again." };
+// A person picked from the list, or a new one made first from a name and a line.
+export async function addEventPerson(_: Done, f: FormData): Promise<Done> {
+  const people = list(f, "people", isCredit);
+  if (!people) return BROKEN;
+  let personId = text(f, "personId");
+  const made = !personId;
+  if (made) {
+    const r = await galaxy<{ id: string }>("POST", "/galaxy/persons", { name: text(f, "name"), headline: text(f, "headline") });
+    if (!r.ok) return { error: r.error.message };
+    personId = r.data.id;
+  }
+  const r = await galaxy("PUT", `/galaxy/events/${path(f, "id")}/people`, { shown: people, people: [...people,{ personId, role: text(f, "role") }] });
+  if (!r.ok && made) refresh(); // the new person is in the picker now
+  if (!r.ok) return { error: made ? `${text(f, "name")} is saved but not on this event. ${r.error.message} Then pick them from the list.` : r.error.message };
+  refresh();
+  return { ok: Date.now() };
+}
+export async function setEventPeople(_: Done, f: FormData) {
+  const shown = list(f, "shown", isCredit), people = list(f, "people", isCredit);
+  if (!shown || !people) return BROKEN;
+  const r = await galaxy("PUT", `/galaxy/events/${path(f, "id")}/people`, { shown, people });
+  if (!r.ok && r.error.error === "stale") refresh(); // shows the list as it is now
+  if (!r.ok) return { error: r.error.message };
+  refresh();
+  return { ok: Date.now() };
+}
+// Links: one a line, the label then the https address ("Website https://asha.in").
+export async function editPerson(_: Done, f: FormData) {
+  const links = text(f, "links")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((l) => {
+      const at = l.lastIndexOf(" ");
+      return { label: l.slice(0, Math.max(at, 0)).trim(), url: l.slice(at + 1) };
+    });
+  return run("PATCH", `/galaxy/persons/${path(f, "personId")}`, { name: text(f, "name"), headline: text(f, "headline"), bio: text(f, "bio") || null, links });
+}
+const festItem = (f: FormData) => ({
+  title: text(f, "title"), kind: text(f, "kind"), when: text(f, "when"), where: text(f, "where"), about: text(f, "about"),
+  team: text(f, "team") || null, prize: text(f, "prize") || null, actHostId: text(f, "actHostId") || null,
+});
+export async function addFestItem(_: Done, f: FormData) {
+  return run("POST", `/galaxy/events/${path(f, "id")}/fest-items`, festItem(f));
+}
+export async function editFestItem(_: Done, f: FormData) {
+  return run("PATCH", `/galaxy/fest-items/${path(f, "itemId")}`, festItem(f));
+}
+export async function deleteFestItem(_: Done, f: FormData) {
+  return run("DELETE", `/galaxy/fest-items/${path(f, "itemId")}`, undefined);
+}
+export async function orderFestItems(_: Done, f: FormData) {
+  const ids = list(f, "ids", isId);
+  return ids ? run("PUT", `/galaxy/events/${path(f, "id")}/fest-items/order`, { ids }) : BROKEN;
 }
 
 // ─── Staff ───

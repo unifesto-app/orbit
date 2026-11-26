@@ -3,21 +3,43 @@
 // size and prize, and the act on stage, whose page it opens. It comes with the fest's own booking: no ticket of its own.
 // Since 19 Nov 2026 (owner approved Take 3 of the detail pages mockup) the act is a host row with Follow under On stage,
 // as Hosted by on the event page, rather than a fact in the card.
+// A uuid item is a real fest's (orbit-pm X14): `fest` is then the event's slug and the item comes from its public read,
+// with the act's host only while it's public and live; anything else stays on the mock (src/kinds.ts).
 import { router, useLocalSearchParams } from 'expo-router';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { Fact, FactCard } from '../../../fact';
-import { festItems } from '../../../kinds';
+import { type Host, toHost } from '../../../events';
+import { festItems, type FestItem as MockItem } from '../../../kinds';
 import { events, hosts } from '../../../mock';
 import { FollowRow, NotFound, Section, Sheet } from '../../../rows';
+import { useEvent } from '../../../useEvent';
 import { color, font, space } from '../../../theme';
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export default function FestItem() {
   const { fest, item } = useLocalSearchParams<{ fest: string; item: string }>();
+  return UUID.test(item) ? <LiveItem fest={fest} item={item} /> : <MockFestItem fest={fest} item={item} />;
+}
+
+function LiveItem({ fest, item }: { fest: string; item: string }) {
+  const found = useEvent(fest);
+  if (!found.e) return found.screen;
+  const it = found.e.festItems?.find((x) => x.id === item);
+  if (!it) return <NotFound what="part of a fest" />;
+  const { act, ...rest } = it;
+  return <ItemView it={{ ...rest, team: it.team ?? undefined, prize: it.prize ?? undefined }} fest={found.e} act={act ? toHost(act) : undefined} />;
+}
+
+function MockFestItem({ fest, item }: { fest: string; item: string }) {
   const e = events.find((x) => x.id === fest);
   const it = festItems[fest]?.find((x) => x.id === item);
   if (!e || !it) return <NotFound what="part of a fest" />;
-  const act = it.act ? hosts.find((h) => h.id === it.act) : undefined;
+  return <ItemView it={it} fest={e} act={it.act ? hosts.find((h) => h.id === it.act) : undefined} />;
+}
+
+function ItemView({ it, fest: e, act }: { it: Omit<MockItem, 'act'>; fest: { title: string; when: string; venue: { name: string } }; act?: Host }) {
   return (
     <Sheet title={it.title} note={`${it.kind} · ${e.title}`} full>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.list}>
