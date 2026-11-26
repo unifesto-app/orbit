@@ -54,6 +54,15 @@ export async function dismissReport(_: Done, f: FormData) {
   return run("POST", `/galaxy/reports/${path(f, "id")}/dismiss`, { note: text(f, "reason") || undefined });
 }
 
+// ─── Support ───
+// A reply reaches the person by push, inbox and email; close and reopen are logged.
+export async function replySupport(_: Done, f: FormData) {
+  return run("POST", `/galaxy/support/${path(f, "id")}/reply`, { body: text(f, "body") });
+}
+export async function setSupportStatus(_: Done, f: FormData) {
+  return run("POST", `/galaxy/support/${path(f, "id")}/status`, { status: text(f, "status") });
+}
+
 // ─── Hosts ───
 // Verify carries the name staff saw, so the badge can't land on a name nobody checked.
 export async function verifyHost(_: Done, f: FormData) {

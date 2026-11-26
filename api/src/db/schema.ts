@@ -1196,3 +1196,38 @@ export const reports = pgTable(
     index().on(t.hostId),
   ],
 );
+
+// Help and support (X16, support.ts): one thread per person per app at a time, from Help's Write to us. Staff with Queues
+// read and answer them in Galaxy; a reply reaches the person as a supportReply notice. A thread that isn't closed takes
+// the person's next message; once closed, the next one starts a new thread.
+export const supportThreads = pgTable(
+  "support_threads",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").notNull().references(() => users.id),
+    app: text("app", { enum: ["orbit", "launch", "station"] }).notNull(),
+    status: text("status", { enum: ["open", "answered", "closed"] }).notNull().default("open"),
+    createdAt: at("created_at").notNull(),
+    updatedAt: at("updated_at").notNull(), // the last message
+  },
+  (t) => [
+    check("support_threads_app", sql`${t.app} in ('orbit', 'launch', 'station')`),
+    check("support_threads_status", sql`${t.status} in ('open', 'answered', 'closed')`),
+    index().on(t.status, t.updatedAt),
+    // One thread that isn't closed per person per app, even for two sends at once.
+    uniqueIndex("support_threads_one_live").on(t.userId, t.app).where(sql`${t.status} <> 'closed'`),
+  ],
+);
+
+export const supportMessages = pgTable(
+  "support_messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    threadId: uuid("thread_id").notNull().references(() => supportThreads.id, { onDelete: "cascade" }),
+    from: text("from", { enum: ["person", "staff"] }).notNull(),
+    staffId: uuid("staff_id").references(() => users.id),
+    body: text("body").notNull(),
+    createdAt: at("created_at").notNull(),
+  },
+  (t) => [check("support_messages_from", sql`${t.from} in ('person', 'staff')`), index().on(t.threadId, t.createdAt)],
+);
