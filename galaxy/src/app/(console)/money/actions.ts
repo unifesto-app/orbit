@@ -22,8 +22,19 @@ async function run(method: "POST" | "PUT", url: string, body: unknown): Promise<
 export const refund = async (_: Done, f: FormData) =>
   run("POST", `/galaxy/money/payments/${id(f)}/refund`, { amountPaise: paise(f), reason: text(f, "reason") });
 export const retryRefund = async (_: Done, f: FormData) => run("POST", `/galaxy/money/refunds/${id(f)}/retry`, { reason: text(f, "reason") });
+// An event's payout, or (a hostId and no event) a Venue's slot money.
 export const newPayout = async (_: Done, f: FormData) =>
-  run("POST", "/galaxy/money/payouts", { eventId: text(f, "eventId") || undefined, hostId: text(f, "hostId") || undefined, amountPaise: paise(f), reason: text(f, "reason") });
+  run("POST", "/galaxy/money/payouts", {
+    ...(text(f, "eventId") ? { eventId: text(f, "eventId") } : { hostId: text(f, "hostId") }),
+    amountPaise: paise(f),
+    reason: text(f, "reason"),
+  });
+// `seen`: the account's updatedAt as the page showed it; the API refuses if it was replaced since.
+export const checkAccount = async (_: Done, f: FormData) =>
+  run("POST", `/galaxy/money/payout-accounts/${id(f)}/${text(f, "verdict") === "verify" ? "verify" : "reject"}`, {
+    reason: text(f, "reason"),
+    seen: text(f, "seen"),
+  });
 export const payoutPaid = async (_: Done, f: FormData) =>
   run("POST", `/galaxy/money/payouts/${id(f)}/paid`, { utr: text(f, "utr"), reason: text(f, "reason") });
 export const cancelPayout = async (_: Done, f: FormData) => run("POST", `/galaxy/money/payouts/${id(f)}/cancel`, { reason: text(f, "reason") });

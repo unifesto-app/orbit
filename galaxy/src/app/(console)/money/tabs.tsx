@@ -11,6 +11,7 @@ const TABS = [
   { key: "bookings", label: "Bookings and tickets", href: "/money/bookings" },
   { key: "refunds", label: "Refunds", href: "/money/refunds" },
   { key: "payouts", label: "Payouts", href: "/money/payouts" },
+  { key: "accounts", label: "Payout accounts", href: "/money/payout-accounts" },
   { key: "fees", label: "Fees", href: "/money/fees" },
   { key: "failed", label: "Failed webhooks", href: "/money/failed-webhooks" },
 ] as const;

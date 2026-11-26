@@ -61,7 +61,7 @@ export type Verified = { status: PaymentStatus | "confirming" | "pending"; booki
 // Galaxy's Money pages (staff with Money).
 export const REFUND_STATUSES = ["requested", "sent", "processed", "failed"] as const;
 export const StaffRefund = z.object({ amountPaise: z.number().int().min(1), reason: z.string().trim().min(3).max(500) });
-// An event's payout (eventId), or a venue's slot money (hostId): one of the two.
+// An event's payout (`eventId`), or a Venue's slot money (`hostId`), never both.
 export const NewPayout = z
   .object({ eventId: z.uuid().optional(), hostId: z.uuid().optional(), amountPaise: z.number().int().min(1), reason: z.string().trim().min(3).max(500) })
   .refine((b) => !b.eventId !== !b.hostId);
@@ -85,9 +85,12 @@ export type RefundRow = {
 export type PaymentList = { payments: PaymentRow[]; total: number; page: number; pageSize: number };
 export type PaymentDetail = { payment: PaymentRow; refunds: RefundRow[]; refundablePaise: number };
 export type RefundQueue = { open: RefundRow[]; failed: RefundRow[] };
+export type PayoutStatus = "requested" | "paid" | "cancelled";
+// `eventId` null: a Venue's slot money. `fromHost`: a host Admin asked (Event Partner, Play Partner), else staff.
 export type PayoutRow = {
-  id: string; hostId: string; hostName: string; eventId: string | null; eventTitle: string | null; amountPaise: number; // null: a venue's slot money
-  status: "requested" | "paid" | "cancelled"; utr: string | null; reason: string | null; byName: string | null; at: string;
+  id: string; hostId: string; hostName: string; eventId: string | null; eventTitle: string | null; amountPaise: number;
+  status: PayoutStatus; utr: string | null; reason: string | null; fromHost: boolean; askedByName: string | null; byName: string | null;
+  createdAt: string; at: string;
 };
 // One event's money (or a venue's slot money: `eventId` null), worked out once on the server: sales, minus commission
 // (less what refunds handed back), minus any fee the host included, minus refunded; then paid out and what's left.
@@ -96,7 +99,60 @@ export type EventEarnings = {
   salesPaise: number; commissionPaise: number; includedPaise: number; refundedPaise: number;
   earningsPaise: number; paidOutPaise: number; requestedPaise: number; availablePaise: number;
 };
-export type Payouts = { payouts: PayoutRow[]; earnings: EventEarnings[] };
+// A Venue's slot money (X4), as EventEarnings, with when it can be asked for: a slot's money 3 days after it ends
+// (`waitingPaise` till then, the last of it by `opensAt`), and a host's ask at most once a week (`nextAskAt`, null: now).
+// `availablePaise`: ready, less paid out and asked for, never below nothing.
+export type VenueEarnings = {
+  hostId: string; hostName: string; bookings: number;
+  salesPaise: number; commissionPaise: number; includedPaise: number; refundedPaise: number; earningsPaise: number;
+  paidOutPaise: number; requestedPaise: number; waitingPaise: number; opensAt: string | null; availablePaise: number; nextAskAt: string | null;
+};
+// `accounts`: each host's bank account state by host id, so staff see it before marking anything paid; none if not added.
+export type Payouts = { payouts: PayoutRow[]; earnings: EventEarnings[]; venues: VenueEarnings[]; accounts: Record<string, "checking" | "verified" | "rejected"> };
+
+// ---------- A host's own money (X4): Event Partner and Play Partner, for the host's Admins ----------
+
+const UPI = /^[\w.-]{2,}@[a-z0-9]{2,}$/i;
+const Holder = z.string().trim().min(2).max(100);
+// PUT /hosts/:id/payout-account: an account number (9 to 18 digits, spaces dropped) and an IFSC, or a UPI ID (the
+// holder then defaults to the host's name). As the host apps' bankFrom checks it.
+export const SetPayoutAccount = z.union([
+  z.strictObject({
+    holder: Holder,
+    account: z.string().transform((s) => s.replace(/\s/g, "")).pipe(z.string().regex(/^\d{9,18}$/)),
+    ifsc: z.string().transform((s) => s.replace(/\s/g, "").toUpperCase()).pipe(z.string().regex(/^[A-Z]{4}0[A-Z0-9]{6}$/)),
+  }),
+  z.strictObject({ holder: Holder.optional(), upi: z.string().trim().max(100).regex(UPI) }),
+]);
+// The bank's name from the IFSC's first four letters; "Your bank" for the rest.
+const BANKS: Record<string, string> = {
+  HDFC: "HDFC Bank", ICIC: "ICICI Bank", SBIN: "State Bank of India", UTIB: "Axis Bank", KKBK: "Kotak Mahindra Bank",
+  YESB: "Yes Bank", IDIB: "Indian Bank", PUNB: "Punjab National Bank", BARB: "Bank of Baroda", CNRB: "Canara Bank",
+};
+export const bankName = (ifsc: string) => BANKS[ifsc.slice(0, 4).toUpperCase()] ?? "Your bank";
+export type AccountState = "checking" | "verified" | "rejected";
+// As the host apps see it: never the number or the UPI ID. `until`: the 72 hours a check takes, while checking.
+// `reason`: why staff rejected it.
+export type PayoutAccount = { kind: "bank" | "upi"; bankName: string; last4: string; holder: string; state: AccountState; reason: string | null; until: string | null };
+// POST /hosts/:id/payouts: an event's money (`eventId`), or with none a Venue's slot money.
+export const AskPayout = z.object({ eventId: z.uuid().optional(), amountPaise: z.number().int().min(1) });
+// One event's money with its scheduled end; its payout opens 3 days after (`opensAt`, null with no end set).
+export type HostEventMoney = EventEarnings & { eventId: string; eventTitle: string; endsAt: string | null; opensAt: string | null };
+export type HostPayout = {
+  id: string; eventId: string | null; eventTitle: string | null; amountPaise: number; status: PayoutStatus;
+  utr: string | null; reason: string | null; askedAt: string; at: string;
+};
+// GET /hosts/:id/money. `venue`: Venue hosts only.
+export type HostMoney = {
+  plan: FeePlan; feeIncluded: boolean; account: PayoutAccount | null; events: HostEventMoney[]; venue: VenueEarnings | null; payouts: HostPayout[];
+};
+// Galaxy's Payout accounts: every detail, for holders of Money. `seen` on verify and reject: the account's updatedAt as
+// staff saw it, so a replacement since then isn't verified unseen.
+export type StaffPayoutAccount = {
+  hostId: string; hostName: string; kind: "bank" | "upi"; holder: string; accountNumber: string | null; ifsc: string | null; upi: string | null;
+  bankName: string; state: AccountState; reason: string | null; checkedByName: string | null; checkedAt: string | null; updatedAt: string;
+};
+export const CheckAccount = z.object({ reason: z.string().trim().min(3).max(500), seen: z.iso.datetime() });
 export type HostFees = { hosts: { id: string; name: string; plan: FeePlan; feeIncluded: boolean }[]; total: number; page: number; pageSize: number };
 export type FailedWebhook = { id: string; receivedAt: string; reason: string; excerpt: string };
 

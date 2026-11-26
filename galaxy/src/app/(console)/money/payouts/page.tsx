@@ -13,11 +13,18 @@ export const metadata: Metadata = { title: "Payouts" };
 
 const TONES = { requested: "warning", paid: "success", cancelled: "neutral" } as const;
 const NAMES = { requested: "To pay", paid: "Paid", cancelled: "Cancelled" } as const;
+const ACCOUNT_TONES = { checking: "warning", verified: "success", rejected: "error" } as const;
+const ACCOUNT_NAMES = { checking: "To check", verified: "Verified", rejected: "Rejected" } as const;
+
+// The host's bank account state: the API refuses Mark paid unless it's verified.
+function Account({ state }: { state: Payouts["accounts"][string] | undefined }) {
+  return state ? <Badge tone={ACCOUNT_TONES[state]}>{ACCOUNT_NAMES[state]}</Badge> : <Badge tone="neutral">None</Badge>;
+}
 
 export default function PayoutsPage() {
   return (
     <div className={ui.page}>
-      <MoneyHeader current="payouts" description="What each event has earned its host, and what's been paid out. Earnings are sales less commission, any fee in the price, and refunds." />
+      <MoneyHeader current="payouts" description="What each event and each venue's slots have earned the host, and what's been paid out. Earnings are sales less commission, any fee in the price, and refunds. Hosts ask from their app; pay only to a verified account." />
       <Suspense fallback={null}>
         <Body />
       </Suspense>
@@ -39,9 +46,11 @@ async function Body() {
               <tr>
                 <th>Event</th>
                 <th>Host</th>
+                <th>Account</th>
                 <th>Amount</th>
                 <th>Status</th>
                 <th>UTR</th>
+                <th>Asked by</th>
                 <th>By</th>
                 <th>When</th>
                 <th />
@@ -52,11 +61,15 @@ async function Body() {
                 <tr key={p.id}>
                   <td>{p.eventTitle ?? "Slots"}</td>
                   <td>{p.hostName}</td>
+                  <td>
+                    <Account state={r.data.accounts[p.hostId]} />
+                  </td>
                   <td>{inr(p.amountPaise)}</td>
                   <td>
                     <Badge tone={TONES[p.status]}>{NAMES[p.status]}</Badge>
                   </td>
                   <td>{p.utr ?? "–"}</td>
+                  <td>{p.fromHost ? `Host, ${p.askedByName ?? "–"}` : "Staff"}</td>
                   <td>{p.byName ?? "–"}</td>
                   <td>{when(p.at)}</td>
                   <td>
@@ -78,7 +91,7 @@ async function Body() {
           </table>
         )}
       </Container>
-      <Container title="Earnings by event or venue" count={r.data.earnings.length}>
+      <Container title="Earnings by event" count={r.data.earnings.length}>
         {r.data.earnings.length === 0 ? (
           <p className={ui.secondary}>No paid sales yet.</p>
         ) : (
@@ -115,6 +128,59 @@ async function Body() {
                         <label>
                           Amount in rupees, up to {inr(e.availablePaise)}
                           <input className={ui.input} name="rupees" type="number" min="0.01" step="0.01" max={e.availablePaise / 100} required />
+                        </label>
+                      </Act>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Container>
+      <Container title="Slots by venue" count={r.data.venues.length}>
+        {r.data.venues.length === 0 ? (
+          <p className={ui.secondary}>No paid slots yet.</p>
+        ) : (
+          <table className={ui.table}>
+            <thead>
+              <tr>
+                <th>Venue</th>
+                <th>Account</th>
+                <th>Slots</th>
+                <th>Sales</th>
+                <th>Commission</th>
+                <th>Refunded</th>
+                <th>Earnings</th>
+                <th>Waiting</th>
+                <th>Paid out</th>
+                <th>To pay</th>
+                <th>Left</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {r.data.venues.map((v) => (
+                <tr key={v.hostId}>
+                  <td>{v.hostName}</td>
+                  <td>
+                    <Account state={r.data.accounts[v.hostId]} />
+                  </td>
+                  <td>{v.bookings}</td>
+                  <td>{inr(v.salesPaise)}</td>
+                  <td>{inr(v.commissionPaise + v.includedPaise)}</td>
+                  <td>{inr(v.refundedPaise)}</td>
+                  <td>{inr(v.earningsPaise)}</td>
+                  <td>{inr(v.waitingPaise)}</td>
+                  <td>{inr(v.paidOutPaise)}</td>
+                  <td>{inr(v.requestedPaise)}</td>
+                  <td>{inr(v.availablePaise)}</td>
+                  <td>
+                    {v.availablePaise > 0 && (
+                      <Act label="New payout" action={newPayout} hidden={{ hostId: v.hostId }} who="Everyone with Money sees this">
+                        <label>
+                          Amount in rupees, up to {inr(v.availablePaise)}
+                          <input className={ui.input} name="rupees" type="number" min="0.01" step="0.01" max={v.availablePaise / 100} required />
                         </label>
                       </Act>
                     )}
