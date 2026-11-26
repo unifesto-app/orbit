@@ -8,13 +8,14 @@ import { seats } from '../station/seats';
 import { Pill } from '../station/ui';
 import { isLaunch, isStation, variant as v } from '../variant';
 
-// Every host app opens on Sign in. Then Orbit Station opens on Today (also its dev demo), Orbit Launch on the no-host
+// Every host app opens on Sign in. Then Orbit Station opens on Today (signed in only: a dev demo session is sent to Sign
+// in), Orbit Launch on the no-host
 // screen (Events in the dev demo), and Crew shows its name until its own screens come. Signed in to Station on no venue's
 // team, it shows the invites screen (welcome) instead.
 export default function Index() {
   const session = useSession();
   if (!session) return <Redirect href="/signin" />;
-  if (isStation) return <Redirect href={'me' in session && !seats(session.me).length ? '/welcome' : '/today'} />;
+  if (isStation) return <Redirect href={!('me' in session) ? '/signin' : !seats(session.me).length ? '/welcome' : '/today'} />;
   if (isLaunch) return <Redirect href={'demo' in session ? '/events' : '/welcome'} />;
   return (
     <View style={s.root}>
