@@ -4,7 +4,7 @@
 // asks (pull, every 30 s, back to the foreground).
 // The counter's writes (S4) go to the API (counter.ts), one at a time per control, then the day is fetched again;
 // nothing changes on screen before the API says so.
-// Venue (S5): as an Admin, the real venue (GET /venues/:hostId; a 404 is a venue not set up yet) and the host's team
+// Venue (S5): as an Admin, the real venue (GET /venues/:hostId; a noVenue 404 is a venue not set up yet) and the host's team
 // (GET /hosts/:id/team), edited through the API (useLiveVenue below). Each write answers the line to show, or null when
 // it went in, and then the venue (or team) and Today's day are fetched again.
 // ponytail: no Money here; it waits on the Money API (payouts, bank account), and 1.0 hides its tab (ONE_0).
@@ -17,8 +17,8 @@ import type { StationType } from './day';
 import { seats as seatsOf } from './seats';
 import { counter } from './counter';
 import { blank, fromApi } from './live';
-import { fieldWhy, fromStation, inviteBody, kindBody, putFor, readVenue, refusal, setupFrom, type TeamList, teamFrom, type VenueSetup, venueApi, weekSpan } from './venue';
-import { api, useSession } from '../session';
+import { fieldWhy, fromStation, inviteBody, kindBody, notSetUp, putFor, readVenue, refusal, setupFrom, type TeamList, teamFrom, type VenueSetup, venueApi, weekSpan } from './venue';
+import { api, refreshMe, useSession } from '../session';
 
 export type Role = 'admin' | 'desk';
 export type { VenueSetup };
@@ -41,6 +41,11 @@ function useStationState() {
   // failed refetch keeps the last good day (useLoad).
   const live = useLoad<VenueDay>(seat ? `day|${seat.hostId}` : null, () => api.authed<unknown>('GET', `/venues/${seat!.hostId}/day`).then(readDay));
   const today = useMemo(() => (seat && live.data ? fromApi(live.data, seat, now) : null), [live.data, seat, now]);
+  // A 404 that isn't "not set up yet" is the seat gone: the account is read again, so the seat drops out of the picker.
+  useEffect(() => {
+    if (live.status === 404 && !notSetUp(live)) void refreshMe();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- each new answer, not each render
+  }, [live.status, live.error]);
   // Writes in flight, by control ("claim:<id>" for Check in and Release alike, "free:<station>", "sheet"): the ref stops a
   // second tap before the next render, the state draws it busy. `said` is the last write's refusal for Today, kept with
   // its seat so another venue never shows it. The sheet shows its own while it's up (`toToday` false), Today's after.

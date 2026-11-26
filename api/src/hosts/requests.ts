@@ -1,4 +1,4 @@
-import { and, count, desc, eq, inArray } from "drizzle-orm";
+import { and, count, desc, eq, gt, inArray } from "drizzle-orm";
 import { Hono, type Context } from "hono";
 import { DecideRequest, type EventRequest, NewEventRequest, RequestStatus, type StaffEventRequest } from "@orbit/contract";
 import type { Db } from "../db/index.ts";
@@ -6,7 +6,8 @@ import { auditLog, eventRequests, users } from "../db/schema.ts";
 import { fail, invalid, isUuid, listPage, type Notify, parse, signedIn, taken } from "../http.ts";
 import { newDraft } from "../events/routes.ts";
 import { holdersOf, masked, requireFeature, type StaffEnv, tell } from "../roles/access.ts";
-import { startHost } from "../roles/routes.ts";
+import { isSuspended } from "../auth/sessions.ts";
+import { NoContact, noContact, startHost } from "../roles/routes.ts";
 
 // Event Requests (contract/src/requests.ts; docs/context/event-partner-api.md 2b): a person asks to host; staff with
 // Hosts approve, ask for changes or decline. Approving starts the host (as POST /hosts does, without its daily cap: staff
@@ -16,6 +17,8 @@ type Deps = { db: Db; notify: Notify; secret: string; now?: () => number };
 type Row = typeof eventRequests.$inferSelect;
 
 const WAITING = ["open", "changes"] as const;
+const SENDS_PER_DAY = 5; // send, withdraw, send again: staff read each one
+const DAY = 24 * 3600 * 1000;
 const iso = (d: Date | null) => d?.toISOString() ?? null;
 const nothing = (c: Context) => fail(c, 404, "notFound", "There's nothing here.");
 
@@ -32,13 +35,30 @@ export function requestsRoutes({ db, notify, secret, now = Date.now }: Deps) {
 
   // ---------- The requester ----------
 
-  // POST /event-requests: one waiting at a time (the partial unique index decides a race).
-  app.post("/event-requests", auth, async (c) => {
+  // The body, with a first event that hasn't started yet.
+  const body = async (c: Context) => {
     const b = await parse(c, NewEventRequest);
     if (!b) return invalid(c);
+    if (b.event && Date.parse(b.event.startsAt) <= now()) return fail(c, 400, "past", "Pick a start time that hasn't passed yet.");
+    return b;
+  };
+
+  // POST /event-requests: one waiting at a time (the partial unique index decides a race), 5 sent a day.
+  app.post("/event-requests", auth, async (c) => {
+    const b = await body(c);
+    if (b instanceof Response) return b;
+    const u = c.var.user;
     try {
-      const [r] = await db.insert(eventRequests).values({ userId: c.var.user.id, host: b.host, event: b.event, createdAt: at(), updatedAt: at() }).returning();
-      return c.json(toOut(r!), 201);
+      const r = await db.transaction(async (tx) => {
+        // Counted under a lock on the person, as POST /hosts does.
+        await tx.select({ id: users.id }).from(users).where(eq(users.id, u.id)).for("update");
+        const [sent] = await tx.select({ n: count() }).from(eventRequests).where(and(eq(eventRequests.userId, u.id), gt(eventRequests.createdAt, new Date(now() - DAY))));
+        if (sent!.n >= SENDS_PER_DAY) return null;
+        const [r] = await tx.insert(eventRequests).values({ userId: u.id, host: b.host, event: b.event, createdAt: at(), updatedAt: at() }).returning();
+        return r!;
+      });
+      if (!r) return fail(c, 429, "tooMany", `You can send ${SENDS_PER_DAY} requests a day. Try again tomorrow.`);
+      return c.json(toOut(r), 201);
     } catch (e) {
       if (taken(e)) return fail(c, 409, "requestOpen", "You already have a request waiting. Edit or withdraw it first.");
       throw e;
@@ -53,11 +73,11 @@ export function requestsRoutes({ db, notify, secret, now = Date.now }: Deps) {
 
   // PATCH /me/event-request: the whole request again, only after staff asked for changes; it goes back to open.
   app.patch("/me/event-request", auth, async (c) => {
-    const b = await parse(c, NewEventRequest);
-    if (!b) return invalid(c);
+    const b = await body(c);
+    if (b instanceof Response) return b;
     const [r] = await db
       .update(eventRequests)
-      .set({ host: b.host, event: b.event, status: "open", note: null, updatedAt: at() })
+      .set({ host: b.host, event: b.event, status: "open", note: null, decidedBy: null, decidedAt: null, updatedAt: at() })
       .where(and(eq(eventRequests.userId, c.var.user.id), eq(eventRequests.status, "changes")))
       .returning();
     return r ? c.json(toOut(r)) : fail(c, 409, "notChanges", "You can edit your request only when Orbit asks for changes.");
@@ -118,8 +138,8 @@ export function requestsRoutes({ db, notify, secret, now = Date.now }: Deps) {
             if (!from.includes(r.status)) return "notOpen" as const;
             const set: Partial<typeof eventRequests.$inferInsert> = { decidedBy: actor, decidedAt: at(), updatedAt: at() };
             if (action === "approve") {
-              const [u] = await tx.select().from(users).where(eq(users.id, r.userId));
-              if (u!.deletedAt || u!.deletionRequestedAt || u!.suspendedAt) return "unavailable" as const;
+              const [u] = await tx.select().from(users).where(eq(users.id, r.userId)).for("update");
+              if (u!.deletedAt || u!.deletionRequestedAt || isSuspended(u!, now())) return "unavailable" as const;
               const h = await startHost(tx, r.host, u!, at());
               const e = r.event
                 ? await newDraft(tx, h, { title: r.event.title, category: r.event.category, startsAt: new Date(r.event.startsAt) }, u!.id, at())
@@ -145,6 +165,7 @@ export function requestsRoutes({ db, notify, secret, now = Date.now }: Deps) {
           const [u] = await db.select().from(users).where(eq(users.id, done.userId));
           return c.json(forStaff(done, u!));
         } catch (e) {
+          if (e instanceof NoContact) return noContact(c);
           // A random slug ending met another host's or event's: try again with fresh ones.
           if (action === "approve" && taken(e) && tries < 2) continue;
           throw e;
