@@ -618,13 +618,14 @@ export function useSavesOnFocus() {
 export async function refreshAccount() {
   if (!current) return;
   const saved = loadSaves(); // not behind /me: a failing /me must not leave Saved waiting
+  const interests = loadInterests(); // nor Account › Interests on its loading state for the whole run
   void loadTickets();
   const r = await api.authed<Account>('GET', '/me');
   if (r.ok && current?.me.id === r.data.id) {
     set({ ...current, me: r.data });
-    await Promise.all([loadFollows(), loadInterests()]);
+    await loadFollows();
   }
-  await saved;
+  await Promise.all([saved, interests]);
 }
 export const setAccount = (me: Account) => current?.me.id === me.id && set({ ...current, me });
 // A field or two the API changed (a new number or email), onto the account as it is now.
