@@ -282,25 +282,29 @@ export function eventsRoutes({ db, notify, secret, media, now = Date.now }: Deps
       if (missing.length) return fail(c, 409, "notReady", "This event isn't ready to publish yet.", { missing });
       return { status: "published", publishedAt: cur.publishedAt ?? at() };
     });
-    if (res.status === 200) await tellFollowers(c.req.param("id")!);
+    // After the publish committed, and off the response path: followers are told in the background.
+    if (res.status === 200) void tellFollowers(c.req.param("id")!);
     return res;
   });
 
-  // ponytail: one notify per follower, awaited in turn; batch the inserts when a host's followers run to thousands.
+  // Followers with notify "all" hear of a public event from a live host (a paused host's publish tells nobody).
+  // ponytail: one notify per follower, awaited in turn, in memory: not durable across a restart mid-fan-out, and slow
+  // when a host's followers run to thousands. The upgrade is a fan-out row the worker picks up and batches.
   const tellFollowers = async (eventId: string) => {
     try {
       const [e] = await db
-        .select({ id: events.id, title: events.title, visibility: events.visibility, hostId: hosts.id, hostName: hosts.name, hostVisibility: hosts.visibility })
+        .select({ id: events.id, title: events.title, visibility: events.visibility, hostId: hosts.id, hostName: hosts.name, hostVisibility: hosts.visibility, hostStatus: hosts.status })
         .from(events)
         .innerJoin(hosts, eq(hosts.id, events.hostId))
         .where(eq(events.id, eventId));
-      if (!e || effectiveVisibility(e.hostVisibility, e.visibility) !== "public") return;
+      if (!e || e.hostStatus !== "live" || effectiveVisibility(e.hostVisibility, e.visibility) !== "public") return;
       const fans = await db.select({ userId: follows.userId }).from(follows).where(and(eq(follows.hostId, e.hostId), eq(follows.notify, "all")));
       for (const f of fans) {
         await notify({ to: { userId: f.userId }, kind: "followedHostEvent", key: e.id, data: { hostId: e.hostId, hostName: e.hostName, eventId: e.id, title: e.title } });
       }
     } catch (err) {
-      console.error("[publish] followers not told", err); // the event is published either way
+      const x = err as { code?: string; cause?: { code?: string } };
+      console.error(`[publish] followers not told (${x.cause?.code ?? x.code ?? "error"})`); // the event is published either way
     }
   };
 

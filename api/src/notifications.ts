@@ -3,7 +3,7 @@ import { inboxApp, type InboxApp, isMust, KINDS, type NoticeKind, type Notificat
 import { type Mail, NotSent } from "./auth/senders.ts";
 import type { Db } from "./db/index.ts";
 import { deliveries, events, inboxItems, notificationPrefs, pushDevices, sessions, users } from "./db/schema.ts";
-import type { Notice, Notify, Tx } from "./http.ts";
+import { isUuid, type Notice, type Notify, type Tx } from "./http.ts";
 import { emailFor, inboxFor } from "./notification-emails.ts";
 
 // Notifications (build plan PR 1 and 2; contract/src/notifications.ts). notify() writes the inbox item and one deliveries
@@ -15,8 +15,10 @@ const DAY = 86_400_000;
 const HOUR = 3_600_000;
 const MIN = 60_000;
 const IST = 330 * MIN; // India time, fixed UTC+5:30
-const PUSH_CAP = 5; // Low and Normal pushes a day per person
-const MUST_KINDS = (Object.keys(KINDS) as NoticeKind[]).filter(isMust);
+const PUSH_CAP = 5; // Low pushes a day per person
+const LOW_KINDS = (Object.keys(KINDS) as NoticeKind[]).filter((k) => KINDS[k].level === "low");
+// Kinds about something still to come: dropped at release once their event was cancelled or has started.
+const AHEAD: readonly string[] = ["reminder", "follow", "near"];
 
 // The start of t's India calendar day.
 const istDay = (t: number) => Math.floor((t + IST) / DAY) * DAY - IST;
@@ -48,31 +50,44 @@ const switchedOff = (s: NotificationSettings, kind: NoticeKind, channel: "push" 
 };
 
 // A person's devices on one app whose sign-in is still live.
-const liveDevices = (q: Tx | Db, userId: string, app: InboxApp, at: Date) =>
+// A device is live while its session is (not ended, not expired). One device when sessionId is given.
+const liveDevices = (q: Tx | Db, userId: string, app: InboxApp, at: Date, sessionId?: string) =>
   q
     .select({ sessionId: pushDevices.sessionId })
     .from(pushDevices)
     .innerJoin(sessions, eq(sessions.id, pushDevices.sessionId))
-    .where(and(eq(pushDevices.userId, userId), eq(pushDevices.app, app), isNull(sessions.endedAt), gt(sessions.expiresAt, at)));
+    .where(
+      and(
+        eq(pushDevices.userId, userId),
+        eq(pushDevices.app, app),
+        isNull(sessions.endedAt),
+        gt(sessions.expiresAt, at),
+        sessionId ? eq(pushDevices.sessionId, sessionId) : undefined,
+      ),
+    );
 
-// Pushes counted against today's caps (India day): any that wasn't skipped or dropped, and the ones skipped only because
-// sending isn't built yet. Counted from deliveries, never stored; one notice on two devices counts once.
+// Pushes counted against a day's caps: those delivering (run_at) that India day, so a push held overnight counts toward
+// the morning it goes. Any that wasn't skipped or dropped counts, and the ones skipped only because sending isn't built
+// yet. Counted from deliveries, never stored; one notice on two devices counts once. Without a host: Low kinds (the 5 a
+// day); with one: that host's followedHostEvent.
 // ponytail: two notices at the same instant can both pass a cap; a per-person lock if that ever matters.
-const pushesToday = async (q: Tx | Db, userId: string, at: Date, hostId?: string) =>
-  (
-    await q
-      .select({ n: countDistinct(deliveries.dedupeKey) })
-      .from(deliveries)
-      .where(
-        and(
-          eq(deliveries.userId, userId),
-          eq(deliveries.channel, "push"),
-          gte(deliveries.createdAt, new Date(istDay(at.getTime()))),
-          or(notInArray(deliveries.status, ["skipped", "dropped"]), and(eq(deliveries.status, "skipped"), eq(deliveries.reason, "notSetUp"))),
-          hostId ? and(eq(deliveries.kind, "followedHostEvent"), sql`${deliveries.payload}->>'hostId' = ${hostId}`) : notInArray(deliveries.kind, MUST_KINDS),
-        ),
-      )
-  )[0]!.n;
+const pushesOn = async (q: Tx | Db, userId: string, day: Date, hostId?: string) => {
+  const from = istDay(day.getTime());
+  const [r] = await q
+    .select({ n: countDistinct(deliveries.dedupeKey) })
+    .from(deliveries)
+    .where(
+      and(
+        eq(deliveries.userId, userId),
+        eq(deliveries.channel, "push"),
+        gte(deliveries.runAt, new Date(from)),
+        lt(deliveries.runAt, new Date(from + DAY)),
+        or(notInArray(deliveries.status, ["skipped", "dropped"]), and(eq(deliveries.status, "skipped"), eq(deliveries.reason, "notSetUp"))),
+        hostId ? and(eq(deliveries.kind, "followedHostEvent"), sql`${deliveries.payload}->>'hostId' = ${hostId}`) : inArray(deliveries.kind, LOW_KINDS),
+      ),
+    );
+  return r!.n;
+};
 
 // Strings Postgres's jsonb refuses (a lone surrogate, a NUL) are mended once, so a notice never fails its caller's write.
 const clean = (data: Record<string, unknown> | undefined): Record<string, unknown> =>
@@ -135,17 +150,22 @@ export function createNotifier({ db, now }: { db: Db; now: () => number }): Noti
     const s = person && !must ? await settingsOf(q, person.id, person.city) : null;
     if (def.email === "always") {
       if (s && switchedOff(s, n.kind, "email")) await log({ channel: "email", status: "skipped", reason: "switchOff", target: "", inboxItemId });
+      // ponytail: optional email (not Must, not the one-off welcome) waits for unsubscribe links; lifts in PR 6.
+      else if (!must && n.kind !== "welcome") await log({ channel: "email", status: "skipped", reason: "optionalHeld", target: "", inboxItemId });
       else await log(address ? { channel: "email", status: "queued", target: address, inboxItemId } : { channel: "email", status: "skipped", reason: "noEmail", target: "", inboxItemId });
     }
     // ponytail: "fallback" email waits for the push sender, which knows whether the push landed.
     if (!def.push || !person) return;
     const skip = (reason: string) => log({ channel: "push", status: "skipped", reason, target: "", inboxItemId });
     if (s && switchedOff(s, n.kind, "push")) return void (await skip("switchOff"));
-    // Caps: 5 Low/Normal pushes a day, and 1 a day per followed host's new events.
+    // Low pushes are held in quiet hours and capped at 5 a day (by the day they deliver); followedHostEvent at 1 a day per
+    // host. Normal pushes are neither held nor counted toward the 5.
     // ponytail: the 3-a-day per-event announcement cap comes with announcements (PR 10).
-    if (s && (await pushesToday(q, person.id, at)) >= PUSH_CAP) return void (await skip("capReached"));
-    if (s && n.kind === "followedHostEvent" && (await pushesToday(q, person.id, at, String(payload.hostId))) >= 1) return void (await skip("capReached"));
-    const quiet = s?.quiet ? quietUntil(at.getTime()) : null;
+    const low = def.level === "low";
+    const quiet = low && s?.quiet ? quietUntil(at.getTime()) : null;
+    const day = quiet ?? at;
+    if (s && low && (await pushesOn(q, person.id, day)) >= PUSH_CAP) return void (await skip("capReached"));
+    if (s && n.kind === "followedHostEvent" && (await pushesOn(q, person.id, day, String(payload.hostId))) >= 1) return void (await skip("capReached"));
     // A row per live device on the kind's app, its target the device's session (the token never goes in the log).
     const devices = await liveDevices(q, person.id, app ?? "orbit", at);
     if (!devices.length) return void (await skip("noDevice"));
@@ -163,24 +183,37 @@ export function createNotifier({ db, now }: { db: Db; now: () => number }): Noti
   };
 }
 
-// Held pushes whose quiet hours are over: queued again, or dropped when the device is gone, the switch went off, or the
-// event they're about was cancelled or has started. Each row moves only from held, so two workers can't both move it.
+// Held pushes whose quiet hours are over: queued again, or dropped when the device is no longer live, the switch went
+// off, or (for kinds about something still ahead) the event was cancelled or has started. Each row moves only from
+// held, so two workers can't both move it. A row that throws is dropped as "error" and logged; the rest carry on.
 export async function releaseHeld({ db, now, limit = 100 }: { db: Db; now: () => number; limit?: number }) {
   const at = new Date(now());
   const due = await db.select().from(deliveries).where(and(eq(deliveries.status, "held"), lte(deliveries.runAt, at))).orderBy(deliveries.runAt).limit(limit);
   for (const d of due) {
     const move = (v: Partial<typeof deliveries.$inferInsert>) => db.update(deliveries).set(v).where(and(eq(deliveries.id, d.id), eq(deliveries.status, "held")));
-    const [device] = await db.select({ id: pushDevices.sessionId }).from(pushDevices).where(eq(pushDevices.sessionId, d.target));
-    const [person] = d.userId ? await db.select({ city: users.city }).from(users).where(eq(users.id, d.userId)) : [];
-    if (!device || !person) await move({ status: "dropped", reason: "noDevice" });
-    else if (switchedOff(await settingsOf(db, d.userId!, person.city), d.kind as NoticeKind, "push")) await move({ status: "dropped", reason: "switchOff" });
-    else if (await stale(db, d.payload.eventId, at)) await move({ status: "dropped", reason: "stale" });
-    else await move({ status: "queued", runAt: at });
+    try {
+      const def = KINDS[d.kind as NoticeKind];
+      if (!def || !d.userId) {
+        await move({ status: "dropped", reason: "error" });
+        continue;
+      }
+      const kind = d.kind as NoticeKind;
+      const [person] = await db.select({ city: users.city }).from(users).where(eq(users.id, d.userId));
+      const [device] = person ? await liveDevices(db, d.userId, inboxApp(kind, d.payload) ?? "orbit", at, d.target) : [];
+      if (!device) await move({ status: "dropped", reason: "noDevice" });
+      else if (switchedOff(await settingsOf(db, d.userId, person!.city), kind, "push")) await move({ status: "dropped", reason: "switchOff" });
+      else if (AHEAD.includes(def.type) && (await stale(db, d.payload.eventId, at))) await move({ status: "dropped", reason: "stale" });
+      else await move({ status: "queued", runAt: at });
+    } catch (e) {
+      const err = e as { code?: string; cause?: { code?: string } };
+      console.error(`[release] ${d.id} dropped (${err.cause?.code ?? err.code ?? "error"})`);
+      await move({ status: "dropped", reason: "error" }).catch(() => {});
+    }
   }
   return due.length;
 }
 const stale = async (db: Db, eventId: unknown, at: Date) => {
-  if (typeof eventId !== "string" || !/^[0-9a-f-]{36}$/.test(eventId)) return false;
+  if (typeof eventId !== "string" || !isUuid(eventId)) return false;
   const [e] = await db.select({ status: events.status, startsAt: events.startsAt }).from(events).where(eq(events.id, eventId));
   return !!e && (e.status === "cancelled" || (!!e.startsAt && e.startsAt <= at));
 };

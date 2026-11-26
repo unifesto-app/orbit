@@ -219,7 +219,7 @@ export const PushDevice = z.object({
   app: z.enum(APPS),
   platform: z.enum(["ios", "android"]),
   env: z.enum(["sandbox", "production"]),
-  token: z.string().min(1).max(4096),
+  token: z.string().min(1).max(512),
 });
 export type PushDevice = z.infer<typeof PushDevice>;
 

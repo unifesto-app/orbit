@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { and, eq } from "drizzle-orm";
 import sharp from "sharp";
 import { KINDS, type NoticeKind, PUSH_SWITCHES } from "@orbit/contract";
-import { deliveries, events, follows, inboxItems, notificationPrefs, pushDevices, sessions, users } from "./db/schema.ts";
+import { deliveries, events, follows, hosts, inboxItems, notificationPrefs, pushDevices, sessions, users } from "./db/schema.ts";
 import { pruneNotifications, releaseHeld } from "./notifications.ts";
 import { testApp } from "./testkit.ts";
 
@@ -65,10 +65,10 @@ test("each switch off skips its channel's row; master push off skips every non-M
     await settings(a, { switches: { [`push.${sw}`]: true } });
   }
   // Email: the switches with an "always" kind behind them. Reminders and follows only govern "fallback" email (PR 4),
-  // which writes nothing yet.
+  // which writes nothing yet. Optional email is held until PR 6 either way; a switch off says why first.
   for (const [sw, kind] of [["announcements", "hostAnnouncement"], ["orbit", "orbitNews"], ["yourHosts", "teamRoleStarted"]] as const) {
     await tell(a, kind);
-    assert.equal((await last(a, kind, "email")).status, "queued", sw);
+    assert.equal((await last(a, kind, "email")).reason, "optionalHeld", sw);
     await settings(a, { switches: { [`email.${sw}`]: false } });
     await tell(a, kind);
     assert.deepEqual([(await last(a, kind, "email")).status, (await last(a, kind, "email")).reason], ["skipped", "switchOff"], sw);
@@ -105,6 +105,9 @@ test("quiet hours: a Low push at 23:00 is held until 07:00, then queued; a cance
   assert.equal(istHour(held[0]!.runAt), 7);
   assert.ok(held[0]!.runAt.getTime() - t.now() > 7 * HOUR && held[0]!.runAt.getTime() - t.now() <= 8 * HOUR);
   assert.equal((await inboxOf(a)).length, 2);
+  // A Normal push isn't held.
+  await tell(a, "eventTomorrow", { eventId: one.eventId });
+  assert.equal((await last(a, "eventTomorrow", "push")).status, "queued");
 
   await t.db.update(events).set({ status: "cancelled", cancelledAt: new Date(t.now()) }).where(eq(events.id, two.eventId));
   t.tick(7 * HOUR + 59 * MIN);
@@ -120,33 +123,58 @@ test("quiet hours: a Low push at 23:00 is held until 07:00, then queued; a cance
   assert.deepEqual([(await sent(a, "eventStartingSoon", "push")).find((d) => d.id === byEvent(one.eventId).id)!.status], ["skipped"]);
 });
 
-test("a held push whose device went or whose switch went off is dropped at release", async () => {
+test("a held push whose device went, whose sign-in ended or whose switch went off is dropped at release", async () => {
   goTo(23);
-  const a = await ready(), b = await ready();
-  await tell(a, "eventStartingSoon");
-  await tell(b, "eventStartingSoon");
+  const a = await ready(), b = await ready(), c = await ready();
+  for (const u of [a, b, c]) await tell(u, "eventStartingSoon");
   assert.equal((await as(a)("DELETE", "/me/push-device")).status, 204);
   await settings(b, { switches: { "push.reminders": false } });
+  await t.db.update(sessions).set({ endedAt: new Date(t.now()) }).where(eq(sessions.userId, c.me.id));
   t.tick(8 * HOUR);
   await releaseHeld({ db: t.db, now: t.now });
   assert.deepEqual([(await last(a, "eventStartingSoon", "push")).status, (await last(a, "eventStartingSoon", "push")).reason], ["dropped", "noDevice"]);
   assert.deepEqual([(await last(b, "eventStartingSoon", "push")).status, (await last(b, "eventStartingSoon", "push")).reason], ["dropped", "switchOff"]);
+  assert.deepEqual([(await last(c, "eventStartingSoon", "push")).status, (await last(c, "eventStartingSoon", "push")).reason], ["dropped", "noDevice"]);
 });
 
-test("caps: a sixth Low/Normal push in a day is inbox only; one followed-host push a day per host", async () => {
+test("release: a broken held row is dropped as error and the queue goes on; post-event kinds are never stale", async () => {
+  goTo(7);
+  const a = await ready({ email: true });
+  const ev = await hostAndEvent(a, -HOUR); // started an hour ago
+  const [s] = await t.db.select().from(sessions).where(eq(sessions.userId, a.me.id));
+  const held = (kind: string, payload: Record<string, unknown>) => ({
+    userId: a.me.id, kind, channel: "push", target: s!.id, status: "held", runAt: new Date(t.now() - MIN), payload, dedupeKey: `h-${++n}`,
+  });
+  const made = await t.db
+    .insert(deliveries)
+    .values([held("noSuchKind", {}), held("eventStartingSoon", { eventId: "not-a-uuid-------------------------!" }), held("thanksForComing", { eventId: ev.eventId })] as (typeof deliveries.$inferInsert)[])
+    .returning();
+  await tell(a, "signInMethodChanged", { method: "passkey", change: "added" }); // a Must email behind them
+  await t.deliver();
+  const now = await t.db.select().from(deliveries).where(eq(deliveries.userId, a.me.id));
+  const of = (i: number) => now.find((d) => d.id === made[i]!.id)!;
+  assert.deepEqual([of(0).status, of(0).reason], ["dropped", "error"]);
+  assert.notEqual(of(1).status, "held"); // a bad event id is no event: released, not thrown
+  assert.notEqual(of(2).status, "dropped"); // thanks for coming is about an event that has happened: never stale
+  assert.equal((await last(a, "signInMethodChanged", "email")).status, "sent");
+});
+
+test("caps: a sixth Low push in a day is inbox only, Normal isn't counted; one followed-host push a day per host", async () => {
   goTo(10);
   const a = await ready({ city: "Hyderabad" }); // near needs a city
-  for (let i = 0; i < 3; i++) await tell(a, "eventTomorrow");
+  for (let i = 0; i < 3; i++) await tell(a, "finishBooking");
   await t.deliver(); // the first three become "not set up", and still count
   for (let i = 0; i < 2; i++) await tell(a, "nearYou");
-  await tell(a, "eventTomorrow");
+  await tell(a, "eventStartingSoon");
   const pushes = (await t.db.select().from(deliveries).where(and(eq(deliveries.userId, a.me.id), eq(deliveries.channel, "push")))).map((d) => d.reason ?? d.status);
   assert.deepEqual(pushes.sort(), ["capReached", "notSetUp", "notSetUp", "notSetUp", "queued", "queued"]);
   assert.equal((await inboxOf(a)).length, 6);
+  await tell(a, "eventTomorrow"); // Normal: past the five, still goes
+  assert.equal((await last(a, "eventTomorrow", "push")).status, "queued");
   // A new India day starts the count again.
   goTo(7); // the next morning, out of quiet hours
-  await tell(a, "eventTomorrow");
-  assert.equal((await last(a, "eventTomorrow", "push")).status, "queued");
+  await tell(a, "eventStartingSoon");
+  assert.equal((await last(a, "eventStartingSoon", "push")).status, "queued");
 
   goTo(10);
   const b = await ready();
@@ -159,12 +187,22 @@ test("caps: a sixth Low/Normal push in a day is inbox only; one followed-host pu
   ]);
 });
 
+test("caps count by the day a push delivers: five held overnight fill the morning", async () => {
+  goTo(23);
+  const a = await ready();
+  for (let i = 0; i < 5; i++) await tell(a, "finishBooking");
+  assert.deepEqual((await sent(a, "finishBooking", "push")).map((d) => d.status), ["held", "held", "held", "held", "held"]);
+  goTo(8); // the India day those five deliver on
+  await tell(a, "eventStartingSoon");
+  assert.deepEqual([(await last(a, "eventStartingSoon", "push")).status, (await last(a, "eventStartingSoon", "push")).reason], ["skipped", "capReached"]);
+});
+
 test("a Must kind ignores switches, caps and quiet hours", async () => {
   goTo(23);
   const a = await ready({ email: true });
   await settings(a, { push: false, switches: Object.fromEntries(PUSH_SWITCHES.map((s) => [`push.${s}`, false])) });
   await t.db.update(notificationPrefs).set({ push: true }).where(eq(notificationPrefs.userId, a.me.id));
-  for (let i = 0; i < 5; i++) await tell(a, "eventTomorrow");
+  for (let i = 0; i < 5; i++) await tell(a, "finishBooking");
   await t.db.update(deliveries).set({ status: "queued", reason: null }).where(and(eq(deliveries.userId, a.me.id), eq(deliveries.channel, "push"))); // five counted
   await tell(a, "signInMethodChanged", { method: "passkey", change: "added" });
   const push = await last(a, "signInMethodChanged", "push");
@@ -211,6 +249,12 @@ test("settings: GET fills the defaults (near follows the city); PUT stores only 
   await settings(b, { switches: { "push.near": false } });
   assert.deepEqual((await stored(b)).switches, { "push.near": false });
 
+  // Two first PUTs at once: both changes stick (the defaults row is made first, so the second waits on the first's lock).
+  const c = await join();
+  const both = await Promise.all([settings(c, { switches: { "push.near": true } }), settings(c, { quiet: false })]);
+  assert.deepEqual(both.map((r) => r.status), [200, 200]);
+  assert.deepEqual([(await stored(c)).switches, (await stored(c)).quiet], [{ "push.near": true }, false]);
+
   for (const bad of [{ switches: { "email.tickets": false } }, { switches: { "push.nope": false } }, { push: "yes" }]) {
     assert.equal((await settings(a, bad)).status, 400, JSON.stringify(bad));
   }
@@ -246,6 +290,10 @@ test("inbox: pages of 30 newest first with a cursor, the app's unread count, rea
   assert.deepEqual(seen, order);
   assert.equal((await as(a)("GET", "/me/inbox?app=launch")).body.unread, 1);
   assert.equal((await as(a)("GET", "/me/inbox?before=garbage")).status, 400);
+  const cur = (s: string) => Buffer.from(s).toString("base64url");
+  for (const bad of [`2026-02-30T10:00:00.000000Z|${seen[0]}`, `2026-01-05 10:00|${seen[0]}`, `2026-01-05T10:00:00.000000Z|nope`]) {
+    assert.equal((await as(a)("GET", `/me/inbox?before=${cur(bad)}`)).status, 400, bad);
+  }
 
   assert.equal((await as(a)("POST", "/me/inbox/read", { app: "orbit", ids: [seen[0], seen[1], theirs!.id] })).status, 204);
   const page = (await as(a)("GET", "/me/inbox?app=orbit")).body;
@@ -265,6 +313,20 @@ const upload = async (a: A, path: string) => {
   return res.status;
 };
 
+// A draft with everything publish needs.
+const publishable = async (owner: A, hostId: string) => {
+  const e = (await as(owner)("POST", `/hosts/${hostId}/events`, { title: "Open Mic Night" })).body as { id: string };
+  assert.equal(await upload(owner, `/events/${e.id}/poster`), 200);
+  const iso = (ms: number) => new Date(t.now() + ms).toISOString();
+  const place = { venue: "Hall", address: "Road 1", area: "Jubilee Hills", city: "Hyderabad", lat: 17.4, lng: 78.4 };
+  assert.equal((await as(owner)("PATCH", `/events/${e.id}`, { category: "comedy", startsAt: iso(DAY), endsAt: iso(DAY + HOUR), place })).status, 200);
+  assert.equal((await as(owner)("POST", `/events/${e.id}/tickets`, { name: "General", pricePaise: 0 })).status, 201);
+  return e;
+};
+// Publish tells followers in the background, after its response.
+const settle = () => new Promise((r) => setTimeout(r, 300));
+const told = (u: A) => t.db.select().from(inboxItems).where(and(eq(inboxItems.userId, u.me.id), eq(inboxItems.kind, "followedHostEvent")));
+
 test("publish tells followers on all, not those on off; a second publish tells nobody twice", async () => {
   goTo(12);
   const owner = await join(), on = await join(), off = await join(), stranger = await join();
@@ -275,15 +337,10 @@ test("publish tells followers on all, not those on off; a second publish tells n
   assert.equal((await as(off)("PUT", `/me/follows/${h.id}/notify`, { notify: "sometimes" })).status, 400);
   assert.equal((await t.db.select().from(follows).where(eq(follows.userId, off.me.id)))[0]!.notify, "off");
 
-  const e = (await as(owner)("POST", `/hosts/${h.id}/events`, { title: "Open Mic Night" })).body as { id: string };
-  assert.equal(await upload(owner, `/events/${e.id}/poster`), 200);
-  const iso = (ms: number) => new Date(t.now() + ms).toISOString();
-  const place = { venue: "Hall", address: "Road 1", area: "Jubilee Hills", city: "Hyderabad", lat: 17.4, lng: 78.4 };
-  assert.equal((await as(owner)("PATCH", `/events/${e.id}`, { category: "comedy", startsAt: iso(DAY), endsAt: iso(DAY + HOUR), place })).status, 200);
-  assert.equal((await as(owner)("POST", `/events/${e.id}/tickets`, { name: "General", pricePaise: 0 })).status, 201);
+  const e = await publishable(owner, h.id);
   assert.equal((await as(owner)("POST", `/events/${e.id}/publish`)).status, 200);
+  await settle();
 
-  const told = (u: A) => t.db.select().from(inboxItems).where(and(eq(inboxItems.userId, u.me.id), eq(inboxItems.kind, "followedHostEvent")));
   const [item] = await told(on);
   assert.deepEqual([item?.fromName, item?.text], ["Punchline Collective", "Open Mic Night"]);
   assert.equal((await told(off)).length, 0);
@@ -295,6 +352,27 @@ test("publish tells followers on all, not those on off; a second publish tells n
   await t.notify({ to: { userId: on.me.id }, kind: "followedHostEvent", key: e.id, data: { hostId: h.id, eventId: e.id, title: "Open Mic Night" } });
   assert.equal((await told(on)).length, 1);
   assert.equal((await sent(on, "followedHostEvent", "push")).length, 1);
+});
+
+test("publish tells nobody for a link-only event, a private host or a paused host", async () => {
+  goTo(12);
+  const owner = await join(), fan = await join();
+  const hostFollowed = async () => {
+    const h = (await as(owner)("POST", "/hosts", { name: `Club ${++n}`, kind: "comedy-group", city: "Hyderabad" })).body as { id: string };
+    assert.equal((await as(fan)("POST", `/hosts/${h.id}/follow`)).status, 200);
+    return h.id;
+  };
+  const link = await hostFollowed(), priv = await hostFollowed(), paused = await hostFollowed();
+  const e1 = await publishable(owner, link);
+  await t.db.update(events).set({ visibility: "link" }).where(eq(events.id, e1.id));
+  const e2 = await publishable(owner, priv);
+  await t.db.update(hosts).set({ visibility: "private" }).where(eq(hosts.id, priv));
+  const e3 = await publishable(owner, paused);
+  await t.db.update(hosts).set({ status: "paused" }).where(eq(hosts.id, paused));
+  for (const e of [e1, e2, e3]) assert.equal((await as(owner)("POST", `/events/${e.id}/publish`)).status, 200);
+  await settle();
+  assert.equal((await told(fan)).length, 0);
+  assert.equal((await sent(fan, "followedHostEvent", "push")).length, 0);
 });
 
 test("push devices unseen for 270 days are pruned", async () => {

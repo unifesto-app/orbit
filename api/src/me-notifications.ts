@@ -15,7 +15,10 @@ type Deps = { db: Db; secret: string; now?: () => number };
 const cursorOf = (at: string, id: string) => Buffer.from(`${at}|${id}`).toString("base64url");
 const readCursor = (s: string) => {
   const [at, id] = Buffer.from(s, "base64url").toString().split("|");
-  return at && id && isUuid(id) && !isNaN(Date.parse(at)) ? { at, id } : null;
+  // The exact shape cursorOf writes; Postgres still rejects an impossible date like Feb 30, so that's checked too.
+  if (!at || !id || !isUuid(id) || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{6}Z$/.test(at)) return null;
+  const t = Date.parse(at); // rolls Feb 30 over to Mar 2, so the round trip catches it
+  return !isNaN(t) && new Date(t).toISOString().slice(0, 10) === at.slice(0, 10) ? { at, id } : null;
 };
 
 export function meNotificationsRoutes({ db, secret, now = Date.now }: Deps) {
@@ -30,6 +33,8 @@ export function meNotificationsRoutes({ db, secret, now = Date.now }: Deps) {
     if (!b) return invalid(c);
     const sid = c.var.sid;
     await db.transaction(async (tx) => {
+      // One writer per token: two sessions sending the same token at once would otherwise trip its unique index.
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${b.token}))`);
       await tx.delete(pushDevices).where(and(eq(pushDevices.token, b.token), ne(pushDevices.sessionId, sid)));
       const row = { userId: c.var.user.id, ...b, seenAt: at() };
       await tx.insert(pushDevices).values({ sessionId: sid, ...row }).onConflictDoUpdate({ target: pushDevices.sessionId, set: row });
@@ -98,6 +103,9 @@ export function meNotificationsRoutes({ db, secret, now = Date.now }: Deps) {
     if (!b) return invalid(c);
     const u = c.var.user;
     const out = await db.transaction(async (tx) => {
+      // A defaults row first, so two first PUTs lock the same row instead of both seeing none (its defaults are the
+      // same as no row).
+      await tx.insert(notificationPrefs).values({ userId: u.id }).onConflictDoNothing();
       const [row] = await tx.select().from(notificationPrefs).where(eq(notificationPrefs.userId, u.id)).for("update");
       const s = settingsFor(row, u.city);
       const next = { push: b.push ?? s.push, quiet: b.quiet ?? s.quiet, switches: { ...s.switches, ...b.switches } };
