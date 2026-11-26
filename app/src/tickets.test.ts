@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import type { MyTickets, Ticket } from '@orbit/contract';
 
-import { cacheKey, keptUpcoming, packTicket, statusText, ticketLabel, unpackTicket, upcomingOf } from './tickets.ts';
+import { cacheKey, checkInLine, keptUpcoming, letInAt, packTicket, statusText, thanksOf, ticketLabel, unpackTicket, upcomingOf } from './tickets.ts';
 
 const NOW = Date.parse('2026-11-24T09:00:00+05:30'); // a Tuesday morning in India
 
@@ -54,4 +54,30 @@ test('keptUpcoming: this account’s live tickets whose event hasn’t ended, so
   const gone = ticket('b4', 'e4', '2026-11-27T20:00:00+05:30', 'cancelled');
   const raws = [packTicket('me', later), packTicket('me', on), packTicket('me', ended), packTicket('me', gone), packTicket('other', later), null, 'junk'];
   assert.deepEqual(keptUpcoming(raws, 'me', NOW).map((t) => t.id), ['b2', 'b1']);
+});
+
+test('checkInLine: nothing until someone is in, then you, or the group’s count', () => {
+  const at = '2026-11-24T13:42:00Z'; // 7:12 PM in India
+  assert.equal(checkInLine({ quantity: 1, admitted: 0, checkedInAt: null }), undefined);
+  assert.equal(checkInLine({ quantity: 1, admitted: 1, checkedInAt: at }), 'You’re in · 7:12 PM');
+  assert.equal(checkInLine({ quantity: 4, admitted: 3, checkedInAt: at }), '3 of 4 in · 7:12 PM');
+  assert.equal(checkInLine({ quantity: 4, admitted: 4, checkedInAt: at }), 'All 4 in · 7:12 PM');
+});
+
+test('thanksOf: let in, ended within the week, newest first, two at most; letInAt by event', () => {
+  const t = (id: string, eventId: string, startsAt: string, admitted: number) => ({ ...ticket(id, eventId, startsAt), admitted, checkedInAt: admitted ? startsAt : null });
+  const m: MyTickets = {
+    upcoming: [t('b1', 'e1', '2026-11-24T08:00:00+05:30', 1)], // on now: not yet
+    past: [
+      t('b2', 'e2', '2026-11-23T20:00:00+05:30', 2),
+      t('b3', 'e3', '2026-11-22T20:00:00+05:30', 0), // never came
+      t('b4', 'e4', '2026-11-21T20:00:00+05:30', 1),
+      t('b5', 'e5', '2026-11-20T20:00:00+05:30', 1), // third: dropped
+      t('b6', 'e6', '2026-11-10T20:00:00+05:30', 1), // over a week ago
+    ],
+  };
+  assert.deepEqual(thanksOf(m, NOW).map((e) => e.id), ['e2', 'e4']);
+  assert.deepEqual(thanksOf(null, NOW), []);
+  assert.equal(letInAt(m, 'e1'), true);
+  assert.equal(letInAt(m, 'e3'), false);
 });

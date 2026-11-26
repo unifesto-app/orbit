@@ -62,3 +62,22 @@ export function unpackTicket(raw: string | null, owner: string): Ticket | null {
     return null;
   }
 }
+
+// Check-in (X5): `admitted` is how many on a ticket were let in at the door.
+/** The ticket's line once anyone on it is in: "You’re in · 7:12 PM", "3 of 4 in · 7:12 PM", "All 4 in · 7:12 PM". */
+export function checkInLine(t: Pick<Ticket, 'quantity' | 'admitted' | 'checkedInAt'>): string | undefined {
+  if (!t.admitted) return undefined;
+  const at = t.checkedInAt ? ` · ${timeLabel(Date.parse(t.checkedInAt))}` : '';
+  if (t.quantity === 1) return `You’re in${at}`;
+  return `${t.admitted < t.quantity ? `${t.admitted} of ${t.quantity}` : `All ${t.quantity}`} in${at}`;
+}
+
+const WEEK = 7 * DAY;
+/** Thanks for coming: the events you were let in at that ended in the last week, newest first, two at most. */
+export function thanksOf(m: MyTickets | null, now: number) {
+  const went = [...(m?.upcoming ?? []), ...(m?.past ?? [])].filter((t) => t.admitted > 0 && Date.parse(t.event.endsAt) <= now && now < Date.parse(t.event.endsAt) + WEEK);
+  return [...new Map(went.map((t) => [t.event.id, t.event])).values()].sort((a, b) => Date.parse(b.startsAt) - Date.parse(a.startsAt)).slice(0, 2);
+}
+
+/** Whether you were let in at this event on any ticket: inRoom opens at the door. */
+export const letInAt = (m: MyTickets | null, eventId: string) => [...(m?.upcoming ?? []), ...(m?.past ?? [])].some((t) => t.event.id === eventId && t.admitted > 0);
