@@ -78,7 +78,7 @@ export function securityRoutes({ db, store, notify, secret, now = Date.now, ways
       : Promise.resolve();
   // Change notices go to the email if there is one, else to WhatsApp (User flow).
   const tellOld = (before: User, data: Record<string, unknown>) =>
-    notify({ to: before.email || before.phone ? { contact: (before.email ?? before.phone)! } : { userId: before.id }, kind: "signInMethodChanged", data });
+    notify({ to: before.email || before.phone ? { contact: (before.email ?? before.phone)!, userId: before.id } : { userId: before.id }, kind: "signInMethodChanged", data });
   const NAMES = { google: "Google", apple: "Apple" } as const;
 
   // GET /me/security: the ways in, and every device signed in.

@@ -4,7 +4,7 @@ import { createMiddleware } from "hono/factory";
 import { getConnInfo } from "@hono/node-server/conninfo";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { z } from "zod";
-import { CLIENT_HEADER, type Contact, readClient, readContact } from "@orbit/contract";
+import { CLIENT_HEADER, type Contact, type NoticeKind, readClient, readContact } from "@orbit/contract";
 import { markActive } from "./activity.ts";
 import type { Db } from "./db/index.ts";
 import { ack, isSuspended, sessionUser, type User } from "./auth/sessions.ts";
@@ -106,7 +106,10 @@ const expand = (ip: string) => {
 export const bucketOf = (ip: string) => (isIPv6(ip) ? expand(ip).slice(0, 4).join(":") : ip);
 export const ipOf = (c: Context) => clientIp(c).replace(/^::ffff:(?=\d+\.)/i, ""); // an IPv4 address as Node may show it
 
-// Messages to people: push, inbox, email or WhatsApp, chosen by the Notifications flow.
-// ponytail: nothing is sent yet; the server logs them and tests collect them.
-export type Notice = { to: { userId: string } | { contact: string }; kind: string; data?: Record<string, unknown> };
-export type Notify = (n: Notice) => Promise<void>;
+// Messages to people: inbox, email and push, by kind (contract/src/notifications.ts), sent by notifications.ts. `key`
+// names the occurrence: the same notice with the same key is written and sent once. `tx`: written with the caller's
+// transaction, so a rollback takes the message with it.
+// `{ contact, userId }`: email to that contact only, the inbox item to that account.
+export type Notice = { to: { userId: string } | { contact: string; userId?: string }; kind: NoticeKind; data?: Record<string, unknown>; key?: string };
+export type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+export type Notify = (n: Notice, tx?: Tx) => Promise<void>;

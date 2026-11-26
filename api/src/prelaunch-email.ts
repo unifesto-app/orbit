@@ -51,7 +51,7 @@ export const NAME = /^[\p{L}\p{M}][\p{L}\p{M}.'’-]{0,39}$/u;
 // heading, a line, anything in between, one button, then why they got it and the footer. `lead` and `middle` are HTML
 // the caller has made safe; the rest is escaped here.
 export function frame(
-  p: { subject: string; heading: string; lead: string; middle?: string; button: { href: string; label: string }; why: string },
+  p: { subject: string; heading: string; lead: string; middle?: string; button?: { href: string; label: string }; why: string },
   site = SITE,
 ) {
   return `<!doctype html>
@@ -85,9 +85,9 @@ u + .body .gd{background:#000;mix-blend-mode:difference}
 <tr><td class="px" style="padding:8px 32px 0">${keep(`<h1 class="h1 t1" style="margin:0;color:${text};font:800 34px/1.3 ${display};letter-spacing:-0.03em">${esc(p.heading)}</h1>`)}</td></tr>
 <tr><td class="px" style="padding:14px 32px 0">${keep(`<p class="t2" style="margin:0;color:${text2};font:400 16px/1.6 ${body}">${p.lead}</p>`)}</td></tr>
 ${p.middle ?? ""}
-<tr><td class="px" style="padding:28px 32px 0">
+${p.button ? `<tr><td class="px" style="padding:28px 32px 0">
 <a class="t1 b1" href="${esc(p.button.href)}" style="display:inline-block;padding:12px 22px;border:1px solid ${glassBorder};border-radius:${radius.pill}px;${bg(glassFill)};color:${text};font:600 15px/1.2 ${display};text-decoration:none">${keepInline(esc(p.button.label))}</a>
-</td></tr>
+</td></tr>` : ""}
 <tr><td class="px" style="padding:40px 32px 0"><div style="height:1px;line-height:1px;font-size:0;${bg(hairline)}">&nbsp;</div></td></tr>
 <tr><td class="px" style="padding:20px 32px 0">${keep(`<p class="t2" style="margin:0;color:${text2};font:400 12px/1.6 ${body}">
 ${esc(p.why).replace(WAITLIST_CONTACT, `<a class="t2" href="mailto:${WAITLIST_CONTACT}" style="color:${text2}">${WAITLIST_CONTACT}</a>`)}<br>

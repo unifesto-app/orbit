@@ -302,6 +302,8 @@ export function authRoutes({ db, store, send, notify, secret, now = Date.now, co
           const appleRefresh = p.identity.provider === "apple" ? await w.appleRefresh(p.identity.subject) : null;
           await tx.insert(identities).values({ userId: made[0]!.id, ...p.identity, appleRefresh, createdAt: at });
         }
+        // Once per account, and only if the account is made.
+        await notify({ to: { userId: made[0]!.id }, kind: "welcome", key: "welcome" }, tx);
         return made;
       });
       // The account the number left hears of it at its email, its other way in (a recycled SIM's old owner).

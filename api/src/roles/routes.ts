@@ -1,6 +1,7 @@
 import { and, count, desc, eq, gt, gte, ilike, inArray, isNotNull, isNull, lte, ne, notLike, or, sql } from "drizzle-orm";
 import { Hono, type Context } from "hono";
-import { GrantFeatures, InviteAdmin, Lift, readPhone, STAFF_FEATURES, type StaffFeature, StaffReason, StartHost, Suspend } from "@orbit/contract";
+import { GrantFeatures, InviteAdmin, Lift, type NoticeKind, readPhone, STAFF_FEATURES, type StaffFeature, StaffReason, StartHost, Suspend } from "@orbit/contract";
+import type { Store } from "../auth/store.ts";
 import type { Db } from "../db/index.ts";
 import { auditLog, hosts, hostSlugs, sessions, staffGrants, teamRoles, users } from "../db/schema.ts";
 import { contactOf, type Env, fail, invalid, isUuid, type Notify, listPage, parse, signedIn, taken } from "../http.ts";
@@ -10,10 +11,11 @@ import { acceptRule, addRule, confirmRule, confirmSeatRule, endRule, endSeatRule
 
 // Hosts and their teams, and Galaxy's staff and People tools (Orbit flows: Roles, Hosts and Galaxy).
 
-type Deps = { db: Db; notify: Notify; secret: string; now?: () => number };
+type Deps = { db: Db; store: Store; notify: Notify; secret: string; now?: () => number };
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 const HOSTS_PER_DAY = 5;
+const INVITES_PER_DAY = 20; // per inviter; and 1 a day per address, so the invite email is no relay
 const DAY = 24 * 3600 * 1000;
 const IST = 5.5 * 3600 * 1000; // India is UTC+5:30, with no daylight saving
 const HEAVY_PAGES = 20; // 1,000 accounts: a day of honest support work rarely pages this far
@@ -31,14 +33,14 @@ const ERRORS: Record<string, [403 | 404 | 409, string]> = {
 };
 const refuse = (c: Context, error: string) => fail(c, ERRORS[error]![0], error, ERRORS[error]![1]);
 
-export function rolesRoutes({ db, notify, secret, now = Date.now }: Deps) {
+export function rolesRoutes({ db, store, notify, secret, now = Date.now }: Deps) {
   const app = new Hono<StaffEnv>();
   const auth = signedIn(db, secret, now);
   const at = () => new Date(now());
   const audit = (tx: Tx, row: Omit<typeof auditLog.$inferInsert, "at">) => tx.insert(auditLog).values({ ...row, at: at() });
 
   const holders = (f: StaffFeature) => holdersOf(db, f, at());
-  const say = (ids: string[], kind: string, data: Record<string, unknown>) => tell(notify, ids, kind, data);
+  const say = (ids: string[], kind: NoticeKind, data: Record<string, unknown>) => tell(notify, ids, kind, data);
 
   // ---------- Hosts and teams ----------
 
@@ -107,6 +109,9 @@ export function rolesRoutes({ db, notify, secret, now = Date.now }: Deps) {
     const [open] = await db.select().from(teamRoles).where(and(eq(teamRoles.hostId, host.id), eq(teamRoles.contact, contact), isNull(teamRoles.endedAt)));
     const invited = () => fail(c, 409, "invited", "They already have an invite waiting. Withdraw it to send a new one.");
     if (open && !expired(open, now())) return open.startedAt ? fail(c, 409, "onTeam", "They're already on this team.") : invited();
+    const tooMany = () => fail(c, 429, "tooMany", "Too many tries today. Try again tomorrow.");
+    if ((await store.incr(`invite:${c.var.user.id}`, DAY)) > INVITES_PER_DAY) return tooMany();
+    if ((await store.incr(`invited:${contact}`, DAY)) > 1) return tooMany();
     let seat;
     try {
       seat = await db.transaction(async (tx) => {

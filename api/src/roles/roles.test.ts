@@ -370,8 +370,9 @@ test("three invites to one contact at once", async () => {
   const h = await startHost(a);
   const to = phone();
   const rs = await Promise.all([1, 2, 3].map(() => as(a)("POST", `/hosts/${h.id}/team`, { to })));
-  assert.deepEqual(rs.map((r) => r.status).sort(), [201, 409, 409]);
-  assert.ok(rs.filter((r) => r.status === 409).every((r) => r.body.error === "invited"));
+  // The losers meet the waiting invite, or the one-a-day cap on the address.
+  assert.equal(rs.filter((r) => r.status === 201).length, 1);
+  assert.ok(rs.filter((r) => r.status !== 201).every((r) => (r.status === 409 && r.body.error === "invited") || (r.status === 429 && r.body.error === "tooMany")));
 });
 
 test("bad ids are 404 JSON", async () => {

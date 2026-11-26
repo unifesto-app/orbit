@@ -741,3 +741,91 @@ export const applications = pgTable(
   },
   (t) => [unique("applications_opening_email_uq").on(t.openingId, t.email), index("applications_opening_idx").on(t.openingId, t.createdAt)],
 );
+
+// Notifications (contract/src/notifications.ts; build plan approved 26 Nov 2026). The kinds are code; these hold what
+// changes at run time and what was sent.
+
+// A kind's channel switched off by staff (kind "*" is the whole channel). No row means on. Read from Galaxy's slice.
+export const notificationSwitches = pgTable(
+  "notification_switches",
+  {
+    kind: text("kind").notNull(),
+    channel: text("channel", { enum: ["email", "push", "inbox"] }).notNull(),
+    offBy: uuid("off_by").notNull().references(() => users.id),
+    offAt: at("off_at").notNull(),
+    reason: text("reason").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.kind, t.channel] })],
+);
+
+// Staff's rewording of a kind on one channel. Read from the templates slice.
+export const notificationTemplates = pgTable(
+  "notification_templates",
+  {
+    kind: text("kind").notNull(),
+    channel: text("channel", { enum: ["email", "push", "inbox"] }).notNull(),
+    subject: text("subject"),
+    title: text("title"),
+    body: text("body").notNull(),
+    updatedBy: uuid("updated_by").notNull().references(() => users.id),
+    updatedAt: at("updated_at").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.kind, t.channel] })],
+);
+
+// What a person can find later in one app's inbox, written even when nothing interrupts them. Gone after 180 days
+// (server.ts) and with the account on day 30 (auth/deletion.ts).
+export const inboxItems = pgTable(
+  "inbox_items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    app: text("app", { enum: ["orbit", "launch", "station", "crew"] }).notNull(),
+    kind: text("kind").notNull(),
+    type: text("type").notNull(),
+    fromName: text("from_name").notNull(), // "Orbit", or the host's name
+    text: text("text").notNull(),
+    picture: jsonb("picture"),
+    opens: jsonb("opens"), // the app's Opens shape, e.g. {"to":"security"}
+    dedupeKey: text("dedupe_key").notNull(),
+    readAt: at("read_at"),
+    createdAt: at("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    unique("inbox_items_user_dedupe_uq").on(t.userId, t.dedupeKey),
+    index("inbox_items_user_app_idx").on(t.userId, t.app, t.createdAt),
+    index("inbox_items_created_idx").on(t.createdAt),
+  ],
+);
+
+// The queue and the delivery log in one: a row per send on one channel to one address or device. The worker
+// (notifications.ts) claims due rows; a skipped row is written on purpose, with its reason. Gone after 180 days.
+export const deliveries = pgTable(
+  "deliveries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+    contact: text("contact"), // the contact a notice was addressed to, when it was
+    kind: text("kind").notNull(),
+    channel: text("channel", { enum: ["email", "push"] }).notNull(),
+    target: text("target").notNull().default(""), // the email address; '' on a skipped row that has none
+    dedupeKey: text("dedupe_key").notNull(),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+    status: text("status", { enum: ["queued", "held", "sending", "sent", "delivered", "failed", "dropped", "skipped"] }).notNull(),
+    reason: text("reason"),
+    tries: integer("tries").notNull().default(0),
+    runAt: at("run_at").notNull(),
+    lockedUntil: at("locked_until"),
+    providerId: text("provider_id"),
+    broadcastId: uuid("broadcast_id"),
+    inboxItemId: uuid("inbox_item_id").references(() => inboxItems.id, { onDelete: "set null" }),
+    createdAt: at("created_at").notNull().defaultNow(),
+    sentAt: at("sent_at"),
+  },
+  (t) => [
+    unique("deliveries_dedupe_uq").on(t.dedupeKey, t.channel, t.target),
+    index("deliveries_due_idx").on(t.runAt).where(sql`${t.status} in ('queued', 'sending')`),
+    index("deliveries_user_idx").on(t.userId, t.createdAt),
+    index("deliveries_created_idx").on(t.createdAt),
+  ],
+);

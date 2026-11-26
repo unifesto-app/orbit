@@ -507,6 +507,7 @@ test("a withdrawn or lapsed invite never blocks staff; one they accepted and lef
   assert.equal((await as(st)("POST", `/galaxy/hosts/${h.id}/suspend`, R)).status, 200);
   assert.equal((await as(st)("POST", `/galaxy/hosts/${h.id}/lift`, R)).status, 200);
   // Lapses after 14 days, and the host's Admins never confirmed it.
+  t.tick(DAY); // one invite a day to an address
   const inv2 = await as(a)("POST", `/hosts/${h.id}/team`, { to: st.p });
   t.tick(15 * DAY);
   assert.equal((await as(st)("POST", `/galaxy/hosts/${h.id}/suspend`, R)).status, 200);
@@ -519,6 +520,7 @@ test("a withdrawn or lapsed invite never blocks staff; one they accepted and lef
   assert.equal((await as(st)("POST", `/galaxy/hosts/${h.id}/suspend`, R)).status, 200);
   assert.equal((await as(st)("POST", `/galaxy/hosts/${h.id}/lift`, R)).status, 200);
   // Accepted but never confirmed: it blocks while it waits, and stops when it lapses (they can't leave it).
+  t.tick(DAY); // one invite a day to an address
   const inv4 = await as(a)("POST", `/hosts/${h.id}/team`, { to: st.p });
   await as(st)("POST", `/invites/${inv4.body.id}/accept`);
   assert.equal((await as(st)("POST", `/galaxy/hosts/${h.id}/suspend`, R)).body.error, "ownHost");

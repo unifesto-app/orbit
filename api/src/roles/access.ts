@@ -1,6 +1,6 @@
 import { and, eq, gt, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import { createMiddleware } from "hono/factory";
-import { type Roles, STAFF_FEATURES, type StaffFeature, type Team } from "@orbit/contract";
+import { type NoticeKind, type Roles, STAFF_FEATURES, type StaffFeature, type Team } from "@orbit/contract";
 import type { Db } from "../db/index.ts";
 import { auditLog, hosts, staffGrants, teamRoles, users } from "../db/schema.ts";
 import type { User } from "../auth/sessions.ts";
@@ -119,7 +119,7 @@ export const holdersOf = async (db: Db, f: StaffFeature, at: Date) => {
     .where(and(eq(staffGrants.feature, f), isNull(staffGrants.endedAt), isNotNull(staffGrants.startsAt), lte(staffGrants.startsAt, at)));
   return [...new Set([...owners, ...granted].map((r) => r.id))];
 };
-export const tell = async (notify: Notify, ids: string[], kind: string, data: Record<string, unknown>) => {
+export const tell = async (notify: Notify, ids: string[], kind: NoticeKind, data: Record<string, unknown>) => {
   for (const userId of ids) await notify({ to: { userId }, kind, data });
 };
 

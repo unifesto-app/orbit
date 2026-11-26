@@ -162,6 +162,13 @@
       "when": 1795632686506,
       "tag": "0022_abandoned_jubilee",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1795671340240,
+      "tag": "0023_notifications",
+      "breakpoints": true
     }
   ]
 }
