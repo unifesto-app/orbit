@@ -3,14 +3,14 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import {
   type EventEarnings, type FailedWebhook, type HostFees, NewPayout, PAYMENT_STATUSES, type PaymentDetail, type PaymentList, type PaymentRow,
-  MoneyReason, PayoutPaid, type Payouts, type RefundQueue, type RefundRow, SetFees, StaffRefund,
+  MoneyReason, PayoutPaid, type Payouts, readPhone, type RefundQueue, type RefundRow, SetFees, type StaffBooking, StaffRefund,
 } from "@orbit/contract";
 import type { Deps } from "../auth/routes.ts";
 import type { Db } from "../db/index.ts";
-import { auditLog, events, failedWebhooks, hosts, payments, payouts, refunds, users } from "../db/schema.ts";
+import { auditLog, bookings, events, failedWebhooks, hosts, payments, payouts, refunds, ticketTypes, users } from "../db/schema.ts";
 import { fail, invalid, isUuid, listPage, PAGE_SIZE, parse, signedIn, taken, type Tx } from "../http.ts";
 import { adminsOf, holdersOf, requireFeature, type StaffEnv, tell } from "../roles/access.ts";
-import { askedBack, CLAIM, sendRefund } from "./routes.ts";
+import { askedBack, CLAIM, refundPaid, sendRefund } from "./routes.ts";
 
 // Galaxy's Money pages (Money flow, "Galaxy"; X2), for holders of Money: payments with their frozen terms and a refund,
 // the refunds queue and the failed ones, payouts with their UTRs, each host's fee plan, and webhooks refused. Every
@@ -141,7 +141,9 @@ export function moneyRoutes({ db, secret, notify, razorpay: rz, now = Date.now }
   });
 
   // POST /galaxy/money/payments/:id/refund {amountPaise, reason}: up to what was paid less what's already asked back.
-  // The booking stays (cancel with a refund comes with Galaxy Bookings, X3).
+  // A part refund keeps the booking; one that takes back all that's left cancels it (the payment is then refundPending).
+  // Locks: the booking, then the payment, as event cancel, account deletion and Galaxy's booking cancel take them (a
+  // paid payment's booking never changes, so reading it unlocked first is safe).
   app.post("/galaxy/money/payments/:id/refund", cap, ...staff, async (c) => {
     if (!rz) return fail(c, 503, "paymentsOff", "Razorpay isn't set up on this server.");
     const id = c.req.param("id");
@@ -150,11 +152,18 @@ export function moneyRoutes({ db, secret, notify, razorpay: rz, now = Date.now }
     if (!b) return invalid(c);
     const actorId = c.var.actor.id;
     const made = await db.transaction(async (tx) => {
+      const [seen] = await tx.select({ bookingId: payments.bookingId }).from(payments).where(eq(payments.id, id));
+      if (seen?.bookingId) await tx.select({ id: bookings.id }).from(bookings).where(eq(bookings.id, seen.bookingId)).for("update");
       const [p] = await tx.select().from(payments).where(eq(payments.id, id)).for("update");
       if (!p) return fail(c, 404, "notFound", "There's nothing here.");
       if (p.status !== "paid" || !p.razorpayPaymentId) return fail(c, 409, "notPaid", "Only a paid payment can be refunded here.");
       const left = p.amountPaise - (await askedBack(tx, p));
       if (b.amountPaise > left) return fail(c, 400, "tooMuch", `At most ₹${(left / 100).toFixed(2)} can go back on this payment.`, { leftPaise: left });
+      if (b.amountPaise === left) {
+        await tx.update(payments).set({ status: "refundPending", updatedAt: at() }).where(eq(payments.id, p.id));
+        if (p.bookingId)
+          await tx.update(bookings).set({ status: "cancelled", cancelledAt: at(), link: null }).where(and(eq(bookings.id, p.bookingId), eq(bookings.status, "confirmed")));
+      }
       const [r] = await tx
         .insert(refunds)
         .values({
@@ -162,7 +171,7 @@ export function moneyRoutes({ db, secret, notify, razorpay: rz, now = Date.now }
           nextAttemptAt: new Date(now() + 15 * 60_000), createdAt: at(), updatedAt: at(), // this request sends it; the poller after 15 minutes
         })
         .returning({ id: refunds.id });
-      await logged(tx, actorId, "money.refund", b.reason, { paymentId: p.id, refundId: r!.id, amountPaise: b.amountPaise }, p.hostId);
+      await logged(tx, actorId, "money.refund", b.reason, { paymentId: p.id, refundId: r!.id, amountPaise: b.amountPaise, cancelled: b.amountPaise === left ? p.bookingId : null }, p.hostId);
       return r!.id;
     });
     if (made instanceof Response) return made;
@@ -335,6 +344,69 @@ export function moneyRoutes({ db, secret, notify, razorpay: rz, now = Date.now }
     const rows = await db.select().from(failedWebhooks).orderBy(desc(failedWebhooks.receivedAt)).limit(200);
     const out: FailedWebhook[] = rows.map((r) => ({ id: r.id, receivedAt: r.receivedAt.toISOString(), reason: r.reason, excerpt: r.excerpt }));
     return c.json(out);
+  });
+
+  // ---------- Bookings and tickets (X3), for holders of Money too: a cancel can send money back ----------
+  const like = (q: string) => `%${q.replace(/[%_\\]/g, (m) => `\\${m}`)}%`;
+
+  // GET /galaxy/bookings?person=&event=: bookings of a person (exact phone or email, else by name; 3 characters at
+  // least) and/or of an event (its id, or by title), newest first, each with its ticket and payment. Logged by ids only.
+  app.get("/galaxy/bookings", ...staff, async (c) => {
+    const person = c.req.query("person")?.trim() ?? "", event = c.req.query("event")?.trim() ?? "";
+    if ((person && person.length < 3) || (event && event.length < 3) || (!person && !event)) return fail(c, 400, "invalid", "Type at least 3 characters of a person or an event.");
+    const phone = person ? readPhone(person) : null;
+    const by = !person ? null : typeof phone === "string" && phone !== "abroad" ? "phone" : person.includes("@") ? "email" : "name";
+    const who =
+      by === "phone" ? eq(users.phone, phone as string) : by === "email" ? eq(users.email, person.toLowerCase()) : by === "name" ? ilike(users.name, like(person)) : undefined;
+    const what = !event ? undefined : isUuid(event) ? eq(bookings.eventId, event) : ilike(events.title, like(event));
+    const rows = await db
+      .select({
+        b: bookings, userName: users.name, eventTitle: events.title, hostId: hosts.id, hostName: hosts.name, ticketTypeName: ticketTypes.name,
+        pricePaise: ticketTypes.pricePaise, pay: { id: payments.id, status: payments.status, amountPaise: payments.amountPaise },
+      })
+      .from(bookings)
+      .innerJoin(users, eq(users.id, bookings.userId))
+      .innerJoin(events, eq(events.id, bookings.eventId))
+      .innerJoin(hosts, eq(hosts.id, events.hostId))
+      .innerJoin(ticketTypes, eq(ticketTypes.id, bookings.ticketTypeId))
+      .leftJoin(payments, eq(payments.bookingId, bookings.id))
+      .where(and(who, what))
+      .orderBy(desc(bookings.createdAt))
+      .limit(100);
+    await db.insert(auditLog).values({ actorId: c.var.actor.id, action: "bookings.search", data: { by, event: !!event, results: rows.map((r) => r.b.id) }, at: at() });
+    const out: StaffBooking[] = rows.map(({ b, pay, ...r }) => ({
+      id: b.id, status: b.status, quantity: b.quantity, code: b.code, createdAt: b.createdAt.toISOString(), cancelledAt: b.cancelledAt?.toISOString() ?? null,
+      userId: b.userId, eventId: b.eventId, ...r, payment: pay?.id ? pay : null,
+    }));
+    return c.json(out);
+  });
+
+  // POST /galaxy/bookings/:id/cancel {reason}: a confirmed booking is cancelled, its seats free; a paid one goes back in
+  // full, fee included, through refundPaid in the same transaction, sent once it commits (the poller sends any that
+  // didn't go). Locks: the booking, then its payment (refundPaid), as event cancel and account deletion.
+  // ponytail: no notice to the holder yet (bookingCancelled has no wording); they hear of the refund when it lands.
+  app.post("/galaxy/bookings/:id/cancel", cap, ...staff, async (c) => {
+    const id = c.req.param("id");
+    if (!isUuid(id)) return fail(c, 404, "notFound", "There's nothing here.");
+    const b = await parse(c, MoneyReason);
+    if (!b) return invalid(c);
+    const actorId = c.var.actor.id;
+    const done = await db.transaction(async (tx) => {
+      const [bk] = await tx.select().from(bookings).where(eq(bookings.id, id)).for("update");
+      if (!bk) return fail(c, 404, "notFound", "There's nothing here.");
+      if (bk.status !== "confirmed") return fail(c, 409, "notConfirmed", "This booking is already cancelled.");
+      await tx.update(bookings).set({ status: "cancelled", cancelledAt: at(), link: null }).where(eq(bookings.id, id));
+      const back = await refundPaid(tx, eq(payments.bookingId, id), b.reason, at());
+      const [e] = await tx.select({ hostId: events.hostId }).from(events).where(eq(events.id, bk.eventId));
+      await tx.insert(auditLog).values({ actorId, action: "bookings.cancel", reason: b.reason, targetUser: bk.userId, targetHost: e!.hostId, data: { bookingId: id, refundIds: back }, at: at() });
+      return back;
+    });
+    if (done instanceof Response) return done;
+    // After the answer; a refund that doesn't go is the poller's after 15 minutes.
+    if (rz && done.length)
+      void Promise.all(done.map((r) => sendRefund(db, rz, notify, r, now(), true))).catch(() => console.error("[refunds] after booking cancel", done.join(",")));
+    await tellMoney("bookings.cancel", b.reason, actorId);
+    return c.json({ ok: true, refunded: done.length > 0 });
   });
 
   return app;

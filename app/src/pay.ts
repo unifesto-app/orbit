@@ -5,7 +5,11 @@
 // checkout (Booking doc, Paying); Orbit keeps no card or bank detail, only which way you like to pay and the UPI IDs you
 // added, on this phone (src/session.ts). Pure, so pay.test.ts runs it on Node.
 // ponytail: fixed lists until the API reads our Razorpay account's own (Unifesto's /v1/methods, cached) and the phone's
-// installed UPI apps (Razorpay's SDK finds them; that's a native module and a rebuild).
+// installed UPI apps (Razorpay's SDK finds them at checkout).
+
+import type { MyPayment, MyRefund, PayOrder, Verified } from '@orbit/contract';
+
+import type { makeApi } from './api.ts';
 
 export type PayWith =
   | { kind: 'upiApp'; id: string }
@@ -45,7 +49,7 @@ export type UpiId = { vpa: string; name: string };
 
 // Our Razorpay account's public key id (rzp_live_… or rzp_test_…), the one its checkout shows anyone; never the secret.
 // Set as EXPO_PUBLIC_RAZORPAY_KEY_ID (eas.json, or .env when running locally). Without it no UPI ID can be checked.
-const RAZORPAY_KEY = process.env.EXPO_PUBLIC_RAZORPAY_KEY_ID ?? '';
+export const RAZORPAY_KEY = process.env.EXPO_PUBLIC_RAZORPAY_KEY_ID ?? '';
 
 /** Whose UPI ID it is, asked of Razorpay as its checkout does (Unifesto's verifyUpiId): the holder's name, 'invalid'
  * when there's no such ID, or null when it couldn't say (no key, offline, slower than 8 seconds). */
@@ -109,3 +113,43 @@ export function payLabel(p?: PayWith): string {
   if (!payReady(p)) return 'Add your UPI ID';
   return `Pay with ${p.kind === 'card' ? 'a card' : payName(p)}`;
 }
+
+// ---------- Paying for a ticket (X3; api/src/payments/routes.ts): the calls, the Booking doc's words, checkout's bits ----------
+
+type Api = Pick<ReturnType<typeof makeApi>, 'authed'>;
+export const paymentsApi = (api: Api) => ({
+  order: (eventId: string, ticketTypeId: string, quantity: number) => api.authed<PayOrder>('POST', `/events/${eventId}/pay`, { ticketTypeId, quantity }),
+  verify: (orderId: string, paymentId: string, signature: string) =>
+    api.authed<Verified>('POST', `/payments/${encodeURIComponent(orderId)}/verify`, { paymentId, signature }),
+  mine: () => api.authed<MyPayment[]>('GET', '/me/payments'),
+  refunds: () => api.authed<MyRefund[]>('GET', '/me/refunds'),
+});
+
+/** The Booking flow's lines for paying, word for word. */
+export const PAY_SAYS = {
+  dismissed: 'Payment not completed. Nothing was charged.',
+  failed: 'Payment failed. Try again, or pick another way to pay.',
+  already: 'You’re already paying for this ticket. Finish there, or wait a few minutes.',
+  confirming: 'We’re confirming your payment. Your ticket appears here within a few minutes.',
+  refunded: 'That sold out while you were paying. We’ve refunded you in full.',
+};
+
+/** Whether Razorpay's checkout closed because the payer closed it (no money tried): code 0 on Android, 2 on iOS, and
+ * either says "cancel" in its reason. Anything else is a failed payment. */
+export function checkoutCancelled(err: unknown, os: string): boolean {
+  const e = (err ?? {}) as { code?: number; description?: string; reason?: string };
+  return e.code === (os === 'ios' ? 2 : 0) || /cancel/i.test(`${e.reason ?? ''} ${e.description ?? ''}`);
+}
+
+/** The way you picked, as checkout's prefill: it opens on that method (Razorpay's prefill.method; a UPI ID filled in). */
+export function prefillOf(p?: PayWith): { method?: 'upi' | 'card' | 'wallet'; vpa?: string } {
+  if (!p) return {};
+  if (p.kind === 'upiApp') return { method: 'upi' };
+  if (p.kind === 'vpa') return { method: 'upi', vpa: p.vpa.trim() };
+  if (p.kind === 'card') return { method: 'card' };
+  if (p.kind === 'wallet') return { method: 'wallet' };
+  return {};
+}
+
+/** A refund's status in the Booking doc's words. */
+export const refundWord = (s: MyRefund['status']) => (s === 'processed' ? 'Refunded' : s === 'failed' ? 'Refund failed, retrying' : 'Requested');

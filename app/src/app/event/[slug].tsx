@@ -67,9 +67,8 @@ export default function EventPage() {
   return found.e ? <EventView e={found.e} host={found.host} now={found.now} live={found.live} /> : found.screen;
 }
 
-// `live`: an event from the API. Its page has no fake counts or mock-only sections. A free one registers (P10.1); a
-// paid one's bar shows the price and "Booking opens soon" until paying in the app arrives. Interested and Loved keep
-// today's on-phone behaviour.
+// `live`: an event from the API. Its page has no fake counts or mock-only sections. A free one registers (P10.1), a
+// paid one books through checkout (X3). Interested and Loved keep today's on-phone behaviour.
 function EventView({ e, host, now, live }: { e: Event; host: Host; now: number; live: boolean }) {
   const insets = useSafeAreaInsets();
   const [bar, setBar] = useState(insets.bottom + 108); // room under the page for the ticket bar, a guess until measured
@@ -86,7 +85,6 @@ function EventView({ e, host, now, live }: { e: Event; host: Host; now: number; 
   const went = viewer.signedIn && history.some((h) => h.eventId === e.id && h.status === 'Went');
   const thanks = past && went && now < Date.parse(e.startsAt) + WEEK;
   const book = bookAction(status, !e.pricePaise);
-  const paidLater = live && book.can && e.pricePaise > 0; // a real event with no free ticket: paying isn't on yet
   // The ticket bar: a ticket holder keeps View ticket until the event has ended, while it's on and if it's cancelled;
   // anyone else sees it until the start, never on a cancelled event.
   const showBar = booked ? status.kind !== 'ended' : !past && status.kind !== 'cancelled';
@@ -201,14 +199,14 @@ function EventView({ e, host, now, live }: { e: Event; host: Host; now: number; 
           price={formatPrice(price.paise)}
           from={price.from}
           note={booked ? undefined : seats}
-          action={booked ? 'View ticket' : paidLater ? 'Booking opens soon' : book.label}
+          action={booked ? 'View ticket' : book.label}
           // A booking opens its ticket (src/app/ticket/[id].tsx, keyed by booking id). Signed out, Book and Register open
           // the sign-in sheet over this page and come back to it (Booking doc, step 2).
           onAction={
             booked
               ? // Two ticket types booked on one event: both are in Account › Tickets.
                 () => (mine.length > 1 ? router.push('/account/tickets') : mine[0]?.id && router.push(`/ticket/${mine[0].id}`))
-              : paidLater || !book.can
+              : !book.can
                 ? undefined
                 : () => needsAccount(() => router.push(`/book/${e.slug}`)) // signed out, sign in first, then on to it
           }

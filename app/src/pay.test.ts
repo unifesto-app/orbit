@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import { readdirSync } from 'node:fs';
 
-import { isVpa, payKey, payLabel, payName, payReady, UPI_APPS, verifyUpiId, WALLETS } from './pay.ts';
+import { checkoutCancelled, isVpa, payKey, payLabel, payName, payReady, prefillOf, refundWord, UPI_APPS, verifyUpiId, WALLETS } from './pay.ts';
 
 test('every UPI app and wallet has its logo file in assets/pay', () => {
   const have = new Set(readdirSync(new URL('../assets/pay', import.meta.url)).map((f) => f.replace(/\.\w+$/, '')));
@@ -60,4 +60,16 @@ test('Razorpay says whose a UPI ID is, that there is none, or nothing', async ()
   } finally {
     globalThis.fetch = real;
   }
+});
+
+test('checkout: a closed sheet is not a failure; the pick opens its method; refund words', () => {
+  assert.equal(checkoutCancelled({ code: 2, description: 'x' }, 'ios'), true);
+  assert.equal(checkoutCancelled({ code: 0, description: 'x' }, 'android'), true);
+  assert.equal(checkoutCancelled({ code: 2, description: 'Network error' }, 'android'), false);
+  assert.equal(checkoutCancelled({ code: 1, reason: 'payment_cancelled' }, 'ios'), true);
+  assert.equal(checkoutCancelled({ code: 1, description: 'Payment failed' }, 'ios'), false);
+  assert.deepEqual(prefillOf({ kind: 'vpa', vpa: ' ravi@ybl ' }), { method: 'upi', vpa: 'ravi@ybl' });
+  assert.deepEqual(prefillOf({ kind: 'upiApp', id: 'gpay' }), { method: 'upi' });
+  assert.deepEqual(prefillOf({ kind: 'applePay' }), {});
+  assert.deepEqual([refundWord('processed'), refundWord('failed'), refundWord('sent')], ['Refunded', 'Refund failed, retrying', 'Requested']);
 });

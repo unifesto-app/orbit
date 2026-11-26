@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, gte, inArray, isNull, lt, lte, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, max, or, sql, type SQL } from "drizzle-orm";
 import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { feeTerms, type PayOrder, PayRequest, type Verified, VerifyPayment } from "@orbit/contract";
+import { feeTerms, type MyPayment, type MyRefund, type PayOrder, PayRequest, type Verified, VerifyPayment } from "@orbit/contract";
 import type { Deps } from "../auth/routes.ts";
 import type { Db } from "../db/index.ts";
-import { bookings, failedWebhooks, hosts, payments, razorpayEvents, refunds, users } from "../db/schema.ts";
+import { bookings, events, failedWebhooks, hosts, payments, razorpayEvents, refunds, users } from "../db/schema.ts";
 import { seatCheck, tokens } from "../bookings.ts";
 import { type Env, fail, invalid, isUuid, type Notify, parse, signedIn, taken, type Tx } from "../http.ts";
 import { mine } from "../saves.ts";
@@ -389,6 +389,51 @@ export function paymentsRoutes({ db, secret, notify, razorpay: rz, now = Date.no
     }
     if (handled) await db.update(razorpayEvents).set({ handledAt: at }).where(eq(razorpayEvents.id, eventId));
     return c.json({ ok: true });
+  });
+
+  // GET /me/payments: the signed-in person's payments that took money, newest first, each with what has come back.
+  // ponytail: the last 200, no paging; a page when someone has more.
+  app.get("/me/payments", auth, async (c) => {
+    const rows = await db
+      .select({ p: payments, title: events.title })
+      .from(payments)
+      .leftJoin(events, eq(events.id, payments.eventId))
+      .where(and(eq(payments.userId, c.var.user.id), isNotNull(payments.razorpayPaymentId)))
+      .orderBy(desc(payments.createdAt))
+      .limit(200);
+    const ids = rows.map((r) => r.p.id);
+    const back = new Map(
+      (ids.length
+        ? await db
+            .select({ id: refunds.paymentId, n: sql<number>`sum(${refunds.amountPaise})::int`, at: max(refunds.updatedAt) })
+            .from(refunds)
+            .where(and(inArray(refunds.paymentId, ids), eq(refunds.status, "processed")))
+            .groupBy(refunds.paymentId)
+        : []
+      ).map((r) => [r.id, r]),
+    );
+    const out: MyPayment[] = rows.map(({ p, title }) => ({
+      id: p.id, eventId: p.eventId, eventTitle: title, quantity: p.quantity, pricePaise: p.unitPricePaise * p.quantity,
+      feePaise: p.feeIncluded ? 0 : p.buyerFeePaise, amountPaise: p.amountPaise, status: p.status, razorpayPaymentId: p.razorpayPaymentId!,
+      refundedPaise: back.get(p.id)?.n ?? 0, refundedAt: back.get(p.id)?.at?.toISOString() ?? null, createdAt: p.createdAt.toISOString(),
+    }));
+    return c.json(out);
+  });
+
+  // GET /me/refunds: refunds of the signed-in person's payments, newest first.
+  app.get("/me/refunds", auth, async (c) => {
+    const rows = await db
+      .select({ r: refunds, eventId: payments.eventId, title: events.title })
+      .from(refunds)
+      .innerJoin(payments, eq(payments.id, refunds.paymentId))
+      .leftJoin(events, eq(events.id, payments.eventId))
+      .where(eq(payments.userId, c.var.user.id))
+      .orderBy(desc(refunds.createdAt))
+      .limit(200);
+    const out: MyRefund[] = rows.map(({ r, eventId, title }) => ({
+      id: r.id, eventId, eventTitle: title, amountPaise: r.amountPaise, status: r.status, createdAt: r.createdAt.toISOString(), updatedAt: r.updatedAt.toISOString(),
+    }));
+    return c.json(out);
   });
 
   return app;

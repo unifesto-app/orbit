@@ -8,6 +8,7 @@ import { retryRefund } from "./actions";
 // Money; anyone else gets Galaxy's not-found, as every gated page.
 const TABS = [
   { key: "payments", label: "Payments", href: "/money/payments" },
+  { key: "bookings", label: "Bookings and tickets", href: "/money/bookings" },
   { key: "refunds", label: "Refunds", href: "/money/refunds" },
   { key: "payouts", label: "Payouts", href: "/money/payouts" },
   { key: "fees", label: "Fees", href: "/money/fees" },

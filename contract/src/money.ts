@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { BookingStatus } from "./bookings.ts";
 
 // Amounts are whole paise everywhere (plan, section 7). 0 means a free event.
 const rupees = (fraction: number) =>
@@ -94,3 +95,20 @@ export type EventEarnings = {
 export type Payouts = { payouts: PayoutRow[]; earnings: EventEarnings[] };
 export type HostFees = { hosts: { id: string; name: string; plan: FeePlan; feeIncluded: boolean }[]; total: number; page: number; pageSize: number };
 export type FailedWebhook = { id: string; receivedAt: string; reason: string; excerpt: string };
+
+// The app's Account › Transactions and Refunds (X3): the signed-in person's own. A payment is listed once money moved
+// (a Razorpay payment on it); `refundedPaise` is what has reached them so far.
+export type MyPayment = {
+  id: string; eventId: string | null; eventTitle: string | null; quantity: number; pricePaise: number; feePaise: number;
+  amountPaise: number; status: PaymentStatus; razorpayPaymentId: string; refundedPaise: number; refundedAt: string | null; createdAt: string;
+};
+export type MyRefund = {
+  id: string; eventId: string | null; eventTitle: string | null; amountPaise: number; status: (typeof REFUND_STATUSES)[number]; createdAt: string; updatedAt: string;
+};
+
+// Galaxy's Bookings and tickets (X3): a booking with its ticket and the payment that paid for it, if any.
+export type StaffBooking = {
+  id: string; status: BookingStatus; quantity: number; code: string; createdAt: string; cancelledAt: string | null;
+  userId: string; userName: string | null; eventId: string; eventTitle: string; hostId: string; hostName: string;
+  ticketTypeName: string; pricePaise: number; payment: { id: string; status: PaymentStatus; amountPaise: number } | null;
+};

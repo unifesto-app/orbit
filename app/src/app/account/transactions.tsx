@@ -1,40 +1,48 @@
-// Transactions: every payment, newest first, with the terms it sold under (Money doc: frozen at sale): the ticket price,
-// the processing fee as a line of its own and never a percentage, how it was paid, and the payment ID the receipt email
-// carries. A refunded payment says how much went back.
+// Transactions: every payment that took money, newest first, from GET /me/payments with the terms it sold under (Money
+// doc: frozen at sale): the ticket price, the fee as a line of its own and never a percentage, and the payment ID the
+// receipt email carries. A refunded one says how much went back. Signed out, a line and Sign in.
 import { formatPrice } from '@orbit/contract';
+import { useState } from 'react';
 import { StyleSheet, Text } from 'react-native';
 
-import { payments, refunds } from '../../account/data';
-import { Group, Note, Page, Row } from '../../account/kit';
+import { Group, Note, Page, Row, SignInNote } from '../../account/kit';
 import { day, year } from '../../account/rules';
-import { events, now } from '../../mock';
+import { useLoad } from '../../load';
+import { paymentsApi } from '../../pay';
+import { Failed, Waiting } from '../../rows';
+import { api, useSession } from '../../session';
 import { color, font } from '../../theme';
 
 export default function Transactions() {
-  if (payments.length === 0)
-    return (
-      <Page title="Transactions">
-        <Note>Nothing paid yet.</Note>
-      </Page>
-    );
+  const me = useSession()?.me.id;
+  const page = useLoad(me ? `payments|${me}` : null, () => paymentsApi(api).mine());
+  const [now] = useState(Date.now);
   return (
     <Page title="Transactions">
-      <Group>
-        {payments.map((p) => {
-          const back = refunds.find((r) => r.eventId === p.eventId && r.status === 'Refunded');
-          const paid = year(p.paidAt) === year(now) ? day(p.paidAt) : `${day(p.paidAt)} ${year(p.paidAt)}`;
-          const lines = [`${formatPrice(p.pricePaise)} + ${formatPrice(p.feePaise)} fee · ${p.via}`, `${paid} · ${p.id}`];
-          if (back?.settled) lines.push(`${formatPrice(back.amountPaise)} refunded ${day(back.settled)}`);
-          return (
-            <Row
-              key={p.id}
-              label={events.find((e) => e.id === p.eventId)?.title ?? 'An event'}
-              note={lines.join('\n')}
-              right={<Text style={styles.total}>{formatPrice(p.pricePaise + p.feePaise)}</Text>}
-            />
-          );
-        })}
-      </Group>
+      {!me ? (
+        <SignInNote>Sign in to see what you’ve paid.</SignInNote>
+      ) : !page.data ? (
+        page.error ? <Failed message={page.error.message} retry={page.reload} /> : <Waiting />
+      ) : page.data.length === 0 ? (
+        <Note>Nothing paid yet.</Note>
+      ) : (
+        <Group>
+          {page.data.map((p) => {
+            const paid = year(p.createdAt) === year(now) ? day(p.createdAt) : `${day(p.createdAt)} ${year(p.createdAt)}`;
+            const lines = [`${formatPrice(p.pricePaise)}${p.feePaise ? ` + ${formatPrice(p.feePaise)} fee` : ''}`, `${paid} · ${p.razorpayPaymentId}`];
+            if (p.refundedPaise) lines.push(`${formatPrice(p.refundedPaise)} refunded${p.refundedAt ? ` ${day(p.refundedAt)}` : ''}`);
+            else if (p.status === 'refundPending') lines.push('Refund on its way');
+            return (
+              <Row
+                key={p.id}
+                label={p.eventTitle ?? 'An event'}
+                note={lines.join('\n')}
+                right={<Text style={styles.total}>{formatPrice(p.amountPaise)}</Text>}
+              />
+            );
+          })}
+        </Group>
+      )}
     </Page>
   );
 }

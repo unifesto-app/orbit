@@ -519,3 +519,92 @@ test("pressing Galaxy's retry twice sends one refund", async () => {
   assert.equal((await as(boss)("POST", `/galaxy/money/refunds/${made.body.id}/retry`, { reason: "Again" })).status, 409);
   assert.equal(posts(p.id) - before, 1);
 });
+
+// ---------- X3: the app's own reads, Galaxy's Bookings and tickets ----------
+
+const until = async (ok: () => Promise<boolean>) => {
+  for (let i = 0; i < 100 && !(await ok()); i++) await new Promise((r) => setTimeout(r, 10));
+};
+
+test("/me/payments and /me/refunds: only the signed-in person's, only payments that took money", async () => {
+  const a = await join(), b = await join(), c = await join(), boss = await join();
+  await give(boss, "money");
+  const { e, o } = await bought(a, b);
+  await pay(c, e); // c only opened an order: not a transaction
+  const id = (await paymentOf(o.orderId)).id;
+  const r = await as(boss)("POST", `/galaxy/money/payments/${id}/refund`, { amountPaise: 500, reason: "Seat was broken" });
+  const rf = rzState.refunds.find((x) => x.receipt === r.body.id)!;
+  assert.equal(await hook("refund.processed", { refund: { entity: { ...rf, status: "processed" } } }), 200);
+
+  const mine = await as(b)("GET", "/me/payments");
+  assert.equal(mine.status, 200);
+  assert.equal(mine.body.length, 1);
+  assert.deepEqual(
+    [mine.body[0].id, mine.body[0].eventTitle, mine.body[0].pricePaise, mine.body[0].feePaise, mine.body[0].amountPaise, mine.body[0].status, mine.body[0].refundedPaise],
+    [id, "Open Mic Night", 120000, 3600, 123600, "paid", 500],
+  );
+  assert.ok(mine.body[0].refundedAt);
+  const back = await as(b)("GET", "/me/refunds");
+  assert.deepEqual(back.body.map((x: { id: string; amountPaise: number; status: string }) => [x.id, x.amountPaise, x.status]), [[r.body.id, 500, "processed"]]);
+  // Nobody else sees them.
+  assert.deepEqual((await as(c)("GET", "/me/payments")).body, []);
+  assert.deepEqual((await as(c)("GET", "/me/refunds")).body, []);
+  assert.equal((await t.call("GET", "/me/payments")).status, 401);
+  assert.equal((await t.call("GET", "/me/refunds")).status, 401);
+});
+
+test("Galaxy Bookings: find by person or event; cancel a paid one makes one full refund; non-staff refused", async () => {
+  const a = await join(), b = await join(), boss = await join(), people = await join();
+  await give(boss, "money");
+  await give(people, "people");
+  const { e, o, p } = await bought(a, b);
+  const booking = (await paymentOf(o.orderId)).bookingId!;
+
+  assert.equal((await as(people)("GET", `/galaxy/bookings?event=${e.id}`)).status, 404);
+  assert.equal((await as(b)("POST", `/galaxy/bookings/${booking}/cancel`, { reason: "Mine" })).status, 404);
+  assert.equal((await as(boss)("GET", "/galaxy/bookings")).status, 400);
+
+  const byPhone = await as(boss)("GET", `/galaxy/bookings?person=${b.p}`);
+  assert.equal(byPhone.status, 200);
+  assert.deepEqual(byPhone.body.map((x: { id: string }) => x.id), [booking]);
+  assert.deepEqual(byPhone.body[0].payment, { id: (await paymentOf(o.orderId)).id, status: "paid", amountPaise: o.amountPaise });
+  assert.equal(byPhone.body[0].ticketTypeName, "General");
+  const byEvent = await as(boss)("GET", `/galaxy/bookings?event=${e.id}`);
+  assert.deepEqual(byEvent.body.map((x: { id: string }) => x.id), [booking]);
+  assert.ok((await t.db.select().from(auditLog).where(eq(auditLog.action, "bookings.search"))).length >= 2);
+
+  const before = posts(p.id);
+  const x = await as(boss)("POST", `/galaxy/bookings/${booking}/cancel`, { reason: "Host asked us" });
+  assert.equal(x.status, 200, JSON.stringify(x.body));
+  assert.equal((await t.db.select().from(bookings).where(eq(bookings.id, booking)))[0]!.status, "cancelled");
+  const pay1 = await paymentOf(o.orderId);
+  assert.equal(pay1.status, "refundPending");
+  await until(async () => (await t.db.select().from(refunds).where(eq(refunds.paymentId, pay1.id)))[0]?.status === "sent");
+  const rs = await t.db.select().from(refunds).where(eq(refunds.paymentId, pay1.id));
+  assert.deepEqual(rs.map((r) => [r.amountPaise, r.status]), [[o.amountPaise, "sent"]]);
+  assert.equal(posts(p.id) - before, 1);
+  assert.equal((await t.db.select().from(auditLog).where(eq(auditLog.action, "bookings.cancel"))).length, 1);
+  // Again: already cancelled, no second refund.
+  assert.equal((await as(boss)("POST", `/galaxy/bookings/${booking}/cancel`, { reason: "Again" })).status, 409);
+  assert.equal((await t.db.select().from(refunds).where(eq(refunds.paymentId, pay1.id))).length, 1);
+
+  // A free booking: cancelled, nothing refunded.
+  const free = await publish(a, { pricePaise: 0 });
+  const tk = await as(b)("POST", `/events/${free.id}/book`, { ticketTypeId: free.tier, quantity: 1 });
+  assert.equal(tk.status, 201);
+  const f = await as(boss)("POST", `/galaxy/bookings/${tk.body.id}/cancel`, { reason: "Duplicate" });
+  assert.deepEqual(f.body, { ok: true, refunded: false });
+  assert.equal((await t.db.select().from(bookings).where(eq(bookings.id, tk.body.id)))[0]!.status, "cancelled");
+});
+
+test("a full staff refund cancels the booking; a part one keeps it", async () => {
+  const a = await join(), b = await join(), boss = await join();
+  await give(boss, "money");
+  const { o } = await bought(a, b);
+  const p = await paymentOf(o.orderId);
+  assert.equal((await as(boss)("POST", `/galaxy/money/payments/${p.id}/refund`, { amountPaise: 1000, reason: "Part" })).status, 201);
+  assert.equal((await t.db.select().from(bookings).where(eq(bookings.id, p.bookingId!)))[0]!.status, "confirmed");
+  assert.equal((await as(boss)("POST", `/galaxy/money/payments/${p.id}/refund`, { amountPaise: o.amountPaise - 1000, reason: "The rest" })).status, 201);
+  assert.equal((await t.db.select().from(bookings).where(eq(bookings.id, p.bookingId!)))[0]!.status, "cancelled");
+  assert.equal((await paymentOf(o.orderId)).status, "refundPending");
+});

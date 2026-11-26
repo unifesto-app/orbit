@@ -11,7 +11,7 @@ type Api = Pick<ReturnType<typeof makeApi>, 'authed'>;
 export const ticketsApi = (api: Api) => ({
   mine: () => api.authed<MyTickets>('GET', '/me/tickets'),
   one: (id: string) => api.authed<Ticket>('GET', `/me/tickets/${id}`),
-  // A free ticket type only, for now: the API answers paidLater for a paid one.
+  // A free ticket type only: a paid one is paid for (paymentsApi, src/pay.ts).
   book: (eventId: string, ticketTypeId: string, quantity: number) =>
     api.authed<Ticket>('POST', `/events/${eventId}/book`, { ticketTypeId, quantity }),
   cancel: (id: string) => api.authed<Ticket>('POST', `/me/tickets/${id}/cancel`),
