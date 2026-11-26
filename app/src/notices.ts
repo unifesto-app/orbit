@@ -39,6 +39,7 @@ const BY_KIND: Partial<Record<keyof typeof KINDS, string>> = {
   supportReply: 'Support',
   dataExportReady: 'Your data',
   bookingConfirmed: 'You’re going',
+  slotConfirmed: 'Booked',
   paymentReceipt: 'Receipt',
   paymentFailed: 'Payment failed',
   refundSent: 'Refund sent',
