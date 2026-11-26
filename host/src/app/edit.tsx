@@ -16,7 +16,7 @@ import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useRef, useState } from 'react';
-import { Alert, Image, Text, TextInput, View } from 'react-native';
+import { Alert, Image, Platform, Text, TextInput, View } from 'react-native';
 
 import { bodyOf, centreCrop, fixesOf, type Form, formOf, LASTS, lastsLabel, paiseOf, placeHalf, priceLabel, saveable } from '../launch/editor';
 import { useHost } from '../launch/host';
@@ -64,6 +64,8 @@ function Editor({ id }: { id: string }) {
   const load = useLoad<TeamEvent>(`event|${id}`, () => api.authed<TeamEvent>('GET', `/events/${id}`));
   const [answer, setAnswer] = useState<TeamEvent | null>(null); // the API's latest answer (save, publish, cancel), over the load
   const e = answer ?? load.data;
+  // Only the image links from a picture's re-read: a slower GET mustn't undo a save or the other picture's upload.
+  const pictures = (f: TeamEvent) => setAnswer((a) => ({ ...(a ?? load.data!), poster: f.poster, wide: f.wide }));
   const hostId = e?.hostId;
   const tickets = useLoad<TicketType[]>(`tickets|${id}`, () => api.authed<TicketType[]>('GET', `/events/${id}/tickets`));
   const page = useLoad<HostPage>(hostId ? `host|${hostId}` : null, () => api.authed<HostPage>('GET', `/hosts/${hostId}`));
@@ -209,9 +211,9 @@ function Editor({ id }: { id: string }) {
       )}
 
       <Section title="Poster" />
-      <Picture id={id} shape="poster" link={e.poster} locked={locked} onDone={setAnswer} />
+      <Picture id={id} shape="poster" link={e.poster} locked={locked} onDone={pictures} />
       <Section title="Wide image · optional" />
-      <Picture id={id} shape="wide" link={e.wide} locked={locked} onDone={setAnswer} />
+      <Picture id={id} shape="wide" link={e.wide} locked={locked} onDone={pictures} />
 
       <Section title="Tickets" />
       <Tickets id={id} list={tickets.data ?? []} published={e.status === 'published'} locked={locked} onChange={tickets.reload} />
@@ -284,13 +286,22 @@ function Picture({ id, shape, link, locked, onDone }: { id: string; shape: 'post
   const choose = async () => {
     if (busy || picking.current) return;
     picking.current = true;
-    let picked: ImagePicker.ImagePickerResult;
+    setError(null);
     try {
-      picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: poster ? [3, 4] : [4, 3], quality: 0.85 });
-    } catch {
-      return setError('Couldn’t open your photos. Try again.');
+      await pick();
     } finally {
       picking.current = false;
+    }
+  };
+  const pick = async () => {
+    let picked: ImagePicker.ImagePickerResult;
+    try {
+      // Android's editor crops to `aspect`; iOS's only crops square, so there the phone cuts the shape (centreCrop) with
+      // no editor rather than cutting a square the host just framed.
+      const edit = Platform.OS === 'android';
+      picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: edit, aspect: poster ? [3, 4] : [4, 3], quality: 0.85 });
+    } catch {
+      return setError('Couldn’t open your photos. Try again.');
     }
     const a = picked.canceled ? null : picked.assets[0];
     if (!a) return;
@@ -298,10 +309,12 @@ function Picture({ id, shape, link, locked, onDone }: { id: string; shape: 'post
     let uri = a.uri;
     const box = centreCrop(a.width, a.height, shape);
     if (box) {
+      setBusy('Preparing…');
       try {
         const cut = await ImageManipulator.manipulate(a.uri).crop(box).renderAsync();
         uri = (await cut.saveAsync({ compress: 0.85, format: SaveFormat.JPEG })).uri;
       } catch {
+        setBusy(null);
         return setError('Couldn’t crop that image. Try another.');
       }
     }
