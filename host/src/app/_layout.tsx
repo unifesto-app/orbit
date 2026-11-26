@@ -8,6 +8,7 @@ import { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 
 import { adminHosts } from '../launch/host';
+import { PushHost } from '../push';
 import { refreshMe, useSession } from '../session';
 import { seats } from '../station/seats';
 import { StationProvider } from '../station/state';
@@ -29,6 +30,7 @@ export default function Layout() {
   const session = useSession();
   const signedIn = !!session;
   const admin = isLaunch && !!session && adminHosts(session.me).length > 0;
+  const onStation = isStation && !!session && seats(session.me).length > 0;
   useEffect(() => {
     if (signedIn) void refreshMe(); // once a launch: the account as the API has it now
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once, at launch or sign-in
@@ -37,9 +39,10 @@ export default function Layout() {
   const stack = (
     <>
       <StatusBar style="light" />
+      <PushHost />
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: color.ground } }}>
         {/* Station's own: in Launch and Crew a link to them goes nowhere, since they read Station's state. */}
-        <Stack.Protected guard={isStation && signedIn && seats(session.me).length > 0}>
+        <Stack.Protected guard={onStation}>
           <Stack.Screen name="(station)" />
           <Stack.Screen name="walkin" options={SHEET} />
           <Stack.Screen name="you" options={SHEET} />
@@ -61,7 +64,10 @@ export default function Layout() {
           <Stack.Screen name="(launch)" />
           {/* Which host, with several. */}
           <Stack.Screen name="pick" />
-          {/* Pushed over the tabs, with its own back circle. */}
+        </Stack.Protected>
+        {/* Pushed over the tabs (welcome, Crew's screen), with its own back circle: anyone signed in, on every app, so a
+            push about a seat just ended still opens it. */}
+        <Stack.Protected guard={signedIn}>
           <Stack.Screen name="inbox" />
         </Stack.Protected>
       </Stack>

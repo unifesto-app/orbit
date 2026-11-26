@@ -17,6 +17,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Alert, Image, Platform, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { InboxButton } from '../inboxButton';
 import { adminHosts, mustPick } from '../launch/host';
 import { useInvites } from '../launch/invites';
 import { dayLabel, istDate } from '../launch/money';
@@ -121,6 +122,7 @@ export default function Welcome() {
       <View style={styles.brand}>
         <Image source={ICON} style={styles.icon} accessible={false} />
         <Text style={styles.brandName}>{thisApp.name}</Text>
+        <InboxButton style={styles.inbox} />
       </View>
       <Text style={styles.title} accessibilityRole="header">
         {first ? `Hi, ${first}` : 'Hi'}
@@ -224,6 +226,7 @@ const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: color.ground },
   body: { flexGrow: 1 },
   brand: { marginHorizontal: 20, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  inbox: { marginLeft: 'auto' }, // the round Inbox, as beside the tabs: a seat just ended still has its message
   icon: { width: 44, height: 44, borderRadius: 10 },
   brandName: { fontFamily: font.title, fontSize: 17, color: color.text },
   title: { marginTop: space.big, marginHorizontal: 20, fontFamily: font.headline, fontSize: 28, lineHeight: 34, letterSpacing: -0.3, color: color.text },
