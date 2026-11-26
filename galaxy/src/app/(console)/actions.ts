@@ -122,20 +122,50 @@ export async function promoteEvent(_: Done, f: FormData) {
 }
 
 // ─── An event's people and what's inside a fest (X14) ───
-// Each move sends the lineup the page showed, changed: the API replaces the whole list. No reason: these are page content.
-// A person picked from the list, or a new one made first from a name and a line.
-export async function addEventPerson(_: Done, f: FormData) {
-  const people = JSON.parse(text(f, "people") || "[]") as { personId: string; role: string }[];
-  let personId = text(f, "personId");
-  if (!personId) {
-    const made = await galaxy<{ id: string }>("POST", "/galaxy/persons", { name: text(f, "name"), headline: text(f, "headline") });
-    if (!made.ok) return { error: made.error.message };
-    personId = made.data.id;
+// Each move sends the lineup the page showed, changed: the API replaces the whole list, and refuses it when the list it
+// has isn't the one the page showed (`shown`). No reason: these are page content, logged without telling anyone.
+const json = <T,>(f: FormData, k: string): T | null => {
+  try {
+    return JSON.parse(text(f, k)) as T;
+  } catch {
+    return null;
   }
-  return run("PUT", `/galaxy/events/${path(f, "id")}/people`, { people: [...people, { personId, role: text(f, "role") }] });
+};
+type Credit = { personId: string; role: string };
+const BROKEN = { error: "Something on this page didn't load right. Reload and try again." };
+// A person picked from the list, or a new one made first from a name and a line.
+export async function addEventPerson(_: Done, f: FormData): Promise<Done> {
+  const people = json<Credit[]>(f, "people");
+  if (!people) return BROKEN;
+  let personId = text(f, "personId");
+  const made = !personId;
+  if (made) {
+    const r = await galaxy<{ id: string }>("POST", "/galaxy/persons", { name: text(f, "name"), headline: text(f, "headline") });
+    if (!r.ok) return { error: r.error.message };
+    personId = r.data.id;
+  }
+  const r = await galaxy("PUT", `/galaxy/events/${path(f, "id")}/people`, { shown: people.map((p) => p.personId), people: [...people, { personId, role: text(f, "role") }] });
+  if (!r.ok && made) refresh(); // the new person is in the picker now
+  if (!r.ok) return { error: made ? `${text(f, "name")} is saved but not on this event. ${r.error.message} Then pick them from the list.` : r.error.message };
+  refresh();
+  return { ok: Date.now() };
 }
 export async function setEventPeople(_: Done, f: FormData) {
-  return run("PUT", `/galaxy/events/${path(f, "id")}/people`, { people: JSON.parse(text(f, "people")) });
+  const shown = json<string[]>(f, "shown"), people = json<Credit[]>(f, "people");
+  if (!shown || !people) return BROKEN;
+  return run("PUT", `/galaxy/events/${path(f, "id")}/people`, { shown, people });
+}
+// Links: one a line, the label then the https address ("Website https://asha.in").
+export async function editPerson(_: Done, f: FormData) {
+  const links = text(f, "links")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((l) => {
+      const at = l.lastIndexOf(" ");
+      return { label: l.slice(0, Math.max(at, 0)).trim(), url: l.slice(at + 1) };
+    });
+  return run("PATCH", `/galaxy/persons/${path(f, "personId")}`, { name: text(f, "name"), headline: text(f, "headline"), bio: text(f, "bio") || null, links });
 }
 const festItem = (f: FormData) => ({
   title: text(f, "title"), kind: text(f, "kind"), when: text(f, "when"), where: text(f, "where"), about: text(f, "about"),
@@ -151,7 +181,8 @@ export async function deleteFestItem(_: Done, f: FormData) {
   return run("DELETE", `/galaxy/fest-items/${path(f, "itemId")}`, undefined);
 }
 export async function orderFestItems(_: Done, f: FormData) {
-  return run("PUT", `/galaxy/events/${path(f, "id")}/fest-items/order`, { ids: JSON.parse(text(f, "ids")) });
+  const ids = json<string[]>(f, "ids");
+  return ids ? run("PUT", `/galaxy/events/${path(f, "id")}/fest-items/order`, { ids }) : BROKEN;
 }
 
 // ─── Staff ───

@@ -182,3 +182,16 @@ test('public reads use call, never authed, and send what was asked', async () =>
   // What they returned is kept for the Saved screens.
   for (const id of ['n1', 's1', 'u1', 'p1', 'one']) assert.ok(isKnown(id), id);
 });
+
+test('a public event brings its people and fest items; a card has neither', () => {
+  const person = { id: 'p1', name: 'Asha Rao', headline: 'Poet', role: 'Judge' };
+  const item = { id: 'f1', title: 'Food court', kind: 'Food' as const, when: 'All day', where: 'Lawns', about: 'Stalls.', team: null, prize: null, act: host };
+  const full = { ...card(), about: null, agenda: [], faq: [], terms: [], vibes: [], interested: 0, people: [person], festItems: [item] };
+  const e = toEvent(full);
+  assert.deepEqual(e.lineup, [person]);
+  assert.deepEqual(e.festItems, [item]);
+  const none = toEvent({ ...full, people: [], festItems: [] });
+  assert.equal(none.lineup, undefined);
+  assert.equal(none.festItems, undefined);
+  assert.equal(toEvent(card()).lineup, undefined);
+});

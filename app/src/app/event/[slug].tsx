@@ -184,7 +184,7 @@ function EventView({ e, host, now, live }: { e: Event; host: Host; now: number; 
 
         {live
           ? liveCast(e.lineup).map((g) => (
-              <View key={g.title}>
+              <View key={g.key}>
                 <Section top={SECTION} title={g.title} />
                 <View style={styles.people}>
                   {g.people.map((p) => (

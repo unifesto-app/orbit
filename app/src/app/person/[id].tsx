@@ -77,8 +77,8 @@ function PersonView({ p, mark, shows, now: clock }: { p: Face; mark: ReturnType<
           {/* Frosted pills with white labels, never accent text. */}
           {p.links.length > 0 && (
             <View style={styles.row}>
-              {p.links.map((l) => (
-                <Pressable key={l.url} onPress={() => Linking.openURL(l.url)} accessibilityRole="link">
+              {p.links.map((l, i) => (
+                <Pressable key={i + l.url} onPress={() => Linking.openURL(l.url)} accessibilityRole="link">
                   <Glass style={styles.link}>
                     <Text style={styles.linkText}>{l.label}</Text>
                   </Glass>

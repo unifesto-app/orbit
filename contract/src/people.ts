@@ -30,8 +30,10 @@ export const EditPerson = PersonFields.partial().refine((b) => Object.keys(b).le
 export type EditPerson = z.input<typeof EditPerson>;
 
 export const MAX_EVENT_PEOPLE = 50;
-// PUT /galaxy/events/:id/people: the whole list in the order the page shows it; each person once.
+// PUT /galaxy/events/:id/people: the whole list in the order the page shows it; each person once. `shown`: the person
+// ids the page showed, in order, so a change made since is refused (409 stale) rather than overwritten.
 export const SetEventPeople = z.object({
+  shown: z.array(z.uuid()).max(MAX_EVENT_PEOPLE),
   people: z
     .array(z.object({ personId: z.uuid(), role: Text(1, 30) }))
     .max(MAX_EVENT_PEOPLE)

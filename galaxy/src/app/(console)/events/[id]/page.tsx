@@ -2,7 +2,7 @@ import { categories, type ContentAdmin, type StaffEvent, type StaffLineup, type 
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
-import { read } from "../../../../api";
+import { galaxy, read } from "../../../../api";
 import { Alert, Container, PageHeader, Pairs, ui } from "../../../ui";
 import { Act } from "../../act";
 import { cancelEvent, unpublishEvent } from "../../actions";
@@ -20,24 +20,26 @@ export const metadata: Metadata = { title: "Event" };
 
 const rupees = (paise: number) => (paise === 0 ? "Free" : `₹${(paise / 100).toLocaleString("en-IN")}`);
 
-export default function EventPage({ params }: PageProps<"/events/[id]">) {
+export default function EventPage({ params, searchParams }: PageProps<"/events/[id]">) {
   return (
     <Suspense fallback={null}>
-      <Event params={params} />
+      <Event params={params} searchParams={searchParams} />
     </Suspense>
   );
 }
 
-async function Event({ params }: Pick<PageProps<"/events/[id]">, "params">) {
+async function Event({ params, searchParams }: Pick<PageProps<"/events/[id]">, "params" | "searchParams">) {
   const { id } = await params;
+  const sq = (await searchParams).q;
+  const q = (typeof sq === "string" ? sq : "").trim().slice(0, 80); // People's picker search
   const [r, content, lineup, persons] = await Promise.all([
     read<StaffEvent>(`/galaxy/events/${encodeURIComponent(id)}`),
     read<ContentAdmin>("/galaxy/app-content"),
-    read<StaffLineup>(`/galaxy/events/${encodeURIComponent(id)}/lineup`),
-    read<{ persons: StaffPerson[] }>("/galaxy/persons"), // ponytail: the first 50 by name; a search box when there are more
+    // `galaxy`, not `read`: if these fail, only People and Inside the fest say so; the rest of the page still shows.
+    galaxy<StaffLineup>("GET", `/galaxy/events/${encodeURIComponent(id)}/lineup`),
+    galaxy<{ persons: StaffPerson[] }>("GET", `/galaxy/persons${q ? `?q=${encodeURIComponent(q)}` : ""}`), // 50 at most, by name
   ]);
   if (!r.ok) return <Alert>{r.error.message}</Alert>;
-  if (!lineup.ok) return <Alert>{lineup.error.message}</Alert>;
   const { event: e, host, tickets, bookings } = r.data;
   const promoted = content.ok ? content.data.content.promoted.some((p) => p.href === `/event/${e.slug}`) : null; // null: no Platform
   const place = e.place && `${e.place.venue}, ${e.place.address}, ${e.place.area}, ${e.place.city}`;
@@ -96,13 +98,17 @@ async function Event({ params }: Pick<PageProps<"/events/[id]">, "params">) {
         )}
       </Container>
 
-      <Container title="People" count={lineup.data.people.length}>
-        <People eventId={e.id} lineup={lineup.data.people} persons={persons.ok ? persons.data.persons : []} />
+      <Container title="People" count={lineup.ok ? lineup.data.people.length : undefined}>
+        {lineup.ok ? (
+          <People eventId={e.id} lineup={lineup.data.people} persons={persons.ok ? persons.data.persons : []} q={q} />
+        ) : (
+          <Alert>{lineup.error.message}</Alert>
+        )}
       </Container>
 
       {e.category === "fests" && (
-        <Container title="Inside the fest" count={lineup.data.festItems.length}>
-          <FestItems eventId={e.id} items={lineup.data.festItems} />
+        <Container title="Inside the fest" count={lineup.ok ? lineup.data.festItems.length : undefined}>
+          {lineup.ok ? <FestItems eventId={e.id} items={lineup.data.festItems} /> : <Alert>{lineup.error.message}</Alert>}
         </Container>
       )}
 

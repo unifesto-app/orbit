@@ -1,9 +1,9 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import sharp from "sharp";
 import { testApp } from "./testkit.ts";
-import { eventPeople, events, festItems, hosts, staffGrants } from "./db/schema.ts";
+import { auditLog, eventPeople, events, festItems, hosts, staffGrants } from "./db/schema.ts";
 
 // People on events and what's inside a fest (X14): Galaxy writes, the public reads.
 
@@ -59,7 +59,7 @@ test("Galaxy's person and lineup routes are for holders of Hosts only", async ()
     ["PATCH", `/galaxy/persons/${ZERO}`, { name: "B" }],
     ["DELETE", `/galaxy/persons/${ZERO}`],
     ["GET", `/galaxy/events/${e.id}/lineup`],
-    ["PUT", `/galaxy/events/${e.id}/people`, { people: [] }],
+    ["PUT", `/galaxy/events/${e.id}/people`, { shown: [], people: [] }],
     ["POST", `/galaxy/events/${e.id}/fest-items`, item],
     ["PATCH", `/galaxy/fest-items/${ZERO}`, { title: "X" }],
     ["DELETE", `/galaxy/fest-items/${ZERO}`],
@@ -80,13 +80,21 @@ test("staff set the lineup and replace it; the public reads it in order, and the
   assert.equal((await as(st)("POST", "/galaxy/persons", { name: "", headline: "x" })).status, 400);
   assert.equal((await as(st)("GET", "/galaxy/persons?q=ash")).body.persons.length, 1);
 
-  const set = await as(st)("PUT", `/galaxy/events/${e.id}/people`, { people: [{ personId: p2.id, role: "Host" }, { personId: p1.id, role: "Judge" }] });
+  const set = await as(st)("PUT", `/galaxy/events/${e.id}/people`, { shown: [], people: [{ personId: p2.id, role: "Host" }, { personId: p1.id, role: "Judge" }] });
   assert.equal(set.status, 200);
   assert.deepEqual(set.body.people.map((p: any) => [p.name, p.role]), [["Vikram Sen", "Host"], ["Asha Rao", "Judge"]]);
-  assert.equal((await as(st)("PUT", `/galaxy/events/${e.id}/people`, { people: [{ personId: ZERO, role: "Judge" }] })).status, 400);
-  assert.equal((await as(st)("PUT", `/galaxy/events/${e.id}/people`, { people: [{ personId: p1.id, role: "A" }, { personId: p1.id, role: "B" }] })).status, 400);
+  assert.equal((await as(st)("PUT", `/galaxy/events/${e.id}/people`, { shown: [p2.id, p1.id], people: [{ personId: ZERO, role: "Judge" }] })).status, 400);
+  assert.equal((await as(st)("PUT", `/galaxy/events/${e.id}/people`, { shown: [p2.id, p1.id], people: [{ personId: p1.id, role: "A" }, { personId: p1.id, role: "B" }] })).status, 400);
+  // A page that showed an older list (or two saves racing from one page) is refused, not overwritten.
+  const old = await as(st)("PUT", `/galaxy/events/${e.id}/people`, { shown: [p1.id, p2.id], people: [] });
+  assert.equal(old.status, 409);
+  assert.equal(old.body.error, "stale");
+  const race = await Promise.all([1, 2].map(() => as(st)("PUT", `/galaxy/events/${e.id}/people`, { shown: [p2.id, p1.id], people: [{ personId: p2.id, role: "Host" }] })));
+  assert.deepEqual(race.map((r) => r.status).sort(), [200, 409]);
+  const [logged] = await t.db.select().from(auditLog).where(and(eq(auditLog.action, "events.people"), eq(auditLog.targetHost, h.id)));
+  assert.equal(logged!.actorId, st.me.id);
   // Replace: one left, the other's gone.
-  await as(st)("PUT", `/galaxy/events/${e.id}/people`, { people: [{ personId: p1.id, role: "Speaker" }] });
+  await as(st)("PUT", `/galaxy/events/${e.id}/people`, { shown: [p2.id], people: [{ personId: p1.id, role: "Speaker" }] });
   const pub = await t.call("GET", `/public/events/${e.slug}`);
   assert.deepEqual(pub.body.people, [{ id: p1.id, name: "Asha Rao", headline: "Speaker", role: "Speaker" }]);
   assert.deepEqual(pub.body.festItems, []);
@@ -105,7 +113,7 @@ test("staff set the lineup and replace it; the public reads it in order, and the
   assert.equal((await t.db.select().from(eventPeople).where(eq(eventPeople.eventId, e.id))).length, 0);
   // Staff never act on a host they're on.
   const own = await publish(st, (await start(st)).id);
-  assert.equal((await as(st)("PUT", `/galaxy/events/${own.id}/people`, { people: [] })).status, 403);
+  assert.equal((await as(st)("PUT", `/galaxy/events/${own.id}/people`, { shown: [], people: [] })).status, 403);
 });
 
 test("fest items: fests only, ordered, act shown while its host is public and live; event delete cascades", async () => {
@@ -140,4 +148,79 @@ test("fest items: fests only, ordered, act shown while its host is public and li
 
   await t.db.delete(events).where(eq(events.id, fest.id));
   assert.equal((await t.db.select().from(festItems).where(eq(festItems.eventId, fest.id))).length, 0);
+});
+
+test("staff never act on their own host's fest, its people or an act of theirs; acts must be public and live; 100 at most", async () => {
+  const a = await join(), st = await staff();
+  const fest = await publish(a, (await start(a)).id);
+  const own = await start(st);
+  const mine = await publish(st, own.id);
+  // Their own fest: every fest route.
+  const [it] = await t.db.insert(festItems).values({ ...item, kind: "Competition", eventId: mine.id, position: 0 }).returning();
+  for (const [m, path, body] of [
+    ["POST", `/galaxy/events/${mine.id}/fest-items`, item],
+    ["PATCH", `/galaxy/fest-items/${it!.id}`, { title: "X" }],
+    ["DELETE", `/galaxy/fest-items/${it!.id}`],
+    ["PUT", `/galaxy/events/${mine.id}/fest-items/order`, { ids: [it!.id] }],
+  ] as [string, string, unknown?][])
+    assert.equal((await as(st)(m, path, body)).status, 403, `${m} ${path}`);
+  // Their own host as the act on someone else's fest.
+  assert.equal((await as(st)("POST", `/galaxy/events/${fest.id}/fest-items`, { ...item, actHostId: own.id })).status, 403);
+  const ok = (await as(st)("POST", `/galaxy/events/${fest.id}/fest-items`, item)).body;
+  assert.equal((await as(st)("PATCH", `/galaxy/fest-items/${ok.id}`, { actHostId: own.id })).status, 403);
+  // A host the page wouldn't show.
+  const quiet = await start(a);
+  await t.db.update(hosts).set({ visibility: "private" }).where(eq(hosts.id, quiet.id));
+  assert.equal((await as(st)("PATCH", `/galaxy/fest-items/${ok.id}`, { actHostId: quiet.id })).body.error, "actHidden");
+  // A person on their own host's event.
+  const p = (await as(st)("POST", "/galaxy/persons", { name: "Neha", headline: "MC" })).body;
+  await t.db.insert(eventPeople).values({ eventId: mine.id, personId: p.id, role: "Host", position: 0 });
+  assert.equal((await as(st)("PATCH", `/galaxy/persons/${p.id}`, { name: "N" })).status, 403);
+  assert.equal((await as(st)("DELETE", `/galaxy/persons/${p.id}`)).status, 403);
+  // Full at 100.
+  await t.db.insert(festItems).values(Array.from({ length: 99 }, (_, i) => ({ ...item, kind: "Food" as const, eventId: fest.id, position: i + 1 })));
+  const full = await as(st)("POST", `/galaxy/events/${fest.id}/fest-items`, item);
+  assert.equal(full.status, 409);
+  assert.equal(full.body.error, "full");
+  // Logged against the host, nobody told.
+  const [fe] = await t.db.select({ hostId: events.hostId }).from(events).where(eq(events.id, fest.id));
+  const logs = await t.db.select({ action: auditLog.action, host: auditLog.targetHost }).from(auditLog).where(eq(auditLog.actorId, st.me.id));
+  assert.ok(logs.some((l) => l.action === "festItems.add" && l.host === fe!.hostId));
+  assert.ok(logs.some((l) => l.action === "persons.add" && l.host === null));
+});
+
+test("the person sheet shows listed events only, the latest 12 past; fest items go once it isn't a fest", async () => {
+  const a = await join(), st = await staff();
+  const h = await start(a);
+  const p = (await as(st)("POST", "/galaxy/persons", { name: "Kiran", headline: "Judge" })).body;
+  const on = (eventId: string) => t.db.insert(eventPeople).values({ eventId, personId: p.id, role: "Judge", position: 0 });
+  const shown = await publish(a, h.id);
+  await on(shown.id);
+  const link = await publish(a, h.id);
+  await t.db.update(events).set({ visibility: "link" }).where(eq(events.id, link.id));
+  const cancelled = await publish(a, h.id);
+  await t.db.update(events).set({ status: "cancelled" }).where(eq(events.id, cancelled.id));
+  const draft = (await as(a)("POST", `/hosts/${h.id}/events`, { title: "Draft" })).body;
+  const paused = await start(a);
+  const elsewhere = await publish(a, paused.id);
+  await t.db.update(hosts).set({ status: "paused" }).where(eq(hosts.id, paused.id));
+  for (const id of [link.id, cancelled.id, draft.id, elsewhere.id]) await on(id);
+  assert.deepEqual((await t.call("GET", `/public/people/${p.id}`)).body.appearances.map((x: any) => x.event.id), [shown.id]);
+
+  // 13 past events: the latest 12, newest first.
+  const past: string[] = [];
+  for (let i = 0; i < 13; i++) {
+    const e = await publish(a, h.id);
+    await t.db.update(events).set({ startsAt: new Date(t.now() - (i + 2) * DAY), endsAt: new Date(t.now() - (i + 2) * DAY + HOUR) }).where(eq(events.id, e.id));
+    await on(e.id);
+    past.push(e.id);
+  }
+  const all = (await t.call("GET", `/public/people/${p.id}`)).body.appearances.map((x: any) => x.event.id);
+  assert.deepEqual(all, [shown.id, ...past.slice(0, 12)]);
+
+  // A fest's items show while it's a fest.
+  await as(st)("POST", `/galaxy/events/${shown.id}/fest-items`, item);
+  assert.equal((await t.call("GET", `/public/events/${shown.slug}`)).body.festItems.length, 1);
+  await t.db.update(events).set({ category: "comedy" }).where(eq(events.id, shown.id));
+  assert.deepEqual((await t.call("GET", `/public/events/${shown.slug}`)).body.festItems, []);
 });

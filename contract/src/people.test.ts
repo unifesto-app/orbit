@@ -13,9 +13,10 @@ test("a new person needs a name and a line; bio and links default", () => {
 });
 
 test("an event's people: each once, with a role", () => {
-  assert.ok(SetEventPeople.safeParse({ people: [{ personId: id, role: "Judge" }, { personId: id2, role: "Host" }] }).success);
-  assert.ok(!SetEventPeople.safeParse({ people: [{ personId: id, role: "Judge" }, { personId: id, role: "Host" }] }).success);
-  assert.ok(!SetEventPeople.safeParse({ people: [{ personId: id, role: "" }] }).success);
+  assert.ok(SetEventPeople.safeParse({ shown: [], people: [{ personId: id, role: "Judge" }, { personId: id2, role: "Host" }] }).success);
+  assert.ok(!SetEventPeople.safeParse({ shown: [], people: [{ personId: id, role: "Judge" }, { personId: id, role: "Host" }] }).success);
+  assert.ok(!SetEventPeople.safeParse({ shown: [], people: [{ personId: id, role: "" }] }).success);
+  assert.ok(!SetEventPeople.safeParse({ people: [] }).success); // what the page showed is required
 });
 
 test("fest items: a known kind; order lists each id once", () => {

@@ -3,7 +3,7 @@
 import { FEST_ITEM_KINDS, type StaffFestItem, type StaffLineup, type StaffPerson } from "@orbit/contract";
 import { type ReactNode, useActionState } from "react";
 import { ui } from "../../ui";
-import { addEventPerson, addFestItem, type Done, deleteFestItem, editFestItem, orderFestItems, setEventPeople } from "../actions";
+import { addEventPerson, addFestItem, type Done, deleteFestItem, editFestItem, editPerson, orderFestItems, setEventPeople } from "../actions";
 import styles from "../act.module.css";
 
 // An event's People and Inside the fest (X14): the lists in order, each row with Up, Down and Remove, and a form to add.
@@ -46,9 +46,10 @@ const moved = <T,>(list: T[], i: number, d: number) => {
   return out;
 };
 
-export function People({ eventId, lineup, persons }: { eventId: string; lineup: StaffLineup["people"]; persons: StaffPerson[] }) {
+export function People({ eventId, lineup, persons, q }: { eventId: string; lineup: StaffLineup["people"]; persons: StaffPerson[]; q: string }) {
   const list = lineup.map((p) => ({ personId: p.id, role: p.role }));
-  const set = (people: typeof list) => ({ id: eventId, people: JSON.stringify(people) });
+  // `shown`: what this page showed, so a change made since is refused rather than overwritten.
+  const set = (people: typeof list) => ({ id: eventId, shown: JSON.stringify(list.map((p) => p.personId)), people: JSON.stringify(people) });
   const others = persons.filter((p) => !list.some((x) => x.personId === p.id));
   return (
     <div className={ui.page}>
@@ -74,14 +75,38 @@ export function People({ eventId, lineup, persons }: { eventId: string; lineup: 
                   {i > 0 && <Post inline action={setEventPeople} hidden={set(moved(list, i, -1))} label="Up" />}
                   {i < lineup.length - 1 && <Post inline action={setEventPeople} hidden={set(moved(list, i, 1))} label="Down" />}
                   <Post inline action={setEventPeople} hidden={set(list.filter((_, j) => j !== i))} label="Remove" />
+                  <details>
+                    <summary className={ui.btn}>Edit person</summary>
+                    <Post action={editPerson} hidden={{ personId: p.id }} label="Save">
+                      <Field label="Name" name="name" value={p.name} max={80} />
+                      <Field label="Line" name="headline" value={p.headline} max={120} />
+                      <label className={styles.label}>
+                        Bio (optional)
+                        <textarea name="bio" defaultValue={p.bio ?? ""} maxLength={2000} className={styles.reason} />
+                      </label>
+                      <label className={styles.label}>
+                        Links, one a line: the label, then the https address (up to 5)
+                        <textarea name="links" defaultValue={p.links.map((l) => `${l.label} ${l.url}`).join("\n")} className={styles.reason} />
+                      </label>
+                      <p className={ui.secondary}>Changes show on every event they&apos;re on.</p>
+                    </Post>
+                  </details>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       )}
-      <details>
+      <details open={!!q || undefined}>
         <summary className={ui.btn}>Add a person</summary>
+        {/* Narrows the list below by name (the API answers 50 at most). A name isn't private, so it can ride in the address. */}
+        <form method="get" className={styles.form}>
+          <label className={styles.label}>
+            Find someone by name
+            <input name="q" type="search" defaultValue={q} maxLength={80} className={ui.input} />
+          </label>
+          <button className={ui.btn}>Search</button>
+        </form>
         <Post action={addEventPerson} hidden={set(list)} label="Add">
           <label className={styles.label}>
             Person

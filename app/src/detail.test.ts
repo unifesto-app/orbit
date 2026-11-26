@@ -83,7 +83,7 @@ test('liveCast groups by typed role in first-seen order, plural only for a group
   const g = liveCast([
     { id: 'a', role: 'Judge' },
     { id: 'b', role: 'Chief guest' },
-    { id: 'c', role: 'Judge' },
+    { id: 'c', role: 'judge' },
     { id: 'd', role: 'Mentors' },
     { id: 'e', role: 'Mentors' },
   ]);

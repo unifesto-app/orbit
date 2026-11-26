@@ -19,12 +19,16 @@ export function cast(people: readonly Credit[] = []) {
   );
 }
 
-// A real event's people (X14), one group per role in the order staff listed them; roles are free text, so a group of
-// more than one takes an "s" unless it has one ("Judges", "Chief guests").
+// A real event's people (X14), one group per role in the order staff listed them, "judge" and "Judge" as one (named as
+// first typed); roles are free text, so a group of more than one takes an "s" unless it has one ("Judges"). `key` is
+// the group's place, never repeated.
 export function liveCast<P extends { role: string }>(people: readonly P[] = []) {
-  const groups = new Map<string, P[]>();
-  for (const p of people) groups.set(p.role, [...(groups.get(p.role) ?? []), p]);
-  return [...groups].map(([role, list]) => ({ title: list.length > 1 && !/s$/i.test(role) ? `${role}s` : role, people: list }));
+  const groups = new Map<string, { role: string; people: P[] }>();
+  for (const p of people) {
+    const k = p.role.toLowerCase();
+    groups.set(k, { role: groups.get(k)?.role ?? p.role, people: [...(groups.get(k)?.people ?? []), p] });
+  }
+  return [...groups.values()].map((g, key) => ({ key, title: g.people.length > 1 && !/s$/i.test(g.role) ? `${g.role}s` : g.role, people: g.people }));
 }
 
 // A host's events: every upcoming one, soonest first, then the latest past ones, latest first.
