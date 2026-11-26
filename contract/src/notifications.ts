@@ -150,6 +150,7 @@ export const KINDS = {
   slotFreedAgain: slot("normal", "PI", ["hostName", "station", "start"]),
   slotCancelledByVenue: slot("must", "PIE"),
   slotReleased: slot("must", "PIE", ["hostName", "start"]),
+  slotConfirmed: slot("must", "PIE", ["hostName", "station", "start", "code"]),
 
   // Events you hold a ticket for
   eventTomorrow: ev("normal", "PIe", "reminder", ["eventId", "title", "hostName", "startsAt"]),

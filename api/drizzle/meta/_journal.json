@@ -243,8 +243,15 @@
     {
       "idx": 35,
       "version": "7",
-      "when": 1795715102326,
-      "tag": "0035_support",
+      "when": 1795715434773,
+      "tag": "0035_slot_money",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1795716497721,
+      "tag": "0036_support",
       "breakpoints": true
     }
   ]
