@@ -29,6 +29,8 @@ async function Request({ params }: Pick<PageProps<"/requests/[id]">, "params">) 
   const e = q.event;
   // A person's page is People's; holders of Hosts alone see the name.
   const people = viewer.ok && !!viewer.data.staff?.features.includes("people");
+  // The API refuses a staff member answering their own request (403 self); hide the buttons too.
+  const own = viewer.ok && viewer.data.id === q.user.id;
   const name = q.user.name ?? "No name yet";
   const toldThem = "The requester sees this";
 
@@ -80,7 +82,7 @@ async function Request({ params }: Pick<PageProps<"/requests/[id]">, "params">) 
         )}
       </Container>
 
-      {(q.status === "open" || q.status === "changes") && (
+      {!own && (q.status === "open" || q.status === "changes") && (
         <Container title="Actions">
           <div className={ui.page}>
             {q.status === "open" && (

@@ -6,7 +6,7 @@ import { read } from "../../../api";
 import { Alert, Container, PageHeader, Pages, phone, ui } from "../../ui";
 import { STATUS_LABELS, time } from "./status";
 
-// Event Requests (Hosts flow, H1.5; API: GET /galaxy/event-requests), for holders of Hosts and events: people asking to
+// Event Requests (Hosts flow, H1.5; API: GET /galaxy/event-requests), for holders of Hosts: people asking to
 // host, oldest first so the longest waiting is answered first. Contacts come masked.
 export const metadata: Metadata = { title: "Requests" };
 
