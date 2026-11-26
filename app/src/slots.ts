@@ -17,6 +17,8 @@ export const slotsApi = (api: Api) => ({
   // A ₹0 hold becomes a booking with its code (a priced one answers 402 paymentNeeded until it's paid; a paid one, its code).
   confirm: (hostId: string, claimId: string) => api.authed<SlotHold>('POST', `/venues/${hostId}/holds/${claimId}/confirm`),
   letGo: (hostId: string, claimId: string) => api.authed<null>('DELETE', `/venues/${hostId}/holds/${claimId}`),
+  // A paid slot given up before it starts, nobody checked in: the price comes back, Orbit's fee stays.
+  cancel: (hostId: string, claimId: string) => api.authed<{ refundPaise: number }>('POST', `/venues/${hostId}/holds/${claimId}/cancel`),
   askAlert: (hostId: string, b: NewSlotAlert) => api.authed<SlotAlert>('POST', `/venues/${hostId}/alerts`, b),
   dropAlert: (hostId: string, alertId: string) => api.authed<null>('DELETE', `/venues/${hostId}/alerts/${alertId}`),
 });

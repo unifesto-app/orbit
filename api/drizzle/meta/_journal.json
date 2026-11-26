@@ -243,8 +243,15 @@
     {
       "idx": 35,
       "version": "7",
-      "when": 1795715658855,
-      "tag": "0035_payouts",
+      "when": 1795715434773,
+      "tag": "0035_slot_money",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1795716628921,
+      "tag": "0036_payouts",
       "breakpoints": true
     }
   ]

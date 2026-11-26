@@ -54,10 +54,10 @@ export function hostMoneyRoutes({ db, store, secret, notify, now = Date.now }: D
       plan: host.feePlan,
       feeIncluded: host.feeIncluded,
       account: a ? masked(a) : null,
-      events: (await earningsOf(db, mine.map((e) => e.id))).map((e) => {
-        const end = ends.get(e.eventId);
+      events: (await earningsOf(db, { eventIds: mine.map((e) => e.id) }, new Date(now()))).map((e) => {
+        const end = ends.get(e.eventId!); // an eventIds scope gives events only, each with its title
         // Below 0 when refunds came after an ask; the host sees nothing to ask for, not a debt.
-        return { ...e, availablePaise: Math.max(0, e.availablePaise), endsAt: end?.toISOString() ?? null, opensAt: end ? new Date(end.getTime() + WAIT).toISOString() : null };
+        return { ...e, eventId: e.eventId!, eventTitle: e.eventTitle!, availablePaise: Math.max(0, e.availablePaise), endsAt: end?.toISOString() ?? null, opensAt: end ? new Date(end.getTime() + WAIT).toISOString() : null };
       }),
       venue: venue ? await venueEarningsOf(db, host.id, now()).then((v) => ({ ...v, availablePaise: Math.max(0, v.availablePaise) })) : null,
       payouts: rows.map(({ o, eventTitle }) => ({

@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, ilike, inArray, isNotNull, isNull, lte, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gt, ilike, inArray, isNotNull, isNull, lte, ne, or, sql, type SQL } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import {
@@ -13,7 +13,8 @@ import { auditLog, bookings, events, failedWebhooks, hosts, payments, payoutAcco
 import { fail, invalid, isUuid, listPage, PAGE_SIZE, parse, signedIn, taken, type Tx } from "../http.ts";
 import { adminsOf, holdersOf, onHost, requireFeature, type StaffEnv, tell } from "../roles/access.ts";
 import { holds } from "../roles/rules.ts";
-import { askedBack, CLAIM, COULDNT, refundPaid, sendRefund } from "./routes.ts";
+import { lockHold } from "../slots/hold.ts";
+import { askedBack, CLAIM, refundPaid, sendRefund } from "./routes.ts";
 
 // Galaxy's Money pages (Money flow, "Galaxy"; X2), for holders of Money: payments with their frozen terms and a refund,
 // the refunds queue and the failed ones, payouts with their UTRs, each host's fee plan, and webhooks refused. Every
@@ -40,72 +41,6 @@ const refundsWhere = async (db: Db, where: SQL) =>
     (x) => refundRow(x.r, x.by),
   );
 
-// One sale's numbers (Money flow, "Your earnings"): the price, less the commission and any fee the host included (both
-// handed back in proportion to the price refunded), less the price refunded. A refund counts against the price first;
-// any fee on top it hands back is Orbit's.
-const saleOf = (p: Pay, back: number) => {
-  const price = p.unitPricePaise * p.quantity;
-  const refunded = Math.min(back, price);
-  const commission = p.commissionPaise - halfUp(p.commissionPaise * refunded, price);
-  const included = p.feeIncluded ? p.buyerFeePaise - halfUp(p.buyerFeePaise * refunded, price) : 0;
-  return { price, refunded, commission, included, earnings: price - commission - included - refunded };
-};
-// What went back on each payment. Only refunds of the sale's own Razorpay payment count (a paid-twice refund is the
-// buyer's own money).
-const refundedOf = async (db: Db | Tx, ids: string[]) =>
-  new Map(
-    (ids.length
-      ? await db
-          .select({ id: refunds.paymentId, n: sql<number>`sum(${refunds.amountPaise})::int` })
-          .from(refunds)
-          .innerJoin(payments, and(eq(payments.id, refunds.paymentId), eq(payments.razorpayPaymentId, refunds.razorpayPaymentId)))
-          .where(inArray(refunds.paymentId, ids))
-          .groupBy(refunds.paymentId)
-      : []
-    ).map((r) => [r.id, r.n]),
-  );
-
-// Each event's numbers, worked out here once, per sale that gave a ticket (saleOf). Paid out and requested payouts come
-// off what's available.
-// ponytail: reads every sale of the events asked; per-event totals kept as rows when there are tens of thousands.
-export async function earningsOf(db: Db | Tx, eventIds?: string[]): Promise<EventEarnings[]> {
-  if (eventIds && !eventIds.length) return [];
-  const sold = await db
-    .select({ p: payments, title: events.title, hostName: hosts.name })
-    .from(payments)
-    .innerJoin(events, eq(events.id, payments.eventId))
-    .innerJoin(hosts, eq(hosts.id, payments.hostId))
-    .where(and(isNotNull(payments.bookingId), eventIds ? inArray(payments.eventId, eventIds) : undefined));
-  const back = await refundedOf(db, sold.map((s) => s.p.id));
-  const outs = await db
-    .select({ eventId: payouts.eventId, status: payouts.status, n: sql<number>`sum(${payouts.amountPaise})::int` })
-    .from(payouts)
-    .where(eventIds ? inArray(payouts.eventId, eventIds) : isNotNull(payouts.eventId))
-    .groupBy(payouts.eventId, payouts.status);
-  const by = new Map<string, EventEarnings>();
-  for (const { p, title, hostName } of sold) {
-    const e = by.get(p.eventId!) ?? {
-      eventId: p.eventId!, eventTitle: title, hostId: p.hostId, hostName,
-      salesPaise: 0, commissionPaise: 0, includedPaise: 0, refundedPaise: 0, earningsPaise: 0, paidOutPaise: 0, requestedPaise: 0, availablePaise: 0,
-    };
-    const x = saleOf(p, back.get(p.id) ?? 0);
-    e.salesPaise += x.price;
-    e.commissionPaise += x.commission;
-    e.includedPaise += x.included;
-    e.refundedPaise += x.refunded;
-    e.earningsPaise += x.earnings;
-    by.set(e.eventId, e);
-  }
-  for (const o of outs) {
-    const e = by.get(o.eventId!);
-    if (!e) continue;
-    if (o.status === "paid") e.paidOutPaise += o.n;
-    if (o.status === "requested") e.requestedPaise += o.n;
-  }
-  for (const e of by.values()) e.availablePaise = e.earningsPaise - e.paidOutPaise - e.requestedPaise;
-  return [...by.values()];
-}
-
 const DAY = 24 * 3600_000;
 const IST = 330 * 60_000;
 export const WAIT = 3 * DAY; // after an event's or a slot's end, before its money can be asked for (Money decision 10)
@@ -113,64 +48,100 @@ const WEEK = 7 * DAY; // between a Venue's asks (Play)
 const indiaMidnight = (t: number) => Math.floor((t + IST) / DAY) * DAY - IST;
 export const indiaDay = (t: number) => new Date(t).toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" });
 
-// A Venue's slot money (X4), as earningsOf's, per slot payment that gave the slot: paid, or refunded since. One that
-// found the slot gone went back whole with settle's "Couldn't confirm" refund and never counts. A slot's money is
-// ready 3 days after it ends; one still to come counts in the numbers but neither ready nor waiting. Payouts with no
-// event are this money's. Available goes below 0 when refunds come after an ask, as earningsOf's; the apps show 0.
-// ponytail: reads every slot sale of the host, as earningsOf; totals kept as rows when a venue has tens of thousands.
-export async function venueEarningsOf(db: Db | Tx, hostId: string, now: number): Promise<VenueEarnings> {
+// Each event's numbers, and each venue's slot money (one pot per venue, `eventId` null), worked out here once (Money
+// flow, "Your earnings"). Per sale that gave a ticket or booked a slot: the price, less the commission and any fee the
+// host included (both handed back in proportion to the price refunded), less the price refunded. Only refunds of the
+// sale's own Razorpay payment count (a paid-twice refund is the buyer's own money). A refund counts against the price
+// first; any fee on top it hands back is Orbit's. A player's own cancel of a slot (a "request" refund) undoes the whole
+// sale: the fee it kept is Orbit's. Paid out and requested payouts come off what's available, and so does a slot's
+// money until 3 days after the slot ends (WAIT; `waitingPaise`, the last of it ready by `opensBy`): its player can
+// cancel it until it starts, and the venue's money is paid after the slot is played.
+// ponytail: reads every sale asked for; per-event totals kept as rows when there are tens of thousands.
+export type Only = { eventIds: string[] } | { venue: string };
+type Tally = EventEarnings & { bookings: number; waitingPaise: number; opensBy: number };
+async function tally(db: Db | Tx, only: Only | undefined, at: Date): Promise<Tally[]> {
+  if (only && "eventIds" in only && !only.eventIds.length) return [];
+  const scope = !only ? undefined : "eventIds" in only ? inArray(payments.eventId, only.eventIds) : and(eq(payments.kind, "slot"), eq(payments.hostId, only.venue));
   const sold = await db
-    .select({ p: payments, endsAt: stationClaims.endsAt })
+    .select({ p: payments, title: events.title, hostName: hosts.name, endsAt: stationClaims.endsAt })
     .from(payments)
-    .innerJoin(stationClaims, eq(stationClaims.id, payments.claimId))
-    .where(
-      and(
-        eq(payments.hostId, hostId),
-        eq(payments.kind, "slot"),
-        inArray(payments.status, ["paid", "refundPending", "refunded"]),
-        sql`not exists (select 1 from ${refunds} where ${refunds.paymentId} = ${payments.id} and ${refunds.kind} = 'auto' and ${refunds.reason} like ${COULDNT + "%"})`,
-      ),
-    );
-  const back = await refundedOf(db, sold.map((s) => s.p.id));
-  const [h] = await db.select({ name: hosts.name }).from(hosts).where(eq(hosts.id, hostId));
-  const v: VenueEarnings = {
-    hostId, hostName: h?.name ?? "", bookings: sold.length,
-    salesPaise: 0, commissionPaise: 0, includedPaise: 0, refundedPaise: 0, earningsPaise: 0,
-    paidOutPaise: 0, requestedPaise: 0, waitingPaise: 0, opensAt: null, availablePaise: 0, nextAskAt: null,
-  };
-  let ready = 0, opensBy = 0;
-  for (const { p, endsAt } of sold) {
-    const x = saleOf(p, back.get(p.id) ?? 0);
-    v.salesPaise += x.price;
-    v.commissionPaise += x.commission;
-    v.includedPaise += x.included;
-    v.refundedPaise += x.refunded;
-    v.earningsPaise += x.earnings;
-    const end = endsAt.getTime();
-    if (end > now) continue;
-    if (end + WAIT <= now) ready += x.earnings;
-    else {
-      v.waitingPaise += x.earnings;
-      opensBy = Math.max(opensBy, end + WAIT);
-    }
-  }
+    .leftJoin(events, eq(events.id, payments.eventId))
+    .leftJoin(stationClaims, eq(stationClaims.id, payments.claimId))
+    .innerJoin(hosts, eq(hosts.id, payments.hostId))
+    .where(and(or(isNotNull(payments.bookingId), eq(payments.slotBooked, true)), scope));
+  const ids = sold.map((s) => s.p.id);
+  const refunded = ids.length
+    ? await db
+        .select({ id: refunds.paymentId, n: sql<number>`sum(${refunds.amountPaise})::int`, cancel: sql<boolean>`bool_or(${refunds.kind} = 'request')` })
+        .from(refunds)
+        .innerJoin(payments, and(eq(payments.id, refunds.paymentId), eq(payments.razorpayPaymentId, refunds.razorpayPaymentId)))
+        .where(inArray(refunds.paymentId, ids))
+        .groupBy(refunds.paymentId)
+    : [];
+  const back = new Map(refunded.map((r) => [r.id, r]));
   const outs = await db
-    .select({ status: payouts.status, fromHost: payouts.fromHost, n: sql<number>`sum(${payouts.amountPaise})::int`, last: sql<Date | null>`max(${payouts.createdAt})` })
+    .select({ eventId: payouts.eventId, hostId: payouts.hostId, status: payouts.status, n: sql<number>`sum(${payouts.amountPaise})::int` })
     .from(payouts)
-    .where(and(eq(payouts.hostId, hostId), isNull(payouts.eventId)))
-    .groupBy(payouts.status, payouts.fromHost);
-  let last = 0;
-  for (const o of outs) {
-    if (o.status === "paid") v.paidOutPaise += o.n;
-    if (o.status === "requested") v.requestedPaise += o.n;
-    if (o.fromHost && o.status !== "cancelled" && o.last) last = Math.max(last, new Date(o.last).getTime());
+    .where(!only ? undefined : "eventIds" in only ? inArray(payouts.eventId, only.eventIds) : and(isNull(payouts.eventId), eq(payouts.hostId, only.venue)))
+    .groupBy(payouts.eventId, payouts.hostId, payouts.status);
+  const keyOf = (eventId: string | null, hostId: string) => eventId ?? `venue:${hostId}`;
+  const by = new Map<string, Tally>();
+  for (const { p, title, hostName, endsAt } of sold) {
+    const key = keyOf(p.eventId, p.hostId);
+    const e = by.get(key) ?? {
+      eventId: p.eventId, eventTitle: title, hostId: p.hostId, hostName, bookings: 0, waitingPaise: 0, opensBy: 0,
+      salesPaise: 0, commissionPaise: 0, includedPaise: 0, refundedPaise: 0, earningsPaise: 0, paidOutPaise: 0, requestedPaise: 0, availablePaise: 0,
+    };
+    const price = p.unitPricePaise * p.quantity;
+    const r = back.get(p.id);
+    const undone = r?.cancel ? price : Math.min(r?.n ?? 0, price);
+    const commission = p.commissionPaise - halfUp(p.commissionPaise * undone, price);
+    const included = p.feeIncluded ? p.buyerFeePaise - halfUp(p.buyerFeePaise * undone, price) : 0;
+    const earnings = price - commission - included - undone;
+    e.bookings += 1;
+    e.salesPaise += price;
+    e.commissionPaise += commission;
+    e.includedPaise += included;
+    e.refundedPaise += undone;
+    e.earningsPaise += earnings;
+    const opens = p.slotBooked && endsAt ? endsAt.getTime() + WAIT : 0;
+    if (opens > at.getTime()) {
+      e.waitingPaise += earnings;
+      if (earnings > 0) e.opensBy = Math.max(e.opensBy, opens); // a sale undone whole doesn't hold the date
+    }
+    by.set(key, e);
   }
-  v.opensAt = opensBy ? new Date(opensBy).toISOString() : null;
-  v.availablePaise = ready - v.paidOutPaise - v.requestedPaise;
+  for (const o of outs) {
+    const e = by.get(keyOf(o.eventId, o.hostId));
+    if (!e) continue;
+    if (o.status === "paid") e.paidOutPaise += o.n;
+    if (o.status === "requested") e.requestedPaise += o.n;
+  }
+  for (const e of by.values()) e.availablePaise = e.earningsPaise - e.paidOutPaise - e.requestedPaise - e.waitingPaise;
+  return [...by.values()];
+}
+export const earningsOf = async (db: Db | Tx, only: Only | undefined, at: Date): Promise<EventEarnings[]> =>
+  (await tally(db, only, at)).map(({ bookings: _b, waitingPaise: _w, opensBy: _o, ...e }) => e);
+
+// A Venue's slot money (X4): earningsOf's venue pot, with when it can be asked for (`opensAt`, `nextAskAt`). Payouts
+// with no event are this money's. Available goes below 0 when refunds come after an ask, as earningsOf's; the apps
+// show 0.
+export async function venueEarningsOf(db: Db | Tx, hostId: string, now: number): Promise<VenueEarnings> {
+  const [t] = await tally(db, { venue: hostId }, new Date(now));
+  const [h] = t ? [{ name: t.hostName }] : await db.select({ name: hosts.name }).from(hosts).where(eq(hosts.id, hostId));
+  const [o] = await db
+    .select({ last: sql<Date | null>`max(${payouts.createdAt})` })
+    .from(payouts)
+    .where(and(eq(payouts.hostId, hostId), isNull(payouts.eventId), eq(payouts.fromHost, true), ne(payouts.status, "cancelled")));
+  const last = o?.last ? new Date(o.last).getTime() : 0;
   // From the start of the day a week after the host's last ask; a cancelled one, or one staff made, doesn't count.
   const next = last ? indiaMidnight(last + WEEK) : 0;
-  v.nextAskAt = next > now ? new Date(next).toISOString() : null;
-  return v;
+  return {
+    hostId, hostName: h?.name ?? "", bookings: t?.bookings ?? 0,
+    salesPaise: t?.salesPaise ?? 0, commissionPaise: t?.commissionPaise ?? 0, includedPaise: t?.includedPaise ?? 0, refundedPaise: t?.refundedPaise ?? 0,
+    earningsPaise: t?.earningsPaise ?? 0, paidOutPaise: t?.paidOutPaise ?? 0, requestedPaise: t?.requestedPaise ?? 0, waitingPaise: t?.waitingPaise ?? 0,
+    opensAt: t?.opensBy ? new Date(t.opensBy).toISOString() : null, availablePaise: t?.availablePaise ?? 0, nextAskAt: next > now ? new Date(next).toISOString() : null,
+  };
 }
 
 type No = { no: [400 | 404 | 409, string, string, object?] };
@@ -194,7 +165,7 @@ export async function askPayout(
       if (open) return { no: [409, "askOpen", "You've already asked for this event's money. Orbit pays that first."] };
     }
     hostId = e.hostId;
-    left = (await earningsOf(tx, [e.id]))[0]?.availablePaise ?? 0;
+    left = (await earningsOf(tx, { eventIds: [e.id] }, at))[0]?.availablePaise ?? 0;
   } else {
     // No key update: enough to serialise asks, without holding up rows that point at the host.
     const [h] = await tx.select({ id: hosts.id }).from(hosts).where(eq(hosts.id, b.hostId!)).for("no key update");
@@ -270,7 +241,9 @@ export function moneyRoutes({ db, secret, notify, razorpay: rz, now = Date.now }
   // POST /galaxy/money/payments/:id/refund {amountPaise, reason}: up to what was paid less what's already asked back.
   // A part refund keeps the booking; one that takes back all that's left cancels it (the payment is then refundPending).
   // Locks: the booking, then the payment, as event cancel, account deletion and Galaxy's booking cancel take them (a
-  // paid payment's booking never changes, so reading it unlocked first is safe).
+  // paid payment's booking never changes, so reading it unlocked first is safe). A slot's payment taken back whole frees
+  // its slot (the claim refunded, so it stops counting and the scanner refuses it); the hold's locks (person first) come
+  // before the paid payment's, as account deletion takes them. One already checked in stays as it is.
   app.post("/galaxy/money/payments/:id/refund", cap, ...staff, async (c) => {
     if (!rz) return fail(c, 503, "paymentsOff", "Razorpay isn't set up on this server.");
     const id = c.req.param("id");
@@ -279,7 +252,9 @@ export function moneyRoutes({ db, secret, notify, razorpay: rz, now = Date.now }
     if (!b) return invalid(c);
     const actorId = c.var.actor.id;
     const made = await db.transaction(async (tx) => {
-      const [seen] = await tx.select({ bookingId: payments.bookingId }).from(payments).where(eq(payments.id, id));
+      const [seen] = await tx.select({ bookingId: payments.bookingId, claimId: payments.claimId, status: payments.status }).from(payments).where(eq(payments.id, id));
+      // Only a paid one is refunded here (settle, on an unpaid one, locks the payment before the hold).
+      if (seen?.claimId && seen.status === "paid") await lockHold(tx, seen.claimId);
       if (seen?.bookingId) await tx.select({ id: bookings.id }).from(bookings).where(eq(bookings.id, seen.bookingId)).for("update");
       const [p] = await tx.select().from(payments).where(eq(payments.id, id)).for("update");
       if (!p) return fail(c, 404, "notFound", "There's nothing here.");
@@ -290,6 +265,8 @@ export function moneyRoutes({ db, secret, notify, razorpay: rz, now = Date.now }
         await tx.update(payments).set({ status: "refundPending", updatedAt: at() }).where(eq(payments.id, p.id));
         if (p.bookingId)
           await tx.update(bookings).set({ status: "cancelled", cancelledAt: at(), link: null }).where(and(eq(bookings.id, p.bookingId), eq(bookings.status, "confirmed")));
+        if (p.claimId)
+          await tx.update(stationClaims).set({ status: "refunded", updatedAt: at() }).where(and(eq(stationClaims.id, p.claimId), eq(stationClaims.status, "paid")));
       }
       const [r] = await tx
         .insert(refunds)
@@ -298,7 +275,7 @@ export function moneyRoutes({ db, secret, notify, razorpay: rz, now = Date.now }
           nextAttemptAt: new Date(now() + 15 * 60_000), createdAt: at(), updatedAt: at(), // this request sends it; the poller after 15 minutes
         })
         .returning({ id: refunds.id });
-      await logged(tx, actorId, "money.refund", b.reason, { paymentId: p.id, refundId: r!.id, amountPaise: b.amountPaise, cancelled: b.amountPaise === left ? p.bookingId : null }, p.hostId);
+      await logged(tx, actorId, "money.refund", b.reason, { paymentId: p.id, refundId: r!.id, amountPaise: b.amountPaise, cancelled: b.amountPaise === left ? (p.bookingId ?? p.claimId) : null }, p.hostId);
       return r!.id;
     });
     if (made instanceof Response) return made;
@@ -365,7 +342,7 @@ export function moneyRoutes({ db, secret, notify, razorpay: rz, now = Date.now }
       .orderBy(desc(payouts.createdAt))
       .limit(500);
     // ponytail: one venueEarningsOf per Venue with slot sales; a grouped query when there are hundreds of venues.
-    const venueIds = await db.selectDistinct({ id: payments.hostId }).from(payments).where(and(eq(payments.kind, "slot"), isNotNull(payments.razorpayPaymentId)));
+    const venueIds = await db.selectDistinct({ id: payments.hostId }).from(payments).where(eq(payments.slotBooked, true));
     const venues: VenueEarnings[] = [];
     for (const v of venueIds) venues.push(await venueEarningsOf(db, v.id, now()));
     const out: Payouts = {
@@ -373,7 +350,7 @@ export function moneyRoutes({ db, secret, notify, razorpay: rz, now = Date.now }
         id: o.id, hostId: o.hostId, hostName, eventId: o.eventId, eventTitle, amountPaise: o.amountPaise, status: o.status, utr: o.utr, reason: o.reason,
         fromHost: o.fromHost, askedByName, byName, createdAt: o.createdAt.toISOString(), at: o.at.toISOString(),
       })),
-      earnings: await earningsOf(db),
+      earnings: (await earningsOf(db, undefined, at())).filter((e) => e.eventId), // venues: below
       venues: venues.filter((v) => v.bookings > 0),
       accounts: Object.fromEntries((await db.select({ hostId: payoutAccounts.hostId, state: payoutAccounts.state }).from(payoutAccounts)).map((a) => [a.hostId, a.state])),
     };
@@ -417,7 +394,7 @@ export function moneyRoutes({ db, secret, notify, razorpay: rz, now = Date.now }
         if (a?.state !== "verified") return "unverified" as const;
         // This payout is already off available as requested; paid moves it, so available stays as it is now.
         const left = o.eventId
-          ? ((await earningsOf(tx, [o.eventId]))[0]?.availablePaise ?? -o.amountPaise)
+          ? ((await earningsOf(tx, { eventIds: [o.eventId] }, at()))[0]?.availablePaise ?? -o.amountPaise)
           : (await venueEarningsOf(tx, o.hostId, now())).availablePaise;
         if (left < 0) return "short" as const;
       }

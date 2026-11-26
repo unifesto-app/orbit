@@ -17,7 +17,6 @@ CREATE TABLE "payout_accounts" (
 	CONSTRAINT "payout_accounts_state" CHECK ("payout_accounts"."state" in ('checking', 'verified', 'rejected'))
 );
 --> statement-breakpoint
-ALTER TABLE "payouts" ALTER COLUMN "event_id" DROP NOT NULL;--> statement-breakpoint
 ALTER TABLE "payouts" ADD COLUMN "asked_by" uuid;--> statement-breakpoint
 ALTER TABLE "payouts" ADD COLUMN "from_host" boolean DEFAULT false NOT NULL;--> statement-breakpoint
 ALTER TABLE "payout_accounts" ADD CONSTRAINT "payout_accounts_host_id_hosts_id_fk" FOREIGN KEY ("host_id") REFERENCES "public"."hosts"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint

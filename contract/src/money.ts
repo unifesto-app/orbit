@@ -92,10 +92,10 @@ export type PayoutRow = {
   status: PayoutStatus; utr: string | null; reason: string | null; fromHost: boolean; askedByName: string | null; byName: string | null;
   createdAt: string; at: string;
 };
-// One event's money, worked out once on the server: sales, minus commission (less what refunds handed back), minus any
-// fee the host included, minus refunded; then paid out and what's left.
+// One event's money (or a venue's slot money: `eventId` null), worked out once on the server: sales, minus commission
+// (less what refunds handed back), minus any fee the host included, minus refunded; then paid out and what's left.
 export type EventEarnings = {
-  eventId: string; eventTitle: string; hostId: string; hostName: string;
+  eventId: string | null; eventTitle: string | null; hostId: string; hostName: string;
   salesPaise: number; commissionPaise: number; includedPaise: number; refundedPaise: number;
   earningsPaise: number; paidOutPaise: number; requestedPaise: number; availablePaise: number;
 };
@@ -137,7 +137,7 @@ export type PayoutAccount = { kind: "bank" | "upi"; bankName: string; last4: str
 // POST /hosts/:id/payouts: an event's money (`eventId`), or with none a Venue's slot money.
 export const AskPayout = z.object({ eventId: z.uuid().optional(), amountPaise: z.number().int().min(1) });
 // One event's money with its scheduled end; its payout opens 3 days after (`opensAt`, null with no end set).
-export type HostEventMoney = EventEarnings & { endsAt: string | null; opensAt: string | null };
+export type HostEventMoney = EventEarnings & { eventId: string; eventTitle: string; endsAt: string | null; opensAt: string | null };
 export type HostPayout = {
   id: string; eventId: string | null; eventTitle: string | null; amountPaise: number; status: PayoutStatus;
   utr: string | null; reason: string | null; askedAt: string; at: string;
@@ -159,11 +159,11 @@ export type FailedWebhook = { id: string; receivedAt: string; reason: string; ex
 // The app's Account › Transactions and Refunds (X3): the signed-in person's own. A payment is listed once money moved
 // (a Razorpay payment on it); `refundedPaise` is what has reached them so far.
 export type MyPayment = {
-  id: string; eventId: string | null; eventTitle: string | null; quantity: number; pricePaise: number; feePaise: number;
+  id: string; eventId: string | null; eventTitle: string | null; hostName: string; quantity: number; pricePaise: number; feePaise: number;
   amountPaise: number; status: PaymentStatus; razorpayPaymentId: string; refundedPaise: number; refundedAt: string | null; createdAt: string;
 };
 export type MyRefund = {
-  id: string; eventId: string | null; eventTitle: string | null; amountPaise: number; status: (typeof REFUND_STATUSES)[number]; createdAt: string; updatedAt: string;
+  id: string; eventId: string | null; eventTitle: string | null; hostName: string; amountPaise: number; status: (typeof REFUND_STATUSES)[number]; createdAt: string; updatedAt: string;
 };
 
 // Galaxy's Bookings and tickets (X3): a booking with its ticket and the payment that paid for it, if any.

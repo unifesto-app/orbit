@@ -4,7 +4,7 @@ import { CHANNELS, EMAIL_SWITCHES, inboxApp, KINDS, PUSH_SWITCHES } from "./noti
 
 const kinds = Object.entries(KINDS);
 
-test("99 kinds: the plan's 94 plus the five host kinds (D1)", () => assert.equal(kinds.length, 99));
+test("100 kinds: the plan's 94, the five host kinds (D1) and slotConfirmed (X8)", () => assert.equal(kinds.length, 100));
 
 test("a kind has an inbox exactly when it names whose", () => {
   for (const [name, d] of kinds) assert.equal(d.inbox, d.app !== null, name);

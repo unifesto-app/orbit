@@ -26,7 +26,7 @@ export default function Refunds() {
           {page.data.map((r) => (
             <Row
               key={r.id}
-              label={r.eventTitle ?? 'An event'}
+              label={r.eventTitle ?? r.hostName}
               note={[`${formatPrice(r.amountPaise)} · asked ${day(r.createdAt)}`, r.status === 'processed' && `Sent ${day(r.updatedAt)}`].filter(Boolean).join('\n')}
               value={refundWord(r.status)}
             />

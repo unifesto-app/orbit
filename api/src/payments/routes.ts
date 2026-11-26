@@ -32,7 +32,7 @@ type Settled = { status: Pay["status"]; bookingId: string | null; refundIds: str
 
 // Why a payment that found no seat went back: seatCheck's code (fewLeft, cancelled, ended, closed, tooMany, booked, …),
 // kept in its automatic refund's reason by settle. Undefined for anything else.
-export const COULDNT = "Couldn't confirm: ";
+const COULDNT = "Couldn't confirm: ";
 const reasonOf = async (q: Db | Tx, paymentId: string) => {
   const [r] = await q
     .select({ reason: refunds.reason })
@@ -54,10 +54,11 @@ const orderOf = (p: Pay, keyId: string, already: boolean): PayOrder => ({
 
 // An automatic refund row (the whole of one Razorpay payment unless `amount` says less), sent after the transaction
 // commits by whoever made it; the poller only takes it after FIRST_TRY.
-const autoRefund = async (tx: Tx, p: Pay, razorpayPaymentId: string, reason: string, at: Date, amount = p.amountPaise) => {
+// `kind` "request": the payer's own cancel.
+const autoRefund = async (tx: Tx, p: Pay, razorpayPaymentId: string, reason: string, at: Date, amount = p.amountPaise, kind: "auto" | "request" = "auto") => {
   const [r] = await tx
     .insert(refunds)
-    .values({ paymentId: p.id, razorpayPaymentId, amountPaise: amount, reason, kind: "auto", nextAttemptAt: new Date(at.getTime() + FIRST_TRY), createdAt: at, updatedAt: at })
+    .values({ paymentId: p.id, razorpayPaymentId, amountPaise: amount, reason, kind, nextAttemptAt: new Date(at.getTime() + FIRST_TRY), createdAt: at, updatedAt: at })
     .returning({ id: refunds.id });
   return r!.id;
 };
@@ -125,7 +126,7 @@ export async function settle(db: Db, notify: Notify, orderId: string, paid: Pick
         await notify({ to: { userId: p.userId }, kind, data: { claimId: p.claimId, hostId: p.hostId, reason }, key: `refund:${id}` }, tx);
         return { status: "refundPending", bookingId: null, refundIds: [id], reason };
       }
-      await tx.update(payments).set({ status: "paid", razorpayPaymentId: paid.id, ...costs, updatedAt: at }).where(eq(payments.id, p.id));
+      await tx.update(payments).set({ status: "paid", slotBooked: true, razorpayPaymentId: paid.id, ...costs, updatedAt: at }).where(eq(payments.id, p.id));
       await tellTeam(tx, notify, ok.claim);
       return { status: "paid", bookingId: null, refundIds: [] };
     }
@@ -163,11 +164,16 @@ export async function markRefund(db: Db, notify: Notify, refundId: string, rz: P
       await tx.update(refunds).set({ status: "processed", razorpayRefundId: rz.id, nextAttemptAt: null, updatedAt: at }).where(eq(refunds.id, r.id));
       const [p] = await tx.select().from(payments).where(eq(payments.id, r.paymentId)).for("update");
       // Only refunds of the payment's own Razorpay payment count: a paid-twice refund leaves the ticket's payment paid.
+      // A refundPending payment (all it will give back asked for: a player's cancel keeps the fee) is refunded once
+      // every one of them is through.
       const [sum] = await tx
-        .select({ done: sql<number>`coalesce(sum(${refunds.amountPaise}), 0)::int` })
+        .select({
+          done: sql<number>`coalesce(sum(${refunds.amountPaise}) filter (where ${refunds.status} = 'processed'), 0)::int`,
+          open: sql<number>`count(*) filter (where ${refunds.status} <> 'processed')::int`,
+        })
         .from(refunds)
-        .where(and(eq(refunds.paymentId, r.paymentId), eq(refunds.razorpayPaymentId, p?.razorpayPaymentId ?? ""), eq(refunds.status, "processed")));
-      if (p && sum!.done >= p.amountPaise && p.status !== "refunded") await tx.update(payments).set({ status: "refunded", updatedAt: at }).where(eq(payments.id, p.id));
+        .where(and(eq(refunds.paymentId, r.paymentId), eq(refunds.razorpayPaymentId, p?.razorpayPaymentId ?? "")));
+      if (p && (sum!.done >= p.amountPaise || (p.status === "refundPending" && sum!.open === 0)) && p.status !== "refunded") await tx.update(payments).set({ status: "refunded", updatedAt: at }).where(eq(payments.id, p.id));
       await notify({ to: { userId: p!.userId }, kind: "refundSent", data: { eventId: p!.eventId, amountPaise: r.amountPaise }, key: `refundSent:${r.id}` }, tx);
     } else if (rz.status === "failed") {
       await tx.update(refunds).set({ status: "failed", razorpayRefundId: rz.id, nextAttemptAt: retryAt(r.createdAt, now), updatedAt: at }).where(eq(refunds.id, r.id));
@@ -404,6 +410,54 @@ export function paymentsRoutes({ db, store, secret, notify, razorpay: rz, now = 
     return c.json(orderOf(done.row, rz.keyId, false), 201);
   });
 
+  // POST /venues/:hostId/holds/:claimId/cancel: the player gives up their own paid slot before it starts, nobody yet
+  // checked in. The slot frees (the claim refunded) and the price comes back; Orbit's fee stays (the host earns nothing
+  // on it, earningsOf). Locks: the hold's (person first), then the paid payment, as account deletion takes them.
+  app.post("/venues/:hostId/holds/:claimId/cancel", auth, async (c) => {
+    if (!rz) return off(c);
+    const hostId = c.req.param("hostId");
+    const claimId = c.req.param("claimId");
+    if (!isUuid(hostId) || !isUuid(claimId)) return nothing(c);
+    const at = new Date(now());
+    const r = await db.transaction(async (tx) => {
+      const k = await lockHold(tx, claimId, { userId: c.var.user.id, hostId });
+      if (!k || k.claim.kind !== "booking") return null;
+      const h = k.claim;
+      if (h.status === "refunded") {
+        // Cancelled already (a retry whose first answer was lost): the same answer.
+        const [was] = await tx
+          .select({ n: refunds.amountPaise })
+          .from(refunds)
+          .innerJoin(payments, eq(payments.id, refunds.paymentId))
+          .where(and(eq(payments.claimId, claimId), eq(refunds.kind, "request")));
+        if (was) return { id: null, back: was.n };
+      }
+      if (h.status !== "paid" || h.admitted > 0 || h.startsAt <= at) return { no: true } as const;
+      const [p] = await tx
+        .select()
+        .from(payments)
+        .where(and(eq(payments.claimId, claimId), eq(payments.slotBooked, true), eq(payments.status, "paid")))
+        .for("update");
+      if (!p) {
+        // A ₹0 booking (no payment ever made on it): it just lets the slot go.
+        const [any] = await tx.select({ id: payments.id }).from(payments).where(eq(payments.claimId, claimId)).limit(1);
+        if (any) return { no: true } as const;
+        await tx.update(stationClaims).set({ status: "released", updatedAt: at }).where(eq(stationClaims.id, claimId));
+        return { id: null, back: 0 };
+      }
+      if (!p.razorpayPaymentId) return { no: true } as const;
+      const back = Math.min(p.amountPaise - p.buyerFeePaise, p.amountPaise - (await askedBack(tx, p)));
+      await tx.update(stationClaims).set({ status: "refunded", updatedAt: at }).where(eq(stationClaims.id, claimId));
+      await tx.update(payments).set({ status: "refundPending", updatedAt: at }).where(eq(payments.id, p.id));
+      const id = back > 0 ? await autoRefund(tx, p, p.razorpayPaymentId, "Cancelled by the player", at, back, "request") : null;
+      return { id, back };
+    });
+    if (!r) return nothing(c);
+    if ("no" in r) return fail(c, 409, "cantCancel", "This slot can't be cancelled any more.");
+    if (r.id) await sendRefund(db, rz, notify, r.id, now(), true);
+    return c.json({ refundPaise: r.back });
+  });
+
   // POST /payments/:orderId/verify {paymentId, signature}: checkout's answer, from the payer. Settles at once, so the app
   // can show the ticket without waiting for the webhook, but only once Razorpay itself says the money is captured on this
   // order, in full: a signature alone also comes with a payment that's only authorized. Otherwise "confirming", and the
@@ -512,9 +566,10 @@ export function paymentsRoutes({ db, store, secret, notify, razorpay: rz, now = 
   // ponytail: the last 200, no paging; a page when someone has more.
   app.get("/me/payments", auth, async (c) => {
     const rows = await db
-      .select({ p: payments, title: events.title })
+      .select({ p: payments, title: events.title, hostName: hosts.name })
       .from(payments)
       .leftJoin(events, eq(events.id, payments.eventId))
+      .innerJoin(hosts, eq(hosts.id, payments.hostId))
       .where(and(eq(payments.userId, c.var.user.id), isNotNull(payments.razorpayPaymentId)))
       .orderBy(desc(payments.createdAt))
       .limit(200);
@@ -531,8 +586,8 @@ export function paymentsRoutes({ db, store, secret, notify, razorpay: rz, now = 
         : []
       ).map((r) => [r.id, r]),
     );
-    const out: MyPayment[] = rows.map(({ p, title }) => ({
-      id: p.id, eventId: p.eventId, eventTitle: title, quantity: p.quantity, pricePaise: p.unitPricePaise * p.quantity,
+    const out: MyPayment[] = rows.map(({ p, title, hostName }) => ({
+      id: p.id, eventId: p.eventId, eventTitle: title, hostName, quantity: p.quantity, pricePaise: p.unitPricePaise * p.quantity,
       feePaise: p.feeIncluded ? 0 : p.buyerFeePaise, amountPaise: p.amountPaise, status: p.status, razorpayPaymentId: p.razorpayPaymentId!,
       refundedPaise: back.get(p.id)?.n ?? 0, refundedAt: back.get(p.id)?.at?.toISOString() ?? null, createdAt: p.createdAt.toISOString(),
     }));
@@ -542,15 +597,16 @@ export function paymentsRoutes({ db, store, secret, notify, razorpay: rz, now = 
   // GET /me/refunds: refunds of the signed-in person's payments, newest first.
   app.get("/me/refunds", auth, async (c) => {
     const rows = await db
-      .select({ r: refunds, eventId: payments.eventId, title: events.title })
+      .select({ r: refunds, eventId: payments.eventId, title: events.title, hostName: hosts.name })
       .from(refunds)
       .innerJoin(payments, eq(payments.id, refunds.paymentId))
       .leftJoin(events, eq(events.id, payments.eventId))
+      .innerJoin(hosts, eq(hosts.id, payments.hostId))
       .where(eq(payments.userId, c.var.user.id))
       .orderBy(desc(refunds.createdAt))
       .limit(200);
-    const out: MyRefund[] = rows.map(({ r, eventId, title }) => ({
-      id: r.id, eventId, eventTitle: title, amountPaise: r.amountPaise, status: r.status, createdAt: r.createdAt.toISOString(), updatedAt: r.updatedAt.toISOString(),
+    const out: MyRefund[] = rows.map(({ r, eventId, title, hostName }) => ({
+      id: r.id, eventId, eventTitle: title, hostName, amountPaise: r.amountPaise, status: r.status, createdAt: r.createdAt.toISOString(), updatedAt: r.updatedAt.toISOString(),
     }));
     return c.json(out);
   });
