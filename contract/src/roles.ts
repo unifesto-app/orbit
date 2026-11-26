@@ -18,6 +18,7 @@ export const HOST_KINDS = {
   company: "Company",
   "housing-society": "Housing society",
   venue: "Venue",
+  performer: "Performer",
   other: "Other",
 } as const;
 export const HostKind = z.enum(Object.keys(HOST_KINDS) as [keyof typeof HOST_KINDS, ...(keyof typeof HOST_KINDS)[]]);

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { HOUR, type StationType } from './day.ts';
-import { type Authed, contactOk, daysLeft, fieldWhy, fromStation, hoursOk, inTheWay, inviteBody, kindBody, kindFrom, type KindForm, pinFrom, plural, priceLine, putFor, readVenue, refusal, span, type StationRowish, teamFrom, toStation, venueApi, weekSpan } from './venue.ts';
+import { type Authed, contactOk, daysLeft, fieldWhy, fromStation, hoursOk, inTheWay, inviteBody, kindBody, kindFrom, type KindForm, pinFrom, plural, priceLine, notSetUp, putFor, readVenue, refusal, span, type StationRowish, teamFrom, toStation, venueApi, weekSpan } from './venue.ts';
 
 const pc: StationType = { id: 'pc', name: 'Gaming PC', count: 12, unit: ['PC', 'PCs'], step: 30, whole: false, price: 16200, offPeak: { from: 11, to: 16, weekdays: true, price: 12000 }, coop: 35000, games: 'Valorant, CS2' };
 
@@ -121,8 +121,9 @@ test('the team: Admins and Desk only, the owner first, you marked; invites by se
         { id: 'c', userId: 'u3', name: null, role: 'curator', owner: false },
       ],
       invites: [
-        { id: 'i1', contact: '+919000022010', accepted: true, acceptedBy: 'Nisha', addedBy: 'u1' },
-        { id: 'i2', contact: 'x@example.com', accepted: true, acceptedBy: 'Om', addedBy: 'u2' },
+        { id: 'i1', contact: '+919000022010', role: 'admin', sentAt: '2026-11-20T10:00:00.000Z', accepted: true, acceptedBy: 'Nisha', addedBy: 'u1' },
+        { id: 'i3', contact: '+919000022011', role: 'crew', sentAt: '2026-11-21T10:00:00.000Z', accepted: false, acceptedBy: null, addedBy: 'u1' },
+        { id: 'i2', contact: 'x@example.com', accepted: true, acceptedBy: 'Om', addedBy: 'u2' }, // an older API: no role or sent time
       ],
     },
     'u1',
@@ -132,8 +133,9 @@ test('the team: Admins and Desk only, the owner first, you marked; invites by se
     { id: 'a', name: 'Ravi K.', role: 'Desk', you: undefined, owner: undefined },
   ]);
   assert.deepEqual(t.invites, [
-    { id: 'i1', contact: '+919000022010', accepted: true, acceptedBy: 'Nisha', addedBy: 'u1', byYou: true, adder: 'Asha' },
-    { id: 'i2', contact: 'x@example.com', accepted: true, acceptedBy: 'Om', addedBy: 'u2', byYou: false, adder: 'Ravi K.' },
+    { id: 'i1', contact: '+919000022010', role: 'Admin', sent: Date.parse('2026-11-20T10:00:00.000Z'), accepted: true, acceptedBy: 'Nisha', addedBy: 'u1', byYou: true, adder: 'Asha' },
+    { id: 'i3', contact: '+919000022011', role: 'Desk', sent: Date.parse('2026-11-21T10:00:00.000Z'), accepted: false, acceptedBy: null, addedBy: 'u1', byYou: true, adder: 'Asha' },
+    { id: 'i2', contact: 'x@example.com', role: undefined, sent: undefined, accepted: true, acceptedBy: 'Om', addedBy: 'u2', byYou: false, adder: 'Ravi K.' },
   ]);
 });
 
@@ -156,9 +158,12 @@ test('the PUT is made on the fresh venue: each edit keeps the pin, place, cutoff
   assert.equal(putFor(fresh, (x) => ({ ...x, deskPhone: '1' })).address, fresh.address);
 });
 
-test('the venue read: a 404 is not set up yet, a payload the contract refuses is an error', () => {
+test('the venue read: a noVenue 404 is not set up yet, a notFound 404 is the seat gone, a payload the contract refuses is an error', () => {
   const check = (x: unknown) => ((x as { hostId?: string }).hostId ? x : undefined);
-  assert.deepEqual(readVenue({ ok: false, status: 404, error: { error: 'notFound', message: '' } }, check), { ok: true, data: null });
+  assert.deepEqual(readVenue({ ok: false, status: 404, error: { error: 'noVenue', message: '' } }, check), { ok: true, data: null });
+  const lost = readVenue({ ok: false, status: 404, error: { error: 'notFound', message: '' } }, check);
+  assert.ok(!lost.ok && lost.status === 404 && lost.error.error === 'notFound');
+  assert.ok(!notSetUp(lost) && notSetUp({ status: 404, error: { error: 'noVenue' } }));
   assert.deepEqual(readVenue({ ok: true, data: { hostId: 'h1' } }, check), { ok: true, data: { hostId: 'h1' } });
   const bad = readVenue({ ok: true, data: { nope: 1 } }, check);
   assert.ok(!bad.ok && bad.error.error === 'unreadable');

@@ -20,3 +20,4 @@ export * from "./visit.ts";
 export * from "./saves.ts";
 export * from "./notifications.ts";
 export * from "./bookings.ts";
+export * from "./requests.ts";

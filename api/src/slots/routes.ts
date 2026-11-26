@@ -1,14 +1,15 @@
 import { and, asc, count, eq, gt, inArray, isNotNull, isNull, lt, ne, or } from "drizzle-orm";
 import { Hono, type Context } from "hono";
 import {
-  Admit, type CounterStation, EditStation, FreeOne, type InTheWay, NewBlock, NewStation, type SlotClaim, type StationRow, VenueSetup, type VenueDay,
-  type VenueSettings, WalkIn, type Week,
+  Admit, type CounterStation, EditStation, FreeOne, type InTheWay, NewBlock, NewHold, NewStation, type SlotClaim, type SlotHold, type StationRow,
+  VENUE_GONE, VenueSetup, type VenueDay, type VenueSettings, WalkIn, type Week,
 } from "@orbit/contract";
 import type { Db } from "../db/index.ts";
 import { hosts, stationClaims, stations, teamRoles, users, venues } from "../db/schema.ts";
 import { fail, invalid, isUuid, type Notify, parse, signedIn, taken, type Env } from "../http.ts";
 import { changeable, teamOf } from "../roles/access.ts";
-import { type Claim, door, hours, HOUR, MIN, admitTo, outsideWeek, scanRefusal, stranded, taken as takenAt, timeLabel, walkIn } from "./rules.ts";
+import { type HoldResult, hold, toClaim } from "./hold.ts";
+import { door, hours, HOUR, MIN, admitTo, outsideWeek, scanRefusal, stranded, taken as takenAt, timeLabel, walkIn } from "./rules.ts";
 
 // A Venue's setup and its counter (Orbit flows: Play, "Setting up a venue" and "At the desk"). Admins set the venue up
 // and edit it; Admins and Desk (a crew seat on a Venue host) run the counter. Desk never sees a price.
@@ -34,20 +35,26 @@ const GONE = no(404, "notFound", "There's nothing here.");
 const CLOSED = no(409, "hostClosed", "This host can't change anything right now.");
 const NO_VENUE = no(409, "noVenue", "Set the venue's address and hours first.");
 const said = (c: Context, r: No) => fail(c, r.no.status, r.no.error, r.no.message, r.no.extra);
-const nothing = (c: Context) => fail(c, 404, "notFound", "There's nothing here.");
+const nothing = (c: Context) => fail(c, 404, VENUE_GONE.notFound, "There's nothing here.");
+// A seat on a venue nobody has set up yet: not the same 404 as no seat, so Station can tell "set it up" from "you're off the team".
+const noVenue = (c: Context) => fail(c, 404, VENUE_GONE.noVenue, "This venue isn't set up yet.");
+// A hold's refusals, as the player hears them.
+const HOLD_NO: Record<Exclude<HoldResult, { ok: true }>["error"], [400 | 401 | 404 | 409 | 429, string, string?]> = {
+  signedOut: [401, "You're signed out. Sign in again."],
+  notFound: [404, "There's nothing here."],
+  hostClosed: [409, "This venue isn't taking bookings right now."],
+  badTime: [400, "That time can't be booked. Pick another."],
+  badCount: [400, "Pick how many."],
+  tooMany: [409, "The venue doesn't have that many."],
+  tooOften: [429, "Too many holds here in the last hour. Try again later.", "tooMany"],
+  full: [409, "That slot just filled up. Pick another."],
+};
 
 // "Meera P.": a booking's name as the counter says it.
 const shortName = (name: string | null) => {
   const [first, ...rest] = (name ?? "").trim().split(/\s+/).filter(Boolean);
   return first ? (rest.length ? `${first} ${rest.at(-1)![0]!.toUpperCase()}.` : first) : "Someone";
 };
-
-// The rules' view of a stored claim.
-export const toClaim = (r: Row): Claim => ({
-  id: r.id, stationId: r.stationId, kind: r.kind, status: r.status, count: r.count, start: r.startsAt.getTime(), end: r.endsAt.getTime(),
-  holdEnd: r.holdEndsAt?.getTime() ?? null, admitted: r.admitted, checkedIn: r.checkedInAt?.getTime() ?? null, checkedInBy: r.checkedInBy,
-  released: r.releasedAt?.getTime() ?? null,
-});
 
 const counterStation = (s: Station): CounterStation => ({
   id: s.id, name: s.name, unit: s.unit, tile: s.tile, count: s.count, whole: s.whole, step: s.step as 30 | 60, archived: s.archivedAt !== null,
@@ -130,7 +137,10 @@ export function slotsRoutes({ db, notify, secret, now = Date.now }: Deps) {
   };
   // The station's claims that can still matter at `from`: a step back covers a walk-in freed earlier in the same step.
   const claimsOf = async (tx: Tx, stationId: string, from: number) =>
-    tx.select().from(stationClaims).where(and(eq(stationClaims.stationId, stationId), gt(stationClaims.endsAt, new Date(from - HOUR))));
+    tx
+      .select()
+      .from(stationClaims)
+      .where(and(eq(stationClaims.stationId, stationId), gt(stationClaims.endsAt, new Date(from - HOUR)), or(ne(stationClaims.status, "held"), gt(stationClaims.holdEndsAt, at()))));
   // The venue's live bookings: what a setup change can strand.
   const liveBookings = async (tx: Tx, hostId: string, only?: string) => {
     const rows = await tx
@@ -213,7 +223,7 @@ export function slotsRoutes({ db, notify, secret, now = Date.now }: Deps) {
     const seat = await seatOn(c.req.param("hostId"), c.var.user.id);
     if (seat?.role !== "admin") return nothing(c);
     const out = await settingsOf(seat.host.id);
-    return out ? c.json(out) : nothing(c);
+    return out ? c.json(out) : noVenue(c);
   });
 
   // POST /venues/:hostId/stations: gaming starts every 30 minutes and is booked by the seat; sports starts on the hour and
@@ -281,7 +291,7 @@ export function slotsRoutes({ db, notify, secret, now = Date.now }: Deps) {
     const seat = await seatOn(c.req.param("hostId"), c.var.user.id);
     if (!seat) return nothing(c);
     const [venue] = await db.select().from(venues).where(eq(venues.hostId, seat.host.id));
-    if (!venue) return nothing(c);
+    if (!venue) return noVenue(c);
     const q = c.req.query("at");
     const when = q === undefined ? now() : Date.parse(q);
     if (!Number.isFinite(when) || when < Date.UTC(2000, 0, 1) || when > Date.UTC(2100, 0, 1)) return invalid(c);
@@ -497,6 +507,24 @@ export function slotsRoutes({ db, notify, secret, now = Date.now }: Deps) {
         },
       };
     });
+  });
+
+  // ---------- Players ----------
+
+  // POST /venues/:hostId/holds: any signed-in person holds a slot for 10 minutes while they pay (hold.ts). No seat needed.
+  app.post("/venues/:hostId/holds", auth, async (c) => {
+    const hostId = c.req.param("hostId");
+    if (!isUuid(hostId)) return nothing(c);
+    const b = await parse(c, NewHold);
+    if (!b) return invalid(c);
+    const r = await hold(db, { hostId, stationId: b.stationId, userId: c.var.user.id, start: Date.parse(b.start), hours: b.hours, count: b.count }, now());
+    if (!r.ok) {
+      const [status, message, error = r.error] = HOLD_NO[r.error];
+      return fail(c, status, error, message);
+    }
+    const h = r.claim;
+    const out: SlotHold = { id: h.id, stationId: h.stationId, start: h.startsAt.toISOString(), end: h.endsAt.toISOString(), count: h.count, holdEndsAt: h.holdEndsAt!.toISOString() };
+    return c.json(out, 201);
   });
 
   return app;
