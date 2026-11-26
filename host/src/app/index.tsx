@@ -1,6 +1,6 @@
 import { role } from '@orbit/tokens';
 import * as Application from 'expo-application';
-import { Redirect } from 'expo-router';
+import { Redirect, router } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { InboxButton } from '../inboxButton';
@@ -12,7 +12,8 @@ import { Pill } from '../station/ui';
 import { isLaunch, isStation, variant as v } from '../variant';
 
 // Every host app opens on Sign in. Then Orbit Station opens on Today, Event Partner on Events (the picker first with
-// several hosts and none picked), and Crew shows its name until its own screens come, with the push ask and its Inbox. Signed in on no venue's team, or
+// several hosts and none picked), and Crew shows its name until its own screens come, with the push ask, its Inbox and
+// Account (account.tsx: Delete account, App Store 5.1.1(v)). Signed in on no venue's team, or
 // as an Admin of no host, it shows the invites screen (welcome) instead.
 export default function Index() {
   const session = useSession();
@@ -33,6 +34,7 @@ export default function Index() {
       <PushAsk />
       <View style={s.out}>
         <InboxButton />
+        <Pill label="Account" onPress={() => router.push('/account')} />
         <Pill label="Sign out" onPress={signOut} />
       </View>
     </View>

@@ -1,33 +1,34 @@
 // Host, Orbit Launch's third tab (route `team`). Host take 1, approved 22 Nov 2026
 // (https://claude.ai/artifact/BwnBQDW2N2hpihmrSSTnsg), from the Hosts flow doc (Becoming a host, Host profile and
 // settings, Team and roles):
-// - the host as people see it: logo, name with the verified tick or Unverified, kind and city, followers; Edit host,
-//   Share page and View;
-// - Get verified, while it isn't: what the tick brings, and Ask Orbit to verify (Admins);
-// - Finish your page: only what's missing (logo, banner, about), each gone once done;
+// - the host as people see it: logo, name with the verified tick or Unverified, kind and city, followers; Edit host
+//   (src/app/host.tsx, PATCH /hosts/:id) while it's live or paused;
+// - Finish your page: only what's missing that the app can add (the about), gone once done;
 // - Admins, the owner marked, and Admin roles still waiting; Add an Admin, by phone or email. A tap on another Admin
 //   removes them, on an invite withdraws it (or confirms it, once accepted, for whoever sent it);
-// - Status: live, paused, suspended or archived; Pause and Archive for the owner alone;
-// - You: your account (sign-in, security, Delete account), help, the web Console, and Sign out.
+// - Status (launch/status.tsx, shared with Play Partner's Venue tab): live, paused, suspended or archived; Pause,
+//   Archive, Resume and Restore for the owner alone (POST /hosts/:id/<action>);
+// - You: your account (src/app/account.tsx: ways in, Delete account), help, the web Console, and Sign out.
 // From GET /hosts/:id (HostPage) and GET /hosts/:id/team; POST /hosts/:id/team invites, DELETE …/team/:seat removes or
 // withdraws, POST …/team/:seat/confirm confirms (plan F31, L3).
-// ponytail: Event teams (Event leads and Crew per event) stay hidden until the Crew slice (H3.3). Edit host, Get
-// verified, Finish your page and the status moves open nothing yet; host pages on the web aren't built, so Share page
-// and View wait for them. An invite's age shows once the team route sends when it went.
+// ponytail: Event teams (Event leads and Crew per event) stay hidden until the Crew slice (H3.3). Hidden till their APIs
+// come: Share page and View (no host pages on the web), Get verified's Ask Orbit to verify (no route), and the logo and
+// banner (no upload route for hosts). An invite's age shows once the team route sends when it went.
 import { HOST_KINDS, type HostEvents, type HostPage, type Me } from '@orbit/contract';
 import { markOf } from '@orbit/mobile/mark';
 import { useLoad } from '@orbit/mobile/load';
 import { showPhone } from '@orbit/mobile/signin';
 import { useTabBarScroll } from '@orbit/mobile/tabBar';
 import { color, font, space } from '@orbit/mobile/theme';
-import { router } from 'expo-router';
-import { useState } from 'react';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useRef, useState } from 'react';
 import { Alert, Linking, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { type Host as HostOf, useHost } from '../../launch/host';
 import { useInvites } from '../../launch/invites';
-import { spokenContact, statusMoves, statusNote } from '../../launch/team';
+import { HostStatus } from '../../launch/status';
+import { spokenContact } from '../../launch/team';
 import { Card, Field, Glow, HostHead, Monogram, Note, PERSON_INDENT, Person, Pill, Row, Section, Tag, Verified, styles as ui } from '../../launch/ui';
 import { api, refreshMe, signOut, useSession } from '../../session';
 
@@ -36,7 +37,6 @@ type Member = { id: string; userId: string | null; name: string | null; role: 'a
 type Invite = { id: string; contact: string; accepted: boolean; acceptedBy: string | null; addedBy: string };
 type TeamList = { members: Member[]; invites: Invite[] };
 
-const STATUS = { live: 'Live', paused: 'Paused', suspended: 'Suspended by Orbit', archived: 'Archived' } as const;
 const followers = (n: number) => `${n.toLocaleString('en-IN')} follower${n === 1 ? '' : 's'}`;
 const kindOf = (k: string) => HOST_KINDS[k as keyof typeof HOST_KINDS] ?? k;
 const shownContact = (c: string) => (/^\+91\d{10}$/.test(c) ? showPhone(c) : c);
@@ -61,6 +61,15 @@ function HostTab({ host, me }: { host: HostOf; me: Me }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const waiting = mine.invites.data ?? [];
+  // Back from Edit host: the page read again (not on the first focus, which the load above covers).
+  const seen = useRef(false);
+  const reloadPage = page.reload;
+  useFocusEffect(
+    useCallback(() => {
+      if (seen.current) reloadPage();
+      seen.current = true;
+    }, [reloadPage]),
+  );
 
   const p = page.data;
   const admins = (team.data?.members ?? []).filter((m) => m.role === 'admin');
@@ -70,15 +79,6 @@ function HostTab({ host, me }: { host: HostOf; me: Me }) {
   const publicPage = p?.visibility === 'public';
   // Pausing or archiving waits while an event coming up has bookings (open refunds join this with the money API).
   const wait = (events.data?.upcoming ?? []).some((e) => e.sold > 0);
-  const moves = p ? statusMoves(p.status, owner, wait) : [];
-  const statusLine = p ? statusNote(p.status, owner, wait) : undefined;
-  const missing = p
-    ? [
-        !p.banner && { label: 'Add a banner', note: '4:3, across the top of your page' },
-        !p.logo && { label: 'Add your logo', note: 'Square; your initials show till then' },
-        !p.about && { label: 'Say what you do', note: 'A few lines about you' },
-      ].filter((m) => !!m)
-    : [];
   const loadError = page.error ?? team.error;
 
   // A write to the team, then the team read again; what went wrong shows under Admins.
@@ -145,35 +145,19 @@ function HostTab({ host, me }: { host: HostOf; me: Me }) {
                 <Text style={styles.meta}>{publicPage ? followers(p.followers) : 'Private: no public page'}</Text>
               </View>
             </View>
-            <View style={styles.pills}>
-              <Pill label="Edit host" />
-              {publicPage && shown && <Pill label="Share page" />}
-              {publicPage && shown && <Pill label="View ↗" />}
-            </View>
+            {shown && (
+              <View style={styles.pills}>
+                <Pill label="Edit host" onPress={() => router.push('/host')} />
+              </View>
+            )}
           </View>
         )}
 
-        {p && !p.verified && shown && (
-          <>
-            <Section title="Get verified" />
-            <View style={[ui.card, styles.verify]}>
-              <Text style={styles.verifyText}>
-                Orbit checks you’re who you say. You get the tick, a place first in host lists, and a push to your city for each new event.
-              </Text>
-              <View style={styles.pills}>
-                <Pill label="Ask Orbit to verify" />
-              </View>
-            </View>
-          </>
-        )}
-
-        {missing.length > 0 && (
+        {p && shown && !p.about && (
           <>
             <Section title="Finish your page" />
             <Card>
-              {missing.map((m) => (
-                <Row key={m.label} label={m.label} note={m.note} onPress={() => {}} />
-              ))}
+              <Row label="Say what you do" note="A few lines about you" onPress={() => router.push('/host')} />
             </Card>
           </>
         )}
@@ -261,19 +245,13 @@ function HostTab({ host, me }: { host: HostOf; me: Me }) {
         {p && (
           <>
             <Section title="Status" />
-            <Card>
-              <Row label={STATUS[p.status]} dot={p.status === 'live'} value={p.status === 'live' ? (publicPage ? 'Public page' : 'Link only') : undefined} />
-              {moves.map((m) => (
-                <Row key={m.label} label={m.label} value={m.value} onPress={m.open ? () => {} : undefined} />
-              ))}
-            </Card>
-            {statusLine && <Note>{statusLine}</Note>}
+            <HostStatus id={id} status={p.status} owner={owner} wait={wait} value={p.status === 'live' ? (publicPage ? 'Public page' : 'Link only') : undefined} onDone={page.reload} />
           </>
         )}
 
         <Section title="You" />
         <Card>
-          <Row label="Account" value="Sign-in, security, delete" onPress={() => {}} />
+          <Row label="Account" value="Sign-in, delete" onPress={() => router.push('/account')} />
           <Row label="Help and support" onPress={() => router.push('/help')} />
           <Row label="Open the web Console" external onPress={() => Linking.openURL('https://console.heyorbit.in').catch(() => {})} />
           <Row label="Sign out" plain onPress={signOut} />
@@ -292,8 +270,6 @@ const styles = StyleSheet.create({
   name: { flexShrink: 1, fontFamily: font.headline, fontSize: 20, lineHeight: 26, color: color.text },
   meta: { fontFamily: font.text, fontSize: 13, lineHeight: 18, color: color.secondary },
   pills: { flexDirection: 'row', flexWrap: 'wrap', gap: space.small },
-  verify: { gap: 16 },
-  verifyText: { fontFamily: font.text, fontSize: 14, lineHeight: 20, color: color.secondary },
   add: { marginTop: 16, marginHorizontal: 20, flexDirection: 'row' },
   adding: { marginTop: 16, marginHorizontal: 20, gap: 12 },
 });

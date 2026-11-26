@@ -2,7 +2,7 @@
 // as orbit app pls"; app/src/app/(tabs)/_layout.tsx): a dark glass capsule low on the screen, the open tab under a
 // lighter pill that springs to it, Phosphor filled icons beside DM Sans 600 labels (the open tab's in the Sage to Moss
 // gradient), shrinking to the open tab while the page scrolls down. Desk has no money, prices or settings (Roles by use
-// case), so it gets Today alone, with no bar. 1.0 (ONE_0) has no Money tab: Today and Venue. Beside the bar, the round
+// case), so it gets Today alone, with no bar. ONE_0 on hides Money (off since X10). Beside the bar, the round
 // Inbox with its count, Event Partner's (src/inboxButton.tsx; Notifications PR 5); Desk keeps it too.
 // ponytail: the Scan button (round beside the bar, a "Scan a ticket" pill for Desk) returns with X7's slot codes, admitted
 // through /venues/:hostId/claims/:claimId/admit; git d31550c has both. Event Partner's event scanner is app/scan.tsx (X6).

@@ -12,7 +12,7 @@ export const seats = (me: Pick<Me, 'teams'>): Seat[] =>
 
 const TAB_NAMES = ['today', 'money', 'venue'] as const;
 export type Tab = (typeof TAB_NAMES)[number];
-/** The tabs on the bar (Desk's are there, hidden): 1.0 has no Money. */
+/** The tabs on the bar (Desk's are there, hidden): Money is off while `one0` (variant.ts ONE_0) is on. */
 export const barTabs = (one0: boolean): Tab[] => TAB_NAMES.filter((t) => !(one0 && t === 'money'));
 /** The tabs a role may open: Desk has no money, prices or settings, so Today alone. */
 export const opens = (role: Seat['role'], one0: boolean): Tab[] => (role === 'desk' ? ['today'] : barTabs(one0));

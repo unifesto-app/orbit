@@ -7,7 +7,7 @@
 // Venue (S5): as an Admin, the real venue (GET /venues/:hostId; a noVenue 404 is a venue not set up yet) and the host's team
 // (GET /hosts/:id/team), edited through the API (useLiveVenue below). Each write answers the line to show, or null when
 // it went in, and then the venue (or team) and Today's day are fetched again.
-// ponytail: no Money here; it waits on the Money API (payouts, bank account), and 1.0 hides its tab (ONE_0).
+// Money isn't here: its tab reads GET /hosts/:id/money itself (src/hostMoney.ts).
 import { EditStation, InviteAdmin, NewStation, VenueDay, VenueSettings, VenueSetup as PutVenue } from '@orbit/contract';
 import type { Result } from '@orbit/mobile/api';
 import { useLoad } from '@orbit/mobile/load';

@@ -35,13 +35,14 @@ export const mustWait = (all: readonly Sales[], now: number) => all.some((s) => 
 
 // The owner's status moves for each status: live pauses or archives, paused resumes or archives, archived restores,
 // and a suspension is Orbit's to lift. Pause and Archive show "Not yet", with nothing to tap, while they must wait.
-// Anyone else on the team gets none.
-export function statusMoves(status: Status, owner: boolean, wait: boolean): { label: string; value?: string; open: boolean }[] {
+// Anyone else on the team gets none. `action`: the API's POST /hosts/:id/<action>.
+export type StatusAction = 'pause' | 'resume' | 'archive' | 'restore';
+export function statusMoves(status: Status, owner: boolean, wait: boolean): { label: string; action: StatusAction; value?: string; open: boolean }[] {
   if (!owner) return [];
-  const blocked = (label: string) => ({ label, value: wait ? 'Not yet' : undefined, open: !wait });
-  if (status === 'live') return [blocked('Pause host'), blocked('Archive host')];
-  if (status === 'paused') return [{ label: 'Resume host', open: true }, blocked('Archive host')];
-  if (status === 'archived') return [{ label: 'Restore host', open: true }];
+  const blocked = (label: string, action: StatusAction) => ({ label, action, value: wait ? 'Not yet' : undefined, open: !wait });
+  if (status === 'live') return [blocked('Pause host', 'pause'), blocked('Archive host', 'archive')];
+  if (status === 'paused') return [{ label: 'Resume host', action: 'resume' as const, open: true }, blocked('Archive host', 'archive')];
+  if (status === 'archived') return [{ label: 'Restore host', action: 'restore' as const, open: true }];
   return [];
 }
 

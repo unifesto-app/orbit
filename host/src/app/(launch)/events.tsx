@@ -12,9 +12,8 @@
 // From GET /hosts/:id/events (plan F31, L4): its drafts, and its upcoming and past events, sorted here by check-in.
 // New event opens the editor (src/app/edit.tsx), as do a draft's Continue and a coming published card's Edit event.
 // - Scan and Find someone open the scanner (src/app/scan.tsx, X6) on that event.
-// ponytail: the rows open nothing yet; each is a later take. Refund
-// requests, payouts and event roles wait for their APIs. Admins'
-// view only. Past lists every past event; add See all when it's long.
+// ponytail: refund requests and event roles wait for their APIs. Admins' view only. Past lists every past event; add
+// See all when it's long.
 import type { EventRow, HostEvents } from '@orbit/contract';
 import { useLoad } from '@orbit/mobile/load';
 import { useTabBarScroll } from '@orbit/mobile/tabBar';

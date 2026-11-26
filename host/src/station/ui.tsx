@@ -48,7 +48,7 @@ export function Section({ title, aside }: { title: string; aside?: string }) {
 }
 
 /** A frosted pill with its label: Check in, Block, a sheet's main button (`wide`). */
-export function Pill({ label, onPress, disabled, wide, spoken }: { label: string; onPress: () => void; disabled?: boolean; wide?: boolean; spoken?: string }) {
+export function Pill({ label, onPress, disabled, wide, spoken }: { label: string; onPress?: () => void; disabled?: boolean; wide?: boolean; spoken?: string }) {
   return (
     <Pressable onPress={onPress} disabled={disabled} accessibilityRole="button" accessibilityLabel={spoken} accessibilityState={{ disabled }} hitSlop={4} style={({ pressed }) => [disabled && styles.off, pressed && styles.pressed]}>
       <Glass style={wide ? styles.wide : styles.pill}>

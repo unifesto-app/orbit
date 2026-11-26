@@ -9,7 +9,8 @@
 // Messages come from GET /me/inbox (src/launch/inboxStore.ts), read again each time the Inbox opens.
 // A tap opens what the message is about where this app has a screen for it (notices.ts pushHref: Event Partner's Event
 // Request, Play Partner's Today, Help and support for a reply from Orbit); the rest stay here.
-// ponytail: the refund request, the event's team, the link and the payout open nothing yet; each comes with its own take. Settings (which messages email you) waits for the account screens. A ScrollView suits the first
+// Settings opens which messages push and email (notifications.tsx).
+// ponytail: the refund request, the event's team, the link and the payout open nothing yet; each comes with its own take. A ScrollView suits the first
 // page of 30; a SectionList when more pages load.
 import { BarGlass, DARK_TINT, Glass } from '@orbit/mobile/glass';
 import { ORB } from '@orbit/mobile/orbitSays';
@@ -82,7 +83,7 @@ export default function Inbox() {
             <Image source={BACK} style={styles.backMark} />
           </Glass>
         </Pressable>
-        <Pill label="Settings" dark />
+        <Pill label="Settings" dark onPress={() => router.push('/notifications')} />
       </View>
     </View>
   );
