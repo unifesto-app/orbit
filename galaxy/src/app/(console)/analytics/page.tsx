@@ -6,11 +6,13 @@ import { read } from "../../../api";
 import { Alert, Container, PageHeader, Pairs, ui } from "../../ui";
 import { Bins, Days, Ranked } from "../charts";
 import c from "../charts.module.css";
+import { inr } from "../money/tabs";
 
 // Analytics (owner, 19 Nov 2026: "user analytics, mau, dau etc", "app analytics and more"): who uses Orbit, how often,
 // on what, and whether they come back. Active people come from the API's activity log (api/src/activity.ts): one row per
 // person a day, kept 90 days, so the charts start on the day the log did. API: GET /galaxy/analytics, for holders of
-// People; each read is written to the audit log.
+// People; each read is written to the audit log. Bookings and check-in (X17) for the same readers; revenue only for
+// holders of Money (the API sends null to the rest).
 export const metadata: Metadata = { title: "Analytics" };
 
 export default function Analytics() {
@@ -26,6 +28,7 @@ export default function Analytics() {
 
 const n = (v: number) => v.toLocaleString("en-IN");
 const pct = (part: number, of: number) => (of ? `${Math.round((part / of) * 100)}%` : "–");
+const share = (v: number | null) => (v === null ? "–" : `${Math.round(v * 100)}%`);
 const day = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 const short = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "UTC" });
 
@@ -152,6 +155,63 @@ async function Body() {
             ]}
           />
         </Container>
+
+        <Container title="Bookings, last 30 days">
+          <Tiles
+            tiles={[
+              ["Bookings made", n(t.bookings.total)],
+              ["Still confirmed", n(t.bookings.confirmed), `${n(t.bookings.cancelled)} cancelled`],
+              ["Tickets", n(t.bookings.tickets), "on confirmed bookings"],
+            ]}
+          />
+          <Days days={t.bookings.days} label="Bookings made a day, last 30 days" series="Booked" />
+          <Ranked data={t.bookings.sources} of={t.bookings.confirmed} label="Confirmed bookings by source" series="Bookings" />
+          <Pairs
+            pairs={[
+              ["Paid", `${n(t.bookings.paid)} (${pct(t.bookings.paid, t.bookings.confirmed)})`],
+              ["Free", `${n(t.bookings.free)} (${pct(t.bookings.free, t.bookings.confirmed)})`],
+              ["Tickets per booking, median", t.bookings.perBooking.p50 === null ? "–" : n(t.bookings.perBooking.p50)],
+              ["Tickets per booking, 90th percentile", t.bookings.perBooking.p90 === null ? "–" : n(t.bookings.perBooking.p90)],
+            ]}
+          />
+          <p className={c.note}>Every ticket booking made, whatever became of it; cancelled counts both the buyer’s and the host’s. Paid means money came in for it, even if it was refunded since.</p>
+        </Container>
+
+        <Container title="Check-in, events ended in the last 30 days">
+          <Pairs
+            pairs={[
+              ["Events", n(t.checkIn.events)],
+              ["Tickets", n(t.checkIn.tickets)],
+              ["Checked in", n(t.checkIn.admitted)],
+              ["Check-in rate", share(t.checkIn.rate)],
+              ["An event’s rate, median", share(t.checkIn.p50)],
+              ["An event’s rate, lowest tenth", share(t.checkIn.p10)],
+            ]}
+          />
+          <p className={c.note}>Published events that have ended, with at least one confirmed booking. The lowest tenth: one event in ten checked in this share or fewer.</p>
+        </Container>
+
+        {t.revenue && (
+          <Container title="Revenue, last 30 days">
+            <Tiles
+              tiles={[
+                ["Paid by buyers", inr(t.revenue.gross)],
+                ["Orbit’s fees", inr(t.revenue.orbit), "buyer fee and commission"],
+                ["Refunded", inr(t.revenue.refunded)],
+                ["Payments", n(t.revenue.payments)],
+              ]}
+            />
+            <Days days={t.revenue.days.map((d) => ({ day: d.day, count: Math.round(d.count / 100) }))} label="Rupees paid a day, last 30 days" series="₹" />
+            <Ranked data={t.revenue.kinds.map((k) => ({ ...k, value: inr(k.count) }))} label="Paid by kind" series="Paid" />
+            <Pairs
+              pairs={[
+                ["A payment, median", t.revenue.order.p50 === null ? "–" : inr(t.revenue.order.p50)],
+                ["A payment, 90th percentile", t.revenue.order.p90 === null ? "–" : inr(t.revenue.order.p90)],
+              ]}
+            />
+            <p className={c.note}>Payments that came in, refunded ones included; refunds are those Razorpay finished in the same 30 days. Orbit’s fees are before GST and Razorpay’s cut.</p>
+          </Container>
+        )}
 
         <Container title="Deletions">
           <Pairs

@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { STAFF_FEATURES, type DashboardStats, type DayCount, type StaffFeature } from "@orbit/contract";
 import type { Deps } from "./auth/routes.ts";
-import { activeCounts } from "./analytics.ts";
+import { activeCounts, bookingWeeks, checkInCounts, revenueWeeks } from "./analytics.ts";
 import { auditLog } from "./db/schema.ts";
 import { signedIn } from "./http.ts";
 import { requireFeature, type StaffEnv } from "./roles/access.ts";
@@ -68,7 +68,10 @@ export function dashboardRoutes({ db, secret, now = Date.now }: Deps) {
       body.events = await one(
         sql`select (count(*) filter (where status = 'published' and starts_at >= ${ts(at)}))::int as upcoming, (count(*) filter (where published_at >= ${week}))::int as week, (count(*) filter (where status = 'draft'))::int as drafts, (count(*) filter (where status = 'cancelled'))::int as cancelled from events`,
       );
+      // As Analytics counts them (analytics.ts): confirmed ticket bookings, and the 30-day check-in rate.
+      body.bookings = { ...(await bookingWeeks(db, at)), checkInRate: (await checkInCounts(db, at)).rate };
     }
+    if (has("money")) body.revenue = await revenueWeeks(db, at);
     if (has("staff")) {
       // The same test as activeFeatures (started, not ended), plus the platform owner whether or not they hold a grant.
       body.staff = await one(

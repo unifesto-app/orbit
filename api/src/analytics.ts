@@ -1,12 +1,13 @@
 import { sql } from "drizzle-orm";
 import { Hono } from "hono";
-import { type AnalyticsStats, PLATFORMS, type Platform } from "@orbit/contract";
+import { type AnalyticsStats, type CheckIn, PLATFORMS, type Platform } from "@orbit/contract";
 import { istDay } from "./activity.ts";
 import type { Deps } from "./auth/routes.ts";
 import type { Db } from "./db/index.ts";
 import { auditLog } from "./db/schema.ts";
 import { signedIn } from "./http.ts";
 import { requireFeature, type StaffEnv } from "./roles/access.ts";
+import { holds } from "./roles/rules.ts";
 
 // Galaxy's Analytics reading side (owner, 19 Nov 2026: "user analytics, mau, dau etc", "app analytics and more"). The
 // numbers come from the activity log (activity.ts), kept "90 days", then summed into activityDays by sweepActivity.
@@ -30,6 +31,44 @@ export async function activeCounts(db: Db, at: number) {
   return r!;
 }
 
+const ts = (ms: number) => sql`${new Date(ms).toISOString()}::timestamptz`; // a raw template doesn't map a Date for the driver
+const startOf = (day: string) => ts(dayMs(day) - IST); // an IST day's midnight
+const round2 = (v: number | null) => (v === null ? null : Math.round(v * 100) / 100);
+// Money that landed: paid, or paid and given back since (refundPending, refunded). Revenue counts what came in; refunds
+// are shown on their own.
+const LANDED = sql`('paid', 'refundPending', 'refunded')`;
+
+/** The one definition of the check-in rate: confirmed bookings at published events that ended in the last 30 IST days, before now. */
+export async function checkInCounts(db: Db, at: number): Promise<CheckIn> {
+  const [r] = await many<{ events: number; tickets: number; admitted: number; p50: number | null; p10: number | null }>(
+    db,
+    // percentile_cont: a share is a share, 0.85 between two events is a fair middle.
+    sql`select count(*)::int as events, coalesce(sum(t), 0)::int as tickets, coalesce(sum(a), 0)::int as admitted, percentile_cont(0.5) within group (order by a::float / t) as p50, percentile_cont(0.1) within group (order by a::float / t) as p10 from (select sum(b.quantity) as t, sum(b.admitted) as a from events e join bookings b on b.event_id = e.id and b.status = 'confirmed' where e.status = 'published' and coalesce(e.ends_at, e.starts_at) >= ${startOf(addDays(istDay(at), -29))} and coalesce(e.ends_at, e.starts_at) < ${ts(at)} group by e.id) x`,
+  );
+  return { events: r!.events, tickets: r!.tickets, admitted: r!.admitted, rate: r!.tickets ? round2(r!.admitted / r!.tickets) : null, p50: round2(r!.p50), p10: round2(r!.p10) };
+}
+
+/** Confirmed ticket bookings made in the last 7 IST days, and the 7 before: the Dashboard's week, as Analytics' days count. */
+export async function bookingWeeks(db: Db, at: number) {
+  const today = istDay(at);
+  const [r] = await many<{ week: number; prev: number }>(
+    db,
+    sql`select (count(*) filter (where created_at >= ${startOf(addDays(today, -6))}))::int as week, (count(*) filter (where created_at < ${startOf(addDays(today, -6))}))::int as prev from bookings where status = 'confirmed' and created_at >= ${startOf(addDays(today, -13))}`,
+  );
+  return { week: r!.week, prevWeek: r!.prev };
+}
+
+/** Paise that landed in the last 7 IST days and the 7 before, and Orbit's part (buyer fee plus commission) of the last 7. */
+export async function revenueWeeks(db: Db, at: number) {
+  const today = istDay(at);
+  const week = startOf(addDays(today, -6));
+  const [r] = await many<{ week: number; prev: number; orbit: number }>(
+    db,
+    sql`select coalesce(sum(amount_paise) filter (where created_at >= ${week}), 0)::int as week, coalesce(sum(amount_paise) filter (where created_at < ${week}), 0)::int as prev, coalesce(sum(buyer_fee_paise + commission_paise) filter (where created_at >= ${week}), 0)::int as orbit from payments where status in ${LANDED} and created_at >= ${startOf(addDays(today, -13))}`,
+  );
+  return { week: r!.week, prevWeek: r!.prev, orbitWeek: r!.orbit };
+}
+
 export function analyticsRoutes({ db, secret, now = Date.now }: Deps) {
   const app = new Hono<StaffEnv>();
 
@@ -38,7 +77,6 @@ export function analyticsRoutes({ db, secret, now = Date.now }: Deps) {
     const today = istDay(at);
     const from30 = addDays(today, -29);
     const from7 = addDays(today, -6);
-    const ts = (ms: number) => sql`${new Date(ms).toISOString()}::timestamptz`; // a raw template doesn't map a Date for the driver
     // One query at a time, as the Dashboard does: all at once would hold every pooled connection.
 
     // Since: the first day anyone was counted, in the log or in the kept totals.
@@ -171,6 +209,69 @@ export function analyticsRoutes({ db, secret, now = Date.now }: Deps) {
       sql`select (count(*) filter (where deletion_due_at is not null and deleted_at is null))::int as pending, (count(*) filter (where deleted_at >= ${ts(at - 30 * DAY)}))::int as month from users`,
     );
 
+    // Bookings: every one made in the last 30 days, whatever became of it. A booking's payment is found through its event
+    // (payments are indexed on event_id). Free: a confirmed booking without money that landed.
+    const fill = (rows: { day: string; count: number }[]) => {
+      const m = new Map(rows.map((r) => [r.day, r.count]));
+      return Array.from({ length: 30 }, (_, i) => ({ day: addDays(from30, i), count: m.get(addDays(from30, i)) ?? 0 }));
+    };
+    const [bk] = await many<{ total: number; confirmed: number; cancelled: number; tickets: number; paid: number; p50: number | null; p90: number | null }>(
+      db,
+      sql`select count(*)::int as total, (count(*) filter (where status = 'confirmed'))::int as confirmed, (count(*) filter (where status <> 'confirmed'))::int as cancelled, coalesce(sum(quantity) filter (where status = 'confirmed'), 0)::int as tickets, (count(*) filter (where status = 'confirmed' and exists (select 1 from payments p where p.event_id = b.event_id and p.booking_id = b.id and p.status in ${LANDED})))::int as paid, (percentile_disc(0.5) within group (order by quantity) filter (where status = 'confirmed'))::int as p50, (percentile_disc(0.9) within group (order by quantity) filter (where status = 'confirmed'))::int as p90 from bookings b where created_at >= ${startOf(from30)}`,
+    );
+    const bkDays = await many<{ day: string; count: number }>(
+      db,
+      sql`select to_char(created_at at time zone 'Asia/Kolkata', 'YYYY-MM-DD') as day, count(*)::int as count from bookings where created_at >= ${startOf(from30)} group by 1`,
+    );
+    const src = await many<{ source: "orbit" | "host" | "other"; count: number }>(
+      db,
+      sql`select source, count(*)::int as count from bookings where status = 'confirmed' and created_at >= ${startOf(from30)} group by source`,
+    );
+    const SOURCE = { orbit: "Orbit app", host: "Host", other: "Other" } as const;
+    const bookings = {
+      total: bk!.total,
+      confirmed: bk!.confirmed,
+      cancelled: bk!.cancelled,
+      tickets: bk!.tickets,
+      days: fill(bkDays),
+      sources: src.map((r) => ({ name: SOURCE[r.source], count: r.count })).sort(byCount),
+      paid: bk!.paid,
+      free: bk!.confirmed - bk!.paid,
+      perBooking: { p50: bk!.p50, p90: bk!.p90 },
+    };
+
+    const checkIn = await checkInCounts(db, at);
+
+    // Revenue: Money holders only; nothing about money is read for anyone else.
+    let revenue: AnalyticsStats["revenue"] = null;
+    if (holds(c.var.actor, "money")) {
+      const [p] = await many<{ gross: number; orbit: number; payments: number; tickets: number; slots: number; p50: number | null; p90: number | null }>(
+        db,
+        // percentile_disc: a real payment's amount, never one between two.
+        sql`select coalesce(sum(amount_paise), 0)::int as gross, coalesce(sum(buyer_fee_paise + commission_paise), 0)::int as orbit, count(*)::int as payments, coalesce(sum(amount_paise) filter (where kind = 'ticket'), 0)::int as tickets, coalesce(sum(amount_paise) filter (where kind = 'slot'), 0)::int as slots, (percentile_disc(0.5) within group (order by amount_paise))::int as p50, (percentile_disc(0.9) within group (order by amount_paise))::int as p90 from payments where status in ${LANDED} and created_at >= ${startOf(from30)}`,
+      );
+      const [rf] = await many<{ n: number }>(
+        db,
+        sql`select coalesce(sum(amount_paise), 0)::int as n from refunds where status = 'processed' and created_at >= ${startOf(from30)}`,
+      );
+      const pDays = await many<{ day: string; count: number }>(
+        db,
+        sql`select to_char(created_at at time zone 'Asia/Kolkata', 'YYYY-MM-DD') as day, sum(amount_paise)::int as count from payments where status in ${LANDED} and created_at >= ${startOf(from30)} group by 1`,
+      );
+      revenue = {
+        gross: p!.gross,
+        orbit: p!.orbit,
+        refunded: rf!.n,
+        payments: p!.payments,
+        days: fill(pDays),
+        kinds: [
+          { name: "Tickets", count: p!.tickets },
+          { name: "Slots", count: p!.slots },
+        ].sort(byCount),
+        order: { p50: p!.p50, p90: p!.p90 },
+      };
+    }
+
     await db.insert(auditLog).values({ actorId: c.var.actor.id, action: "analytics.view", data: {}, at: new Date(at) });
     const body: AnalyticsStats = {
       since: first?.day ?? null,
@@ -186,6 +287,9 @@ export function analyticsRoutes({ db, secret, now = Date.now }: Deps) {
       cities,
       follows,
       deletions: d!,
+      bookings,
+      checkIn,
+      revenue,
     };
     return c.json(body satisfies AnalyticsStats);
   });
