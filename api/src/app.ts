@@ -11,6 +11,8 @@ import { publicEventsRoutes } from "./events/public.ts";
 import { savesRoutes } from "./saves.ts";
 import { meNotificationsRoutes } from "./me-notifications.ts";
 import { bookingsRoutes } from "./bookings.ts";
+import { paymentsRoutes } from "./payments/routes.ts";
+import { moneyRoutes } from "./payments/galaxy.ts";
 import { checkInRoutes } from "./checkin.ts";
 import { slotsRoutes } from "./slots/routes.ts";
 import { hostsRoutes } from "./hosts/routes.ts";
@@ -54,6 +56,8 @@ export function createApp(deps?: Deps) {
     app.route("/", savesRoutes(deps));
     app.route("/", meNotificationsRoutes(deps));
     app.route("/", bookingsRoutes(deps));
+    app.route("/", paymentsRoutes(deps));
+    app.route("/", moneyRoutes(deps));
     app.route("/", checkInRoutes(deps));
     app.route("/", slotsRoutes(deps));
     app.route("/", galaxyVenuesRoutes(deps));

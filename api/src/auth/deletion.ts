@@ -1,7 +1,8 @@
 import { and, eq, gt, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import type { Db } from "../db/index.ts";
-import { activity, bookings, deliveries, eventRequests, events, follows, hosts, identities, inboxItems, listEvents, lists, notificationPrefs, passkeys, saves, pmActivity, sessions, staffGrants, teamRoles, users } from "../db/schema.ts";
+import { activity, bookings, deliveries, eventRequests, events, follows, hosts, identities, inboxItems, listEvents, lists, notificationPrefs, passkeys, payments, saves, pmActivity, sessions, staffGrants, teamRoles, users } from "../db/schema.ts";
+import { refundPaid } from "../payments/routes.ts";
 import { type Env, fail, type Notify, signedIn } from "../http.ts";
 import { drop, type Media } from "../media.ts";
 import { holdIfUnanswered, ownerOnlySql } from "../roles/access.ts";
@@ -147,12 +148,19 @@ export async function runDeletions(db: Db, notify: Notify, now: number, revokeAp
         await tx.delete(inboxItems).where(eq(inboxItems.userId, u.id));
         await tx.update(deliveries).set({ status: "skipped", reason: "accountDeleted" }).where(and(eq(deliveries.userId, u.id), eq(deliveries.status, "queued")));
         await tx.update(deliveries).set({ userId: null, contact: null, payload: {}, target: sql`'deleted:' || ${deliveries.id}` }).where(eq(deliveries.userId, u.id));
-        // Their tickets for events that haven't ended are cancelled, freeing the seats; past bookings stay as records.
-        // ponytail: free bookings only exist yet; P3.2 makes deletion wait for upcoming paid tickets instead.
-        await tx
+        // Their tickets for events that haven't ended are cancelled, freeing the seats; past bookings stay as records. Paid
+        // ones for events that haven't started go back in full, as a holder's own cancel would (one under way doesn't);
+        // the poller sends those refunds (their first try is 15 minutes on).
+        const gone = await tx
           .update(bookings)
           .set({ status: "cancelled", cancelledAt: at, link: null })
-          .where(and(eq(bookings.userId, u.id), eq(bookings.status, "confirmed"), inArray(bookings.eventId, tx.select({ id: events.id }).from(events).where(gt(events.endsAt, at)))));
+          .where(and(eq(bookings.userId, u.id), eq(bookings.status, "confirmed"), inArray(bookings.eventId, tx.select({ id: events.id }).from(events).where(gt(events.endsAt, at)))))
+          .returning({ id: bookings.id, eventId: bookings.eventId });
+        const ahead = gone.length
+          ? new Set((await tx.select({ id: events.id }).from(events).where(and(inArray(events.id, gone.map((b) => b.eventId)), gt(events.startsAt, at)))).map((e) => e.id))
+          : new Set<string>();
+        const back = gone.filter((b) => ahead.has(b.eventId)).map((b) => b.id);
+        if (back.length) await refundPaid(tx, inArray(payments.bookingId, back), "The account was deleted", at);
         const seats = await tx
           .update(teamRoles)
           .set({ endedAt: at, endReason: "deleted" })

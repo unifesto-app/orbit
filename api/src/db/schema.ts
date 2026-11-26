@@ -67,9 +67,11 @@ export const hosts = pgTable("hosts", {
   parentId: uuid("parent_id").references((): AnyPgColumn => hosts.id),
   suspendReason: text("suspend_reason"), // what staff said, shown to the host's Admins
   liftTo: text("lift_to", { enum: ["live", "paused", "archived"] }), // where a staff lift returns a staff-suspended host
-  // How Orbit's 5% fee splits (owner, 25 Nov 2026): 3% from the buyer + 2% from the host, or 5% from the buyer + 0%.
-  // Only stored here; charging it is the payments slice's (X2/X3).
+  // How Orbit's 5% fee splits (owner, 25 Nov 2026): 3% from the buyer + 2% from the host, or 5% from the buyer + 0%; the
+  // host's Admins pick it (PATCH /hosts/:id), staff can set it in Galaxy Fees. `feeIncluded` (Galaxy Fees only) carves
+  // the buyer fee out of the price instead of adding it. Each payment freezes both at sale.
   feePlan: text("fee_plan", { enum: ["3+2", "5+0"] }).notNull().default("3+2"),
+  feeIncluded: boolean("fee_included").notNull().default(false),
   createdAt: at("created_at").notNull().defaultNow(),
   updatedAt: at("updated_at").notNull().defaultNow(),
 }, (t) => [index().on(t.parentId)]);
@@ -916,6 +918,132 @@ export const announcements = pgTable(
     createdAt: at("created_at").notNull().defaultNow(),
   },
   (t) => [index().on(t.eventId, t.createdAt)],
+);
+
+// ---------- Money (Orbit flows: Money; X2): Razorpay payments, refunds and payouts. Whole paise, always integers ----------
+
+// One Razorpay order and the payment that lands on it, with the terms frozen at the moment it was made. `created` until
+// money lands (verify, webhook or the poller all settle it once); `refundPending` when it landed but no seat could be
+// given. `merchant`: which Razorpay account took it (a new company takes over later). Rows stay for good.
+export const payments = pgTable(
+  "payments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    kind: text("kind", { enum: ["ticket", "slot"] }).notNull(),
+    userId: uuid("user_id").notNull().references(() => users.id),
+    hostId: uuid("host_id").notNull().references(() => hosts.id),
+    eventId: uuid("event_id").references(() => events.id),
+    ticketTypeId: uuid("ticket_type_id").references(() => ticketTypes.id),
+    claimId: uuid("claim_id").references(() => stationClaims.id),
+    quantity: integer("quantity").notNull(),
+    unitPricePaise: integer("unit_price_paise").notNull(),
+    plan: text("plan", { enum: ["3+2", "5+0"] }).notNull(),
+    buyerFeeBps: integer("buyer_fee_bps").notNull(),
+    buyerFeePaise: integer("buyer_fee_paise").notNull(),
+    commissionBps: integer("commission_bps").notNull(),
+    commissionPaise: integer("commission_paise").notNull(),
+    feeIncluded: boolean("fee_included").notNull(),
+    gstFeePaise: integer("gst_fee_paise").notNull().default(0), // GST waits (Money decision 12)
+    gstCommissionPaise: integer("gst_commission_paise").notNull().default(0),
+    amountPaise: integer("amount_paise").notNull(), // what the buyer pays
+    merchant: text("merchant").notNull().default("orbit"),
+    razorpayOrderId: text("razorpay_order_id").notNull().unique(),
+    razorpayPaymentId: text("razorpay_payment_id").unique(),
+    razorpayFeePaise: integer("razorpay_fee_paise"), // Razorpay's own fee and tax, once it reports them
+    razorpayTaxPaise: integer("razorpay_tax_paise"),
+    status: text("status", { enum: ["created", "paid", "refundPending", "refunded", "expired", "failed"] }).notNull().default("created"),
+    bookingId: uuid("booking_id").references(() => bookings.id),
+    createdAt: at("created_at").notNull(),
+    updatedAt: at("updated_at").notNull(),
+  },
+  (t) => [
+    check("payments_amounts", sql`${t.amountPaise} > 0 and ${t.quantity} > 0 and ${t.unitPricePaise} > 0`),
+    check("payments_status", sql`${t.status} in ('created', 'paid', 'refundPending', 'refunded', 'expired', 'failed')`),
+    check("payments_plan", sql`${t.plan} in ('3+2', '5+0')`),
+    // A ticket is for an event's ticket type; a slot for a Station claim.
+    check(
+      "payments_kind",
+      sql`(${t.kind} = 'ticket' and ${t.eventId} is not null and ${t.ticketTypeId} is not null) or (${t.kind} = 'slot' and ${t.claimId} is not null)`,
+    ),
+    // One open order per person per ticket type: a second tap gets the same order ("You're already paying").
+    uniqueIndex("payments_one_open_per_type").on(t.userId, t.ticketTypeId).where(sql`${t.status} = 'created'`),
+    index().on(t.status, t.createdAt),
+    index().on(t.hostId, t.createdAt),
+    index().on(t.eventId),
+  ],
+);
+
+// Money going back. The row is written first with its own id, which goes to Razorpay as the receipt, so a retry finds the
+// refund it already made instead of sending twice. `razorpayPaymentId`: the Razorpay payment it refunds (a second payment
+// on one order is refunded on its own).
+export const refunds = pgTable(
+  "refunds",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    paymentId: uuid("payment_id").notNull().references(() => payments.id),
+    razorpayPaymentId: text("razorpay_payment_id").notNull(),
+    amountPaise: integer("amount_paise").notNull(),
+    reason: text("reason").notNull(),
+    kind: text("kind", { enum: ["auto", "staff", "request"] }).notNull(),
+    status: text("status", { enum: ["requested", "sent", "processed", "failed"] }).notNull().default("requested"),
+    razorpayRefundId: text("razorpay_refund_id").unique(),
+    attempts: integer("attempts").notNull().default(0),
+    nextAttemptAt: at("next_attempt_at"), // null: not retried on its own (sent, done, or out of retries)
+    by: uuid("by").references(() => users.id), // the staff member, for kind staff
+    createdAt: at("created_at").notNull(),
+    updatedAt: at("updated_at").notNull(),
+  },
+  (t) => [
+    check("refunds_amount_positive", sql`${t.amountPaise} > 0`),
+    check("refunds_status", sql`${t.status} in ('requested', 'sent', 'processed', 'failed')`),
+    check("refunds_kind", sql`${t.kind} in ('auto', 'staff', 'request')`),
+    index().on(t.paymentId),
+    index().on(t.status, t.nextAttemptAt),
+  ],
+);
+
+// Bank transfers to hosts, by hand, each with its UTR once paid (6 to 40 characters, stored upper case, never reused).
+export const payouts = pgTable(
+  "payouts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    hostId: uuid("host_id").notNull().references(() => hosts.id),
+    eventId: uuid("event_id").notNull().references(() => events.id),
+    amountPaise: integer("amount_paise").notNull(),
+    status: text("status", { enum: ["requested", "paid", "cancelled"] }).notNull().default("requested"),
+    utr: text("utr").unique(),
+    reason: text("reason"),
+    by: uuid("by").notNull().references(() => users.id), // who last changed it
+    at: at("at").notNull(),
+    createdAt: at("created_at").notNull(),
+  },
+  (t) => [
+    check("payouts_amount_positive", sql`${t.amountPaise} > 0`),
+    check("payouts_utr", sql`${t.utr} is null or (length(${t.utr}) between 6 and 40 and ${t.utr} = upper(${t.utr}))`),
+    check("payouts_status", sql`${t.status} in ('requested', 'paid', 'cancelled')`),
+    index().on(t.eventId),
+  ],
+);
+
+// Every Razorpay webhook event we took, by Razorpay's event id: a repeat is a no-op. `handledAt` null: nothing to match yet
+// (a refund we don't know), left for the poller.
+export const razorpayEvents = pgTable("razorpay_events", {
+  id: text("id").primaryKey(),
+  type: text("type").notNull(),
+  receivedAt: at("received_at").notNull(),
+  handledAt: at("handled_at"),
+});
+
+// Webhooks refused (a bad signature, a body we can't read), for Galaxy. `excerpt`: the event and ids only, never the body.
+export const failedWebhooks = pgTable(
+  "failed_webhooks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    receivedAt: at("received_at").notNull(),
+    reason: text("reason").notNull(),
+    excerpt: text("excerpt").notNull(),
+  },
+  (t) => [index().on(t.receivedAt)],
 );
 
 // A staff message to a segment (notifications build plan PR 9, broadcasts.ts). `cursor`: the last user id sent to, so a

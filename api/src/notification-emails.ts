@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { type Channel, EMAIL_SWITCHES, type EmailSwitch, fillVars, inboxApp, isMust, KINDS, type NoticeKind, WAITLIST_CONTACT, type Wording } from "@orbit/contract";
+import { type Channel, EMAIL_SWITCHES, type EmailSwitch, fillVars, formatPrice, inboxApp, isMust, KINDS, type NoticeKind, WAITLIST_CONTACT, type Wording } from "@orbit/contract";
 import type { Db } from "./db/index.ts";
 import { notificationTemplates } from "./db/schema.ts";
 import type { Tx } from "./http.ts";
@@ -37,6 +37,14 @@ const time = (v: unknown) => {
 const METHOD: Record<string, string> = { email: "email", phone: "phone number", passkey: "passkey", google: "Google", apple: "Apple" };
 const THE_METHOD: Record<string, string> = { email: "your email", phone: "your phone number", passkey: "a passkey", google: "Google", apple: "Apple" };
 const AUDIT = "See the audit log in Galaxy.";
+
+const UNCONFIRMED: Record<string, string> = {
+  fewLeft: "It sold out",
+  closed: "Booking closed",
+  cancelled: "The event was cancelled",
+  ended: "The event ended",
+  notOpen: "Booking wasn’t open",
+};
 
 const WORDS: Partial<Record<NoticeKind, (d: Data) => Words>> = {
   welcome: () => ({ subject: "Welcome to Orbit", line: "You’re in. There’s more to life beyond the usual." }),
@@ -87,6 +95,22 @@ const WORDS: Partial<Record<NoticeKind, (d: Data) => Words>> = {
       : d.decision === "changes"
         ? { subject: "Your request to host needs a change", line: `What to change: ${str(d.reason)}. Edit your request in ${partnerApp(d)} and send it again.` }
         : { subject: "Your request to host was declined", line: `Reason: ${str(d.reason)}.` },
+  // Paying (payments/routes.ts): `reason` is the check that failed when the money landed.
+  soldOutWhilePaying: (d) => ({
+    subject: "We refunded your payment",
+    line: `${UNCONFIRMED[str(d.reason)] ?? "We couldn’t confirm your ticket"} while you were paying, so we refunded you in full, fee included.`,
+  }),
+  paidTwice: () => ({ subject: "We refunded your second payment", line: "You paid twice, so we refunded the second payment in full." }),
+  refundSent: (d) => ({
+    subject: "Your refund is on its way",
+    line: `${formatPrice(Number(d.amountPaise) || 0)} is on its way back to you. It takes 5 to 7 working days to reach your account.`,
+  }),
+  payoutPaid: (d) => ({ subject: "Your payout is on its way", line: `${formatPrice(Number(d.amountPaise) || 0)} was sent to your bank account. UTR ${str(d.utr)}.` }),
+  payoutCancelled: (d) => ({ subject: "A payout was cancelled", line: `${formatPrice(Number(d.amountPaise) || 0)}. Reason: ${str(d.reason)}.` }),
+  feeChange: (d) => ({
+    subject: `${str(d.hostName)}’s fee plan changed`,
+    line: `${d.plan === "5+0" ? "5% from the buyer, no commission" : "3% from the buyer and 2% commission"}, ${d.feeIncluded ? "with the fee included in your prices" : "with the fee on top of your prices"}. It applies to sales from now on.`,
+  }),
   slotReleased: (d) => ({ subject: `Your slot at ${str(d.hostName)} was released`, line: `You didn’t check in for ${dayTime(d.start)}, so the slot was freed.` }),
   hostAnnouncement: (d) => ({ subject: `${str(d.hostName) || "The host"} about ${str(d.title)}`, line: str(d.text) }),
   eventTomorrow: (d) => ({ subject: `Coming up: ${str(d.title)}`, line: `${str(d.title)} starts tomorrow at ${time(d.startsAt)}.` }),
@@ -119,6 +143,7 @@ const WORDS: Partial<Record<NoticeKind, (d: Data) => Words>> = {
 type Var = [sample: unknown, show?: (v: unknown) => string];
 const method = (v: unknown) => METHOD[str(v)] ?? str(v);
 const list = (v: unknown) => (Array.isArray(v) ? v.join(", ") : str(v));
+const rupees = (v: unknown) => formatPrice(Number(v) || 0);
 const H: Record<string, Var> = { hostName: ["Open Mic Club"] };
 const R: Record<string, Var> = { reason: ["It broke the house rules"] };
 const T: Record<string, Var> = { title: ["Open Mic Night"] };
@@ -142,6 +167,12 @@ export const VARS: Partial<Record<NoticeKind, Record<string, Var>>> = {
   hostLifted: H,
   hostParentSet: { ...H, parentName: ["City Arts Collective"] },
   eventRequestAnswered: { decision: ["approved"], name: ["Open Mic Club"], ...R },
+  soldOutWhilePaying: { reason: ["fewLeft", (v) => UNCONFIRMED[str(v)] ?? str(v)] },
+  paidTwice: {},
+  refundSent: { amountPaise: [49900, rupees] },
+  payoutPaid: { amountPaise: [1250000, rupees], utr: ["HDFCN52026112612345"] },
+  payoutCancelled: { amountPaise: [1250000, rupees], ...R },
+  feeChange: { ...H, plan: ["5+0"], feeIncluded: [false] },
   slotReleased: { ...H, start: [SOON, dayTime] },
   hostAnnouncement: { ...H, ...T, text: ["Doors open at 6:30, half an hour early."] },
   eventTomorrow: { ...T, startsAt: [SOON, time] },
@@ -171,6 +202,8 @@ const BRANCHES: Partial<Record<NoticeKind, readonly Channel[]>> = {
   hostAnnouncement: ["email"],
   followedHostEvent: ["email"],
   providerFailing: ALL,
+  soldOutWhilePaying: ALL, // the line follows the reason
+  feeChange: ALL, // the line follows the plan and where the fee sits
   orbitNews: ALL, // a broadcast's words are its own title and text
   orbitNotice: ALL,
 };

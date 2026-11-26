@@ -46,6 +46,17 @@ export const sections: { title: string; items: NavItem[] }[] = [
     ],
   },
   {
+    // Paying (Money flow; X2), for holders of Money: Razorpay's orders, refunds, payouts by hand, each host's fee plan.
+    title: "Money",
+    items: [
+      { label: "Payments", href: "/money/payments" },
+      { label: "Refunds", href: "/money/refunds" },
+      { label: "Payouts", href: "/money/payouts" },
+      { label: "Fees", href: "/money/fees" },
+      { label: "Failed webhooks", href: "/money/failed-webhooks" },
+    ],
+  },
+  {
     title: "Platform",
     items: [
       // Notification kinds with their kill switches, and the delivery log by person (notifications build plan, PR 7).

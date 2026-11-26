@@ -9,7 +9,7 @@ import { fail, invalid, isUuid, parse, signedIn, taken, type Env } from "./http.
 import { mine } from "./saves.ts";
 
 // Free registration and the ticket it gives (Orbit flows: Booking and tickets; P10.1, P12.1, P12.2). Signed in, and a
-// person only ever reads or cancels their own (anyone else's is a 404). Paid tiers wait for checkout (the next slice).
+// person only ever reads or cancels their own (anyone else's is a 404). Paid tiers are paid for (payments/routes.ts).
 // Tokens (qr, code, link) are never logged.
 
 type Deps = { db: Db; secret: string; now?: () => number };
@@ -33,6 +33,49 @@ export async function seatsTaken(db: Db | Tx, tierIds: string[]): Promise<Map<st
     .groupBy(bookings.ticketTypeId);
   return new Map(rows.map((r) => [r.id, r.n]));
 }
+
+// What book() and paying check, under book()'s locks: the caller holds the person (mine), and this takes the event
+// shared (so a host's cancel or ticket edit waits for it, and it for them), then the ticket type, under which the
+// confirmed seats are counted: never oversold. `paid`: the caller is paying, so the tier must have a price (book() is
+// for free ones). Settling a payment runs it again, so a seat taken while someone paid is caught there.
+export type Refusal = { error: string; status: 400 | 404 | 409; message: string; extra?: object };
+export async function seatCheck(
+  tx: Tx,
+  i: { userId: string; eventId: string; ticketTypeId: string; quantity: number; paid: boolean },
+  now: number,
+): Promise<Refusal | { e: { id: string; hostId: string }; tier: typeof ticketTypes.$inferSelect }> {
+  const no = (status: Refusal["status"], error: string, message: string, extra?: object): Refusal => ({ status, error, message, extra });
+  const [e] = await tx
+    .select({ id: events.id, hostId: events.hostId, status: events.status, endsAt: events.endsAt })
+    .from(events)
+    .innerJoin(hosts, eq(hosts.id, events.hostId))
+    .where(and(eq(events.id, i.eventId), openable))
+    .for("share", { of: events });
+  if (!e) return no(404, "notFound", "There's nothing here.");
+  if (e.status === "cancelled") return no(409, "cancelled", "This event has been cancelled.");
+  if (!e.endsAt || e.endsAt.getTime() <= now) return no(409, "ended", "This event has ended.");
+  const [tier] = await tx.select().from(ticketTypes).where(and(eq(ticketTypes.id, i.ticketTypeId), eq(ticketTypes.eventId, e.id))).for("update");
+  if (!tier) return no(404, "notFound", "There's nothing here.");
+  if (!i.paid && tier.pricePaise > 0) return no(409, "paidLater", "Paying in the app is coming soon."); // the code builds before X3 read
+  if (i.paid && tier.pricePaise === 0) return no(400, "free", "This ticket is free. Book it instead.");
+  if (tier.salesStartAt && tier.salesStartAt.getTime() > now) return no(409, "notOpen", `Booking opens ${india(tier.salesStartAt)}`);
+  if (tier.salesEndAt && tier.salesEndAt.getTime() <= now) return no(409, "closed", "Booking has closed");
+  // ponytail: no age on events yet (P19.2); once there is, an 18+ or 21+ event books exactly 1 (Booking d14).
+  if (i.quantity > tier.perPersonLimit) return no(409, "tooMany", `You can book up to ${tier.perPersonLimit} of these at a time.`);
+  const [have] = await tx
+    .select({ id: bookings.id })
+    .from(bookings)
+    .where(and(eq(bookings.userId, i.userId), eq(bookings.ticketTypeId, tier.id), eq(bookings.status, "confirmed")));
+  if (have) return no(409, "booked", "You already have a ticket for this.");
+  if (tier.quantity !== null) {
+    const left = tier.quantity - ((await seatsTaken(tx, [tier.id])).get(tier.id) ?? 0);
+    if (left < i.quantity) return no(409, "fewLeft", left <= 0 ? "Sold out" : `Only ${left} left`, { left: Math.max(left, 0) });
+  }
+  return { e: { id: e.id, hostId: e.hostId }, tier };
+}
+
+// A confirmed booking's random tokens: a QR, the 8-character code and the link.
+export const tokens = () => ({ qr: token(), code: code(), link: token() });
 
 // The holder's view of bookings: each with its event card (cancelled and off-the-air events too: it's their ticket) and,
 // only while confirmed, the tokens and the event's online link.
@@ -62,9 +105,8 @@ export function bookingsRoutes({ db, secret, now = Date.now }: Deps) {
 
   // POST /events/:id/book {ticketTypeId, quantity}: booked in Orbit's app, so `source` is "orbit" (d16: a client can't
   // set its own attribution; host and other sources come with their own routes). A free seat is taken at once, no hold
-  // (holds are for paid checkout). Locks, in this order everywhere: the person (mine), the event shared (so a host's
-  // cancel or ticket edit waits for it, and it for them), then the ticket type, under which the confirmed seats are
-  // counted: never oversold.
+  // (holds are for paid checkout). Locks, in this order everywhere: the person (mine), then seatCheck's event and ticket
+  // type.
   app.post("/events/:id/book", auth, async (c) => {
     const id = c.req.param("id");
     if (!isUuid(id)) return nothing(c);
@@ -74,34 +116,12 @@ export function bookingsRoutes({ db, secret, now = Date.now }: Deps) {
     for (let tries = 0; ; tries++) {
       try {
         const done = await mine(db, c, userId, async (tx) => {
-          const [e] = await tx
-            .select({ id: events.id, status: events.status, endsAt: events.endsAt })
-            .from(events)
-            .innerJoin(hosts, eq(hosts.id, events.hostId))
-            .where(and(eq(events.id, id), openable))
-            .for("share", { of: events });
-          if (!e) return nothing(c);
-          if (e.status === "cancelled") return fail(c, 409, "cancelled", "This event has been cancelled.");
-          if (!e.endsAt || e.endsAt.getTime() <= now()) return fail(c, 409, "ended", "This event has ended.");
-          const [tier] = await tx.select().from(ticketTypes).where(and(eq(ticketTypes.id, b.ticketTypeId), eq(ticketTypes.eventId, e.id))).for("update");
-          if (!tier) return nothing(c);
-          if (tier.pricePaise > 0) return fail(c, 409, "paidLater", "Paying in the app is coming soon.");
-          if (tier.salesStartAt && tier.salesStartAt.getTime() > now()) return fail(c, 409, "notOpen", `Booking opens ${india(tier.salesStartAt)}`);
-          if (tier.salesEndAt && tier.salesEndAt.getTime() <= now()) return fail(c, 409, "closed", "Booking has closed");
-          // ponytail: no age on events yet (P19.2); once there is, an 18+ or 21+ event books exactly 1 (Booking d14).
-          if (b.quantity > tier.perPersonLimit) return fail(c, 409, "tooMany", `You can book up to ${tier.perPersonLimit} of these at a time.`);
-          const [have] = await tx
-            .select({ id: bookings.id })
-            .from(bookings)
-            .where(and(eq(bookings.userId, userId), eq(bookings.ticketTypeId, tier.id), eq(bookings.status, "confirmed")));
-          if (have) return fail(c, 409, "booked", "You already have a ticket for this.");
-          if (tier.quantity !== null) {
-            const left = tier.quantity - ((await seatsTaken(tx, [tier.id])).get(tier.id) ?? 0);
-            if (left < b.quantity) return fail(c, 409, "fewLeft", left <= 0 ? "Sold out" : `Only ${left} left`, { left: Math.max(left, 0) });
-          }
+          const ok = await seatCheck(tx, { userId, eventId: id, ticketTypeId: b.ticketTypeId, quantity: b.quantity, paid: false }, now());
+          if ("error" in ok) return fail(c, ok.status, ok.error, ok.message, ok.extra);
+          const { e, tier } = ok;
           const [row] = await tx
             .insert(bookings)
-            .values({ userId, eventId: e.id, ticketTypeId: tier.id, quantity: b.quantity, source: "orbit", qr: token(), code: code(), link: token(), createdAt: at() })
+            .values({ userId, eventId: e.id, ticketTypeId: tier.id, quantity: b.quantity, source: "orbit", ...tokens(), createdAt: at() })
             .returning();
           return row!;
         });
@@ -157,7 +177,7 @@ export function bookingsRoutes({ db, secret, now = Date.now }: Deps) {
       const [e] = await tx.select({ startsAt: events.startsAt }).from(events).where(eq(events.id, row.eventId));
       if (!e!.startsAt || e!.startsAt.getTime() <= now()) return fail(c, 409, "started", "The event has started, so this ticket can't be cancelled.");
       const [tier] = await tx.select({ pricePaise: ticketTypes.pricePaise }).from(ticketTypes).where(eq(ticketTypes.id, row.ticketTypeId));
-      // ponytail: paid bookings don't exist yet; their cancel is a refund (the paid slice).
+      // ponytail: a paid ticket isn't cancelled by its holder here; asking for a refund comes with the refund requests queue.
       if (tier!.pricePaise > 0) return fail(c, 409, "notFree", "A paid ticket is refunded, not cancelled.");
       // ponytail: qr and code stay on the row (unique, so never reused); the scan slice must check status, not just find
       // the token, so a cancelled ticket's QR is refused at the gate.

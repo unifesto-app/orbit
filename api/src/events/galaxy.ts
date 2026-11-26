@@ -7,14 +7,16 @@ import { seatsTaken } from "../bookings.ts";
 import { fail, invalid, isUuid, listPage, type Notify, parse, signedIn } from "../http.ts";
 import { onHost, requireFeature, type StaffEnv } from "../roles/access.ts";
 import { sayStaff } from "../hosts/routes.ts";
-import { cancelling, cancelRefused, toTeamEvent, toTicket } from "./routes.ts";
+import type { Razorpay } from "../payments/razorpay.ts";
+import { cancelling, cancelRefused, sendBack, toTeamEvent, toTicket } from "./routes.ts";
 
 // Galaxy's Events (X1), for holders of Hosts: every host's events, one with its tickets, and staff's two moves on a
-// published one: back to draft while nobody has booked, or cancel with a reason (the host's own cancel, `cancelling`).
+// published one: back to draft while nobody has booked, or cancel with a reason (the host's own cancel, `cancelling`, paid
+// tickets refunded in full).
 // Each move is logged and told to the host's Admins and every holder of Hosts, as the host tools do (`sayStaff`). Staff never act on
 // a host they're on (Roles flow).
 
-type Deps = { db: Db; notify: Notify; secret: string; now?: () => number };
+type Deps = { db: Db; notify: Notify; secret: string; now?: () => number; razorpay?: Razorpay };
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 type Event = typeof events.$inferSelect;
 
@@ -22,7 +24,7 @@ const nothing = (c: Context) => fail(c, 404, "notFound", "There's nothing here."
 const ownHost = (c: Context) =>
   fail(c, 403, "ownHost", "Staff never act on a host they're on, invited to or left in the last 30 days. Ask another staff member with this access.");
 
-export function galaxyEventsRoutes({ db, notify, secret, now = Date.now }: Deps) {
+export function galaxyEventsRoutes({ db, notify, secret, razorpay: rz, now = Date.now }: Deps) {
   const app = new Hono<StaffEnv>();
   const auth = signedIn(db, secret, now);
   const hostsOnly = requireFeature(db, now, "hosts");
@@ -117,10 +119,15 @@ export function galaxyEventsRoutes({ db, notify, secret, now = Date.now }: Deps)
   app.post("/galaxy/events/:id/cancel", auth, hostsOnly, async (c) => {
     const b = await parse(c, CancelEvent);
     if (!b) return invalid(c);
-    return act(c, "events.cancel", b.reason, async (tx, cur) => {
+    let back: string[] = [];
+    const res = await act(c, "events.cancel", b.reason, async (tx, cur) => {
       const r = await cancelling(tx, cur, c.var.actor.id, b.reason, at());
-      return "error" in r ? cancelRefused(c, r.error, cur.status) : r.set;
+      if ("error" in r) return cancelRefused(c, r.error, cur.status);
+      back = r.back;
+      return r.set;
     });
+    if (res.status === 200) sendBack(db, rz, notify, back, now);
+    return res;
   });
 
   return app;
