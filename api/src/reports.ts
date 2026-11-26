@@ -5,15 +5,18 @@ import type { Deps } from "./auth/routes.ts";
 import { auditLog, events, hosts, reports, users } from "./db/schema.ts";
 import { openable } from "./events/public.ts";
 import { fail, invalid, isUuid, parse, signedIn } from "./http.ts";
-import { masked, requireFeature, type StaffEnv } from "./roles/access.ts";
+import { masked, onHost, requireFeature, type StaffEnv } from "./roles/access.ts";
 
 // Reports (orbit-pm X15, contract/src/reports.ts): a person flags an event or a host from its page in the app; holders of
 // Queues resolve or dismiss them in Galaxy. Acting on the event or host (unpublish, cancel, suspend) happens on its own
-// Galaxy page, so a decision here only closes the report.
+// Galaxy page, so a decision here only closes the report. Staff never see or decide a report on a host they're on (or
+// an event of one), as on every other Galaxy host action (onHost).
 
 const DAY = 24 * 3600_000;
 const LIST_MAX = 200;
 const nothing = (c: Context) => fail(c, 404, "notFound", "There's nothing here.");
+const ownHost = (c: Context) =>
+  fail(c, 403, "ownHost", "Staff never act on a host they're on, invited to or left in the last 30 days. Ask another staff member with this access.");
 type Row = typeof reports.$inferSelect;
 
 // Open reports on the same event or host as this row, itself included while it's open.
@@ -24,10 +27,14 @@ const columns = {
   openOnSubject,
   eventSlug: events.slug,
   eventTitle: events.title,
+  eventHost: events.hostId,
   hostSlug: hosts.slug,
   hostName: hosts.name,
 };
-type Joined = { r: Row; u: typeof users.$inferSelect; openOnSubject: number; eventSlug: string | null; eventTitle: string | null; hostSlug: string | null; hostName: string | null };
+type Joined = { r: Row; u: typeof users.$inferSelect; openOnSubject: number; eventSlug: string | null; eventTitle: string | null; eventHost: string | null; hostSlug: string | null; hostName: string | null };
+
+// The host a report is about: its own, or its event's.
+const hostOf = (x: Joined) => (x.r.hostId ?? x.eventHost)!;
 
 const toStaff = (x: Joined): StaffReport => {
   const m = masked(x.u);
@@ -62,15 +69,19 @@ export function reportsRoutes({ db, store, secret, now = Date.now }: Deps) {
       : await db.select({ id: hosts.id }).from(hosts).where(eq(hosts.id, b.hostId!));
     if (!found) return nothing(c);
     const subject = b.eventId ? eq(reports.eventId, b.eventId) : eq(reports.hostId, b.hostId!);
-    // The partial unique indexes keep one open report per person per subject, even for two sent at once.
-    const [made] = await db
-      .insert(reports)
-      .values({ userId, eventId: b.eventId ?? null, hostId: b.hostId ?? null, reason: b.reason, note: b.note || null, createdAt: at() })
-      .onConflictDoNothing()
-      .returning({ id: reports.id });
-    if (made) return c.json({ id: made.id }, 201);
-    const [have] = await db.select({ id: reports.id }).from(reports).where(and(eq(reports.userId, userId), eq(reports.status, "open"), subject));
-    return c.json({ id: have!.id });
+    // The partial unique indexes keep one open report per person per subject, even for two sent at once. The open one
+    // that blocked the insert may be decided before it's read: then the insert is tried once more.
+    for (let tries = 0; tries < 2; tries++) {
+      const [made] = await db
+        .insert(reports)
+        .values({ userId, eventId: b.eventId ?? null, hostId: b.hostId ?? null, reason: b.reason, note: b.note || null, createdAt: at() })
+        .onConflictDoNothing()
+        .returning({ id: reports.id });
+      if (made) return c.json({ id: made.id }, 201);
+      const [have] = await db.select({ id: reports.id }).from(reports).where(and(eq(reports.userId, userId), eq(reports.status, "open"), subject));
+      if (have) return c.json({ id: have.id });
+    }
+    return fail(c, 409, "busy", "That didn't go through. Try again.");
   });
 
   // ---------- Galaxy: Queues ----------
@@ -82,25 +93,29 @@ export function reportsRoutes({ db, store, secret, now = Date.now }: Deps) {
       .leftJoin(events, eq(events.id, reports.eventId))
       .leftJoin(hosts, eq(hosts.id, reports.hostId));
 
-  const detail = async (id: string): Promise<StaffReportDetail | null> => {
+  // One report, or null when it's missing or on a host the viewer is on.
+  const detail = async (c: Context<StaffEnv>, id: string): Promise<StaffReportDetail | null> => {
     const [x] = await joined().where(eq(reports.id, id));
-    if (!x) return null;
+    if (!x || (await onHost(db, hostOf(x), c.var.user, now()))) return null;
     const [by] = x.r.decidedBy ? await db.select({ id: users.id, name: users.name }).from(users).where(eq(users.id, x.r.decidedBy)) : [];
     return { ...toStaff(x), staffNote: x.r.staffNote, decidedBy: by ?? null, decidedAt: x.r.decidedAt?.toISOString() ?? null };
   };
 
   // GET /galaxy/reports?status=: newest first, 200 at most. Default: open.
-  // ponytail: one page of 200; page it (listPage) when the queue grows past that.
+  // Reports on a host the viewer is on are left out, so a page may hold fewer than 200.
+  // ponytail: one page of 200 and an onHost read per host on it; page it (listPage) when the queue grows past that.
   app.get("/galaxy/reports", auth, queues, async (c) => {
     const status = ReportStatus.safeParse(c.req.query("status") ?? "open");
     if (!status.success) return invalid(c);
     const rows = await joined().where(eq(reports.status, status.data)).orderBy(desc(reports.createdAt), desc(reports.id)).limit(LIST_MAX);
-    return c.json({ reports: rows.map(toStaff) });
+    const mine = new Map<string, boolean>();
+    for (const h of new Set(rows.map(hostOf))) mine.set(h, await onHost(db, h, c.var.user, now()));
+    return c.json({ reports: rows.filter((x) => !mine.get(hostOf(x))).map(toStaff) });
   });
 
   app.get("/galaxy/reports/:id", auth, queues, async (c) => {
     const id = c.req.param("id");
-    const r = isUuid(id) ? await detail(id) : null;
+    const r = isUuid(id) ? await detail(c, id) : null;
     return r ? c.json(r) : nothing(c);
   });
 
@@ -112,6 +127,9 @@ export function reportsRoutes({ db, store, secret, now = Date.now }: Deps) {
       const id = c.req.param("id");
       if (!isUuid(id)) return nothing(c);
       const actor = c.var.actor.id;
+      const [x] = await joined().where(eq(reports.id, id));
+      if (!x) return nothing(c);
+      if (await onHost(db, hostOf(x), c.var.user, now())) return ownHost(c);
       const done = await db.transaction(async (tx) => {
         const [r] = await tx.select().from(reports).where(eq(reports.id, id)).for("update");
         if (!r) return "missing" as const;
@@ -125,7 +143,7 @@ export function reportsRoutes({ db, store, secret, now = Date.now }: Deps) {
       });
       if (done === "missing") return nothing(c);
       if (done === "decided") return fail(c, 409, "decided", "That report has already been dealt with.");
-      return c.json(await detail(id));
+      return c.json(await detail(c, id));
     });
 
   return app;

@@ -218,7 +218,15 @@ export function icsOf(
   now: number,
 ) {
   const utc = (d: Date) => d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
-  const esc = (s: string) => s.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
+  // Any line break (CRLF, CR or LF) is a literal \n; other control characters and the Unicode line and paragraph
+  // separators are dropped, so no text can end a line or start a property of its own.
+  const esc = (s: string) =>
+    s
+      .replace(/\\/g, "\\\\")
+      .replace(/;/g, "\\;")
+      .replace(/,/g, "\\,")
+      .replace(/\r\n|\r|\n/g, "\\n")
+      .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, "");
   const url = `https://heyorbit.in/event/${e.slug}`;
   const place = e.venue ? [e.venue, e.address, e.area, e.city].filter(Boolean).join(", ") : e.online ? "Online" : null;
   return [

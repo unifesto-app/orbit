@@ -12,7 +12,7 @@
 import { categories, formatPrice } from '@orbit/contract';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { past as history } from '../../account/data';
@@ -236,12 +236,20 @@ function EventView({ e, host, now, live }: { e: Event; host: Host; now: number; 
               onPress: () => shareLink(`${e.title} · ${e.when} · ${e.area} · ${formatPrice(e.pricePaise)}`, `/event/${e.slug}`),
             },
             { label: 'Copy link', icon: 'link', onPress: () => void copyLink(`/event/${e.slug}`) },
-            ...(live
+            // The API has no calendar file for a cancelled event; a phone that can't open one says so.
+            ...(live && status.kind !== 'cancelled'
               ? [
-                  { label: 'Add to calendar', icon: 'calendar' as const, onPress: () => void Linking.openURL(`${API_URL}/public/events/${e.slug}/calendar.ics`) },
-                  { label: 'Report', icon: 'report' as const, onPress: () => reportIt('event', e.id, e.title) },
+                  {
+                    label: 'Add to calendar',
+                    icon: 'calendar' as const,
+                    onPress: () =>
+                      void Linking.openURL(`${API_URL}/public/events/${e.slug}/calendar.ics`).catch(() =>
+                        Alert.alert('Couldn’t open your calendar', 'Try again, or add it from the event’s link.'),
+                      ),
+                  },
                 ]
               : []),
+            ...(live ? [{ label: 'Report', icon: 'report' as const, onPress: () => reportIt('event', e.id, e.title) }] : []),
           ]}
         />
       </BackBar>

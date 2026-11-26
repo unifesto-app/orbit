@@ -1,5 +1,5 @@
 {
-  "id": "3082f656-ea57-4539-b876-13a2aabbbc30",
+  "id": "5eadf8d9-2a7e-4d30-bef6-aa6a35f423ff",
   "prevId": "c72d6ca8-2738-4613-a144-a8e598efd739",
   "version": "7",
   "dialect": "postgresql",
@@ -4893,7 +4893,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "no action",
           "onUpdate": "no action"
         },
         "reports_host_id_hosts_id_fk": {

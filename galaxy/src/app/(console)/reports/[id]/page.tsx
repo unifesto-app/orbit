@@ -28,13 +28,17 @@ async function Report({ params }: Pick<PageProps<"/reports/[id]">, "params">) {
   const q = r.data;
   // A person's page is People's; holders of Queues alone see the name.
   const people = viewer.ok && !!viewer.data.staff?.features.includes("people");
+  // The event's and host's pages are Hosts'; holders of Queues alone see the name.
+  const hostsToo = viewer.ok && !!viewer.data.staff?.features.includes("hosts");
   const name = q.reporter.name ?? "No name yet";
   const kind = q.subject.kind === "event" ? "Event" : "Host";
   // No prefetch: opening a host's page is written to the audit log.
-  const subject = (
+  const subject = hostsToo ? (
     <Link href={`/${q.subject.kind === "event" ? "events" : "hosts"}/${q.subject.id}`} prefetch={false}>
       {q.subject.name}
     </Link>
+  ) : (
+    q.subject.name
   );
 
   const pairs: [string, ReactNode][] = [
@@ -62,7 +66,15 @@ async function Report({ params }: Pick<PageProps<"/reports/[id]">, "params">) {
       {q.status === "open" && (
         <Container title="Actions">
           <div className={ui.page}>
-            <p className={ui.secondary}>To unpublish, cancel or suspend, open the {kind.toLowerCase()}&apos;s page: {subject}.</p>
+            <p className={ui.secondary}>
+              {hostsToo ? (
+                <>
+                  To unpublish, cancel or suspend, open the {kind.toLowerCase()}&apos;s page: {subject}.
+                </>
+              ) : (
+                "Ask someone with Hosts to act on it."
+              )}
+            </p>
             <Act label="Resolve" action={resolveReport} hidden={{ id: q.id }} who="Staff see this; the reporter doesn't" optional />
             <Act label="Dismiss" action={dismissReport} hidden={{ id: q.id }} who="Staff see this; the reporter doesn't" optional />
           </div>

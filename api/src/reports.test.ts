@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { eq } from "drizzle-orm";
 import sharp from "sharp";
 import { testApp } from "./testkit.ts";
-import { auditLog, staffGrants } from "./db/schema.ts";
+import { auditLog, events, staffGrants } from "./db/schema.ts";
 
 // Reports (X15): sending one, the Galaxy queue, and the event's calendar file.
 
@@ -83,10 +83,16 @@ test("Galaxy: Queues only; list, view, resolve and dismiss once", async () => {
   const h = await start(owner);
   const e = await publish(owner, h.id, "Late Show");
   const ra = (await as(a)("POST", "/reports", { eventId: e.id, reason: "unsafe", note: "No exits" })).body.id as string;
+  t.tick(1000); // newest first needs two times
   const rb = (await as(b)("POST", "/reports", { eventId: e.id, reason: "offensive" })).body.id as string;
 
   assert.equal((await as(a)("GET", "/galaxy/reports")).status, 404);
   assert.equal((await as(hostsOnly)("GET", "/galaxy/reports")).status, 404);
+  for (const u of [a, hostsOnly]) {
+    assert.equal((await as(u)("GET", `/galaxy/reports/${ra}`)).status, 404);
+    assert.equal((await as(u)("POST", `/galaxy/reports/${ra}/resolve`, {})).status, 404);
+    assert.equal((await as(u)("POST", `/galaxy/reports/${ra}/dismiss`, {})).status, 404);
+  }
   assert.equal((await as(q)("GET", "/galaxy/reports?status=nope")).status, 400);
 
   const open = (await as(q)("GET", "/galaxy/reports")).body.reports as any[];
@@ -141,4 +147,46 @@ test("calendar file for a published event, 404 for a draft", async () => {
   assert.match(body, /DTSTART:\d{8}T\d{6}Z\r\nDTEND:\d{8}T\d{6}Z\r\n/);
   assert.equal((await t.app.request(`/public/events/${d.slug}/calendar.ics`)).status, 404);
   assert.equal((await t.app.request(`/public/events/nope-nope/calendar.ics`)).status, 404);
+});
+
+test("two reports at once: one made, the other answered with it", async () => {
+  const owner = await join(), a = await join();
+  const h = await start(owner);
+  const [x, y] = await Promise.all([as(a)("POST", "/reports", { hostId: h.id, reason: "spam" }), as(a)("POST", "/reports", { hostId: h.id, reason: "scam" })]);
+  assert.deepEqual([x.status, y.status].sort(), [200, 201]);
+  assert.equal(x.body.id, y.body.id);
+});
+
+test("staff never see or decide reports on a host they're on", async () => {
+  const q = await withFeature("queues"), q2 = await withFeature("queues"), a = await join();
+  const h = await start(q); // q owns this host
+  const e = await publish(q, h.id, "My Own Show");
+  const onHost = (await as(a)("POST", "/reports", { hostId: h.id, reason: "spam" })).body.id as string;
+  const onEvent = (await as(a)("POST", "/reports", { eventId: e.id, reason: "unsafe" })).body.id as string;
+  for (const id of [onHost, onEvent]) {
+    assert.equal((await as(q)("POST", `/galaxy/reports/${id}/resolve`, {})).status, 403);
+    assert.equal((await as(q)("POST", `/galaxy/reports/${id}/dismiss`, {})).body.error, "ownHost");
+    assert.equal((await as(q)("GET", `/galaxy/reports/${id}`)).status, 404);
+  }
+  const seen = ((await as(q)("GET", "/galaxy/reports")).body.reports as any[]).map((r) => r.id);
+  assert.ok(!seen.includes(onHost) && !seen.includes(onEvent));
+  // Another staff member sees and decides them.
+  const other = ((await as(q2)("GET", "/galaxy/reports")).body.reports as any[]).map((r) => r.id);
+  assert.ok(other.includes(onHost) && other.includes(onEvent));
+  assert.equal((await as(q2)("POST", `/galaxy/reports/${onHost}/resolve`, {})).status, 200);
+});
+
+test("calendar file: text with line breaks and controls, no end time, cancelled", async () => {
+  const owner = await join();
+  const h = await start(owner);
+  const e = await publish(owner, h.id);
+  await t.db.update(events).set({ title: "Line\r\nBreak\rOne\nTwo\u0007\u2028End", endsAt: null }).where(eq(events.id, e.id));
+  const body = await (await t.app.request(`/public/events/${e.slug}/calendar.ics`)).text();
+  assert.ok(body.includes("SUMMARY:Line\\nBreak\\nOne\\nTwoEnd\r\n"));
+  assert.ok(!/\r(?!\n)|[^\r]\n/.test(body));
+  const start_ = /DTSTART:(\d{8}T\d{6}Z)/.exec(body)![1]!, end = /DTEND:(\d{8}T\d{6}Z)/.exec(body)![1]!;
+  const ms = (s: string) => Date.parse(s.replace(/(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z/, "$1-$2-$3T$4:$5:$6Z"));
+  assert.equal(ms(end) - ms(start_), 2 * HOUR);
+  await t.db.update(events).set({ status: "cancelled" }).where(eq(events.id, e.id));
+  assert.equal((await t.app.request(`/public/events/${e.slug}/calendar.ics`)).status, 404);
 });

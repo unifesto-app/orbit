@@ -1104,13 +1104,13 @@ export const broadcasts = pgTable(
 );
 
 // A person's report of an event or a host (X15, reports.ts): exactly one of the two. Staff with Queues resolve or
-// dismiss it in Galaxy. An event that's deleted (a draft, or cancelled with no money) takes its reports with it.
+// dismiss it in Galaxy. Reports stay with their event or host, so neither can be deleted while one points at it.
 export const reports = pgTable(
   "reports",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     userId: uuid("user_id").notNull().references(() => users.id),
-    eventId: uuid("event_id").references(() => events.id, { onDelete: "cascade" }),
+    eventId: uuid("event_id").references(() => events.id),
     hostId: uuid("host_id").references(() => hosts.id),
     reason: text("reason", { enum: ["misleading", "scam", "unsafe", "offensive", "spam", "other"] }).notNull(),
     note: text("note"),
