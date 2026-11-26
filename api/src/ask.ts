@@ -22,10 +22,10 @@ export const askModel = (apiKey: string): AskModel => {
   return (p) => client.messages.create(p);
 };
 
-const MODEL = "claude-opus-5-5";
-// Claude Opus 5.5 in US dollars per million tokens (claude-api skill, shared/models.md and prompt-caching.md, Nov 2026):
-// input 4, output 20, cache read 0.20, 5-minute cache write 1.25 × input. Per token, that's micro-dollars.
-export const ASK_PRICES = { input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5 };
+const MODEL = "claude-haiku-5-5";
+// Claude Haiku 5.5 in US dollars per million tokens (claude-api skill, shared/models.md, Nov 2026), prompts of 100K or less:
+// input 0.10, output 0.50, cache read 0.1 × input, 5-minute cache write 1.25 × input. Per token, that's micro-dollars.
+export const ASK_PRICES = { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125 };
 const HOUR = 3600_000;
 const DAY = 24 * HOUR;
 const IST = 5.5 * HOUR;

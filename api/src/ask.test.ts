@@ -129,7 +129,7 @@ test("4 a reply is logged with its tokens and cost; Orbit's welcome before the f
   assert.equal(r.status, 200);
   assert.deepEqual(r.body, { reply: "Try the open mic." });
   const p = sent[0]!;
-  assert.equal(p.model, "claude-opus-5-5");
+  assert.equal(p.model, "claude-haiku-5-5");
   assert.deepEqual(p.output_config, { effort: "low" });
   assert.deepEqual(p.messages.slice(1), [
     { role: "assistant", content: "Which day?" },
@@ -145,8 +145,8 @@ test("4 a reply is logged with its tokens and cost; Orbit's welcome before the f
   assert.equal(row!.inputTokens, 1000);
   assert.equal(row!.cacheReadTokens, 3000);
   const P = ASK_PRICES;
-  assert.equal(row!.costMicroUsd, 1000 * P.input + 200 * P.output + 3000 * P.cacheRead + 500 * P.cacheWrite); // 4000 + 4000 + 600 + 2500
-  assert.equal(row!.costMicroUsd, 11_100);
+  assert.equal(row!.costMicroUsd, Math.round(1000 * P.input + 200 * P.output + 3000 * P.cacheRead + 500 * P.cacheWrite)); // 100 + 100 + 30 + 62.5
+  assert.equal(row!.costMicroUsd, 293);
 });
 
 test("5 a refusal gets the fixed line; a model error is 503 askBusy with none of its words", async () => {
@@ -215,7 +215,7 @@ test("7 Galaxy's Ask Orbit needs Platform; it shows the switch, key, cost per da
   const top = g.body.log[0];
   assert.equal(top.who, "Riya Kapoor");
   assert.equal(top.tokens, 4700);
-  assert.equal(top.costUsd, 0.0111);
+  assert.equal(top.costUsd, 0.000293);
   assert.ok((await t.db.select().from(auditLog)).some((a) => a.action === "ask.read"));
 });
 
@@ -281,7 +281,7 @@ test("12 out of tokens with no words is 503 askBusy, logged as an error with its
   assert.equal(r.body.error, "askBusy");
   const [row] = await t.db.select().from(askLog).where(eq(askLog.userId, u.me.id));
   assert.equal(row!.status, "error");
-  assert.equal(row!.costMicroUsd, 11_100);
+  assert.equal(row!.costMicroUsd, 293);
 });
 
 test("13 Orbit's bubbles may run to 8000 characters", async () => {
