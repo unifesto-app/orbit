@@ -1,4 +1,4 @@
-import { and, desc, eq, ilike, inArray, isNotNull, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gt, ilike, inArray, isNotNull, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import {
@@ -10,7 +10,7 @@ import type { Db } from "../db/index.ts";
 import { auditLog, events, failedWebhooks, hosts, payments, payouts, refunds, users } from "../db/schema.ts";
 import { fail, invalid, isUuid, listPage, PAGE_SIZE, parse, signedIn, taken, type Tx } from "../http.ts";
 import { adminsOf, holdersOf, requireFeature, type StaffEnv, tell } from "../roles/access.ts";
-import { askedBack, sendRefund } from "./routes.ts";
+import { askedBack, CLAIM, sendRefund } from "./routes.ts";
 
 // Galaxy's Money pages (Money flow, "Galaxy"; X2), for holders of Money: payments with their frozen terms and a refund,
 // the refunds queue and the failed ones, payouts with their UTRs, each host's fee plan, and webhooks refused. Every
@@ -188,21 +188,27 @@ export function moneyRoutes({ db, secret, notify, razorpay: rz, now = Date.now }
     if (!isUuid(id)) return fail(c, 404, "notFound", "There's nothing here.");
     const b = await parse(c, MoneyReason);
     if (!b) return invalid(c);
-    // Still failed, only due now: sendRefund's claim takes it, and seeing Razorpay's failed one sends anew.
-    // ponytail: two staff pressing in the same second can both get past this and send while each other's POST is in
-    // flight (the claim and the receipt lookup catch every later overlap); a "sending" status if that ever matters.
+    // Still failed, only due now: sendRefund's claim takes it, and seeing Razorpay's failed one sends anew. Not while a
+    // send holds it (its claim puts the next try at most CLAIM ahead), so a second press is a 409, not a second refund;
+    // an hourly retry further off is brought forward.
     const r = await db.transaction(async (tx) => {
       const [r] = await tx
         .update(refunds)
         .set({ nextAttemptAt: at(), updatedAt: at() })
-        .where(and(eq(refunds.id, id), eq(refunds.status, "failed")))
+        .where(
+          and(
+            eq(refunds.id, id),
+            eq(refunds.status, "failed"),
+            or(isNull(refunds.nextAttemptAt), lte(refunds.nextAttemptAt, at()), gt(refunds.nextAttemptAt, new Date(now() + CLAIM))),
+          ),
+        )
         .returning({ id: refunds.id });
       if (r) await logged(tx, c.var.actor.id, "money.refund.retry", b.reason, { refundId: id });
       return r;
     });
     if (!r) {
       const [had] = await db.select({ id: refunds.id }).from(refunds).where(eq(refunds.id, id));
-      return had ? fail(c, 409, "notFailed", "Only a failed refund can be sent again.") : fail(c, 404, "notFound", "There's nothing here.");
+      return had ? fail(c, 409, "notFailed", "Only a failed refund not being sent right now can be sent again.") : fail(c, 404, "notFound", "There's nothing here.");
     }
     await sendRefund(db, rz, notify, id, now());
     await tellMoney("money.refund.retry", b.reason, c.var.actor.id);

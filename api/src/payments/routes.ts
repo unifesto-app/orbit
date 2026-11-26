@@ -23,7 +23,7 @@ const POLL_AFTER = 5 * MIN; // the poller asks Razorpay about orders older than 
 const RETRY_FOR = 24 * HOUR; // a failed refund retries hourly for this long, then waits for staff in Galaxy
 const LATE_FOR = 24 * HOUR; // failed and expired orders are still asked about this long, so late money settles
 const FIRST_TRY = 15 * MIN; // a new refund's first try is its sender's; the poller takes over after this
-const CLAIM = 10 * MIN; // a send in flight holds its refund this long
+export const CLAIM = 10 * MIN; // a send in flight holds its refund this long
 
 type Pay = typeof payments.$inferSelect;
 type Settled = { status: Pay["status"]; bookingId: string | null; refundIds: string[] };

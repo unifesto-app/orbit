@@ -493,3 +493,29 @@ test("account deletion refunds an upcoming paid ticket, not one for an event und
   await pollPayments({ db: t.db, rz, notify: t.notify, now: t.now() });
   assert.equal((await t.db.select().from(refunds).where(eq(refunds.id, r!.id)))[0]!.status, "sent");
 });
+
+test("pressing Galaxy's retry twice sends one refund", async () => {
+  const a = await join(), b = await join(), boss = await join();
+  await give(boss, "money");
+  const { o, p } = await bought(a, b);
+  const id = (await paymentOf(o.orderId)).id;
+  rzState.refundFails = true; // the first send fails, as Razorpay being down
+  const made = await as(boss)("POST", `/galaxy/money/payments/${id}/refund`, { amountPaise: 700, reason: "Seat was broken" });
+  rzState.refundFails = false;
+  assert.equal(made.body.status, "failed");
+  const before = posts(p.id);
+  // Press one's send is still holding the refund (its claim, as if Razorpay were slow), when press two lands.
+  await t.db.update(refunds).set({ nextAttemptAt: new Date(t.now() + 5 * MIN) }).where(eq(refunds.id, made.body.id));
+  assert.equal((await as(boss)("POST", `/galaxy/money/refunds/${made.body.id}/retry`, { reason: "Again" })).status, 409);
+  // Two presses at once once nothing holds it: both may pass the retry, but sendRefund's claim lets one send.
+  await t.db.update(refunds).set({ nextAttemptAt: null }).where(eq(refunds.id, made.body.id));
+  const both = await Promise.all([
+    as(boss)("POST", `/galaxy/money/refunds/${made.body.id}/retry`, { reason: "Again" }),
+    as(boss)("POST", `/galaxy/money/refunds/${made.body.id}/retry`, { reason: "Again" }),
+  ]);
+  assert.ok(both.every((x) => x.status === 200 || x.status === 409));
+  assert.equal(posts(p.id) - before, 1);
+  // A press after it went: 409, and still one.
+  assert.equal((await as(boss)("POST", `/galaxy/money/refunds/${made.body.id}/retry`, { reason: "Again" })).status, 409);
+  assert.equal(posts(p.id) - before, 1);
+});
