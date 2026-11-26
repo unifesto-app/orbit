@@ -67,8 +67,9 @@ export const hosts = pgTable("hosts", {
   parentId: uuid("parent_id").references((): AnyPgColumn => hosts.id),
   suspendReason: text("suspend_reason"), // what staff said, shown to the host's Admins
   liftTo: text("lift_to", { enum: ["live", "paused", "archived"] }), // where a staff lift returns a staff-suspended host
-  // Money (owner, 25 Nov 2026): 3% buyer fee + 2% commission, or 5% + 0%, set by staff in Galaxy Fees. `feeIncluded`
-  // carves the buyer fee out of the price instead of adding it. Each payment freezes both at sale.
+  // How Orbit's 5% fee splits (owner, 25 Nov 2026): 3% from the buyer + 2% from the host, or 5% from the buyer + 0%; the
+  // host's Admins pick it (PATCH /hosts/:id), staff can set it in Galaxy Fees. `feeIncluded` (Galaxy Fees only) carves
+  // the buyer fee out of the price instead of adding it. Each payment freezes both at sale.
   feePlan: text("fee_plan", { enum: ["3+2", "5+0"] }).notNull().default("3+2"),
   feeIncluded: boolean("fee_included").notNull().default(false),
   createdAt: at("created_at").notNull().defaultNow(),
@@ -300,9 +301,14 @@ export const bookings = pgTable(
     link: text("link").unique(),
     createdAt: at("created_at").notNull().defaultNow(),
     cancelledAt: at("cancelled_at"),
+    // Check-in (checkin.ts): how many of `quantity` are in, and the first admit's when and who. Attended is admitted > 0.
+    admitted: integer("admitted").notNull().default(0),
+    checkedInAt: at("checked_in_at"),
+    checkedInBy: uuid("checked_in_by").references(() => users.id),
   },
   (t) => [
     check("bookings_quantity_range", sql`${t.quantity} between 1 and 10`),
+    check("bookings_admitted_in_quantity", sql`${t.admitted} between 0 and ${t.quantity}`),
     index().on(t.userId, t.createdAt),
     index().on(t.ticketTypeId, t.status),
     index().on(t.eventId, t.status),

@@ -85,7 +85,6 @@ CREATE TABLE "refunds" (
 	CONSTRAINT "refunds_kind" CHECK ("refunds"."kind" in ('auto', 'staff', 'request'))
 );
 --> statement-breakpoint
-ALTER TABLE "hosts" ADD COLUMN "fee_plan" text DEFAULT '3+2' NOT NULL;--> statement-breakpoint
 ALTER TABLE "hosts" ADD COLUMN "fee_included" boolean DEFAULT false NOT NULL;--> statement-breakpoint
 ALTER TABLE "payments" ADD CONSTRAINT "payments_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "payments" ADD CONSTRAINT "payments_host_id_hosts_id_fk" FOREIGN KEY ("host_id") REFERENCES "public"."hosts"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint

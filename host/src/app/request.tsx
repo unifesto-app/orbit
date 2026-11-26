@@ -5,6 +5,8 @@
 // What's typed stays on this phone until it's sent, under one Keychain key (REQUEST_DRAFT), for the account that typed
 // it (and, for an edit, that round of changes), gone on sign-out. A write that fails deletes the key, so an older draft
 // never comes back. It's kept a moment after each change, and at once when the screen goes away.
+// In Play Partner (X9) a new request is a Venue's, with no event: no kind chips, no event step, step 1 then Check and
+// send, the same POST. Approved, the account's new Admin seat on the Venue opens setup.
 import { allCities, categories, type EventRequest, HOST_KINDS, type RequestStatus, popularCities, searchCities } from '@orbit/contract';
 import { Glass } from '@orbit/mobile/glass';
 import { useLoad } from '@orbit/mobile/load';
@@ -39,6 +41,7 @@ import {
 } from '../launch/request';
 import { Field, Note, Pill, Section, Wide, styles as ui } from '../launch/ui';
 import { api, kept, REQUEST_DRAFT, useSession } from '../session';
+import { isStation } from '../variant';
 
 const CHEVRON = require('../../assets/tabs/chevron.png');
 const KINDS = Object.entries(HOST_KINDS);
@@ -84,13 +87,14 @@ export default function Request() {
     return <Steps initial={editDraft(saved, sent.data, me.id)} />;
   }
   const city = me.city && allCities.some((c) => c.name === me.city) ? me.city : null;
-  return <Steps initial={newDraft(saved, me.id, city)} />;
+  const d = newDraft(saved, me.id, city);
+  return <Steps initial={isStation ? { ...d, kind: 'venue', skip: true } : d} />;
 }
 
 // What a sent request's own screen says under its title, by where it stands.
 const SEE_LINE: Record<RequestStatus, string> = {
   open: 'Orbit is checking it, usually within a day.',
-  changes: 'Orbit asked for a change before your host goes live.',
+  changes: `Orbit asked for a change before your ${isStation ? 'venue' : 'host'} goes live.`,
   declined: 'Orbit didn’t approve this one.',
   approved: 'Approved.',
   withdrawn: 'You withdrew this request.',
@@ -137,7 +141,7 @@ function Steps({ initial, see = null }: { initial: Draft; see?: RequestStatus | 
     useCallback(() => {
       const sub = BackHandler.addEventListener('hardwareBackPress', () => {
         if (see || at.current === 1) return false;
-        setStep(at.current === 3 ? 2 : 1);
+        setStep(at.current === 3 && !isStation ? 2 : 1);
         return true;
       });
       return () => {
@@ -168,7 +172,9 @@ function Steps({ initial, see = null }: { initial: Draft; see?: RequestStatus | 
   }
 
   const head = {
-    1: ['Who’s hosting?', 'Your club, group, venue or you. People see this name on every event.'],
+    1: isStation
+      ? ['Your venue', 'The gaming café, turf or court people book by the hour. Players see this name.']
+      : ['Who’s hosting?', 'Your club, group, venue or you. People see this name on every event.'],
     2: ['Your first event', 'A rough plan is enough. You’ll finish it as a draft once you’re live.'],
     3: see ? ['Your request', SEE_LINE[see]] : ['Check and send', 'Orbit checks it, usually within a day. We’ll tell you by notification and email.'],
   }[step];
@@ -185,7 +191,7 @@ function Steps({ initial, see = null }: { initial: Draft; see?: RequestStatus | 
           disabled={!ok}
           onPress={() => {
             if (step === 2) put({ skip: false });
-            setStep(step === 1 ? 2 : 3);
+            setStep(step === 1 && !isStation ? 2 : 3);
           }}
         />
         {step === 2 && canSkip(d) && (
@@ -204,7 +210,12 @@ function Steps({ initial, see = null }: { initial: Draft; see?: RequestStatus | 
     );
 
   return (
-    <Frame step={see ? null : step} onBack={() => (see || step === 1 ? router.back() : setStep(step === 3 ? 2 : 1))} foot={foot}>
+    <Frame
+      step={see ? null : isStation ? (step === 1 ? 1 : 2) : step}
+      of={isStation ? 2 : 3}
+      onBack={() => (see || step === 1 ? router.back() : setStep(step === 3 && !isStation ? 2 : 1))}
+      foot={foot}
+    >
       <Text style={s.title} accessibilityRole="header">
         {head[0]}
       </Text>
@@ -212,14 +223,16 @@ function Steps({ initial, see = null }: { initial: Draft; see?: RequestStatus | 
 
       {step === 1 && (
         <View style={s.fields}>
-          <Field label="Name" value={d.name} onChangeText={(name) => put({ name })} placeholder="Punchline Comedy" autoCapitalize="words" maxLength={100} />
-          <Label text="Kind">
-            <View style={s.chips} accessibilityRole="radiogroup" accessibilityLabel="Kind">
-              {KINDS.map(([k, label]) => (
-                <Chip key={k} label={label} on={d.kind === k} onPress={() => put({ kind: k })} />
-              ))}
-            </View>
-          </Label>
+          <Field label="Name" value={d.name} onChangeText={(name) => put({ name })} placeholder={isStation ? 'Respawn Gaming Lounge' : 'Punchline Comedy'} autoCapitalize="words" maxLength={100} />
+          {!isStation && (
+            <Label text="Kind">
+              <View style={s.chips} accessibilityRole="radiogroup" accessibilityLabel="Kind">
+                {KINDS.map(([k, label]) => (
+                  <Chip key={k} label={label} on={d.kind === k} onPress={() => put({ kind: k })} />
+                ))}
+              </View>
+            </Label>
+          )}
           <Label text="City">
             <Opens label="City" value={d.city} placeholder="Pick your city" onPress={() => setSheet('city')} />
           </Label>
@@ -229,7 +242,7 @@ function Steps({ initial, see = null }: { initial: Draft; see?: RequestStatus | 
                 accessibilityLabel="About"
                 value={d.about}
                 onChangeText={(about) => put({ about })}
-                placeholder="What you run, who comes"
+                placeholder={isStation ? 'What players book: PCs, consoles, a turf or court' : 'What you run, who comes'}
                 placeholderTextColor={color.secondary}
                 selectionColor={color.accent}
                 style={s.areaText}
@@ -279,7 +292,7 @@ function Steps({ initial, see = null }: { initial: Draft; see?: RequestStatus | 
 
       {step === 3 && (
         <>
-          <Section title="Host" />
+          <Section title={isStation ? 'Venue' : 'Host'} />
           <View style={[ui.card, s.card]}>
             <View style={s.cardHead}>
               <Text style={s.cardTitle} numberOfLines={1}>
@@ -337,9 +350,9 @@ function Steps({ initial, see = null }: { initial: Draft; see?: RequestStatus | 
   );
 }
 
-// The page: the back circle, the three-part progress and "1 of 3" (none when `step` is null), what scrolls, and the
+// The page: the back circle, the progress in `of` parts and "1 of 3" (none when `step` is null), what scrolls, and the
 // buttons pinned at the foot, above the keyboard.
-function Frame({ step, onBack, foot, children }: { step: 1 | 2 | 3 | null; onBack: () => void; foot?: ReactNode; children?: ReactNode }) {
+export function Frame({ step, of = 3, onBack, foot, children }: { step: 1 | 2 | 3 | null; of?: number; onBack: () => void; foot?: ReactNode; children?: ReactNode }) {
   const insets = useSafeAreaInsets();
   return (
     <KeyboardAvoidingView style={ui.page} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -352,11 +365,11 @@ function Frame({ step, onBack, foot, children }: { step: 1 | 2 | 3 | null; onBac
         {step && (
           <>
             <View style={s.steps} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-              {[1, 2, 3].map((n) => (
+              {Array.from({ length: of }, (_, i) => i + 1).map((n) => (
                 <View key={n} style={[s.seg3, n <= step && s.seg3On]} />
               ))}
             </View>
-            <Text style={s.stepWord}>{`${step} of 3`}</Text>
+            <Text style={s.stepWord}>{`${step} of ${of}`}</Text>
           </>
         )}
       </View>
@@ -368,7 +381,7 @@ function Frame({ step, onBack, foot, children }: { step: 1 | 2 | 3 | null; onBac
   );
 }
 
-function Label({ text, optional = false, children }: { text: string; optional?: boolean; children: ReactNode }) {
+export function Label({ text, optional = false, children }: { text: string; optional?: boolean; children: ReactNode }) {
   return (
     <View style={ui.field}>
       <Text style={ui.fieldLabel}>{optional ? `${text} · optional` : text}</Text>
@@ -378,7 +391,7 @@ function Label({ text, optional = false, children }: { text: string; optional?: 
 }
 
 // A text-only choice: a Sage outline and dot when picked (the accent on the element, never the words).
-function Chip({ label, on, onPress }: { label: string; on: boolean; onPress: () => void }) {
+export function Chip({ label, on, onPress }: { label: string; on: boolean; onPress: () => void }) {
   return (
     <Pressable onPress={onPress} accessibilityRole="radio" accessibilityState={{ checked: on }} style={[s.chip, on && s.chipOn]}>
       {on && <View style={s.dot} />}
@@ -388,7 +401,7 @@ function Chip({ label, on, onPress }: { label: string; on: boolean; onPress: () 
 }
 
 // A field that opens a sheet (City, When): its value, or grey words, and a >.
-function Opens({ label, value, placeholder, onPress }: { label: string; value: string | null; placeholder: string; onPress: () => void }) {
+export function Opens({ label, value, placeholder, onPress }: { label: string; value: string | null; placeholder: string; onPress: () => void }) {
   return (
     <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`${label}, ${(value || placeholder).replace(' · ', ', ')}`} style={({ pressed }) => pressed && ui.pressed}>
       <Glass style={[ui.input, s.opens]}>
@@ -412,7 +425,7 @@ function KV({ k, v }: { k: string; v: string }) {
 
 // The city list sign-up's city uses in the Orbit app (app/src/citySheet.tsx), from the same list in @orbit/contract:
 // search, then Popular cities and every city A to Z.
-function CitySheet({ chosen, onPick, onClose }: { chosen: string | null; onPick: (city: string) => void; onClose: () => void }) {
+export function CitySheet({ chosen, onPick, onClose }: { chosen: string | null; onPick: (city: string) => void; onClose: () => void }) {
   const [query, setQuery] = useState('');
   const searching = query.trim() !== '';
   return (
@@ -468,7 +481,7 @@ function CitySheet({ chosen, onPick, onClose }: { chosen: string | null; onPick:
 }
 
 // When: the month, past days faded and not pickable, then start times every half hour that are still ahead, India time.
-function WhenSheet({ startsAt, onDone, onClose }: { startsAt: string | null; onDone: (iso: string) => void; onClose: () => void }) {
+export function WhenSheet({ startsAt, onDone, onClose }: { startsAt: string | null; onDone: (iso: string) => void; onClose: () => void }) {
   const insets = useSafeAreaInsets();
   const now = Date.now();
   const thisMonth = istDate(now).slice(0, 7);
@@ -543,7 +556,7 @@ function Round({ label, flip = false, disabled = false, onPress }: { label: stri
   );
 }
 
-const s = StyleSheet.create({
+export const s = StyleSheet.create({
   top: { height: 44, marginHorizontal: 20, flexDirection: 'row', alignItems: 'center', gap: 12 },
   circle: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   small: { width: 32, height: 32, borderRadius: 16 },

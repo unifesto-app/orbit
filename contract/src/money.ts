@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { BookingStatus } from "./bookings.ts";
+import { FeePlan } from "./hosts.ts";
 
 // Amounts are whole paise everywhere (plan, section 7). 0 means a free event.
 const rupees = (fraction: number) =>
@@ -15,10 +16,8 @@ export function formatPrice(paise: number): string {
 
 // ---------- Paying (Money flow; X2): fee plans, the fee maths, and the shapes the API, the apps and Galaxy share ----------
 
-// The two fee plans in basis points (owner, 25 Nov 2026): what the buyer pays on top, and the commission from the host.
-export const FEE_PLANS = { "3+2": { buyerBps: 300, hostBps: 200 }, "5+0": { buyerBps: 500, hostBps: 0 } } as const;
-export type FeePlan = keyof typeof FEE_PLANS;
-export const isFeePlan = (s: unknown): s is FeePlan => typeof s === "string" && Object.hasOwn(FEE_PLANS, s);
+// The two fee plans (`FeePlan`, hosts.ts) in basis points: what the buyer pays on top, and the commission from the host.
+const FEE_BPS: Record<FeePlan, { buyerBps: number; hostBps: number }> = { "3+2": { buyerBps: 300, hostBps: 200 }, "5+0": { buyerBps: 500, hostBps: 0 } };
 
 // n / d rounded half up, for whole non-negative paise: integers only, so no float drift.
 const halfUp = (n: number, d: number) => Math.floor((2 * n + d) / (2 * d));
@@ -27,7 +26,7 @@ const halfUp = (n: number, d: number) => Math.floor((2 * n + d) / (2 * d));
 // when the host includes it; the commission is h on what's left after an included fee. Each rounds half up per seat,
 // then sums over the seats. The buyer pays the price, plus the fee when it's on top.
 export function feeTerms(unitPaise: number, quantity: number, plan: FeePlan, included: boolean) {
-  const { buyerBps, hostBps } = FEE_PLANS[plan];
+  const { buyerBps, hostBps } = FEE_BPS[plan];
   const fee = included ? halfUp(unitPaise * buyerBps, 10_000 + buyerBps) : halfUp(unitPaise * buyerBps, 10_000);
   const commission = halfUp((included ? unitPaise - fee : unitPaise) * hostBps, 10_000);
   const pricePaise = unitPaise * quantity;
@@ -65,7 +64,7 @@ export const StaffRefund = z.object({ amountPaise: z.number().int().min(1), reas
 export const NewPayout = z.object({ eventId: z.uuid(), amountPaise: z.number().int().min(1), reason: z.string().trim().min(3).max(500) });
 export const PayoutPaid = z.object({ utr: z.string().trim().regex(/^[A-Za-z0-9]{6,40}$/), reason: z.string().trim().max(500).optional() });
 export const MoneyReason = z.object({ reason: z.string().trim().min(3).max(500) });
-export const SetFees = z.object({ plan: z.enum(["3+2", "5+0"]), feeIncluded: z.boolean(), reason: z.string().trim().min(3).max(500) });
+export const SetFees = z.object({ plan: FeePlan, feeIncluded: z.boolean(), reason: z.string().trim().min(3).max(500) });
 
 export type PaymentRow = {
   id: string; kind: "ticket" | "slot"; status: PaymentStatus; userId: string; userName: string | null;

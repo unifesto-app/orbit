@@ -36,7 +36,7 @@ const iso = (d: Date | null) => d?.toISOString() ?? null;
 
 // The colour of the image the page shows: the 4:3 when there is one.
 const toneOf = (e: Pick<Event, "wideTone" | "posterTone">) => e.wideTone ?? e.posterTone;
-const toTicket = (t: typeof ticketTypes.$inferSelect): TicketType => ({
+export const toTicket = (t: typeof ticketTypes.$inferSelect): TicketType => ({
   id: t.id, name: t.name, pricePaise: t.pricePaise, quantity: t.quantity, salesStartAt: iso(t.salesStartAt), salesEndAt: iso(t.salesEndAt),
   note: t.note, perPersonLimit: t.perPersonLimit, sortOrder: t.sortOrder,
 });
@@ -81,6 +81,28 @@ export async function newDraft(
     .returning();
   await tx.insert(eventSlugs).values({ slug: e!.slug, eventId: e!.id, createdAt: at });
   return e!;
+}
+
+// Cancelling a published event that hasn't ended, on the event as read under its lock, for its host's Admins and for
+// Galaxy: its confirmed bookings are cancelled with it in the same transaction (the event's lock keeps a booking from
+// landing in between), and every paid one goes back in full, fee included: the refunds are written here and sent once
+// it commits (`sendBack`; the poller sends any that didn't go). Answers the columns to write and the refunds, or why not.
+// ponytail: the notices to holders come with H13.5; a refund tells its buyer once Razorpay has processed it.
+export async function cancelling(tx: Tx, cur: Event, by: string, reason: string, at: Date): Promise<{ error: "notNow" | "ended" } | { set: Partial<typeof events.$inferInsert>; back: string[] }> {
+  if (cur.status !== "published") return { error: "notNow" } as const;
+  if (stageOf(cur, at.getTime()) === "past") return { error: "ended" } as const;
+  await tx.update(bookings).set({ status: "cancelledByHost", cancelledAt: at, link: null }).where(and(eq(bookings.eventId, cur.id), eq(bookings.status, "confirmed")));
+  const back = await refundPaid(tx, eq(payments.eventId, cur.id), "The event was cancelled", at);
+  return { set: { status: "cancelled", cancelledAt: at, cancelledBy: by, cancelReason: reason }, back };
+}
+export const cancelRefused = (c: Context, error: "notNow" | "ended", status: string) =>
+  error === "notNow" ? fail(c, 409, "notNow", `You can't cancel an event that is ${status}.`) : fail(c, 409, "ended", "This event has ended, so it can't be cancelled.");
+// A cancel's refunds, sent after the answer one at a time; any that don't go are the poller's after 15 minutes.
+export function sendBack(db: Db, rz: Razorpay | undefined, notify: Notify, back: string[], now: () => number) {
+  if (!rz || !back.length) return;
+  void (async () => {
+    for (const id of back) await sendRefund(db, rz, notify, id, now(), true);
+  })().catch(() => console.error("[refunds] after cancel", back.join(",")));
 }
 
 export function eventsRoutes({ db, notify, secret, media, razorpay: rz, now = Date.now }: Deps) {
@@ -329,31 +351,19 @@ export function eventsRoutes({ db, notify, secret, media, razorpay: rz, now = Da
     }
   };
 
-  // POST /events/:id/cancel: a published event that hasn't ended, with the reason its ticket holders get. An ended one
-  // stays as it happened: cancelling would hide it from the host's page.
-  // Its confirmed bookings are cancelled with it, in the same transaction (the event's lock keeps a booking from
-  // landing in between), and every paid one goes back in full, fee included: the refunds are written in the same
-  // transaction and sent once it commits (the poller sends any that didn't go).
-  // ponytail: the notices to holders come with H13.5; a refund tells its buyer once Razorpay has processed it.
+  // POST /events/:id/cancel: with the reason its ticket holders get (`cancelling` above). An ended one stays as it
+  // happened: cancelling would hide it from the host's page.
   app.post("/events/:id/cancel", auth, async (c) => {
     const b = await parse(c, CancelEvent);
     if (!b) return invalid(c);
     let back: string[] = [];
     const res = await move(c, async (cur, tx) => {
-      if (cur.status !== "published") return fail(c, 409, "notNow", `You can't cancel an event that is ${cur.status}.`);
-      if (stageOf(cur, now()) === "past") return fail(c, 409, "ended", "This event has ended, so it can't be cancelled.");
-      await tx
-        .update(bookings)
-        .set({ status: "cancelledByHost", cancelledAt: at(), link: null })
-        .where(and(eq(bookings.eventId, cur.id), eq(bookings.status, "confirmed")));
-      back = await refundPaid(tx, eq(payments.eventId, cur.id), "The event was cancelled", at());
-      return { status: "cancelled", cancelledAt: at(), cancelledBy: c.var.user.id, cancelReason: b.reason };
+      const r = await cancelling(tx, cur, c.var.user.id, b.reason, at());
+      if ("error" in r) return cancelRefused(c, r.error, cur.status);
+      back = r.back;
+      return r.set;
     });
-    // Sent after the answer, one at a time; any that don't go are the poller's after 15 minutes.
-    if (rz && res.status === 200 && back.length)
-      void (async () => {
-        for (const id of back) await sendRefund(db, rz, notify, id, now(), true);
-      })().catch(() => console.error("[refunds] after cancel", back.join(",")));
+    if (res.status === 200) sendBack(db, rz, notify, back, now);
     return res;
   });
 
