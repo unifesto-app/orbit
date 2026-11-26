@@ -79,11 +79,12 @@ export function Pairs({ pairs }: { pairs: [string, ReactNode][] }) {
 export function Pages({ path, total, page, pageSize }: { path: string; total: number; page: number; pageSize: number }) {
   const last = Math.max(1, Math.ceil(total / pageSize));
   if (last === 1 && page === 1) return null;
+  const sep = path.includes("?") ? "&" : "?"; // a path may carry its own query, as Requests' status
   return (
     <nav aria-label="Pages" className={`${ui.row} ${ui.pager}`}>
       {page > 1 && (
         // From past the end (an old link), straight back to the last page.
-        <Link className={ui.btn} href={`${path}?page=${Math.min(page - 1, last)}`} prefetch={false}>
+        <Link className={ui.btn} href={`${path}${sep}page=${Math.min(page - 1, last)}`} prefetch={false}>
           Previous
         </Link>
       )}
@@ -91,7 +92,7 @@ export function Pages({ path, total, page, pageSize }: { path: string; total: nu
         Page {page} of {last}
       </span>
       {page < last && (
-        <Link className={ui.btn} href={`${path}?page=${page + 1}`} prefetch={false}>
+        <Link className={ui.btn} href={`${path}${sep}page=${page + 1}`} prefetch={false}>
           Next
         </Link>
       )}
