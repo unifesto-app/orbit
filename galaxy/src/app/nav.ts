@@ -21,6 +21,8 @@ export const sections: { title: string; items: NavItem[] }[] = [
       { label: "Requests", href: "/requests" },
       // Every host's events: unpublish, cancel, promote (X1).
       { label: "Events", href: "/events" },
+      // Every Venue host, Setup pending until Play Partner's setup saves it, with its stations (X9).
+      { label: "Venues", href: "/venues" },
       // DAU, WAU, MAU, retention, platforms and versions (owner, 19 Nov 2026: "user analytics, mau, dau etc").
       { label: "Analytics", href: "/analytics" },
       // Coming Soon's waitlist until launch (owner, 17 Nov 2026: "create a page in galaxy web - prelaunch").

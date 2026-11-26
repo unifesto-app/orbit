@@ -132,3 +132,12 @@ export type InTheWay = z.infer<typeof InTheWay>;
 // A hold, made: it lapses at holdEndsAt unless paid.
 export const SlotHold = z.object({ id: z.string(), stationId: z.string(), start: z.string(), end: z.string(), count: z.number(), holdEndsAt: z.string() });
 export type SlotHold = z.infer<typeof SlotHold>;
+
+// GET /galaxy/venues (X9), for holders of Hosts: every Venue host, its venue row (null until Play Partner's setup saves
+// one: "Setup pending") and its stations with the price an hour.
+export type StaffVenue = {
+  host: { id: string; name: string; city: string; createdAt: string };
+  venue: { area: string; address: string; deskPhone: string } | null;
+  stations: { id: string; name: string; unit: string; tile: StationTile; count: number; pricePaise: number; archived: boolean }[];
+};
+export type StaffVenues = { venues: StaffVenue[] };

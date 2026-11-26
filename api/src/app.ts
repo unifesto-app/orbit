@@ -5,6 +5,7 @@ import { deletionRoutes } from "./auth/deletion.ts";
 import { securityRoutes } from "./auth/security.ts";
 import { eventsRoutes } from "./events/routes.ts";
 import { galaxyEventsRoutes } from "./events/galaxy.ts";
+import { galaxyVenuesRoutes } from "./slots/galaxy.ts";
 import { announcementsRoutes } from "./announcements.ts";
 import { publicEventsRoutes } from "./events/public.ts";
 import { savesRoutes } from "./saves.ts";
@@ -52,6 +53,7 @@ export function createApp(deps?: Deps) {
     app.route("/", meNotificationsRoutes(deps));
     app.route("/", bookingsRoutes(deps));
     app.route("/", slotsRoutes(deps));
+    app.route("/", galaxyVenuesRoutes(deps));
     app.route("/", mediaRoutes(deps.media));
     app.route("/", pmRoutes(deps));
     app.route("/", prelaunchRoutes(deps));

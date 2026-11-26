@@ -256,3 +256,34 @@ test("day-30 deletion drops requests that never became a host and clears notes o
   const left = await t.db.select().from(eventRequests).where(eq(eventRequests.userId, a.me.id));
   assert.deepEqual(left.map((x) => [x.status, x.note]), [["approved", null]]);
 });
+
+test("an approved venue request leaves the requester able to set the venue up; Galaxy lists it", async () => {
+  const a = await join(), st = await staff(), nobody = await join();
+  const sent = await as(a)("POST", "/event-requests", { host: { name: "Respawn Arena", kind: "venue", city: "Hyderabad", about: null } });
+  assert.equal(sent.status, 201);
+  const ok = await as(st)("POST", `/galaxy/event-requests/${sent.body.id}/approve`, R);
+  assert.equal(ok.status, 200);
+  const hostId = ok.body.hostId as string;
+  assert.equal(ok.body.eventId, null);
+  const [h] = await t.db.select().from(hosts).where(eq(hosts.id, hostId));
+  assert.equal(h!.kind, "venue");
+
+  // Setup pending until Play Partner saves the venue.
+  const pending = (await as(st)("GET", "/galaxy/venues")).body.venues.find((v: any) => v.host.id === hostId);
+  assert.equal(pending.venue, null);
+  assert.deepEqual(pending.stations, []);
+
+  const setup = await as(a)("PUT", `/venues/${hostId}`, { address: "1 Road", area: "Madhapur", lat: 17.4, lng: 78.4, deskPhone: "+914012345678", week: Array(7).fill([11, 23]) });
+  assert.equal(setup.status, 201, JSON.stringify(setup.body));
+  const pc = await as(a)("POST", `/venues/${hostId}/stations`, { name: "Gaming PC", unit: "PC", tile: "gaming", count: 10, pricePaise: 8000 });
+  assert.equal(pc.status, 201, JSON.stringify(pc.body));
+
+  const live = (await as(st)("GET", "/galaxy/venues")).body.venues.find((v: any) => v.host.id === hostId);
+  assert.deepEqual(live.venue, { area: "Madhapur", address: "1 Road", deskPhone: "+914012345678" });
+  assert.deepEqual(live.stations, [{ id: pc.body.id, name: "Gaming PC", unit: "PC", tile: "gaming", count: 10, pricePaise: 8000, archived: false }]);
+
+  // Holders of Hosts only.
+  assert.equal((await as(nobody)("GET", "/galaxy/venues")).status, 404);
+  assert.equal((await as(a)("GET", "/galaxy/venues")).status, 404);
+  assert.equal((await t.call("GET", "/galaxy/venues")).status, 401);
+});

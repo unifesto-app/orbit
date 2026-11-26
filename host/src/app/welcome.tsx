@@ -7,6 +7,9 @@
 // or the request waiting (See request, Withdraw), Orbit's note on changes asked (Edit request) or a decline (Start a new
 // request). Approved, the account is read again and the Admin redirect below takes over. Someone on a host's team but
 // not its Admin is told Event Partner is for Admins; an Admin goes to the tabs.
+// Play Partner (X9) shows the same request card, as List your venue: a Venue request with no event. Approved, the new
+// Admin seat on the Venue opens Today, which sends a venue not set up yet to setup. Another kind's approved request
+// (sent from Event Partner) makes no seat here, so it reads as no request.
 import { markOf } from '@orbit/mobile/mark';
 import { showPhone } from '@orbit/mobile/signin';
 import { color, font, space } from '@orbit/mobile/theme';
@@ -42,11 +45,11 @@ export default function Welcome() {
   const me = session?.me ?? null;
   const { invites, busy, error, accept } = useInvites();
   const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
-  const request = useLoad<EventRequest | null>(me && !isStation ? `request|${me.id}` : null, () => api.authed('GET', '/me/event-request'));
+  const request = useLoad<EventRequest | null>(me ? `request|${me.id}` : null, () => api.authed('GET', '/me/event-request'));
   const [said, setSaid] = useState<string | null>(null); // a refused withdraw
   const [withdrawing, setWithdrawing] = useState(false);
   const r = request.data;
-  const state = welcomeState(r);
+  const state = welcomeState(isStation && r?.status === 'approved' && r.host.kind !== 'venue' ? null : r);
   const approved = useRef(false);
   approved.current = state === 'approved';
   // Back from the form (sent, or left mid-way): read the request again, showing no card until it's in, so a request
@@ -128,12 +131,12 @@ export default function Welcome() {
         {first ? `Hi, ${first}` : 'Hi'}
       </Text>
       <Text style={styles.line}>
-        {isStation
-          ? 'You’re not on a venue’s team yet. Accept an invite from a venue’s Admin.'
-          : state === 'waiting'
+        {state === 'waiting'
           ? 'Your request is with Orbit. We’ll tell you as soon as it’s checked.'
           : state === 'changes'
           ? 'Orbit asked for a change before your host goes live.'
+          : isStation
+          ? 'You’re not on a venue’s team yet. Accept an invite from a venue’s Admin, or list your own.'
           : onTeams
           ? `You’re on ${onTeams === 1 ? 'a host’s team' : `${onTeams} hosts’ teams`}, but not as an Admin. Event Partner is for Admins.`
           : 'You’re not on a host yet. Accept an invite, or start your own.'}
@@ -167,15 +170,15 @@ export default function Welcome() {
       {invites.error && <Note>{invites.error.message}</Note>}
       {error && <Note>{error}</Note>}
 
-      {!isStation && loaded && state === 'approved' && (
+      {loaded && state === 'approved' && (
         <>
           <Section title="Your request" />
           <View style={[ui.card, styles.invite]}>
-            <Text style={styles.cardLine}>Approved. Opening your host…</Text>
+            <Text style={styles.cardLine}>{`Approved. Opening your ${isStation ? 'venue' : 'host'}…`}</Text>
           </View>
         </>
       )}
-      {!isStation && loaded && state !== 'approved' && (r && (state === 'waiting' || state === 'changes' || state === 'declined') ? (
+      {loaded && state !== 'approved' && (r && (state === 'waiting' || state === 'changes' || state === 'declined') ? (
         <>
           <Section title={state === 'declined' ? 'Your last request' : 'Your request'} />
           <View style={[ui.card, styles.invite]}>
@@ -202,9 +205,13 @@ export default function Welcome() {
         </>
       ) : (
         <>
-          <Section title="Host on Orbit" />
+          <Section title={isStation ? 'List your venue' : 'Host on Orbit'} />
           <View style={[ui.card, styles.invite]}>
-            <Text style={styles.cardLine}>Tell us about you and your first event. Orbit checks it, usually within a day, and you’re live.</Text>
+            <Text style={styles.cardLine}>
+              {isStation
+                ? 'Tell us about your venue. Orbit checks it, usually within a day, then you set up its hours and stations here.'
+                : 'Tell us about you and your first event. Orbit checks it, usually within a day, and you’re live.'}
+            </Text>
             <View style={styles.pills}>
               <Pill label="Start a request" onPress={() => router.push('/request')} />
             </View>
