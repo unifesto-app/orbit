@@ -286,13 +286,27 @@ export const unknownVars = (text: string, names: readonly string[]) => [...new S
 // Email has subject + body, push title + body, inbox body.
 export type Wording = { subject?: string | null; title?: string | null; body: string };
 // GET /galaxy/notifications/templates/:kind. `vars`: each variable with its sample as shown; `code`: the wording in code,
-// rendered with the samples; `saved`: Galaxy's, with placeholders, or null.
-export type WordingChannel = { channel: Channel; saved: (Wording & { updatedAt: string; by: string | null }) | null; code: Wording };
-export type GalaxyWording = { kind: NoticeKind; vars: Record<string, string>; channels: WordingChannel[] };
+// rendered with the samples; `saved`: Galaxy's, with placeholders, or null; `editable`: false where the code's wording
+// changes with the situation, so it's edited in code only. `subjectOff`: variables an email subject may not use.
+export type WordingChannel = {
+  channel: Channel;
+  editable: boolean;
+  saved: (Wording & { updatedAt: string; by: string | null }) | null;
+  code: Wording;
+};
+export type GalaxyWording = { kind: NoticeKind; vars: Record<string, string>; subjectOff: string[]; channels: WordingChannel[] };
 export const PUSH_BODY_MAX = 300;
+const line = (max: number) =>
+  z
+    .string()
+    .trim()
+    .min(1)
+    .max(max)
+    .refine((s) => !/[\r\n]/.test(s), "One line only.")
+    .optional();
 export const WordingDraft = z.object({
-  subject: z.string().trim().min(1).max(120).optional(),
-  title: z.string().trim().min(1).max(80).optional(),
+  subject: line(120),
+  title: line(80),
   body: z.string().trim().min(1).max(1000),
 });
 // `readAt`: the saved row's updatedAt as the page read it; null when there was none.

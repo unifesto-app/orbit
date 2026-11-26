@@ -27,16 +27,19 @@ export function WordingEditor({
   vars,
   code,
   saved,
+  subjectOff,
 }: {
   kind: string;
   channel: Channel;
   vars: Record<string, string>;
   code: WordingChannel["code"];
   saved: WordingChannel["saved"];
+  subjectOff: string[];
 }) {
   const fields = FIELDS[channel];
-  const start = saved ?? code;
-  const [draft, setDraft] = useState<Record<Field, string>>({ subject: start.subject ?? "", title: start.title ?? "", body: start.body });
+  // Empty with nothing saved: the code's wording above is filled with samples, so saving it as is would fix them in.
+  const blank = { subject: "", title: "", body: "" };
+  const [draft, setDraft] = useState<Record<Field, string>>(saved ? { subject: saved.subject ?? "", title: saved.title ?? "", body: saved.body } : blank);
   const [readAt, setReadAt] = useState(saved?.updatedAt ?? null);
   const [answer, setAnswer] = useState<Answer>({});
   const [pending, run] = useTransition();
@@ -44,13 +47,16 @@ export function WordingEditor({
 
   const names = Object.keys(vars);
   const sent: Draft = Object.fromEntries(fields.map(([f]) => [f, draft[f]])) as Draft;
-  const unknown = unknownVars(fields.map(([f]) => draft[f]).join("\n"), names);
+  const unknown = [
+    ...new Set([...unknownVars(draft.subject, names.filter((n) => !subjectOff.includes(n))), ...unknownVars(fields.map(([f]) => draft[f]).join("\n"), names)]),
+  ];
+  const empty = fields.some(([f]) => !draft[f].trim());
   const go = (f: () => Promise<Answer>) =>
     run(async () => {
       const a = await f();
       setAnswer(a);
       if (a.updatedAt !== undefined) setReadAt(a.updatedAt);
-      if (a.updatedAt === null && !a.error) setDraft({ subject: code.subject ?? "", title: code.title ?? "", body: code.body });
+      if (a.updatedAt === null && !a.error) setDraft(blank);
     });
   // {name} where the cursor last was (else at the end of the last field), the cursor after it.
   const insert = (name: string) => {
@@ -109,10 +115,10 @@ export function WordingEditor({
         </p>
       )}
       <div className={ui.row}>
-        <button type="button" className={`${ui.btn} ${ui.primary}`} disabled={pending} onClick={() => go(() => saveWording(kind, channel, sent, readAt))}>
+        <button type="button" className={`${ui.btn} ${ui.primary}`} disabled={pending || empty} onClick={() => go(() => saveWording(kind, channel, sent, readAt))}>
           Save
         </button>
-        <button type="button" className={ui.btn} disabled={pending} onClick={() => go(() => testWording(kind, channel, sent))}>
+        <button type="button" className={ui.btn} disabled={pending || empty} onClick={() => go(() => testWording(kind, channel, sent))}>
           Send test to me
         </button>
         {saved && (
@@ -123,5 +129,15 @@ export function WordingEditor({
         {answer.note && <span className={ui.secondary}>{answer.note}</span>}
       </div>
     </div>
+  );
+}
+
+// A channel whose code wording changes with the situation (a decision, an end date or none): shown, not edited.
+export function CodeOnly({ channel, code }: { channel: Channel; code: WordingChannel["code"] }) {
+  return (
+    <>
+      <Pairs pairs={FIELDS[channel].map(([f, label]) => [`In code: ${label.toLowerCase()}`, code[f] || "–"])} />
+      <p className={ui.secondary}>This wording changes with the situation, so it’s edited in code.</p>
+    </>
   );
 }

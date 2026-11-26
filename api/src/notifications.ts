@@ -152,7 +152,7 @@ const writeEmail = async (q: Tx | Db, row: Base, s: NotificationSettings | null,
 // onConflictDoNothing makes the second insert a no-op.
 const fallBack = async (db: Db, d: typeof deliveries.$inferSelect, at: Date) => {
   const kind = d.kind as NoticeKind;
-  if (KINDS[kind]?.email !== "fallback" || !d.userId) return;
+  if (KINDS[kind]?.email !== "fallback" || !d.userId || d.dedupeKey.startsWith("test:")) return; // a Galaxy test push stays a push
   const [live] = await db
     .select({ id: deliveries.id })
     .from(deliveries)

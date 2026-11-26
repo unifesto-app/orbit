@@ -64,7 +64,7 @@ test("Platform only; unknown kinds and channels a kind doesn't use are 404", asy
   assert.equal((await as(st)("PUT", `${T}/welcome/push`, { body: "x", readAt: null })).status, 404); // welcome is email only
   const g = await as(st)("GET", `${T}/hostAnnouncement`);
   assert.equal(g.status, 200);
-  assert.deepEqual(g.body.channels.map((c: any) => [c.channel, c.saved]), [["email", null], ["push", null], ["inbox", null]]);
+  assert.deepEqual(g.body.channels.map((c: any) => [c.channel, c.saved, c.editable]), [["email", null, false], ["push", null, true], ["inbox", null, true]]);
   assert.equal(g.body.vars.hostName, "Open Mic Club");
   assert.deepEqual(g.body.channels[1].code, { title: "Open Mic Club", body: "Doors open at 6:30, half an hour early." });
   assert.equal(g.body.channels[0].code.subject, "Open Mic Club about Open Mic Night");
@@ -154,16 +154,66 @@ test("a test send reaches only the caller, with the draft and the samples", asyn
   const rows = await t.db.select().from(deliveries).where(like(deliveries.dedupeKey, "test:%")); // other has a phone too
   assert.deepEqual(rows.map((d) => d.userId), [st.me.id]);
 
-  const e = await send("email", { subject: "S {title}", body: "B" });
+  const mail = (b: object) => as(st)("POST", `${T}/hostVerified/email/test`, b);
+  const e = await mail({ subject: "S {hostName}", body: "B" });
   assert.deepEqual([e.status, e.body.error], [409, "noEmail"]);
   await t.db.update(users).set({ email: `st${n}@example.com`, emailVerifiedAt: new Date(t.now()) }).where(eq(users.id, st.me.id));
-  assert.equal((await send("email", { subject: "S {title}", body: "B" })).status, 200);
+  assert.equal((await mail({ subject: "S {hostName}", body: "B" })).status, 200);
   t.mails.length = 0;
   await t.deliver();
-  assert.deepEqual(t.mails.map((m) => [m.to, m.subject]), [[`st${n}@example.com`, "S Open Mic Night"]]);
+  assert.deepEqual(t.mails.map((m) => [m.to, m.subject]), [[`st${n}@example.com`, "S Open Mic Club"]]);
 
   assert.equal((await send("inbox", { body: "Inbox {title}" })).status, 200);
   const items = await t.db.select().from(inboxItems).where(like(inboxItems.dedupeKey, "test:%"));
   assert.deepEqual(items.map((i) => [i.userId, i.text]), [[st.me.id, "Inbox Open Mic Night"]]);
   assert.equal((await t.db.select().from(auditLog).where(eq(auditLog.action, "notifications.wordingTest"))).length, 3);
+});
+
+test("wording that branches on the data is code only: GET editable false, PUT and test 400 branches", async () => {
+  const st = await platform();
+  const g = await as(st)("GET", `${T}/eventRequestAnswered`);
+  assert.ok(g.body.channels.every((c: any) => c.editable === false));
+  for (const [m, path] of [
+    ["PUT", `${T}/eventRequestAnswered/inbox`],
+    ["POST", `${T}/eventRequestAnswered/inbox/test`],
+    ["PUT", `${T}/teamAccepted/email`],
+    ["PUT", `${T}/hostAnnouncement/email`],
+  ] as const) {
+    const r = await as(st)(m, path, { subject: "S", body: "B", readAt: null });
+    assert.deepEqual([r.status, r.body.error], [400, "branches"], path);
+  }
+  assert.equal((await as(st)("PUT", `${T}/teamAccepted/inbox`, { body: "B", readAt: null })).status, 200); // its line doesn't branch
+  await as(st)("DELETE", `${T}/teamAccepted/inbox`);
+});
+
+test("teamInvite's subject can't use {hostName}; subject and title are one line", async () => {
+  const st = await platform();
+  const put = (b: object) => as(st)("PUT", `${T}/teamInvite/email`, { readAt: null, ...b });
+  const r = await put({ subject: "Join {hostName}", body: "B" });
+  assert.equal(r.status, 400);
+  assert.match(r.body.message, /\{hostName\}/);
+  assert.equal((await as(st)("GET", `${T}/teamInvite`)).body.subjectOff[0], "hostName");
+  assert.equal((await put({ subject: "Line\none", body: "B" })).status, 400);
+  assert.equal((await as(st)("PUT", `${T}/eventTomorrow/push`, { title: "A\r\nB", body: "B", readAt: null })).status, 400);
+  assert.equal((await put({ subject: "You're invited", body: "{hostName} invited you." })).status, 200);
+  await as(st)("DELETE", `${T}/teamInvite/email`);
+});
+
+test("a test push that doesn't land never falls back to email; a kill switch refuses the test", async () => {
+  const st = await platform();
+  await addDevice(st);
+  await t.db.update(users).set({ email: `fb${n}@example.com`, emailVerifiedAt: new Date(t.now()) }).where(eq(users.id, st.me.id));
+  // eventTomorrow emails only when its push didn't land; no push sender here, so the push ends notSetUp.
+  assert.equal((await as(st)("POST", `${T}/eventTomorrow/push/test`, { title: "T", body: "B" })).status, 200);
+  await t.deliver();
+  const rows = await t.db.select().from(deliveries).where(and(eq(deliveries.userId, st.me.id), like(deliveries.dedupeKey, "test:eventTomorrow:%")));
+  assert.deepEqual(rows.map((d) => [d.channel, d.status]), [["push", "skipped"]]);
+
+  assert.equal((await as(st)("PUT", "/galaxy/notifications/switches/eventTomorrow/inbox", { off: true, reason: "Test it" })).status, 200);
+  const r = await as(st)("POST", `${T}/eventTomorrow/inbox/test`, { body: "B" });
+  assert.deepEqual([r.status, r.body.error], [409, "killSwitch"]);
+  assert.equal((await as(st)("PUT", "/galaxy/notifications/switches/*/push", { off: true, reason: "Test it" })).status, 200);
+  assert.equal((await as(st)("POST", `${T}/eventTomorrow/push/test`, { title: "T", body: "B" })).status, 409);
+  await as(st)("PUT", "/galaxy/notifications/switches/*/push", { off: false, reason: "Done" });
+  await as(st)("PUT", "/galaxy/notifications/switches/eventTomorrow/inbox", { off: false, reason: "Done" });
 });

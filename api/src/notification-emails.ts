@@ -147,6 +147,23 @@ export const VARS: Partial<Record<NoticeKind, Record<string, Var>>> = {
   providerFailing: { channel: ["push"], failed: [12], total: [40] },
 };
 export const varsOf = (kind: string) => VARS[kind as NoticeKind] ?? {};
+// Variables kept out of a kind's email subject: teamInvite's host name is typed by whoever invites (see WORDS).
+export const SUBJECT_OFF: Partial<Record<NoticeKind, readonly string[]>> = { teamInvite: ["hostName"] };
+// Channels whose code wording changes with the data (a decision, an end date or none, a fallback name), which one saved
+// wording can't follow: edited in code only. Email is the subject + line; push and inbox the line, else the subject.
+const ALL: readonly Channel[] = ["email", "push", "inbox"];
+const BRANCHES: Partial<Record<NoticeKind, readonly Channel[]>> = {
+  signInMethodChangeHeld: ALL,
+  accountSuspended: ALL,
+  teamAccepted: ["email"],
+  teamLeft: ALL,
+  hostParentSet: ALL,
+  eventRequestAnswered: ALL,
+  hostAnnouncement: ["email"],
+  followedHostEvent: ["email"],
+  providerFailing: ALL,
+};
+export const branches = (kind: string, channel: Channel) => BRANCHES[kind as NoticeKind]?.includes(channel) ?? false;
 export const samplesOf = (kind: string): Data => Object.fromEntries(Object.entries(varsOf(kind)).map(([n, [v]]) => [n, v]));
 // `text` with each of the kind's {name} filled from the data, shown as the code shows it.
 export const fill = (text: string, vars: Record<string, Var>, data: Data) =>

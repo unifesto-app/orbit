@@ -25,8 +25,8 @@ import type { z } from "zod";
 import type { Deps } from "./auth/routes.ts";
 import { auditLog, deliveries, inboxItems, notificationSwitches, notificationTemplates, pushDevices, users } from "./db/schema.ts";
 import { fail, invalid, isUuid, parse, signedIn } from "./http.ts";
-import { clearWording, fill, inboxFor, pushFor, samplesOf, varsOf, words } from "./notification-emails.ts";
-import { liveDevices } from "./notifications.ts";
+import { branches, clearWording, fill, inboxFor, pushFor, samplesOf, SUBJECT_OFF, varsOf, words } from "./notification-emails.ts";
+import { killedFor, liveDevices } from "./notifications.ts";
 import { holdersOf, requireFeature, type StaffEnv, tell } from "./roles/access.ts";
 import { holds } from "./roles/rules.ts";
 
@@ -150,13 +150,20 @@ export function galaxyNotificationsRoutes({ db, secret, notify, now = Date.now }
     return { kind: kind as NoticeKind, def, channel: channel as Channel };
   };
   // A draft as the channel has it (email: subject + body, push: title + body, inbox: body), or why not.
-  const draftOf = (kind: NoticeKind, channel: Channel, b: z.infer<typeof WordingDraft>): Wording | string => {
-    if (channel === "email" && !b.subject) return "An email needs a subject.";
-    if (channel === "push" && !b.title) return "A push needs a title.";
-    if (channel === "push" && b.body.length > PUSH_BODY_MAX) return `A push's words are ${PUSH_BODY_MAX} characters at most.`;
+  const draftOf = (kind: NoticeKind, channel: Channel, b: z.infer<typeof WordingDraft>): Wording | { error: string; message: string } => {
+    const no = (message: string, error = "invalid") => ({ error, message });
+    if (branches(kind, channel)) return no("This wording changes with the situation, so it's edited in code.", "branches");
+    if (channel === "email" && !b.subject) return no("An email needs a subject.");
+    if (channel === "push" && !b.title) return no("A push needs a title.");
+    if (channel === "push" && b.body.length > PUSH_BODY_MAX) return no(`A push's words are ${PUSH_BODY_MAX} characters at most.`);
     const w = { subject: channel === "email" ? b.subject! : null, title: channel === "push" ? b.title! : null, body: b.body };
-    const bad = unknownVars([w.subject, w.title, w.body].join("\n"), Object.keys(varsOf(kind)));
-    if (bad.length) return `Not a variable for this message: ${bad.map((n) => `{${n}}`).join(", ")}.`;
+    const names = Object.keys(varsOf(kind));
+    const off = SUBJECT_OFF[kind] ?? [];
+    const bad = [
+      ...unknownVars(w.subject ?? "", names.filter((n) => !off.includes(n))),
+      ...unknownVars([w.title, w.body].join("\n"), names),
+    ];
+    if (bad.length) return no(`Not a variable for this message${off.length ? " (or not in its subject)" : ""}: ${[...new Set(bad)].map((n) => `{${n}}`).join(", ")}.`);
     return w;
   };
 
@@ -181,10 +188,11 @@ export function galaxyNotificationsRoutes({ db, secret, notify, now = Date.now }
     const body: GalaxyWording = {
       kind: t.kind,
       vars: Object.fromEntries(Object.entries(varsOf(t.kind)).map(([n, v]) => [n, fill(`{${n}}`, { [n]: v }, data)])),
+      subjectOff: [...(SUBJECT_OFF[t.kind] ?? [])],
       channels: channelsOf(t.def).map((channel) => {
         const r = rows.find((x) => x.row.channel === channel);
         const saved = r && { subject: r.row.subject, title: r.row.title, body: r.row.body, updatedAt: r.row.updatedAt.toISOString(), by: r.by };
-        return { channel, saved: saved ?? null, code: code[channel] };
+        return { channel, editable: !branches(t.kind, channel), saved: saved ?? null, code: code[channel] };
       }),
     };
     return c.json(body);
@@ -198,7 +206,7 @@ export function galaxyNotificationsRoutes({ db, secret, notify, now = Date.now }
     const b = await parse(c, WordingBody);
     if (!b) return invalid(c);
     const w = draftOf(t.kind, t.channel, b);
-    if (typeof w === "string") return fail(c, 400, "invalid", w);
+    if ("error" in w) return fail(c, 400, w.error, w.message);
     const actorId = c.var.actor.id;
     const at = new Date(now());
     const done = await db.transaction(async (tx) => {
@@ -244,7 +252,9 @@ export function galaxyNotificationsRoutes({ db, secret, notify, now = Date.now }
     const b = await parse(c, WordingDraft);
     if (!b) return invalid(c);
     const w = draftOf(t.kind, t.channel, b);
-    if (typeof w === "string") return fail(c, 400, "invalid", w);
+    if ("error" in w) return fail(c, 400, w.error, w.message);
+    // The worker would skip it: say so rather than "sent".
+    if ((await killedFor(db, t.kind)).has(t.channel)) return fail(c, 409, "killSwitch", "This channel is switched off for this message. Switch it on to test.");
     const me = c.var.user;
     const at = new Date(now());
     const payload = { ...samplesOf(t.kind), _draft: w };
