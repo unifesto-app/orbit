@@ -73,9 +73,11 @@ export async function refundPaid(tx: Tx, where: SQL, reason: string, at: Date) {
   return ids;
 }
 
-// Money landed on `orderId` (Razorpay payment `paid`): one transaction, the payment row locked first (only settle
-// writes a payment's status, so it can't clash with book()'s order), then book()'s locks and checks again. Null for an
-// order that isn't ours.
+// Money landed on `orderId` (Razorpay payment `paid`): one transaction, the payment row locked first, then book()'s
+// locks (the person, the event, the ticket type) and its checks again. Null for an order that isn't ours.
+// Lock order: payment before person and event. Nothing holding a person or an event waits on an open payment: /pay
+// expires an old order only after its own locks are gone; event cancel and account deletion lock only paid payments,
+// which settle never waits on the person or event for.
 export async function settle(db: Db, notify: Notify, orderId: string, paid: Pick<RzPayment, "id" | "fee" | "tax">, now: number): Promise<Settled | null> {
   const at = new Date(now);
   return db.transaction(async (tx): Promise<Settled | null> => {
@@ -274,11 +276,14 @@ export function paymentsRoutes({ db, secret, notify, razorpay: rz, now = Date.no
       const open = await openOf(tx, ok.tier.id);
       if (open && open.quantity === terms.quantity && open.amountPaise === terms.amountPaise && open.plan === terms.plan && open.feeIncluded === terms.feeIncluded)
         return { open };
-      if (open) await tx.update(payments).set({ status: "expired", updatedAt: new Date(now()) }).where(and(eq(payments.id, open.id), eq(payments.status, "created")));
-      return { hostId: ok.e.hostId, tierId: ok.tier.id, terms };
+      return { hostId: ok.e.hostId, tierId: ok.tier.id, terms, stale: open?.id };
     });
     if (checked instanceof Response) return checked;
     if ("open" in checked) return c.json(orderOf(checked.open!, rz.keyId, true));
+    // The old order on other terms goes, in a statement of its own once the person's lock is released (settle locks a
+    // payment before the person, so doing it under that lock could deadlock with money landing on it).
+    if (checked.stale)
+      await db.update(payments).set({ status: "expired", updatedAt: new Date(now()) }).where(and(eq(payments.id, checked.stale), eq(payments.status, "created")));
     // The order is made outside the transaction, so no lock waits on Razorpay.
     const paymentId = randomUUID();
     const { terms } = checked;

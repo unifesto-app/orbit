@@ -188,11 +188,13 @@ export function moneyRoutes({ db, secret, notify, razorpay: rz, now = Date.now }
     if (!isUuid(id)) return fail(c, 404, "notFound", "There's nothing here.");
     const b = await parse(c, MoneyReason);
     if (!b) return invalid(c);
-    // Taken back from failed in one statement, so two staff pressing at once send it once.
+    // Still failed, only due now: sendRefund's claim takes it, and seeing Razorpay's failed one sends anew.
+    // ponytail: two staff pressing in the same second can both get past this and send while each other's POST is in
+    // flight (the claim and the receipt lookup catch every later overlap); a "sending" status if that ever matters.
     const r = await db.transaction(async (tx) => {
       const [r] = await tx
         .update(refunds)
-        .set({ status: "requested", nextAttemptAt: at(), updatedAt: at() })
+        .set({ nextAttemptAt: at(), updatedAt: at() })
         .where(and(eq(refunds.id, id), eq(refunds.status, "failed")))
         .returning({ id: refunds.id });
       if (r) await logged(tx, c.var.actor.id, "money.refund.retry", b.reason, { refundId: id });

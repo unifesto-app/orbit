@@ -3,8 +3,9 @@ import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { eq } from "drizzle-orm";
 import sharp from "sharp";
+import { runDeletions } from "./auth/deletion.ts";
 import { testApp } from "./testkit.ts";
-import { auditLog, bookings, failedWebhooks, hosts, payments, razorpayEvents, refunds, staffGrants } from "./db/schema.ts";
+import { auditLog, bookings, events, failedWebhooks, hosts, payments, razorpayEvents, refunds, staffGrants, users } from "./db/schema.ts";
 import { earningsOf } from "./payments/galaxy.ts";
 import { paymentsRoutes, pollPayments, sendRefund } from "./payments/routes.ts";
 import { razorpay, type RzPayment, type RzRefund } from "./payments/razorpay.ts";
@@ -24,8 +25,10 @@ const fakeFetch = (async (url: string | URL, init?: RequestInit) => {
   assert.equal((init?.headers as Record<string, string>).authorization, `Basic ${Buffer.from(`${KEY.keyId}:${KEY.keySecret}`).toString("base64")}`);
   const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
   const body = init?.body ? JSON.parse(String(init.body)) : null;
-  if (method === "POST" && path === "/orders") return json({ id: `order_${++rzState.orders}`, amount: body.amount, receipt: body.receipt });
-  if (method === "POST" && path === "/orders") assert.equal(body.payment_capture, 1);
+  if (method === "POST" && path === "/orders") {
+    assert.equal(body.payment_capture, 1);
+    return json({ id: `order_${++rzState.orders}`, amount: body.amount, receipt: body.receipt });
+  }
   let m = path.match(/^\/orders\/([^/]+)\/payments$/);
   if (m) return json({ items: rzState.captured.get(m[1]!) ?? [] });
   m = path.match(/^\/payments\/([^/]+)$/);
@@ -382,6 +385,8 @@ test("cancelling an event refunds its paid tickets in full; earnings go to 0", a
   assert.equal((await as(a)("POST", `/events/${e.id}/cancel`, { reason: "Venue flooded" })).status, 200);
   const p = await paymentOf(o.orderId);
   assert.equal(p.status, "refundPending");
+  // The refund goes after the answer.
+  for (let i = 0; i < 100 && (await t.db.select().from(refunds).where(eq(refunds.paymentId, p.id)))[0]?.status !== "sent"; i++) await new Promise((r) => setTimeout(r, 10));
   const [r] = await t.db.select().from(refunds).where(eq(refunds.paymentId, p.id));
   assert.deepEqual([r!.amountPaise, r!.kind, r!.status], [o.amountPaise, "auto", "sent"]);
   const [earned] = await earningsOf(t.db, [e.id]);
@@ -436,4 +441,55 @@ test("a ticket type someone has paid for (or started to) can't be removed", asyn
   const r = await as(a)("DELETE", `/events/${e.id}/tickets/${extra.id}`);
   assert.equal(r.status, 409);
   assert.equal(r.body.error, "hasBookings");
+});
+
+// A paid ticket for `u` on a new event of `host`'s, confirmed through verify.
+const bought = async (host: P, u: P) => {
+  const e = await publish(host);
+  const o = (await pay(u, e)).body;
+  const p = capture(o.orderId, o.amountPaise);
+  assert.equal((await verify(u, o.orderId, p.id)).body.status, "paid");
+  return { e, o, p };
+};
+const posts = (paymentId: string) => rzState.calls.filter((x) => x === `POST /payments/${paymentId}/refund`).length;
+
+test("Razorpay fails a refund, then a Galaxy retry sends a new one; a stale refund.failed is ignored", async () => {
+  const a = await join(), b = await join(), boss = await join();
+  await give(boss, "money");
+  const { o, p } = await bought(a, b);
+  const id = (await paymentOf(o.orderId)).id;
+  const made = await as(boss)("POST", `/galaxy/money/payments/${id}/refund`, { amountPaise: 500, reason: "Seat was broken" });
+  assert.equal(made.body.status, "sent");
+  const first = rzState.refunds.find((x) => x.receipt === made.body.id)!;
+  first.status = "failed";
+  assert.equal(await hook("refund.failed", { refund: { entity: first } }), 200);
+  assert.equal((await t.db.select().from(refunds).where(eq(refunds.id, made.body.id)))[0]!.status, "failed");
+  assert.equal((await as(boss)("POST", `/galaxy/money/refunds/${made.body.id}/retry`, { reason: "Razorpay was down" })).status, 200);
+  assert.equal(posts(p.id), 2);
+  const row = (await t.db.select().from(refunds).where(eq(refunds.id, made.body.id)))[0]!;
+  assert.equal(row.status, "sent");
+  assert.notEqual(row.razorpayRefundId, first.id);
+  // The first one's failure again (a resend from Razorpay, under a new event id): the new refund stays sent.
+  assert.equal(await hook("refund.failed", { refund: { entity: first } }), 200);
+  assert.equal((await t.db.select().from(refunds).where(eq(refunds.id, made.body.id)))[0]!.status, "sent");
+});
+
+test("account deletion refunds an upcoming paid ticket, not one for an event under way", async () => {
+  const a = await join(), b = await join();
+  const soon = await bought(a, b);
+  const now = await bought(a, b);
+  // The second event started an hour ago and runs another hour.
+  await t.db.update(events).set({ startsAt: new Date(t.now() - HOUR), endsAt: new Date(t.now() + HOUR) }).where(eq(events.id, now.e.id));
+  await t.db.update(users).set({ deletionDueAt: new Date(t.now() - 1000) }).where(eq(users.id, b.me.id));
+  assert.equal(await runDeletions(t.db, t.notify, t.now()), 1);
+  const ps = await paymentOf(soon.o.orderId), pn = await paymentOf(now.o.orderId);
+  assert.equal(ps.status, "refundPending");
+  const [r] = await t.db.select().from(refunds).where(eq(refunds.paymentId, ps.id));
+  assert.deepEqual([r!.amountPaise, r!.status], [soon.o.amountPaise, "requested"]);
+  assert.equal(pn.status, "paid");
+  assert.equal((await t.db.select().from(refunds).where(eq(refunds.paymentId, pn.id))).length, 0);
+  // The poller sends it once its first 15 minutes are up.
+  t.tick(16 * MIN);
+  await pollPayments({ db: t.db, rz, notify: t.notify, now: t.now() });
+  assert.equal((await t.db.select().from(refunds).where(eq(refunds.id, r!.id)))[0]!.status, "sent");
 });

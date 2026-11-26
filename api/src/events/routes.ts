@@ -349,7 +349,11 @@ export function eventsRoutes({ db, notify, secret, media, razorpay: rz, now = Da
       back = await refundPaid(tx, eq(payments.eventId, cur.id), "The event was cancelled", at());
       return { status: "cancelled", cancelledAt: at(), cancelledBy: c.var.user.id, cancelReason: b.reason };
     });
-    if (rz && res.status === 200) for (const id of back) await sendRefund(db, rz, notify, id, now(), true);
+    // Sent after the answer, one at a time; any that don't go are the poller's after 15 minutes.
+    if (rz && res.status === 200 && back.length)
+      void (async () => {
+        for (const id of back) await sendRefund(db, rz, notify, id, now(), true);
+      })().catch(() => console.error("[refunds] after cancel", back.join(",")));
     return res;
   });
 
