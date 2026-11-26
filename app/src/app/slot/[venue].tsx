@@ -6,11 +6,11 @@
 // Since 19 Nov 2026 in the Tickets sheet's language (owner approved Take 5 of the detail pages mockup,
 // https://claude.ai/artifact/5dDmrmZ6soDjoe8kro1xAq): Slot and Pay as a capsule, the picks in outlined cards, the way
 // you pay on the dark bar's left, and Orbit saying what a hold means, that it ended, and what isn't on yet.
-// ponytail: payments (Razorpay) and the slots API aren't on yet, so Pay says so and charges nothing; free stations are a
-// made-up pattern until the API knows the bookings.
-import { formatPrice } from '@orbit/contract';
+// A real venue books on the API (LiveSlots below, X8). The mock's venues keep the mock: Pay says payments aren't on and
+// charges nothing, and free stations are a made-up pattern.
+import { formatPrice, type NewHold, type SlotHold } from '@orbit/contract';
 import { router, useLocalSearchParams } from 'expo-router';
-import { type ComponentRef, useEffect, useRef, useState } from 'react';
+import { type ComponentRef, useEffect, useReducer, useRef, useState } from 'react';
 import { AccessibilityInfo, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { BookBar } from '../../bookBar';
@@ -22,15 +22,24 @@ import { payLabel, payReady } from '../../pay';
 import { PayMark } from '../../payChoices';
 import { Chip, Stepper, Steps } from '../../pickers';
 import { answerPush } from '../../push';
-import { NotFound, Sheet, SheetSays } from '../../rows';
-import { usePayWith } from '../../session';
+import { Failed, NotFound, Sheet, SheetSays, Waiting } from '../../rows';
+import { api, needsAccount, real, usePayWith } from '../../session';
+import { confirmed, holdMsLeft, holdSheet, NO_HOLD, PAYS, payForHold, slotDays, slotMessage, slotsApi, startsFor } from '../../slots';
+import { useLoad } from '../../load';
 import { color, font, space } from '../../theme';
 
 
 const NOT_PAYING = 'Orbit isn’t taking payments yet, so nothing was charged.';
+const NOT_YET = 'Paying in the app is coming soon, so it can’t be held yet. Free slots book now.';
 
+// A real venue (a host's uuid, the "UUID = real, else mock" rule since #43) books on the API; a mock one's id draws the
+// mock's sheet below, as it was.
 export default function SlotSheet() {
-  const { venue: id } = useLocalSearchParams<{ venue: string }>();
+  const { venue: id, name } = useLocalSearchParams<{ venue: string; name?: string }>();
+  return real(id) ? <LiveSlots id={id} name={name} /> : <MockSlots id={id} />;
+}
+
+function MockSlots({ id }: { id: string }) {
   const v = venues[id];
   const host = hosts.find((h) => h.id === id);
   const [si, setSi] = useState(0);
@@ -208,6 +217,301 @@ export default function SlotSheet() {
         }
         // Held, the way you pay on the bar's left, as on the Tickets sheet; a tap opens How to pay.
         pay={heldAt !== null && !lapsed ? { mark: <PayMark pay={pay} />, label: payLabel(pay), onPress: () => router.push('/pay') } : undefined}
+        onHeight={setBar}
+      />
+    </Sheet>
+  );
+}
+
+// Booking a real venue's slot (X8, on X7's API through src/slots.ts), in the mock's look. The days and each station's
+// free starts are the API's; a hold is the server's, counted down for its 10 minutes from when it came back. A ₹0 slot
+// is confirmed with a tap and shows its code; a priced one shows its price and can't be held until payments land
+// (PAYS and payForHold, src/slots.ts: the one seam). A full time can still be tried (the API lets the player's own other
+// hold here go first) or asked to hear if it frees up, as can a hold that ran out. Leaving the sheet lets a live hold go.
+// ponytail: a hold doesn't carry co-op yet (the API prices it solo), so no Two on one here; and a booked slot's code
+// shows on this sheet only, until slot bookings join Tickets.
+const HOUR = 3_600_000;
+function LiveSlots({ id, name }: { id: string; name?: string }) {
+  const [di, setDi] = useState(0);
+  const [si, setSi] = useState(0);
+  const [hours, setHours] = useState(1);
+  const [count, setCount] = useState(1);
+  const [start, setStart] = useState<number | null>(null);
+  const [st, step] = useReducer(holdSheet, NO_HOLD);
+  const [clock, setClock] = useState(() => Date.now());
+  const [bar, setBar] = useState(140);
+  const pay = usePayWith();
+  const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
+  const first = useLoad(`slots|${id}`, () => slotsApi(api).publicSlots(id));
+  const days = first.data ? slotDays(first.data.day, clock) : [];
+  const dayText = di > 0 ? (days[di]?.day ?? null) : null;
+  const other = useLoad(dayText && `slots|${id}|${dayText}`, () => slotsApi(api).publicSlots(id, dayText ?? undefined));
+  const page = di === 0 ? first : other;
+  const { held, booked, busy, said, asked } = st;
+  // A call out (a ref, so a second tap before the next render is caught too).
+  const flying = useRef(false);
+  // Leaving the sheet lets go of a live hold; so does a hold that comes back after it's gone.
+  const mounted = useRef(true);
+  const live = useRef<string | null>(null);
+  useEffect(() => {
+    live.current = held && !booked ? held.id : null; // one that's run out answers 404 to a let go: harmless
+  }, [held, booked]);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      if (live.current) void slotsApi(api).letGo(id, live.current);
+    };
+  }, [id]);
+  // While held, the countdown ticks every second, and stops itself once it's run out.
+  const ticking = held && !booked ? st.heldAt : null;
+  useEffect(() => {
+    if (ticking === null) return;
+    const t = setInterval(() => {
+      const at = Date.now();
+      setClock(at);
+      if (at >= ticking + HOLD_MS) clearInterval(t);
+    }, 1000);
+    return () => clearInterval(t);
+  }, [ticking]);
+
+  if (!first.data) return first.status === 404 ? <NotFound what="place to play" /> : first.error ? <Failed message={first.error.message} retry={first.reload} /> : <Waiting />;
+  const stations = page.data?.stations ?? first.data.stations;
+  // Held, the hold's own station (the list may have moved under it); otherwise the one picked.
+  const s = (held && stations.find((x) => x.id === held.stationId)) || stations[Math.min(si, stations.length - 1)];
+  if (!s) return <NotFound what="place to play" />;
+
+  const kind = { kind: s.whole ? ('turf' as const) : ('gaming' as const) }; // a pitch or court is booked whole, for the group
+  const unit = { name: s.name, unit: [s.unit] };
+  const need = s.whole ? 1 : count;
+  const times = page.data ? startsFor(s, hours) : [];
+  const chosen = times.find((t) => t.at === start) ?? null;
+  const full = chosen !== null && chosen.free < need;
+  const ofHold = (h: SlotHold) => ({ at: Date.parse(h.start), hours: (Date.parse(h.end) - Date.parse(h.start)) / HOUR, count: h.count });
+  const was = held && ofHold(held);
+  const line = was ? slotLine(kind, unit, was.at, was.hours, was.count) : chosen ? slotLine(kind, unit, chosen.at, hours, need) : undefined;
+  // The price on the phone, by the API's own rule (contract slotPrice); the API charges the same.
+  const cost = was ? slotPrice(s, was.at, was.hours, was.count) : chosen ? slotPrice(s, chosen.at, hours, need) : null;
+  const priced = cost !== null && cost > 0;
+  const holdable = !!chosen && (PAYS || !priced); // a priced slot waits for payments (X2): never held to sit unpaid
+  const left = holdMsLeft(st, clock);
+  const lapsed = !!held && !booked && left === 0;
+  const unitHours = `${hours} ${hours === 1 ? 'hour' : 'hours'}`;
+
+  const say = (text: string) => {
+    step({ t: 'said', text });
+    AccessibilityInfo.announceForAccessibility(text); // focus stays on the bar
+    requestAnimationFrame(() => scroll.current?.scrollToEnd());
+  };
+  // Every call needs an account: signed out, the sign-in sheet first, then the tap goes on (src/session.ts). One at a
+  // time: while one's out, taps and picks are ignored.
+  const run = (fn: () => Promise<void>) =>
+    needsAccount(async () => {
+      if (flying.current) return;
+      flying.current = true;
+      step({ t: 'busy' });
+      try {
+        await fn();
+      } finally {
+        flying.current = false;
+        if (mounted.current) step({ t: 'done' });
+      }
+    });
+  // A new pick lets go of a live hold, so the time is free for others at once. Ignored while a call is out.
+  const pick = (fn: () => void) => {
+    if (flying.current || busy) return;
+    fn();
+    if (live.current) void slotsApi(api).letGo(id, live.current);
+    step({ t: 'pick' });
+  };
+  const asNew = (): NewHold => ({ stationId: s.id, start: new Date(chosen!.at).toISOString(), hours, count: need });
+  const hold = () =>
+    run(async () => {
+      const r = await slotsApi(api).hold(id, asNew());
+      if (!mounted.current) {
+        if (r.ok) void slotsApi(api).letGo(id, r.data.id); // the sheet's gone: nobody's there to book it
+        return;
+      }
+      if (!r.ok) {
+        if (r.error.error === 'full' || r.error.error === 'badTime') page.reload();
+        return say(slotMessage(r.error));
+      }
+      step({ t: 'held', hold: r.data, at: Date.now() });
+      setClock(Date.now());
+    });
+  const confirm = () =>
+    run(async () => {
+      const c = confirmed(await slotsApi(api).confirm(id, held!.id));
+      if ('booked' in c) step({ t: 'booked', hold: c.booked });
+      else if ('no' in c) say(c.no);
+    });
+  const payNow = () =>
+    run(async () => {
+      const c = confirmed(await payForHold(id, held!.id));
+      if ('booked' in c) step({ t: 'booked', hold: c.booked });
+      else if ('no' in c) say(c.no);
+    });
+  const letGo = () =>
+    run(async () => {
+      await slotsApi(api).letGo(id, held!.id); // a hold already ended answers 404: let go all the same
+      step({ t: 'done' }); // so the pick isn't ignored as busy
+      step({ t: 'pick' });
+      page.reload();
+    });
+  // Hear if it frees up (Play 18): once; the tap is also the yes to the phone's push prompt (src/push.tsx). If it's free
+  // again already, the times are read again so it shows.
+  const ask = (what: NewHold) =>
+    run(async () => {
+      const r = await slotsApi(api).askAlert(id, what);
+      if (!r.ok) {
+        if (r.error.error === 'notFull') page.reload();
+        return say(slotMessage(r.error));
+      }
+      step({ t: 'asked' });
+      void answerPush(true);
+    });
+  // What "Hear if it frees up" asks about: the hold that ran out, or the full time picked.
+  const what: (() => NewHold) | null = lapsed ? () => ({ stationId: held.stationId, start: held.start, hours: was!.hours, count: held.count }) : full ? asNew : null;
+  const hear = what && (
+    <SheetSays
+      text={held ? 'Your hold ended, so someone else can book this time now.' : 'That time’s full. Try holding it anyway, or hear if it frees up.'}
+      then={asked ? { mine: 'Hear if it frees up', reply: 'I’ll tell you once if it frees up.' } : undefined}
+      answers={asked ? [] : [{ label: 'Hear if it frees up', onPress: () => ask(what()) }]}
+    />
+  );
+  const steps = [
+    { key: 'pick' as const, label: 'Slot', ready: !booked },
+    { key: 'pay' as const, label: priced ? 'Pay' : 'Confirm', ready: !!held && !lapsed },
+  ];
+  const from = Math.min(...stations.map((x) => Math.min(x.pricePaise, x.offPeak?.pricePaise ?? Infinity)));
+
+  return (
+    <Sheet title={booked ? 'Booked' : !held ? 'Book a slot' : lapsed ? 'Hold ended' : 'Held for you'} note={name} full>
+      <ScrollView ref={scroll} showsVerticalScrollIndicator={false} contentContainerStyle={[styles.list, { paddingBottom: bar }]}>
+        <Steps steps={steps} at={held ? 'pay' : 'pick'} onPick={(k) => k === 'pick' && !booked && pick(() => undefined)} />
+        {booked ? (
+          <>
+            <FactCard flush>
+              <Fact label="Booked" value={line ?? ''} note={booked.code ? `Code ${booked.code}` : undefined} />
+            </FactCard>
+            <SheetSays text="Show this code at the desk when you get there." />
+          </>
+        ) : !held ? (
+          <>
+            <FactCard flush>
+              <View style={styles.group}>
+                <Text style={styles.label}>What</Text>
+                <View style={styles.wrap}>
+                  {stations.map((x, i) => (
+                    <Chip
+                      key={x.id}
+                      label={`${x.name} · ${perHour(x.pricePaise)}`}
+                      picked={x.id === s.id}
+                      onPress={() => pick(() => { setSi(i); setCount(1); })}
+                    />
+                  ))}
+                </View>
+              </View>
+            </FactCard>
+
+            <FactCard flush>
+              <View style={styles.group}>
+                <Text style={styles.label}>Day</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
+                  {days.map((d, i) => (
+                    <Chip key={d.day} label={d.label} picked={i === di} onPress={() => pick(() => setDi(i))} />
+                  ))}
+                </ScrollView>
+              </View>
+              <View style={styles.group}>
+                <Text style={styles.label}>Start</Text>
+                {times.length > 0 && (
+                  <View style={styles.wrap}>
+                    {/* A full time stays pickable, to try anyway or hear if it frees up. */}
+                    {times.map((t) => (
+                      <Chip key={t.at} label={t.free < need ? `${timeLabel(t.at)} · Full` : timeLabel(t.at)} picked={t.at === chosen?.at} onPress={() => pick(() => setStart(t.at))} />
+                    ))}
+                  </View>
+                )}
+                <Text style={styles.note}>{startsLine(kind)}</Text>
+              </View>
+            </FactCard>
+            {page.data && times.length === 0 && <SheetSays text={page.data.opening ? 'Nothing’s left that day. Try another.' : 'Closed that day. Try another.'} />}
+            {!page.data && page.error && <SheetSays text={slotMessage(page.error)} answers={[{ label: 'Try again', onPress: page.reload }]} />}
+
+            <FactCard flush>
+              <View style={styles.line}>
+                <Text style={[styles.grow, styles.value]}>For {unitHours}</Text>
+                <Stepper value={hours} min={1} max={MAX_HOURS} label="Hours" onChange={(n) => pick(() => setHours(n))} />
+              </View>
+              {!s.whole && (
+                <View style={styles.line}>
+                  <Text style={[styles.grow, styles.value]}>{`${count} × ${s.unit}`}</Text>
+                  <Stepper value={count} min={1} max={s.count} label={s.unit} onChange={(n) => pick(() => setCount(n))} />
+                </View>
+              )}
+            </FactCard>
+            {chosen && priced && !PAYS && <SheetSays text={`This one is ${formatPrice(cost)}. ${NOT_YET}`} />}
+            {hear}
+          </>
+        ) : lapsed ? (
+          <>
+            <FactCard flush>
+              <Fact label="Was held for you" value={line ?? ''} note={cost !== null ? formatPrice(cost) : undefined} />
+            </FactCard>
+            {hear}
+          </>
+        ) : (
+          <>
+            <FactCard flush>
+              <Fact label={`${mmss(left)} left to ${priced ? 'pay' : 'confirm'}`} value={line ?? ''} note={cost !== null ? formatPrice(cost) : undefined} />
+            </FactCard>
+            <SheetSays
+              text={priced ? 'It’s yours if you pay before the time’s up. You can cancel up to 2 hours before the start.' : 'It’s yours once you confirm, before the time’s up.'}
+              answers={[{ label: 'Let go', onPress: letGo }]}
+            />
+          </>
+        )}
+        {said && <SheetSays text={said} />}
+      </ScrollView>
+      <BookBar
+        dark
+        price={cost !== null ? formatPrice(cost) : perHour(from)}
+        from={cost === null}
+        note={line ?? 'Pick a start time'}
+        action={
+          busy
+            ? 'One moment'
+            : booked
+              ? 'Done'
+              : !held
+                ? chosen && !holdable
+                  ? 'Paying soon'
+                  : 'Hold for 10 minutes'
+                : lapsed
+                  ? 'Pick again'
+                  : priced
+                    ? 'Pay'
+                    : 'Confirm'
+        }
+        onAction={
+          busy
+            ? undefined
+            : booked
+              ? () => router.back()
+              : !held
+                ? holdable
+                  ? hold
+                  : undefined
+                : lapsed
+                  ? () => pick(() => undefined)
+                  : priced
+                    ? payReady(pay)
+                      ? payNow
+                      : () => router.push('/pay')
+                    : confirm
+        }
+        pay={held && !lapsed && !booked && priced ? { mark: <PayMark pay={pay} />, label: payLabel(pay), onPress: () => router.push('/pay') } : undefined}
         onHeight={setBar}
       />
     </Sheet>

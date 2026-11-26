@@ -46,7 +46,7 @@ export type KindDef = {
   switch: PushSwitch | null; // the person's switch that governs it; null for Must kinds
 };
 
-export type Target = "security" | "help" | "refunds" | "request" | "ticket" | "refund" | "event" | "room" | "slot" | "host";
+export type Target = "security" | "help" | "refunds" | "request" | "ticket" | "refund" | "event" | "room" | "slot" | "host" | "today"; // today: Play Partner's Today
 
 // Where a kind opens when the catalog doesn't say: a booking its ticket (a refund its refund), an event you hold a
 // ticket for the ticket (inRoom its room, Thanks the event page, for Loved it), a followed host's or nearby event its
@@ -98,7 +98,8 @@ const acct = (level: Level, ch: string, vars: readonly string[] = [], opens: Kin
 const slot = (level: Level, ch: string, vars: readonly string[] = []) => k("booking", level, ch, "orbit", "ticket", vars, "slot");
 const book = (level: Level, ch: string, type: InboxType = "ticket") => k("booking", level, ch, "orbit", type);
 const ev = (level: Level, ch: string, type: InboxType, vars: readonly string[] = []) => k("events", level, ch, "orbit", type, vars);
-const host = (level: Level, ch: string, app: InboxApp | "role" | null = "launch", vars: readonly string[] = []) => k("host", level, ch, app, "account", vars);
+const host = (level: Level, ch: string, app: InboxApp | "role" | null = "launch", vars: readonly string[] = [], opens?: KindDef["opens"]) =>
+  k("host", level, ch, app, "account", vars, opens);
 const staff = (vars: readonly string[] = []) => k("staff", "must", "E", null, "account", vars);
 
 const HOST = ["hostName"] as const;
@@ -204,8 +205,8 @@ export const KINDS = {
   linkRemoved: host("normal", "PIE"),
   loveSummary: host("normal", "PIE"),
   loveRemoved: host("normal", "PIE"),
-  slotBooked: host("normal", "PI", "station", ["hostName", "station", "start", "count"]),
-  slotCancelled: host("normal", "PI", "station"),
+  slotBooked: host("normal", "PI", "station", ["hostName", "station", "start", "count"], "today"),
+  slotCancelled: host("normal", "PI", "station", [], "today"),
   judgeReady: host("normal", "E", null),
   judgeDue: host("normal", "E", null),
 

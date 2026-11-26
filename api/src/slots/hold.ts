@@ -3,8 +3,8 @@ import { code, token } from "../bookings.ts";
 import type { Db } from "../db/index.ts";
 import type { Tx } from "../http.ts";
 import { hosts, stationClaims, stations, users, venues } from "../db/schema.ts";
-import type { Week } from "@orbit/contract";
-import { type Claim, fits, hours, HOUR, MIN } from "./rules.ts";
+import { bookable, type Claim, fits, hours, HOUR, MIN } from "./rules.ts";
+export { bookable, SLOT_DAYS } from "./rules.ts";
 
 // A player's hold on a slot while they pay (Play, "Backend shape"). It counts for 10 minutes and then lapses by itself:
 // no job, the counting rule just stops reading it.
@@ -13,21 +13,6 @@ import { type Claim, fits, hours, HOUR, MIN } from "./rules.ts";
 export const HOLD_MINUTES = 10;
 // ponytail: a guess. Without it one account could hold a station to closing and renew it every 10 minutes for good.
 export const HOLDS_PER_HOUR = 3;
-const IST = 330 * MIN;
-const DAY = 24 * HOUR;
-export const SLOT_DAYS = 14; // today's opening, or one of the next 13
-
-/** On the station's grid, ahead of now, inside one opening of the next 14 days: a start a player may hold or ask about. */
-export function bookable(week: Week, step: number, start: number, hrs: number, now: number) {
-  const open = hours(week, start);
-  const first = hours(week, now).day;
-  const end = start + hrs * HOUR;
-  return (
-    Number.isInteger(hrs) && hrs >= 1 &&
-    (start + IST) % (step * MIN) === 0 && start >= now && open.day >= first && open.day <= first + (SLOT_DAYS - 1) * DAY && start >= open.opens && end <= open.closes
-  );
-}
-
 // The rules' view of a stored claim. Here, not in routes.ts, so routes can import hold without a cycle.
 export const toClaim = (r: Held): Claim => ({
   id: r.id, stationId: r.stationId, kind: r.kind, status: r.status, count: r.count, start: r.startsAt.getTime(), end: r.endsAt.getTime(),

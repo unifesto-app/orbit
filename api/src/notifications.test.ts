@@ -454,9 +454,12 @@ test("inbox rows open the app's screen with the id from the data, or nothing wit
   // Every target names one the app knows. Another app's inbox only gets the account targets (security, help, refunds,
   // request), never a people-app screen (an email-only kind has no inbox at all).
   const account = ["security", "help", "refunds", "request"];
-  const known = [...account, "ticket", "refund", "event", "room", "slot", "host"];
+  const known = [...account, "ticket", "refund", "event", "room", "slot", "host", "today"];
   for (const [kind, def] of Object.entries(KINDS))
-    if (def.opens) assert.ok(known.includes(def.opens) && (def.app === "orbit" || !def.inbox || account.includes(def.opens)), kind);
+    if (def.opens)
+      assert.ok(known.includes(def.opens) && (def.app === "orbit" || !def.inbox || account.includes(def.opens) || (def.app === "station" && def.opens === "today")), kind);
+  assert.deepEqual(opensFor("slotBooked", { hostId: "h" }), { to: "today", host: "h" }); // Play Partner opens Today, on that venue
+  assert.deepEqual(opensFor("slotCancelled"), { to: "today" });
 });
 
 // ---- Push (PR 4): the worker with a fake sender, the email fallback and the provider check.

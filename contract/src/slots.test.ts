@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { EditStation, NewStation, slotPrice, Week } from "./slots.ts";
+import { EditStation, NewStation, PublicSlots, slotPrice, VenueDay, Week } from "./slots.ts";
 
 type S = { safeParse: (v: unknown) => { success: boolean } };
 const ok = (s: S, v: unknown) => assert.equal(s.safeParse(v).success, true, JSON.stringify(v));
@@ -62,4 +62,21 @@ test("slotPrice: each half hour at its own rate, times count; co-op shares one; 
   assert.equal(slotPrice(s, Date.parse("2026-11-21T14:00:00+05:30"), 1, 1), 10000); // Saturday: weekdays only
   assert.equal(slotPrice(s, at("14:00:00"), 1, 3, true), 15000); // co-op: one station's rate, not per player
   assert.equal(slotPrice({ pricePaise: 0 }, at("14:00:00"), 3, 4), 0);
+});
+
+test("a /day or public read from before X7 (no charges, no holdEndsAt) still parses, with the defaults", () => {
+  const station = { id: "s1", name: "PC", unit: "PC", tile: "gaming", count: 4, whole: false, step: 30, archived: false };
+  const claim = {
+    id: "c1", stationId: "s1", kind: "booking", status: "paid", count: 1, start: "a", end: "b", who: null, why: null, admitted: 0,
+    checkedInAt: null, checkedInBy: null, releasedAt: null,
+  };
+  const day = VenueDay.parse({
+    opening: { day: "2026-11-26", opens: "a", closes: "b", state: "open" }, logsWalkIns: false, stations: [station], claims: [claim], free: {},
+  });
+  assert.equal(day.stations[0]!.charges, true);
+  assert.equal(day.claims[0]!.holdEndsAt, null);
+  const row = { ...station, pricePaise: 10000, coopPaise: null, offPeak: null, games: null, free: [] };
+  assert.equal(PublicSlots.parse({ day: "2026-11-26", opening: null, stations: [row] }).stations[0]!.charges, true);
+  // Sent, they're kept.
+  assert.equal(VenueDay.parse({ ...day, stations: [{ ...station, charges: false }] }).stations[0]!.charges, false);
 });

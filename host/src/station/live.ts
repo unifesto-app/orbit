@@ -1,7 +1,8 @@
 // Today's day from the API (GET /venues/:hostId/day) as the shapes Today already draws: the venue's stations as kinds,
 // its claims, and the opening. Pure, so live.test.ts runs it on Node.
 // - Desk sees no money: the day has none, so a kind's price is 0 and nothing on Today reads it.
-// - A held claim (someone mid-payment) takes its stations but isn't due at the door (`held`).
+// - A held claim (someone mid-payment) takes its stations but isn't due at the door (`held`); Next up shows it with its
+//   minutes left, Paying… on a priced station, Holding on a free one (`holdEnds`, `paying`).
 // - Refunded claims are left out (they take nothing and Today never shows them); released ones keep their time.
 // - Archived stations are left out: nothing new lands on them.
 // - The API's `free` counts aren't read: Today works them out from the claims with taken(), the same rule.
@@ -28,6 +29,7 @@ export function fromApi(d: VenueDay, host: { hostId: string; name: string }, now
     .filter((s) => !s.archived)
     .map((s) => ({ id: s.id, name: s.name, count: s.count, unit: [s.unit, plural(s.unit)], step: s.step, whole: s.whole, price: 0 }));
   const venue: Venue = { ...blank(host), open: [Math.round((opens - day) / HOUR), Math.round((closes - day) / HOUR)], types };
+  const priced = new Set(d.stations.filter((s) => s.charges).map((s) => s.id));
   const claims: Claim[] = d.claims
     .filter((c) => c.status !== 'refunded')
     .map((c) => ({
@@ -43,6 +45,8 @@ export function fromApi(d: VenueDay, host: { hostId: string; name: string }, now
       in: c.admitted,
       by: c.checkedInBy ?? undefined,
       held: c.status === 'held' || undefined,
+      holdEnds: c.status === 'held' && c.holdEndsAt ? Date.parse(c.holdEndsAt) : undefined,
+      paying: c.status === 'held' ? priced.has(c.stationId) : undefined,
       released: c.status === 'released' ? Date.parse(c.releasedAt ?? c.start) : undefined,
     }));
   // Where now is against the opening, from the phone's clock so it moves between fetches; a closed day opens and closes

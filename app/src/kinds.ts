@@ -234,13 +234,13 @@ export function fromPricePaise(v: Venue): number {
 }
 
 /** An hour's price as the venue page writes it: "₹162/hr". */
-export const perHour = (paise: number) => `${formatPrice(paise)}/hr`;
+export const perHour = (paise: number) => (paise ? `${formatPrice(paise)}/hr` : formatPrice(0));
 
 /**
  * How a booking starts (Play 7, 19): a pitch or court is booked whole by one person for the group, on the hour; a
  * gaming station starts every 30 minutes, solo or co-op.
  */
-export const startsLine = (v: Venue) =>
+export const startsLine = (v: Pick<Venue, 'kind'>) =>
   v.kind === 'gaming' ? 'Starts every 30 minutes, for as many whole hours as you like' : 'Booked whole for your group, starting on the hour';
 
 /** "2 pitches", "1 box". */

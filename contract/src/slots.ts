@@ -99,6 +99,9 @@ const OffPeakRow = z.object({ from: z.number(), to: z.number(), weekdays: z.bool
 export const CounterStation = z.object({
   id: z.string(), name: z.string(), unit: z.string(), tile: StationTile, count: z.number(),
   whole: z.boolean(), step: z.union([z.literal(30), z.literal(60)]), archived: z.boolean(),
+  // false: booked at ₹0, a hold confirmed, never paid for (no amount, so Desk still sees no money). Defaulted, as an API
+  // from before X7 doesn't send it.
+  charges: z.boolean().default(true),
 });
 export type CounterStation = z.infer<typeof CounterStation>;
 export const StationRow = CounterStation.extend({
@@ -117,6 +120,7 @@ export const SlotClaim = z.object({
   id: z.string(), stationId: z.string(), kind: z.enum(CLAIM_KINDS), status: z.enum(CLAIM_STATUSES), count: z.number(),
   start: z.string(), end: z.string(), who: z.string().nullable(), why: z.string().nullable(), admitted: z.number(),
   checkedInAt: z.string().nullable(), checkedInBy: z.string().nullable(), releasedAt: z.string().nullable(),
+  holdEndsAt: z.string().nullable().default(null), // a held booking's: when it lapses unless paid (or confirmed, when free); defaulted for an API from before X7
 });
 export type SlotClaim = z.infer<typeof SlotClaim>;
 export const VenueDay = z.object({
@@ -145,7 +149,8 @@ export const SlotAlert = z.object({ id: z.string(), stationId: z.string(), start
 export type SlotAlert = z.infer<typeof SlotAlert>;
 
 // GET /public/venues/:hostId/slots?day=YYYY-MM-DD: a venue's free slots on one India day, for anyone. Per station, how
-// many are free at each start on its grid still ahead (one step each, so a longer booking needs every step it covers).
+// many are free at every step of its grid still ahead, up to the last before closing (one step each, so not every
+// listed step is a start: a booking needs every step it covers listed, as the app's startsFor reads it).
 export const PublicSlots = z.object({
   day: z.string(), // YYYY-MM-DD
   opening: z.object({ opens: z.string(), closes: z.string() }).nullable(), // null: closed that day
