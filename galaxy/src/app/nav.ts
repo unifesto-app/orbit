@@ -21,6 +21,8 @@ export const sections: { title: string; items: NavItem[] }[] = [
       { label: "Requests", href: "/requests" },
       // Every host's events: unpublish, cancel, promote (X1).
       { label: "Events", href: "/events" },
+      // Every Venue host, Setup pending until Play Partner's setup saves it, with its stations (X9).
+      { label: "Venues", href: "/venues" },
       // Doors open now or closed in the last week: booked against checked in, and an undo (X5).
       { label: "Check-in", href: "/check-in" },
       // DAU, WAU, MAU, retention, platforms and versions (owner, 19 Nov 2026: "user analytics, mau, dau etc").

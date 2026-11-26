@@ -78,7 +78,11 @@ async function Request({ params }: Pick<PageProps<"/requests/[id]">, "params">) 
             ]}
           />
         ) : (
-          <p className={ui.secondary}>Host only, no event yet.</p>
+          <p className={ui.secondary}>
+            {q.host.kind === "venue"
+              ? "A venue, no event. Once approved, they set up its address, hours and stations in Play Partner."
+              : "Host only, no event yet."}
+          </p>
         )}
       </Container>
 

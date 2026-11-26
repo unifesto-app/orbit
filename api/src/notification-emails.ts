@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { type Channel, EMAIL_SWITCHES, type EmailSwitch, fillVars, isMust, KINDS, type NoticeKind, WAITLIST_CONTACT, type Wording } from "@orbit/contract";
+import { type Channel, EMAIL_SWITCHES, type EmailSwitch, fillVars, inboxApp, isMust, KINDS, type NoticeKind, WAITLIST_CONTACT, type Wording } from "@orbit/contract";
 import type { Db } from "./db/index.ts";
 import { notificationTemplates } from "./db/schema.ts";
 import type { Tx } from "./http.ts";
@@ -18,6 +18,8 @@ type Data = Record<string, unknown>;
 type Words = { subject: string; line?: string };
 
 const str = (v: unknown) => (v === undefined || v === null ? "" : String(v));
+// The host app a request was asked from, as inboxApp sends it there.
+const partnerApp = (d: Data) => (inboxApp("eventRequestAnswered", d) === "station" ? "Orbit Play Partner" : "Orbit Event Partner");
 const day = (v: unknown) => {
   const d = new Date(str(v));
   return isNaN(d.getTime()) ? "" : d.toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" });
@@ -81,9 +83,9 @@ const WORDS: Partial<Record<NoticeKind, (d: Data) => Words>> = {
   }),
   eventRequestAnswered: (d) =>
     d.decision === "approved"
-      ? { subject: "Your request to host is approved", line: `${str(d.name)} is on Orbit, unverified for now. Open Orbit Event Partner to carry on.` }
+      ? { subject: "Your request to host is approved", line: `${str(d.name)} is on Orbit, unverified for now. Open ${partnerApp(d)} to carry on.` }
       : d.decision === "changes"
-        ? { subject: "Your request to host needs a change", line: `What to change: ${str(d.reason)}. Edit your request in Orbit Event Partner and send it again.` }
+        ? { subject: "Your request to host needs a change", line: `What to change: ${str(d.reason)}. Edit your request in ${partnerApp(d)} and send it again.` }
         : { subject: "Your request to host was declined", line: `Reason: ${str(d.reason)}.` },
   slotReleased: (d) => ({ subject: `Your slot at ${str(d.hostName)} was released`, line: `You didn’t check in for ${dayTime(d.start)}, so the slot was freed.` }),
   hostAnnouncement: (d) => ({ subject: `${str(d.hostName) || "The host"} about ${str(d.title)}`, line: str(d.text) }),

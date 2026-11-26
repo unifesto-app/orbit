@@ -120,8 +120,9 @@ export const KINDS = {
   staffDecision: acct("must", "PIE"),
   supportReply: acct("must", "PIE"),
   dataExportReady: acct("must", "IE"),
-  // Asked from Orbit Event Partner, so it lands there. `name`, not hostName: the inbox row is from Orbit, not the host.
-  eventRequestAnswered: k("account", "must", "PIE", "launch", "account", ["decision", "name", "reason"], "request"),
+  // Lands in the app it was asked from: a Venue's in Play Partner, the rest in Event Partner (`inboxApp`, by `kind`).
+  // `name`, not hostName: the inbox row is from Orbit, not the host.
+  eventRequestAnswered: k("account", "must", "PIE", "launch", "account", ["decision", "name", "reason", "kind"], "request"),
   inRoomCardRemoved: acct("must", "PIE"),
   inRoomBarred: acct("must", "PIE"),
 
@@ -224,6 +225,7 @@ export const isMust = (kind: NoticeKind) => KINDS[kind].level === "must";
 
 // The inbox a kind lands in for this notice; null when it has none.
 export const inboxApp = (kind: NoticeKind, data?: Record<string, unknown>): InboxApp | null => {
+  if (kind === "eventRequestAnswered") return data?.kind === "venue" ? "station" : "launch";
   const app: InboxApp | "role" | null = KINDS[kind].app;
   if (app !== "role") return app;
   return data?.role === "crew" ? "crew" : data?.role === "desk" ? "station" : "launch";
