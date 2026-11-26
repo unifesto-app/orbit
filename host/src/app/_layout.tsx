@@ -12,7 +12,7 @@ import { PushHost } from '../push';
 import { refreshMe, useSession } from '../session';
 import { seats } from '../station/seats';
 import { StationProvider } from '../station/state';
-import { isCrew, isLaunch, isStation } from '../variant';
+import { isLaunch, isStation } from '../variant';
 
 // Station's short sheets (walk-in and block, you, Venue's edits) are see-through, so their own frosted glass shows, as the Orbit
 // app's venue sheet: as tall as what's in them, with a grabber.
@@ -65,9 +65,9 @@ export default function Layout() {
           {/* Which host, with several. */}
           <Stack.Screen name="pick" />
         </Stack.Protected>
-        {/* Pushed over the tabs (Crew's screen), with its own back circle: each app's signed-in people with a seat it
-            already checks. */}
-        <Stack.Protected guard={admin || onStation || (isCrew && signedIn)}>
+        {/* Pushed over the tabs (welcome, Crew's screen), with its own back circle: anyone signed in, on every app, so a
+            push about a seat just ended still opens it. */}
+        <Stack.Protected guard={signedIn}>
           <Stack.Screen name="inbox" />
         </Stack.Protected>
       </Stack>

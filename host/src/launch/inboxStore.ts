@@ -8,7 +8,7 @@ import type { InboxPage, InboxRow } from '@orbit/contract';
 import { useSyncExternalStore } from 'react';
 
 import { inboxPath, readBody } from '../notices';
-import { api, useSession } from '../session';
+import { api, signedInId, useSession } from '../session';
 import { thisApp } from '../variant';
 import { type Message, type Picture, kept, readLocally } from './inbox';
 
@@ -46,30 +46,32 @@ const toMessage = (r: InboxRow): Message => ({ id: r.id, at: r.at, from: r.from,
 export async function refreshInbox(user: string) {
   const started = marks;
   const r = await api.authed<InboxPage>('GET', inboxPath(app));
-  if (started !== marks) return;
+  if (started !== marks || signedInId() !== user) return; // a tap meanwhile, or another account signed in since
   if (r.ok) set({ user, items: r.data.items.map(toMessage), unread: r.data.unread, error: null });
   else if (state?.user === user) set({ ...state, error: r.error.message });
   else set({ user, items: [], unread: 0, error: r.error.message });
 }
 
 /** Marks messages read, or every one with none given; the Inbox's dots and the circle's count follow. */
-// Before the inbox is read (a push tapped at launch, `who` signed in), the POST still goes, then the inbox is read.
-export function markRead(ids?: readonly string[], who?: string) {
-  if (!state) {
-    if (ids && who) {
+export function markRead(ids?: readonly string[]) {
+  const user = signedInId();
+  if (!user) return;
+  const mine = state?.user === user ? state : null;
+  // Ids this phone hasn't read in for this account (a push tapped before the first read, or the last account's inbox
+  // still here): the POST still goes, then the inbox is read again.
+  if (!mine || (ids && ids.some((id) => !mine.items.some((m) => m.id === id)))) {
+    if (!ids) return;
+    marks++;
+    void api.authed('POST', '/me/inbox/read', readBody(app, ids)).then(() => {
       marks++;
-      void api.authed('POST', '/me/inbox/read', readBody(app, ids)).then(() => {
-        marks++;
-        void refreshInbox(who);
-      });
-    }
+      void refreshInbox(user);
+    });
     return;
   }
-  const next = readLocally(state.items, state.unread, ids);
+  const next = readLocally(mine.items, mine.unread, ids);
   if (ids && next.newly === 0) return;
   marks++;
-  set({ ...state, items: next.items, unread: next.unread });
-  const user = state.user;
+  set({ ...mine, items: next.items, unread: next.unread });
   void api.authed('POST', '/me/inbox/read', readBody(app, ids)).then((r) => {
     marks++;
     if (!r.ok) void refreshInbox(user); // put back what the API still has unread

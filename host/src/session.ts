@@ -109,6 +109,9 @@ if (Platform.OS === 'ios' && Settings.get(INSTALLED) !== 1) {
 }
 current = readKept();
 
+// The account signed in now, outside React (the inbox store drops what's for someone else).
+export const signedInId = () => current?.me.id;
+
 export function useSession(): Session {
   return useSyncExternalStore(
     (on) => {

@@ -112,7 +112,7 @@ function openPush(n: import('expo-notifications').Notification) {
   if (n.request.identifier === opened) return;
   opened = n.request.identifier;
   const { id, opens } = (n.request.content.data ?? {}) as { id?: unknown; opens?: unknown };
-  if (typeof id === 'string' && id) markRead([id], me ?? undefined);
+  if (typeof id === 'string' && id) markRead([id]);
   router.push(pushHref(app, opens) as Href);
 }
 
