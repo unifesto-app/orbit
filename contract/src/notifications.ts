@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 // The notification kinds (Orbit notifications build plan, Claude Doc 39zppEh4XSQhFe33NRCBnS; approved 26 Nov 2026): what
 // each message is, how much it matters, the ways it may go and whose inbox it lands in. Read by the API now and the apps
 // and Galaxy later. The catalog is code, so the database holds only what changes at run time (switches, wording).
@@ -16,6 +18,16 @@ export type Level = "must" | "normal" | "low";
 // The inbox row's icon (app/src/inbox.ts).
 export type InboxType = "announcement" | "reminder" | "follow" | "near" | "ticket" | "refund" | "inRoom" | "thanks" | "account";
 
+// The person's switches (app/src/app/account/notifications.tsx): push one per area; email only for the optional emails
+// (tickets, near and inRoom never email). Must kinds have none.
+export const PUSH_SWITCHES = ["tickets", "reminders", "follows", "near", "announcements", "inRoom", "orbit", "yourHosts"] as const;
+export type PushSwitch = (typeof PUSH_SWITCHES)[number];
+export const EMAIL_SWITCHES = ["reminders", "follows", "announcements", "orbit", "yourHosts"] as const satisfies readonly PushSwitch[];
+export type EmailSwitch = (typeof EMAIL_SWITCHES)[number];
+// Stored and sent as "push.near", "email.follows".
+export type SwitchKey = `push.${PushSwitch}` | `email.${EmailSwitch}`;
+export const SWITCH_KEYS = [...PUSH_SWITCHES.map((s) => `push.${s}` as const), ...EMAIL_SWITCHES.map((s) => `email.${s}` as const)] as [SwitchKey, ...SwitchKey[]];
+
 export type KindDef = {
   group: "account" | "booking" | "events" | "following" | "host" | "staff";
   level: Level;
@@ -28,6 +40,21 @@ export type KindDef = {
   type: InboxType;
   opens: "security" | "help" | "refunds" | "request" | null;
   vars: readonly string[]; // the data keys the wording may use
+  switch: PushSwitch | null; // the person's switch that governs it; null for Must kinds
+};
+
+// The plan's "Switch" column, by area: tickets for booking, Your hosts for the host apps, From Orbit for the account's
+// optional email; events and following by what the message is.
+const switchOf = (group: KindDef["group"], level: Level, type: InboxType): PushSwitch | null => {
+  if (level === "must") return null;
+  if (group === "booking") return "tickets";
+  if (group === "host" || group === "staff") return "yourHosts";
+  if (group === "account") return "orbit";
+  if (type === "reminder") return "reminders";
+  if (type === "inRoom") return "inRoom";
+  if (type === "follow") return "follows";
+  if (type === "near") return "near";
+  return group === "following" ? "orbit" : "announcements"; // orbitNews; the hosts' event messages
 };
 
 // `ch`: P push, I inbox, E email always, e email only when the push didn't land.
@@ -49,6 +76,7 @@ const k = (
   type,
   opens,
   vars,
+  switch: switchOf(group, level, type),
 });
 
 const acct = (level: Level, ch: string, vars: readonly string[] = [], opens: KindDef["opens"] = null) => k("account", level, ch, "orbit", "account", vars, opens);
@@ -123,7 +151,7 @@ export const KINDS = {
   hackChanged: ev("must", "PIE", "announcement"),
 
   // Following, discovering, from Orbit
-  followedHostEvent: k("following", "normal", "PIe", "orbit", "follow"),
+  followedHostEvent: k("following", "normal", "PIe", "orbit", "follow", ["hostId", "hostName", "eventId", "title"]), // hostId: the per-host cap
   savedEventOpens: k("following", "normal", "PIe", "orbit", "reminder"),
   nearYou: k("following", "low", "PI", "orbit", "near"),
   orbitNews: k("following", "normal", "PIE", "orbit", "announcement"),
@@ -183,3 +211,34 @@ export const inboxApp = (kind: NoticeKind, data?: Record<string, unknown>): Inbo
   if (app !== "role") return app;
   return data?.role === "crew" ? "crew" : data?.role === "desk" ? "station" : "launch";
 };
+
+// ---------- The person's routes (/me, build plan PR 2) ----------
+
+// The phone's push token for this sign-in. A token moves with its latest PUT.
+export const PushDevice = z.object({
+  app: z.enum(APPS),
+  platform: z.enum(["ios", "android"]),
+  env: z.enum(["sandbox", "production"]),
+  token: z.string().min(1).max(4096),
+});
+export type PushDevice = z.infer<typeof PushDevice>;
+
+// One inbox row, as the app's InboxItem (app/src/inbox.ts) but with the catalog's kind.
+export type InboxRow = { id: string; at: string; from: string; kind: NoticeKind; type: InboxType; text: string; picture: unknown; opens: unknown; read: boolean };
+export const INBOX_PAGE = 30;
+// Newest first; `next` is the cursor for the page after, null on the last. `unread`: that app's whole inbox.
+export type InboxPage = { items: InboxRow[]; unread: number; next: string | null };
+
+// With no ids: everything in that app's inbox.
+export const InboxRead = z.object({ app: z.enum(APPS), ids: z.array(z.uuid()).max(100).optional() });
+
+// Every key filled in. Defaults: all on but push.near, which is on only with a city set; quiet hours on.
+export type NotificationSettings = { push: boolean; quiet: boolean; switches: Record<SwitchKey, boolean> };
+export const NotificationSettingsBody = z.object({
+  push: z.boolean().optional(),
+  quiet: z.boolean().optional(),
+  switches: z.partialRecord(z.enum(SWITCH_KEYS), z.boolean()).optional(),
+});
+export type NotificationSettingsBody = z.infer<typeof NotificationSettingsBody>;
+
+export const FollowNotify = z.object({ notify: z.enum(["all", "off"]) });

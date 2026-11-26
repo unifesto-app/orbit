@@ -313,12 +313,12 @@ test("notify on its own: a failed write is all or nothing, and never throws at i
   assert.equal((await rows("signInMethodChanged")).length, 0);
 });
 
-test("held until PR 6: optional kinds write the inbox but skip the email", async () => {
+test("optional kinds' email follows the person's switch, on by default", async () => {
   const a = await join(true);
   await t.notify({ to: { userId: a.me.id }, kind: "teamRoleStarted", data: { hostName: "Club", role: "crew" } });
   assert.equal((await inbox(a.me.id)).filter((i) => i.kind === "teamRoleStarted").length, 1);
   const mail = (await rows("teamRoleStarted")).find((d) => d.channel === "email")!;
-  assert.deepEqual([mail.status, mail.reason], ["skipped", "optionalHeld"]);
+  assert.deepEqual([mail.status, mail.reason], ["queued", null]);
 });
 
 test("day-30 deletion: inbox gone, old rows scrubbed, nothing queued sends, the goodbye goes to the old address", async () => {

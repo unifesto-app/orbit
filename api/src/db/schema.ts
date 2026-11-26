@@ -84,6 +84,7 @@ export const follows = pgTable(
   {
     userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     hostId: uuid("host_id").notNull().references(() => hosts.id),
+    notify: text("notify", { enum: ["all", "off"] }).notNull().default("all"), // its new events: told, or not
     createdAt: at("created_at").notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.userId, t.hostId] }), index().on(t.hostId)],
@@ -824,8 +825,34 @@ export const deliveries = pgTable(
   },
   (t) => [
     unique("deliveries_dedupe_uq").on(t.dedupeKey, t.channel, t.target),
-    index("deliveries_due_idx").on(t.runAt).where(sql`${t.status} in ('queued', 'sending')`),
+    index("deliveries_due_idx").on(t.runAt).where(sql`${t.status} in ('queued', 'held', 'sending')`),
     index("deliveries_user_idx").on(t.userId, t.createdAt),
     index("deliveries_created_idx").on(t.createdAt),
   ],
+);
+
+// The person's notification settings. No row means every default (me-notifications.ts); `switches` holds only the keys
+// that differ from theirs ("push.near", "email.follows").
+export const notificationPrefs = pgTable("notification_prefs", {
+  userId: uuid("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  push: boolean("push").notNull().default(true),
+  switches: jsonb("switches").$type<Record<string, boolean>>().notNull().default({}),
+  quiet: boolean("quiet").notNull().default(true), // quiet hours, 22:00 to 07:00 India time
+  updatedAt: at("updated_at").notNull().defaultNow(),
+});
+
+// A sign-in's push token, one per session: a sign-out ends the session and so the device. A token lives on one row.
+// Gone after 270 days unseen.
+export const pushDevices = pgTable(
+  "push_devices",
+  {
+    sessionId: uuid("session_id").primaryKey().references(() => sessions.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    app: text("app", { enum: ["orbit", "launch", "station", "crew"] }).notNull(),
+    platform: text("platform", { enum: ["ios", "android"] }).notNull(),
+    env: text("env", { enum: ["sandbox", "production"] }).notNull(),
+    token: text("token").notNull().unique(),
+    seenAt: at("seen_at").notNull(),
+  },
+  (t) => [index().on(t.userId)],
 );

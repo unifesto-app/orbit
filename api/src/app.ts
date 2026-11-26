@@ -6,6 +6,7 @@ import { securityRoutes } from "./auth/security.ts";
 import { eventsRoutes } from "./events/routes.ts";
 import { publicEventsRoutes } from "./events/public.ts";
 import { savesRoutes } from "./saves.ts";
+import { meNotificationsRoutes } from "./me-notifications.ts";
 import { bookingsRoutes } from "./bookings.ts";
 import { slotsRoutes } from "./slots/routes.ts";
 import { hostsRoutes } from "./hosts/routes.ts";
@@ -40,6 +41,7 @@ export function createApp(deps?: Deps) {
     app.route("/", eventsRoutes(deps));
     app.route("/", publicEventsRoutes(deps));
     app.route("/", savesRoutes(deps));
+    app.route("/", meNotificationsRoutes(deps));
     app.route("/", bookingsRoutes(deps));
     app.route("/", slotsRoutes(deps));
     app.route("/", mediaRoutes(deps.media));
