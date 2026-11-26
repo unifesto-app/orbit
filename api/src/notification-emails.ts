@@ -71,6 +71,7 @@ const WORDS: Partial<Record<NoticeKind, (d: Data) => Words>> = {
     subject: d.parentName ? `${str(d.hostName)} is now part of ${str(d.parentName)}` : `${str(d.hostName)} is no longer part of another host`,
   }),
   slotReleased: (d) => ({ subject: `Your slot at ${str(d.hostName)} was released`, line: `You didn’t check in for ${dayTime(d.start)}, so the slot was freed.` }),
+  followedHostEvent: (d) => ({ subject: `${str(d.hostName) || "A host you follow"} has a new event`, line: str(d.title) }),
   staffGrantAdded: (d) => ({
     subject: "Staff access was given",
     line: `Features: ${Array.isArray(d.features) ? d.features.join(", ") : str(d.features)}. Reason: ${str(d.reason)}. ${AUDIT}`,

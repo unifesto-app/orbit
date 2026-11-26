@@ -1,7 +1,7 @@
 import { and, eq, gt, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import type { Db } from "../db/index.ts";
-import { activity, bookings, deliveries, events, follows, hosts, identities, inboxItems, listEvents, lists, passkeys, saves, pmActivity, sessions, staffGrants, teamRoles, users } from "../db/schema.ts";
+import { activity, bookings, deliveries, events, follows, hosts, identities, inboxItems, listEvents, lists, notificationPrefs, passkeys, saves, pmActivity, sessions, staffGrants, teamRoles, users } from "../db/schema.ts";
 import { type Env, fail, type Notify, signedIn } from "../http.ts";
 import { drop, type Media } from "../media.ts";
 import { holdIfUnanswered, ownerOnlySql } from "../roles/access.ts";
@@ -133,6 +133,7 @@ export async function runDeletions(db: Db, notify: Notify, now: number, revokeAp
         await tx.delete(passkeys).where(eq(passkeys.userId, u.id));
         const links = await tx.delete(identities).where(eq(identities.userId, u.id)).returning({ appleRefresh: identities.appleRefresh });
         await tx.delete(follows).where(eq(follows.userId, u.id)); // the row stays, so the cascade never fires
+        await tx.delete(notificationPrefs).where(eq(notificationPrefs.userId, u.id));
         // Their saves and lists go too: private, nobody else could ever read them (Saved events and lists doc).
         await tx.delete(listEvents).where(eq(listEvents.userId, u.id));
         await tx.delete(lists).where(eq(lists.userId, u.id));

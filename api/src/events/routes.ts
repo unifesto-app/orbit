@@ -6,7 +6,7 @@ import {
   type TeamEvent, type TicketType, type WideSaved,
 } from "@orbit/contract";
 import type { Db } from "../db/index.ts";
-import { bookings, events, eventSlugs, hosts, teamRoles, ticketTypes } from "../db/schema.ts";
+import { bookings, events, eventSlugs, follows, hosts, teamRoles, ticketTypes } from "../db/schema.ts";
 import { seatsTaken } from "../bookings.ts";
 import { fail, invalid, isUuid, type Notify, parse, signedIn, taken, type Env } from "../http.ts";
 import { contentImage, drop, linkOf, type Media, newKey } from "../media.ts";
@@ -63,7 +63,7 @@ export const toRow = (e: Pick<Event, keyof typeof rowColumns>, host: HostVisibil
   startsAt: iso(e.startsAt), endsAt: iso(e.endsAt), timezone: e.timezone, area: e.area, city: e.city, online: e.online,
 });
 
-export function eventsRoutes({ db, secret, media, now = Date.now }: Deps) {
+export function eventsRoutes({ db, notify, secret, media, now = Date.now }: Deps) {
   const app = new Hono<Env>();
   const auth = signedIn(db, secret, now);
   const at = () => new Date(now());
@@ -266,10 +266,11 @@ export function eventsRoutes({ db, secret, media, now = Date.now }: Deps) {
   // POST /events/:id/publish: a draft only. Needs a poster, a time that hasn't ended, a place or an online link, a category
   // and a ticket type; a 409 lists what's missing so Console can show a fix button for each. Outside registration links
   // (H5.7) aren't here yet.
-  // ponytail: follower pushes at publish, and the host link dropping its random ending at first publish, come with the
-  // notifications slice.
-  app.post("/events/:id/publish", auth, (c) =>
-    move(c, async (cur, tx) => {
+  // After the commit, every follower who has the host on `all` is told (followedHostEvent, keyed by the event, so a second
+  // publish tells nobody twice). A link-only event isn't announced: its link is its only way in.
+  // ponytail: the host link dropping its random ending at first publish comes with the notifications slice.
+  app.post("/events/:id/publish", auth, async (c) => {
+    const res = await move(c, async (cur, tx) => {
       if (cur.status !== "draft") return fail(c, 409, "notNow", `You can't publish an event that is ${cur.status}.`);
       const [tiers] = await tx.select({ n: count() }).from(ticketTypes).where(eq(ticketTypes.eventId, cur.id));
       const missing: PublishMissing[] = [];
@@ -280,8 +281,32 @@ export function eventsRoutes({ db, secret, media, now = Date.now }: Deps) {
       if (!tiers!.n) missing.push("tickets");
       if (missing.length) return fail(c, 409, "notReady", "This event isn't ready to publish yet.", { missing });
       return { status: "published", publishedAt: cur.publishedAt ?? at() };
-    }),
-  );
+    });
+    // After the publish committed, and off the response path: followers are told in the background.
+    if (res.status === 200) void tellFollowers(c.req.param("id")!);
+    return res;
+  });
+
+  // Followers with notify "all" hear of a public event from a live host (a paused host's publish tells nobody).
+  // ponytail: one notify per follower, awaited in turn, in memory: not durable across a restart mid-fan-out, and slow
+  // when a host's followers run to thousands. The upgrade is a fan-out row the worker picks up and batches.
+  const tellFollowers = async (eventId: string) => {
+    try {
+      const [e] = await db
+        .select({ id: events.id, title: events.title, visibility: events.visibility, hostId: hosts.id, hostName: hosts.name, hostVisibility: hosts.visibility, hostStatus: hosts.status })
+        .from(events)
+        .innerJoin(hosts, eq(hosts.id, events.hostId))
+        .where(eq(events.id, eventId));
+      if (!e || e.hostStatus !== "live" || effectiveVisibility(e.hostVisibility, e.visibility) !== "public") return;
+      const fans = await db.select({ userId: follows.userId }).from(follows).where(and(eq(follows.hostId, e.hostId), eq(follows.notify, "all")));
+      for (const f of fans) {
+        await notify({ to: { userId: f.userId }, kind: "followedHostEvent", key: e.id, data: { hostId: e.hostId, hostName: e.hostName, eventId: e.id, title: e.title } });
+      }
+    } catch (err) {
+      const x = err as { code?: string; cause?: { code?: string } };
+      console.error(`[publish] followers not told (${x.cause?.code ?? x.code ?? "error"})`); // the event is published either way
+    }
+  };
 
   // POST /events/:id/cancel: a published event that hasn't ended, with the reason its ticket holders get. An ended one
   // stays as it happened: cancelling would hide it from the host's page.
