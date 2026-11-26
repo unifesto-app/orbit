@@ -13,7 +13,7 @@
 // add double tap"); the one you pick sits on its corner. At the bottom: + for photos ("add attachments"), shown above
 // the field until sent, and the field, with the mic while it's empty and Send once there's something to send. The mic
 // opens voice mode ("also bring voice chat"), which says it's coming: hearing you needs expo-audio and a rebuild.
-// Nothing answers yet ("dont build chatbot"), so Orbit says so, once a message.
+// Orbit answers through Ask Orbit (X12, POST /ask, api/src/ask.ts): the conversation's text goes with each question, signed in.
 import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { type ComponentRef, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
@@ -43,7 +43,7 @@ import { markChatUsed } from '../chatUsed';
 import { useContent } from '../content';
 import { ORB as ORB_ART } from '../orbitSays';
 import { CircleButton } from '../rows';
-import { useSession } from '../session';
+import { api, needsAccount, useSession } from '../session';
 import { RINGS } from '../splash/motion';
 import { BAR, orbCentre } from '../tabBar';
 import { color, font, groundAt, space, stoneAt } from '../theme';
@@ -76,7 +76,10 @@ const PHOTOS = 4; // photos in one message
 // glass to plus and chat field"); without Liquid Glass, the Charcoal fill with the glass rim.
 const FIELD = groundAt(0.6);
 
-const NOT_YET = "I can't answer yet. Chat is coming soon; for now, Search finds events and places near you.";
+const NO_PHOTOS = "I can't see photos yet. Ask me in words and I'll help.";
+const SIGN_IN = 'Sign in first, then I can answer.';
+const HISTORY = 20; // messages sent with a question (contract/src/ask.ts)
+const ASK_MS = 65_000; // the API's model call takes up to 30s and one retry
 
 // The reactions in Orbit's 3D look, each in its own colours (owner, 19 Nov 2026: "in reaction bring 3d symbols",
 // "instead of star, plus, peral bring thumbsup and any two useful ones", "adjust sizes and make heart straight and give
@@ -92,7 +95,9 @@ type Reaction = (typeof REACTIONS)[number]['key'];
 
 type Photo = { uri: string; width: number; height: number };
 // `fresh`: a reply still to be typed out; it's false once typed, so it shows whole if its bubble mounts again.
-type Message = { id: number; from: 'you' | 'orbit'; text: string; photos?: Photo[]; fresh?: boolean };
+// `waiting`: Orbit's bubble while the answer is on its way (the dots). `aside`: Orbit's own line (an error, sign in
+// first), never sent back to the API as part of the conversation.
+type Message = { id: number; from: 'you' | 'orbit'; text: string; photos?: Photo[]; fresh?: boolean; waiting?: boolean; aside?: boolean };
 // A held message's frame on screen, for placing the reactions by it.
 type Held = { id: number; mine: boolean; x: number; y: number; w: number; h: number };
 
@@ -202,21 +207,53 @@ function Chat({
   const [reactions, setReactions] = useState<Record<number, Reaction | undefined>>({});
   const [held, setHeld] = useState<Held | null>(null);
   const [voice, setVoice] = useState(false);
+  const session = useSession();
   const nextId = useRef(0);
   const choosing = useRef(false);
   const list = useRef<ComponentRef<typeof ScrollView>>(null);
-  const ready = draft.trim() !== '' || photos.length > 0;
+  const [busy, setBusy] = useState(false); // a question is out: Send waits
+  // Bumped by New chat and on leaving, so a question from before (one waiting on sign-in too) never goes or lands.
+  const chat = useRef(0);
+  useEffect(() => () => void chat.current++, []);
+  const out = useRef(false); // a question is out, set at once so a second tap in the same frame can't send another
+  const ready = (draft.trim() !== '' || photos.length > 0) && !busy;
+
+  // Orbit's bubble with the dots while the API answers, then the answer (or why not) typed out in it.
+  const answer = async (history: { from: 'you' | 'orbit'; text: string }[], at: number) => {
+    if (at !== chat.current || out.current) return;
+    const id = nextId.current++;
+    out.current = true;
+    setBusy(true);
+    setMessages((all) => [...all, { id, from: 'orbit', text: '', waiting: true }]);
+    const r = await api.authed<{ reply: string }>('POST', '/ask', { messages: history }, ASK_MS);
+    if (at !== chat.current) return;
+    out.current = false;
+    setBusy(false);
+    const text = r.ok ? r.data.reply : r.error.message;
+    setMessages((all) => all.map((m) => (m.id === id ? { id, from: 'orbit', text, fresh: true, aside: !r.ok } : m)));
+  };
 
   const send = (text: string, sent: Photo[] = []) => {
     const said = text.trim();
-    if (!said && sent.length === 0) return;
+    if ((!said && sent.length === 0) || out.current) return;
     markChatUsed(); // the orb's bubble has done its job
     const you: Message = { id: nextId.current++, from: 'you', text: said, photos: sent };
-    const orbit: Message = { id: nextId.current++, from: 'orbit', text: NOT_YET, fresh: true };
-    setMessages((all) => [...all, you, orbit]);
     setDraft('');
     setPhotos([]);
     setNote('');
+    const aside = (line: string): Message => ({ id: nextId.current++, from: 'orbit', text: line, fresh: true, aside: true });
+    // Photos stay in the chat but only words go: a photo on its own gets a line, not a question.
+    if (!said) return setMessages((all) => [...all, you, aside(NO_PHOTOS)]);
+    // The conversation as the person sees it, words only, without Orbit's asides; the last 20, ending with this.
+    const history = [...messages, you]
+      .filter((m) => !m.aside && !m.waiting && m.text !== '')
+      .map((m) => ({ from: m.from, text: m.text.slice(0, m.from === 'you' ? 1000 : 8000) }))
+      .slice(-HISTORY);
+    // Signed out, the sign-in sheet opens, and the question goes once they're in.
+    const signedIn = !!session;
+    setMessages((all) => [...all, you, ...(signedIn ? [] : [aside(SIGN_IN)])]);
+    const at = chat.current;
+    needsAccount(() => void answer(history, at));
   };
 
   const attach = async () => {
@@ -251,6 +288,9 @@ function Chat({
 
   // A new chat: the conversation, its reactions and anything waiting to send, gone.
   const newChat = () => {
+    chat.current++;
+    out.current = false;
+    setBusy(false);
     setMessages([]);
     setReactions({});
     setDraft('');
@@ -292,7 +332,7 @@ function Chat({
           showsVerticalScrollIndicator={false}
           onContentSizeChange={() => list.current?.scrollToEnd({ animated: true })}
         >
-          <Welcome onPick={messages.length === 0 ? (s) => send(s, photos) : undefined} />
+          <Welcome onPick={messages.length === 0 && !busy ? (s) => send(s, photos) : undefined} />
           {messages.map((m) => (
             <Bubble key={m.id} message={m} reaction={reactions[m.id]} onHold={setHeld} onDouble={(id) => react(id, 'heart')} onTyped={typed} />
           ))}
@@ -472,6 +512,7 @@ function Bubble({
   // A fresh reply: dots first, then its words typed out, then it tells the chat it's done.
   const [thinking, setThinking] = useState(!!m.fresh);
   const [shown, setShown] = useState(m.fresh ? 0 : m.text.length);
+  const [waited] = useState(!!m.waiting); // an answer from the API already had its dots while it came
   useEffect(() => {
     if (!m.fresh) return;
     let typing: ReturnType<typeof setInterval> | undefined;
@@ -486,12 +527,12 @@ function Bubble({
           onTyped(m.id);
         }
       }, TYPE_MS);
-    }, THINK_MS);
+    }, waited ? 0 : THINK_MS);
     return () => {
       clearTimeout(wait);
       if (typing) clearInterval(typing);
     };
-  }, [m.fresh, m.id, m.text, onTyped]);
+  }, [m.fresh, m.id, m.text, onTyped, waited]);
   const ref = useRef<ComponentRef<typeof View>>(null);
   const lastTap = useRef(0);
   const picked = REACTIONS.find((r) => r.key === reaction);
@@ -524,7 +565,7 @@ function Bubble({
             ))}
           </View>
         )}
-        {thinking ? <Dots /> : m.text !== '' && <Text style={styles.bubbleText}>{m.text.slice(0, shown)}</Text>}
+        {thinking || m.waiting || (m.fresh && shown === 0) ? <Dots /> : m.text !== '' && <Text style={styles.bubbleText}>{m.text.slice(0, shown)}</Text>}
         {picked && (
           <Glass tint={groundAt(0.8)} style={[styles.badge, mine ? styles.badgeMine : styles.badgeTheirs]}>
             <Image source={picked.art} style={styles.badgeArt} accessibilityIgnoresInvertColors />

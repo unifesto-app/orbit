@@ -38,11 +38,12 @@ export function makeApi(deps: {
   const now = deps.now ?? Date.now;
 
   // A FormData body (an upload) goes as it is, and fetch sets its content-type; anything else goes as JSON.
-  async function call<T>(method: Method, path: string, body?: unknown, access?: string): Promise<Result<T>> {
+  // `ms`: a longer wait for a slow route (Ask Orbit's model call), else TIMEOUT_MS or UPLOAD_MS.
+  async function call<T>(method: Method, path: string, body?: unknown, access?: string, ms?: number): Promise<Result<T>> {
     const form = body instanceof FormData;
     // AbortController and a timer rather than AbortSignal.timeout, which Hermes may not have.
     const abort = new AbortController();
-    const timer = setTimeout(() => abort.abort(), form ? UPLOAD_MS : TIMEOUT_MS);
+    const timer = setTimeout(() => abort.abort(), ms ?? (form ? UPLOAD_MS : TIMEOUT_MS));
     try {
       const res = await deps.fetch(deps.base + path, {
         method,
@@ -119,7 +120,7 @@ export function makeApi(deps: {
 
   // Pinned to the sign-in it started under: after a sign-out or another sign-in, it never goes out with the next
   // account's token.
-  async function authed<T>(method: Method, path: string, body?: unknown): Promise<Result<T>> {
+  async function authed<T>(method: Method, path: string, body?: unknown, ms?: number): Promise<Result<T>> {
     const at = epoch;
     let token = access && access.until > now() ? access.token : null;
     if (!token) {
@@ -128,7 +129,7 @@ export function makeApi(deps: {
       if (at !== epoch) return gone();
       token = r.data;
     }
-    const first = await call<T>(method, path, body, token);
+    const first = await call<T>(method, path, body, token, ms);
     if (at !== epoch) return gone();
     if (!first.ok && first.status === 403 && first.error.error === 'suspended') {
       end(first.error);
@@ -138,7 +139,7 @@ export function makeApi(deps: {
     // Refused: the token ran out early or the session ended. One renewal tells which; then one more try.
     const r = await renew();
     if (!r.ok) return r;
-    return at === epoch ? call<T>(method, path, body, r.data) : gone();
+    return at === epoch ? call<T>(method, path, body, r.data, ms) : gone();
   }
 
   return {
