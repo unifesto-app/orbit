@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { BookingStatus } from "./bookings.ts";
 import { FeePlan } from "./hosts.ts";
 
 // Amounts are whole paise everywhere (plan, section 7). 0 means a free event.
@@ -53,7 +54,9 @@ export const VerifyPayment = z.object({ paymentId: z.string().min(1).max(64), si
 export const PAYMENT_STATUSES = ["created", "paid", "refundPending", "refunded", "expired", "failed"] as const;
 export type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
 // "confirming": Razorpay hasn't captured it yet (or couldn't be asked); the webhook or the poller settles it.
-export type Verified = { status: PaymentStatus | "confirming"; bookingId: string | null };
+// `reason`, when it went back with no seat: seatCheck's code (fewLeft is sold out; cancelled, ended, closed, tooMany, booked…).
+// "pending" (GET /payments/:orderId only): Razorpay has the attempt open, not paid, not failed (a UPI request unanswered).
+export type Verified = { status: PaymentStatus | "confirming" | "pending"; bookingId: string | null; reason?: string };
 
 // Galaxy's Money pages (staff with Money).
 export const REFUND_STATUSES = ["requested", "sent", "processed", "failed"] as const;
@@ -93,3 +96,20 @@ export type EventEarnings = {
 export type Payouts = { payouts: PayoutRow[]; earnings: EventEarnings[] };
 export type HostFees = { hosts: { id: string; name: string; plan: FeePlan; feeIncluded: boolean }[]; total: number; page: number; pageSize: number };
 export type FailedWebhook = { id: string; receivedAt: string; reason: string; excerpt: string };
+
+// The app's Account › Transactions and Refunds (X3): the signed-in person's own. A payment is listed once money moved
+// (a Razorpay payment on it); `refundedPaise` is what has reached them so far.
+export type MyPayment = {
+  id: string; eventId: string | null; eventTitle: string | null; quantity: number; pricePaise: number; feePaise: number;
+  amountPaise: number; status: PaymentStatus; razorpayPaymentId: string; refundedPaise: number; refundedAt: string | null; createdAt: string;
+};
+export type MyRefund = {
+  id: string; eventId: string | null; eventTitle: string | null; amountPaise: number; status: (typeof REFUND_STATUSES)[number]; createdAt: string; updatedAt: string;
+};
+
+// Galaxy's Bookings and tickets (X3): a booking with its ticket and the payment that paid for it, if any.
+export type StaffBooking = {
+  id: string; status: BookingStatus; quantity: number; createdAt: string; cancelledAt: string | null;
+  userId: string; userName: string | null; eventId: string; eventTitle: string; hostId: string; hostName: string;
+  ticketTypeName: string; pricePaise: number; payment: { id: string; status: PaymentStatus; amountPaise: number } | null;
+};

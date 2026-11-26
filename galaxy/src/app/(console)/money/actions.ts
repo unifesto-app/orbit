@@ -2,6 +2,7 @@
 
 import { refresh } from "next/cache";
 import { galaxy } from "../../../api";
+import type { StaffBooking } from "@orbit/contract";
 import type { Done } from "../actions";
 
 // Money's risky actions (API: /galaxy/money/*). The API checks Money, the amounts and the reason, writes the audit row
@@ -28,3 +29,15 @@ export const payoutPaid = async (_: Done, f: FormData) =>
 export const cancelPayout = async (_: Done, f: FormData) => run("POST", `/galaxy/money/payouts/${id(f)}/cancel`, { reason: text(f, "reason") });
 export const setFees = async (_: Done, f: FormData) =>
   run("PUT", `/galaxy/money/fees/${id(f)}`, { plan: text(f, "plan"), feeIncluded: f.get("feeIncluded") === "on", reason: text(f, "reason") });
+export const cancelBooking = async (_: Done, f: FormData) => run("POST", `/galaxy/bookings/${id(f)}/cancel`, { reason: text(f, "reason") });
+
+// Bookings › search: a Server Action (a POST), as People's search, so a phone or email typed never sits in an address.
+export type FoundBookings = { person: string; event: string; bookings?: StaffBooking[]; error?: string };
+export async function searchBookings(_: FoundBookings, f: FormData): Promise<FoundBookings> {
+  const person = text(f, "person");
+  const event = text(f, "event");
+  if (!person && !event) return { person, event };
+  const qs = new URLSearchParams({ ...(person && { person }), ...(event && { event }) }).toString();
+  const r = await galaxy<StaffBooking[]>("GET", `/galaxy/bookings?${qs}`);
+  return r.ok ? { person, event, bookings: r.data } : { person, event, error: r.error.message };
+}

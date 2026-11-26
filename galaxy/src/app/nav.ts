@@ -50,6 +50,7 @@ export const sections: { title: string; items: NavItem[] }[] = [
     title: "Money",
     items: [
       { label: "Payments", href: "/money/payments" },
+      { label: "Bookings and tickets", href: "/money/bookings" },
       { label: "Refunds", href: "/money/refunds" },
       { label: "Payouts", href: "/money/payouts" },
       { label: "Fees", href: "/money/fees" },

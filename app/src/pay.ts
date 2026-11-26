@@ -5,7 +5,11 @@
 // checkout (Booking doc, Paying); Orbit keeps no card or bank detail, only which way you like to pay and the UPI IDs you
 // added, on this phone (src/session.ts). Pure, so pay.test.ts runs it on Node.
 // ponytail: fixed lists until the API reads our Razorpay account's own (Unifesto's /v1/methods, cached) and the phone's
-// installed UPI apps (Razorpay's SDK finds them; that's a native module and a rebuild).
+// installed UPI apps (Razorpay's SDK finds them at checkout).
+
+import type { MyPayment, MyRefund, PayOrder, Verified } from '@orbit/contract';
+
+import type { makeApi, Result } from './api.ts';
 
 export type PayWith =
   | { kind: 'upiApp'; id: string }
@@ -45,7 +49,7 @@ export type UpiId = { vpa: string; name: string };
 
 // Our Razorpay account's public key id (rzp_live_… or rzp_test_…), the one its checkout shows anyone; never the secret.
 // Set as EXPO_PUBLIC_RAZORPAY_KEY_ID (eas.json, or .env when running locally). Without it no UPI ID can be checked.
-const RAZORPAY_KEY = process.env.EXPO_PUBLIC_RAZORPAY_KEY_ID ?? '';
+export const RAZORPAY_KEY = process.env.EXPO_PUBLIC_RAZORPAY_KEY_ID ?? '';
 
 /** Whose UPI ID it is, asked of Razorpay as its checkout does (Unifesto's verifyUpiId): the holder's name, 'invalid'
  * when there's no such ID, or null when it couldn't say (no key, offline, slower than 8 seconds). */
@@ -109,3 +113,109 @@ export function payLabel(p?: PayWith): string {
   if (!payReady(p)) return 'Add your UPI ID';
   return `Pay with ${p.kind === 'card' ? 'a card' : payName(p)}`;
 }
+
+// ---------- Paying for a ticket (X3; api/src/payments/routes.ts): the calls, the Booking doc's words, checkout's bits ----------
+
+type Api = Pick<ReturnType<typeof makeApi>, 'authed'>;
+export const paymentsApi = (api: Api) => ({
+  order: (eventId: string, ticketTypeId: string, quantity: number) => api.authed<PayOrder>('POST', `/events/${eventId}/pay`, { ticketTypeId, quantity }),
+  verify: (orderId: string, paymentId: string, signature: string) =>
+    api.authed<Verified>('POST', `/payments/${encodeURIComponent(orderId)}/verify`, { paymentId, signature }),
+  status: (orderId: string) => api.authed<Verified>('GET', `/payments/${encodeURIComponent(orderId)}`),
+  mine: () => api.authed<MyPayment[]>('GET', '/me/payments'),
+  refunds: () => api.authed<MyRefund[]>('GET', '/me/refunds'),
+});
+
+/** The Booking flow's lines for paying, word for word. */
+export const PAY_SAYS = {
+  dismissed: 'Payment not completed. Nothing was charged.',
+  failed: 'Payment failed. Try again, or pick another way to pay.',
+  already: 'You’re already paying for this ticket. Finish there, or wait a few minutes.',
+  confirming: 'We’re confirming your payment. Your ticket appears here within a few minutes.',
+  refunded: 'That sold out while you were paying. We’ve refunded you in full.',
+  off: 'Orbit isn’t taking payments yet, so nothing was charged.',
+  pending: 'If you approved it, your ticket appears here shortly. Otherwise nothing was charged.',
+  unknown: 'We couldn’t check that payment. Pull down on Your tickets in a minute, or try again.',
+};
+
+/** Why a payment went back with no ticket (settle's reason, api/src/payments/routes.ts), in a short true line. */
+export function refundSays(reason?: string): string {
+  switch (reason) {
+    case 'fewLeft':
+      return PAY_SAYS.refunded;
+    case 'booked':
+      return 'You already have this ticket. We’ve refunded this payment in full.';
+    case 'cancelled':
+      return 'This event was cancelled. We’ve refunded you in full.';
+    case 'ended':
+      return 'This event has ended. We’ve refunded you in full.';
+    case 'closed':
+      return 'Booking closed while you were paying. We’ve refunded you in full.';
+    case 'notOpen':
+      return 'Booking isn’t open yet. We’ve refunded you in full.';
+    case 'tooMany':
+      return 'That’s more tickets than one person can book. We’ve refunded you in full.';
+    default:
+      return 'We couldn’t give you this ticket, so we’ve refunded you in full.';
+  }
+}
+
+/** What the booking sheet does next while paying. `again`: nothing was taken, so Pay can be tapped again; `reread`: the
+ * event changed, so it's read again and the pick shown; `confirming`: never reopen checkout, the ticket comes later. */
+export type PayNext =
+  | { next: 'open'; order: PayOrder }
+  | { next: 'already'; order: PayOrder; say: string }
+  | { next: 'ticket'; bookingId: string }
+  | { next: 'confirming'; say: string }
+  | { next: 'refunded'; say: string }
+  | { next: 'again'; say: string }
+  | { next: 'reread'; say: string };
+/** Every next step but opening checkout. */
+export type PayDone = Exclude<PayNext, { order: PayOrder }>;
+
+/** The answer to Pay's order request. An open order this sheet didn't make ("already") is said, not opened: the next tap
+ * opens it. One this sheet made is reused without a word. */
+export function orderNext(r: Result<PayOrder>, ours: ReadonlySet<string>): PayNext {
+  if (r.ok) return r.data.already && !ours.has(r.data.orderId) ? { next: 'already', order: r.data, say: PAY_SAYS.already } : { next: 'open', order: r.data };
+  if (r.status === 503 && r.error.error === 'paymentsOff') return { next: 'again', say: PAY_SAYS.off };
+  if (r.status === 409) return { next: 'reread', say: r.error.message };
+  return { next: 'again', say: r.error.message };
+}
+
+/** Where a payment stands once checkout is done: verify's answer after Razorpay took it (`closed` unset), or the order's
+ * status after checkout closed without it (`closed`: how). After verify, a bad signature says the server's line and Pay
+ * stays; any other trouble is confirming, so checkout never reopens on money that went. After a close, an attempt still
+ * open at Razorpay ("pending") or a status we couldn't get ("unknown") keeps Pay on the same order. */
+export function paidNext(r: Result<Verified>, closed?: 'dismissed' | 'failed'): PayDone {
+  const confirming: PayDone = { next: 'confirming', say: PAY_SAYS.confirming };
+  if (!r.ok) {
+    if (closed) return { next: 'again', say: PAY_SAYS.unknown };
+    return r.error.error === 'badSignature' ? { next: 'again', say: r.error.message } : confirming;
+  }
+  const v = r.data;
+  if (v.status === 'paid' && v.bookingId) return { next: 'ticket', bookingId: v.bookingId };
+  if (v.status === 'refundPending' || v.status === 'refunded') return { next: 'refunded', say: refundSays(v.reason) };
+  if (closed && v.status === 'pending') return { next: 'again', say: PAY_SAYS.pending };
+  if (closed && (v.status === 'created' || v.status === 'failed' || v.status === 'expired')) return { next: 'again', say: PAY_SAYS[closed] };
+  return confirming;
+}
+
+/** Whether Razorpay's checkout closed because the payer closed it (no money tried): code 0 on Android, 2 on iOS, and
+ * either says "cancel" in its reason. Anything else is a failed payment. */
+export function checkoutCancelled(err: unknown, os: string): boolean {
+  const e = (err ?? {}) as { code?: number; description?: string; reason?: string };
+  return e.code === (os === 'ios' ? 2 : 0) || /cancel/i.test(`${e.reason ?? ''} ${e.description ?? ''}`);
+}
+
+/** The way you picked, as checkout's prefill: it opens on that method (Razorpay's prefill.method; a UPI ID filled in). */
+export function prefillOf(p?: PayWith): { method?: 'upi' | 'card' | 'wallet'; vpa?: string } {
+  if (!p) return {};
+  if (p.kind === 'upiApp') return { method: 'upi' };
+  if (p.kind === 'vpa') return { method: 'upi', vpa: p.vpa.trim() };
+  if (p.kind === 'card') return { method: 'card' };
+  if (p.kind === 'wallet') return { method: 'wallet' };
+  return {};
+}
+
+/** A refund's status in the Booking doc's words. */
+export const refundWord = (s: MyRefund['status']) => (s === 'processed' ? 'Refunded' : s === 'failed' ? 'Refund failed, retrying' : 'Requested');
