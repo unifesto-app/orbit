@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { eq, inArray, sql } from "drizzle-orm";
 import { testApp } from "./testkit.ts";
-import { activity, activityDays, auditLog, follows, hosts, identities, passkeys, sessions, staffGrants, users } from "./db/schema.ts";
+import { activity, activityDays, auditLog, bookings, events, follows, hosts, identities, passkeys, payments, refunds, sessions, staffGrants, ticketTypes, users } from "./db/schema.ts";
 import { markActive } from "./activity.ts";
 import { sweepActivity } from "./analytics.ts";
 import { runDeletions } from "./auth/deletion.ts";
@@ -278,6 +278,108 @@ test("5b cities: top 10 then Others", async () => {
   assert.equal(cities[0].count, 20);
   assert.equal(cities[10].name, "Others");
   assert.ok(cities[10].count >= 10); // ZZ-City-10's 10, plus any other file's
+});
+
+// Percentiles as Postgres takes them: disc the first value reaching p, cont the value between the two around p*(n-1).
+const disc = (xs: number[], p: number) => (xs.length ? xs[Math.max(0, Math.ceil(p * xs.length) - 1)]! : null);
+const cont = (xs: number[], p: number) => {
+  if (!xs.length) return null;
+  const i = p * (xs.length - 1), lo = Math.floor(i);
+  return xs[lo]! + (xs[Math.min(lo + 1, xs.length - 1)]! - xs[lo]!) * (i - lo);
+};
+const r2 = (v: number | null) => (v === null ? null : Math.round(v * 100) / 100);
+const nums = async (q: ReturnType<typeof sql>) => ((await t.db.execute(q)) as any[]).map((r) => Number(r.n)).sort((x, y) => x - y);
+
+test("11 bookings, check-in and revenue; revenue for Money holders only", async () => {
+  const people = await stats();
+  assert.equal(people.revenue, null); // People without Money: no money read at all
+  const banker = await join();
+  for (const feature of ["people", "money"] as const)
+    await t.db.insert(staffGrants).values({ userId: banker.me.id, feature, addedBy: banker.me.id, addedAt: new Date(t.now() - 2 * DAY), startsAt: new Date(t.now() - DAY) });
+  const money = async () => {
+    const r = await get("/galaxy/analytics", banker.access, "galaxy");
+    assert.equal(r.status, 200);
+    return (await r.json()) as any;
+  };
+  const a = await money();
+  assert.ok(a.revenue);
+
+  const owner = await newUser(new Date());
+  const [h] = await t.db.insert(hosts).values({ name: "H", slug: `h-${randomUUID()}`, kind: "venue", city: "Hyderabad", ownerId: owner, createdBy: owner }).returning({ id: hosts.id });
+  const ev = async (status: "published" | "cancelled", endsAgo: number | null, startsAgo: number) => {
+    const [e] = await t.db
+      .insert(events)
+      .values({ hostId: h!.id, slug: `e-${randomUUID()}`, title: "E", status, startsAt: new Date(t.now() - startsAgo), endsAt: endsAgo === null ? null : new Date(t.now() - endsAgo), createdBy: owner })
+      .returning({ id: events.id });
+    const [tt] = await t.db.insert(ticketTypes).values({ eventId: e!.id, name: "General", pricePaise: 10_000 }).returning({ id: ticketTypes.id });
+    return { id: e!.id, tt: tt!.id };
+  };
+  const E1 = await ev("published", 2 * DAY, 2 * DAY + 3 * 3_600_000); // ended 2 days ago
+  const E2 = await ev("published", null, 5 * DAY); // no end: ended at its start, 5 days ago
+  const E3 = await ev("cancelled", 3 * DAY, 3 * DAY + 3_600_000); // cancelled: never counted for check-in
+  const E4 = await ev("published", -DAY, -DAY + 3_600_000); // still to come
+  const E5 = await ev("published", 40 * DAY, 40 * DAY + 3_600_000); // ended too long ago
+  const book = async (e: { id: string; tt: string }, quantity: number, o: Partial<typeof bookings.$inferInsert> = {}) =>
+    (await t.db
+      .insert(bookings)
+      .values({ userId: await newUser(new Date()), eventId: e.id, ticketTypeId: e.tt, quantity, qr: randomUUID(), code: randomUUID(), createdAt: at(3), ...o })
+      .returning({ id: bookings.id }))[0]!.id;
+  const b1 = await book(E1, 3, { admitted: 3, createdAt: at(3) });
+  await book(E1, 1, { source: "host", createdAt: at(3) });
+  await book(E1, 2, { status: "cancelled", createdAt: at(4) });
+  const b2 = await book(E2, 4, { admitted: 1, source: "other", createdAt: at(6) });
+  await book(E3, 2, { admitted: 2, createdAt: at(6) });
+  const b4 = await book(E4, 1, { createdAt: at(1) });
+  await book(E5, 1, { admitted: 1, createdAt: at(45) }); // made before the window
+  const pay = async (e: { id: string; tt: string }, bookingId: string | null, amountPaise: number, status: "paid" | "refunded" | "failed", createdAt: Date) =>
+    (await t.db
+      .insert(payments)
+      .values({ kind: "ticket", userId: owner, hostId: h!.id, eventId: e.id, ticketTypeId: e.tt, quantity: 1, unitPricePaise: amountPaise, plan: "3+2", buyerFeeBps: 300, buyerFeePaise: amountPaise * 0.03, commissionBps: 200, commissionPaise: amountPaise * 0.02, feeIncluded: false, amountPaise, razorpayOrderId: `order_${randomUUID()}`, status, bookingId, createdAt, updatedAt: createdAt })
+      .returning({ id: payments.id }))[0]!.id;
+  await pay(E1, b1, 30_000, "paid", at(3));
+  const refundedPay = await pay(E2, b2, 50_000, "refunded", at(6));
+  await pay(E4, b4, 10_000, "failed", at(1)); // never landed: b4 stays free
+  await pay(E5, null, 70_000, "paid", at(40)); // too old
+  await t.db.update(payments).set({ razorpayPaymentId: "pay_x" }).where(eq(payments.id, refundedPay));
+  const refund = (amountPaise: number, status: "processed" | "requested", createdAt: Date, razorpayPaymentId = "pay_x") =>
+    t.db.insert(refunds).values({ paymentId: refundedPay, razorpayPaymentId, amountPaise, reason: "Test", kind: "staff", status, createdAt, updatedAt: createdAt });
+  await refund(50_000, "processed", at(2));
+  await refund(1_000, "requested", at(2)); // not processed yet
+  await refund(2_000, "processed", at(40)); // too old
+  await refund(4_000, "processed", at(2), "pay_twice"); // a second Razorpay payment on the order: never in gross
+
+  const b = await money();
+  const pb = await stats();
+  assert.equal(pb.revenue, null);
+  assert.deepEqual(pb.bookings, b.bookings); // the same counts for People holders
+  const k = (x: any, y: any, keys: string[]) => keys.map((key) => y[key] - x[key]);
+  assert.deepEqual(k(a.bookings, b.bookings, ["total", "confirmed", "cancelled", "tickets", "paid", "free"]), [6, 5, 1, 11, 2, 3]);
+  const dd = (d: number) => b.bookings.days.find((x: any) => x.day === dayAgo(d)).count - a.bookings.days.find((x: any) => x.day === dayAgo(d)).count;
+  assert.deepEqual([dd(1), dd(3), dd(4), dd(6)], [1, 2, 1, 2]);
+  assert.equal(b.bookings.days.length, 30);
+  const s = delta(a.bookings.sources, b.bookings.sources);
+  assert.deepEqual([s["Orbit app"], s["Host"], s["Other"]], [3, 1, 1]);
+  const from30 = new Date(Date.parse(`${dayAgo(29)}T00:00:00Z`) - IST).toISOString();
+  const q = await nums(sql`select quantity as n from bookings where status = 'confirmed' and created_at >= ${from30}::timestamptz`);
+  assert.deepEqual(b.bookings.perBooking, { p50: disc(q, 0.5), p90: disc(q, 0.9) });
+
+  assert.deepEqual(k(a.checkIn, b.checkIn, ["events", "tickets", "admitted"]), [2, 8, 4]);
+  const nowTs = new Date(t.now()).toISOString();
+  const shares = await nums(
+    sql`select sum(b.admitted)::float / sum(b.quantity) as n from events e join bookings b on b.event_id = e.id and b.status = 'confirmed' where e.status = 'published' and coalesce(e.ends_at, e.starts_at) >= ${from30}::timestamptz and coalesce(e.ends_at, e.starts_at) < ${nowTs}::timestamptz group by e.id`,
+  );
+  assert.ok(shares.includes(0.75) && shares.includes(0.25));
+  assert.equal(shares.length, b.checkIn.events);
+  assert.equal(b.checkIn.rate, r2(b.checkIn.admitted / b.checkIn.tickets));
+  assert.deepEqual([b.checkIn.p50, b.checkIn.p10], [r2(cont(shares, 0.5)), r2(cont(shares, 0.1))]);
+
+  assert.deepEqual(k(a.revenue, b.revenue, ["gross", "orbit", "refunded", "payments"]), [80_000, 1_500, 50_000, 2]);
+  const rd = (d: number) => b.revenue.days.find((x: any) => x.day === dayAgo(d)).count - a.revenue.days.find((x: any) => x.day === dayAgo(d)).count;
+  assert.deepEqual([rd(3), rd(6), rd(1)], [30_000, 50_000, 0]);
+  const kd = delta(a.revenue.kinds, b.revenue.kinds);
+  assert.deepEqual([kd["Tickets"], kd["Slots"]], [80_000, 0]);
+  const amounts = await nums(sql`select amount_paise as n from payments where status in ('paid', 'refundPending', 'refunded') and created_at >= ${from30}::timestamptz`);
+  assert.deepEqual(b.revenue.order, { p50: disc(amounts, 0.5), p90: disc(amounts, 0.9) });
 });
 
 test("7 sweep", async () => {
