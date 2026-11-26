@@ -35,6 +35,7 @@ import { checkCode, OPEN, RESEND_AFTER, sendCode, type Sender, type SendPolicy }
 import { proofs, type ProofConfig } from "./proof.ts";
 import type { Mail } from "./senders.ts";
 import type { Razorpay } from "../payments/razorpay.ts";
+import type { AskModel } from "../ask.ts";
 import { nextFor, resolve, type Pending, type Pick } from "./resolve.ts";
 import { deviceKnown, endSession, isSuspended, refresh, startSession, type User } from "./sessions.ts";
 import type { Store } from "./store.ts";
@@ -48,7 +49,8 @@ import { defaultWays, type Identity, relay, ways, type WaysConfig } from "./ways
 // a laptop) nothing checks that requests come from Orbit itself.
 // `mail`: other emails than codes (the waitlist's welcome); without it they're skipped.
 // `razorpay`: paying (payments/routes.ts); without it the pay routes answer 503 paymentsOff.
-export type Deps = { db: Db; store: Store; send: Sender; notify: Notify; secret: string; now?: () => number; codes?: SendPolicy; ways?: WaysConfig; media?: Media; proof?: ProofConfig; mail?: Mail; sesTopic?: string; razorpay?: Razorpay };
+// `ask`: Ask Orbit's model (ask.ts); without it POST /ask answers 503 askOff.
+export type Deps = { db: Db; store: Store; send: Sender; notify: Notify; secret: string; now?: () => number; codes?: SendPolicy; ways?: WaysConfig; media?: Media; proof?: ProofConfig; mail?: Mail; sesTopic?: string; razorpay?: Razorpay; ask?: AskModel };
 
 // ponytail: the terms version is a constant until Galaxy's Legal documents keeps them in the database. The migration
 // must leave every copied Unifesto acceptance below it, so each migrated person accepts Orbit's terms at About you.

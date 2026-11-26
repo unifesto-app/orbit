@@ -35,3 +35,11 @@ export async function uploadImage(shape: ContentShape, f: FormData): Promise<{ i
   const r = await galaxy<ContentImage>("POST", `/galaxy/app-content/image?shape=${shape}`, body);
   return r.ok ? { image: r.data } : { error: r.error.message };
 }
+
+// Ask Orbit on or off for everyone (API: PUT /galaxy/ask/switch). The API checks Platform and logs it.
+export async function setAsk(on: boolean): Promise<Saved> {
+  const r = await galaxy("PUT", "/galaxy/ask/switch", { on });
+  if (!r.ok) return { error: r.error.message };
+  refresh();
+  return {};
+}

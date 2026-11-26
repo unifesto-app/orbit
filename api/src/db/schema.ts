@@ -1102,3 +1102,26 @@ export const broadcasts = pgTable(
   },
   (t) => [index().on(t.status), index().on(t.createdAt)],
 );
+
+// Every Ask Orbit question and its reply (ask.ts), for Galaxy's log and cost per day. Tokens are what the model billed;
+// `costMicroUsd` is them at Claude Opus 5.5's prices (ASK_PRICES). An error row has no reply and no tokens. Deleted
+// with the account (auth/deletion.ts).
+export const askLog = pgTable(
+  "ask_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    at: at("at").notNull(),
+    question: text("question").notNull(),
+    reply: text("reply"),
+    status: text("status", { enum: ["ok", "refused", "error"] }).notNull(),
+    inputTokens: integer("input_tokens").notNull().default(0),
+    outputTokens: integer("output_tokens").notNull().default(0),
+    cacheReadTokens: integer("cache_read_tokens").notNull().default(0),
+    cacheWriteTokens: integer("cache_write_tokens").notNull().default(0),
+    costMicroUsd: integer("cost_micro_usd").notNull().default(0),
+  },
+  (t) => [index().on(t.at), index().on(t.userId, t.at)],
+);

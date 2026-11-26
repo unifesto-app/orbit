@@ -50,7 +50,8 @@ test("1 public read of an empty table is the defaults, cached a minute", async (
   const r = await t.app.request("/public/app-content");
   assert.equal(r.status, 200);
   assert.equal(r.headers.get("cache-control"), "public, max-age=60");
-  assert.deepEqual(await r.json(), DEFAULT_CONTENT);
+  const { knowledge: _, ...lists } = DEFAULT_CONTENT; // staff's words for Ask Orbit never reach phones
+  assert.deepEqual(await r.json(), lists);
 });
 
 test("2 only staff with platform get in", async () => {
@@ -65,7 +66,7 @@ test("2 only staff with platform get in", async () => {
   assert.equal((await as(p)("GET", "/galaxy/app-content")).status, 404);
   const ok = await (await staff())("GET", "/galaxy/app-content");
   assert.equal(ok.status, 200);
-  assert.deepEqual(ok.body.saved, { ads: null, help: null, asks: null, featured: null, promoted: null });
+  assert.deepEqual(ok.body.saved, { ads: null, help: null, asks: null, featured: null, promoted: null, knowledge: null });
 });
 
 test("3 first save shows on both reads, names the saver, and is audited", async () => {

@@ -3,7 +3,7 @@ import { Text } from "./text.ts";
 
 // App content: what Orbit itself puts in the app, edited in Galaxy's App content page (owner, 19 Nov 2026: "build CMS
 // for Orbit App in galaxy web", then "featured & promoted", "Ad strips image uplaod also instead of text", "also add
-// custom ads in carousel"). Five lists, each saved whole:
+// custom ads in carousel"). Six lists, each saved whole:
 //   ads       Orbit's own ad strips (app/src/orbitAd.tsx), words or an uploaded 4.5:1 image: Home shows the first two
 //             live ones marked Home, Search and Account the first live one marked for each. Not a host's paid Boost, so
 //             never labelled Promoted.
@@ -13,8 +13,9 @@ import { Text } from "./text.ts";
 //             (a pick), or Orbit's own 4:3 image slide. No label. The carousel fills the rest as before.
 //   promoted  Events marked Promoted: the label, first in lists, the carousel's lead and Home's middle banner
 //             (app/src/home/layout.ts), set by staff until hosts can buy Boost.
+//   knowledge What Ask Orbit knows beyond Help answers (X11), written by staff for the model only: never sent to phones.
 // Each item but help and asks has optional `starts` and `ends`. Hosts' own events and pages are theirs, never edited
-// here. GET /public/app-content serves all five; a list nobody has saved yet, or one saved under an older schema that
+// here. GET /public/app-content serves all but knowledge; a list nobody has saved yet, or one saved under an older schema that
 // no longer reads, falls back to DEFAULT_CONTENT, which is what the app showed before the CMS.
 
 // A strip's fill, by name: Orbit's two fills (@orbit/tokens palette), each carrying Stone words. Sage is the accent and
@@ -112,22 +113,26 @@ export const nextChange = (items: readonly Timed[], now: number) =>
 export const HelpAnswer = z.object({ q: Text(1, 80), a: Text(1, 400) });
 export type HelpAnswer = z.infer<typeof HelpAnswer>;
 
+export const Knowledge = z.object({ title: Text(1, 80), body: Text(1, 2000) });
+export type Knowledge = z.infer<typeof Knowledge>;
+
 // The app keys rows by their words or links, so two can't be the same.
 const unique = (words: string[]) => new Set(words.map((w) => w.toLowerCase())).size === words.length;
-const ITEMS = { ads: Ad, help: HelpAnswer, asks: Text(1, 40), featured: Slide, promoted: Promotion };
-const MAX = { ads: 10, help: 20, asks: 6, featured: 6, promoted: 10 };
+const ITEMS = { ads: Ad, help: HelpAnswer, asks: Text(1, 40), featured: Slide, promoted: Promotion, knowledge: Knowledge };
+const MAX = { ads: 10, help: 20, asks: 6, featured: 6, promoted: 10, knowledge: 50 };
 export const CONTENT = {
   ads: z.array(ITEMS.ads).max(MAX.ads),
   help: z.array(ITEMS.help).max(MAX.help).refine((a) => unique(a.map((h) => h.q)), "Two questions are the same"),
   asks: z.array(ITEMS.asks).max(MAX.asks).refine(unique, "Two chips are the same"),
   featured: z.array(ITEMS.featured).max(MAX.featured),
   promoted: z.array(ITEMS.promoted).max(MAX.promoted).refine((a) => unique(a.map((p) => p.href)), "That event is in the list twice"),
+  knowledge: z.array(ITEMS.knowledge).max(MAX.knowledge).refine((a) => unique(a.map((k) => k.title)), "Two entries have the same title"),
 };
 export type ContentKey = keyof typeof CONTENT;
 export const CONTENT_KEYS = Object.keys(CONTENT) as ContentKey[];
 export const isContentKey = (k: string): k is ContentKey => Object.hasOwn(CONTENT, k);
 // What one item of each list is called, for the API's messages ("Ad 2: …").
-export const ITEM_NAMES: Record<ContentKey, string> = { ads: "Ad", help: "Question", asks: "Chip", featured: "Slide", promoted: "Event" };
+export const ITEM_NAMES: Record<ContentKey, string> = { ads: "Ad", help: "Question", asks: "Chip", featured: "Slide", promoted: "Event", knowledge: "Entry" };
 
 export const AppContent = z.object(CONTENT);
 export type AppContent = z.infer<typeof AppContent>;
@@ -149,6 +154,7 @@ export const DEFAULT_CONTENT: AppContent = {
   asks: ["Comedy this weekend", "Turf slots tonight", "Free events near me", "Hackathons this month"],
   featured: [],
   promoted: [{ href: "/event/build-anything-hackathon" }, { href: "/event/reel-society-screening" }],
+  knowledge: [],
 };
 
 /**
@@ -164,7 +170,7 @@ export function readContent(raw: unknown): AppContent {
     const r = CONTENT[k].safeParse(list.filter((i) => ITEMS[k].safeParse(i).success).slice(0, MAX[k]));
     return r.success ? (r.data as AppContent[K]) : DEFAULT_CONTENT[k];
   };
-  return { ads: read("ads"), help: read("help"), asks: read("asks"), featured: read("featured"), promoted: read("promoted") };
+  return { ads: read("ads"), help: read("help"), asks: read("asks"), featured: read("featured"), promoted: read("promoted"), knowledge: read("knowledge") };
 }
 
 /** The ads a screen shows at `now`, in order: Home two, Search and Account one. */

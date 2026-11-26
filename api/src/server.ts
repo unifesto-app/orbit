@@ -18,6 +18,7 @@ import { apnsSender, fcmSender, type Push } from "./push.ts";
 import { type Media, memoryFiles, s3Files } from "./media.ts";
 import { pollPayments } from "./payments/routes.ts";
 import { razorpay } from "./payments/razorpay.ts";
+import { askModel } from "./ask.ts";
 
 const need = (name: string) => {
   const v = process.env[name];
@@ -248,6 +249,10 @@ const rz =
     : undefined;
 console.log(`[payments] Razorpay ${rz ? `on (${rz.keyId.startsWith("rzp_live_") ? "live" : "test"} keys)` : "off"}`);
 
+// Ask Orbit (ask.ts): the model key ANTHROPIC_API_KEY. Unset, POST /ask answers 503 askOff. Never logged.
+const ask = env.ANTHROPIC_API_KEY?.trim() ? askModel(env.ANTHROPIC_API_KEY.trim()) : undefined;
+console.log(`[ask] Ask Orbit ${ask ? "on" : "off"}`);
+
 // Orders nobody settled and refunds due a try (pollPayments), every 15 minutes, never two at once here.
 let polling = false;
 if (rz)
@@ -259,6 +264,6 @@ if (rz)
       .finally(() => (polling = false));
   }, 15 * 60_000).unref();
 
-serve({ fetch: createApp({ db, store, send, notify, secret, codes, ways: waysConfig, media, proof, mail, sesTopic, razorpay: rz }).fetch, port }, (info) => {
+serve({ fetch: createApp({ db, store, send, notify, secret, codes, ways: waysConfig, media, proof, mail, sesTopic, razorpay: rz, ask }).fetch, port }, (info) => {
   console.log(`orbit-api listening on :${info.port}`);
 });
