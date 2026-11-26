@@ -22,6 +22,7 @@ import { API_URL, makeApi, OFFLINE, type Result } from './api';
 import { hostsApi } from './hosts';
 import type { Viewer } from './home/layout';
 import { hideNote, showNote } from './note';
+import { noticesApi } from './notices';
 import { CACHE_PREFIX, cacheKey, keptUpcoming, packTicket, ticketsApi, unpackTicket, upcomingOf } from './tickets';
 
 let saveEpoch = 0; // bumped by every save change made here, and by sign-in and sign-out: an older read can't undo it
@@ -47,8 +48,7 @@ export type Session = {
   asked?: readonly string[]; // `${event}|${person}`: people you asked to connect with in a room
   payWith?: PayWith; // the way you like to pay (Account › Payment methods); never a card or bank detail
   upiIds?: readonly UpiId[]; // UPI IDs you added once Razorpay found whose they are (owner, 19 Nov 2026)
-  read?: readonly string[]; // inbox messages opened on this phone (src/app/inbox.tsx)
-  hostsOff?: readonly string[]; // followed hosts set to Off: their new events reach only your inbox
+  hostsOff?: readonly string[]; // followed hosts set to Off (GET /me/follows' notify): their new events reach only your inbox
   me: Account;
 } & saves.Saves;
 
@@ -225,6 +225,9 @@ export function useTickets() {
   const me = useSession()?.me.id;
   return t.owner === me ? t : NO_TICKETS;
 }
+// The account's live ticket for an event, outside a component (a tapped push, src/push.tsx).
+export const ticketNow = (eventId: string) =>
+  tickets.owner === current?.me.id ? tickets.data?.upcoming.find((t) => t.event.id === eventId && t.status === 'confirmed')?.id : undefined;
 export const useTicketsOnFocus = () =>
   useFocusEffect(
     useCallback(() => {
@@ -234,6 +237,8 @@ export const useTicketsOnFocus = () =>
 // The account's id, to key what's read for it; '' while signed out.
 const SIGNED_OUT = { id: '' };
 export const useMe = (): { id: string } => useSession()?.me ?? SIGNED_OUT;
+// The same, outside a component (src/inboxStore.ts, src/push.tsx).
+export const meNow = () => current?.me.id;
 
 export const useSaved = (eventId: string) => useSession()?.saved.some((x) => x.id === eventId) ?? false;
 export const useLoved = (eventId: string) => useSession()?.loved?.includes(eventId) ?? false;
@@ -293,17 +298,22 @@ export const useAsked = (eventId: string, personId: string) => useSession()?.ask
 export const askToConnect = (eventId: string, personId: string) =>
   current && set({ ...current, asked: turn(current.asked ?? [], `${eventId}|${personId}`, true) });
 export const setInterested = (eventId: string, on: boolean) => current && set({ ...current, interested: turn(current.interested ?? [], eventId, on) });
-// The inbox (Notifications doc): read state per message, and All or Off per followed host (decision 3; Off stops the
-// push and the email, the inbox copy still lands).
-// ponytail: on this phone only, like follows; the API's inbox carries read state and the host switches.
-const noRead: readonly string[] = [];
-export const useRead = () => useSession()?.read ?? noRead;
-export function markRead(ids: readonly string[]) {
-  const fresh = current ? ids.filter((id) => !current!.read?.includes(id)) : [];
-  if (current && fresh.length) set({ ...current, read: [...(current.read ?? []), ...fresh] });
-}
+// All or Off per followed host (Notifications decision 3; Off stops the push and the email, the inbox copy still lands):
+// read with the follows, shown at once when tapped and sent (PUT /me/follows/:id/notify), put back if the API says no.
+// The old mock's hosts stay on the phone, as their follows do.
 export const useHostOff = (hostId: string) => useSession()?.hostsOff?.includes(hostId) ?? false;
-export const setHostOff = (hostId: string, off: boolean) => current && set({ ...current, hostsOff: turn(current.hostsOff ?? [], hostId, off) });
+const offHere = (hostId: string, off: boolean) => current && set({ ...current, hostsOff: turn(current.hostsOff ?? [], hostId, off) });
+export function setHostOff(hostId: string, off: boolean) {
+  offHere(hostId, off);
+  if (!current || !UUID.test(hostId)) return;
+  const who = current.me.id;
+  followEpoch++; // a follows read already out may not have it
+  void noticesApi(api).hostNotify(hostId, off ? 'off' : 'all').then((r) => {
+    if (r.ok || current?.me.id !== who) return;
+    offHere(hostId, !off);
+    Alert.alert('Couldn’t change that', r.error.message);
+  });
+}
 
 // Anything that needs an account: done at once when signed in; otherwise the sign-in sheet opens over the screen and
 // `action` runs once it closes signed in. Every way into the sheet comes through here, so a sheet closed without
@@ -486,7 +496,7 @@ export function signIn(done: Extract<AuthStep, { step: 'signedIn' }>, via: Way) 
   reading = null;
   const kept = current ? { saved: current.saved, lists: current.lists } : saves.normalise({ saved: [], lists: [] }, Date.now());
   // What's kept on this phone carries over, follows to Loved it, as saves do.
-  const mine = current && { interests: current.interests, interested: current.interested, loved: current.loved, rooms: current.rooms, asked: current.asked, payWith: current.payWith, upiIds: current.upiIds, read: current.read, hostsOff: current.hostsOff };
+  const mine = current && { interests: current.interests, interested: current.interested, loved: current.loved, rooms: current.rooms, asked: current.asked, payWith: current.payWith, upiIds: current.upiIds, hostsOff: current.hostsOff };
   model = fresh(kept);
   set({ via, ...kept, ...mine, follows: current?.follows ?? [], me: done.me });
   void loadFollows();
@@ -504,7 +514,7 @@ async function loadFollows(retry = true): Promise<void> {
   // ponytail: one re-read after a tap; a follow POST still in flight when that re-read lands can show Follow until the
   // next launch. Overlay the pending taps on the answer if that ever shows up.
   if (at !== followEpoch) return retry ? loadFollows(false) : undefined;
-  if (r.ok && current) set({ ...current, follows: r.data.map((h) => h.id) });
+  if (r.ok && current) set({ ...current, follows: r.data.map((h) => h.id), hostsOff: r.data.filter((h) => h.notify === 'off').map((h) => h.id) });
 }
 
 // The saves and lists as the API has them: they become what the server confirmed, with the changes still waiting drawn

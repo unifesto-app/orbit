@@ -47,5 +47,3 @@ export const bookings: Booking[] = [
   { id: 'BK-3HF8KD', eventId: 'founders-breakfast', tier: 'Breakfast seat', count: 1, qr: 'Rt5vN2kQ8xLc4WmZ7pYb1HsD9fJg3AeU', code: 'FB3HF8KD' },
   { id: 'BK-9PL2WA', eventId: 'pottery-for-beginners', tier: 'Beginner class', count: 1, qr: 'Lm3Xq8Vt2Nc7Rb5Kp9Wz4Yh6Df1Jg8Ae', code: 'PB9PL2WA' },
 ];
-// The viewer's booking for an event, for links to its ticket (`/ticket/<booking id>`).
-export const ticketFor = (eventId: string) => bookings.find((b) => b.eventId === eventId);

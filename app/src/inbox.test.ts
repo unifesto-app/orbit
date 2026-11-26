@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { dayLabel, hrefFor, inAppPath, inboxDays, isKept, pushStatusOf, timeLabel } from './inbox.ts';
+import { dayLabel, hrefFor, inAppPath, inboxDays, pushStatusOf, timeLabel } from './inbox.ts';
 
 const NOW = Date.parse('2026-11-20T09:00:00+05:30');
 const ticketOf = (e: string) => (e === 'open-mic-night' ? 'BK-7Q2M9X' : undefined);
@@ -36,7 +36,7 @@ test('days and times read in India time', () => {
   assert.equal(timeLabel('2026-11-19T12:05:00+05:30'), '12:05 PM');
 });
 
-test('the last 180 days, newest first, a heading per day', () => {
+test('newest first, a heading per day', () => {
   const at = (iso: string) => ({ at: iso });
   const days = inboxDays(
     [at('2026-11-18T18:00:00+05:30'), at('2026-11-20T08:40:00+05:30'), at('2026-05-20T09:00:00+05:30'), at('2026-11-20T07:00:00+05:30'), at('2026-05-24T10:00:00+05:30')],
@@ -47,12 +47,10 @@ test('the last 180 days, newest first, a heading per day', () => {
     [
       ['Today', ['11-20T08:40', '11-20T07:00']],
       ['Wed 18 Nov', ['11-18T18:00']],
-      ['Sun 24 May', ['05-24T10:00']], // 180 days back is 24 May, 9 AM; 20 May is gone
+      ['Sun 24 May', ['05-24T10:00']],
+      ['Wed 20 May', ['05-20T09:00']],
     ],
   );
-  // Cut to the moment: exactly 180 days old is gone, a minute younger is kept.
-  assert.equal(isKept('2026-05-24T09:00:00+05:30', NOW), false);
-  assert.equal(isKept('2026-05-24T09:01:00+05:30', NOW), true);
 });
 
 test('a push opens only a path inside the app', () => {

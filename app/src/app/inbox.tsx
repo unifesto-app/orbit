@@ -1,23 +1,24 @@
 // Notifications, the inbox (Notifications doc, "The inbox and where each message opens"), from the bell in Home's
 // header. The owner picked the Rows take on 19 Nov 2026 (https://claude.ai/artifact/4H6dp7ssrQbNXCJ4kSBj2b): Home's feed
-// rows, a heading per day, newest first, the last 180 days. Each row is the event's poster, the host's logo or Orbit's
-// orb; an icon for what it is, then what it is (the sender's name only for screen readers; owner, 25 Nov 2026: "in
-// notifications, instead of name, use icon"); the message; the time; a Sage dot until it's opened. A tap marks it read
-// and opens its own screen (src/inbox.ts); one with no screen of its own shows the whole message in place. Mark all read
-// sits by the title, a gear for Settings (Account › Notifications) at the top right. It fills even with push off.
-// ponytail: the mock's messages (src/inboxStore.ts); the API's inbox, refreshed on open and every minute, replaces them.
-import { type Href, router } from 'expo-router';
-import { useState } from 'react';
+// rows, a heading per day, newest first, the last 180 days (the API keeps them). Each row is the event's poster, the
+// host's logo or Orbit's orb; an icon for what it is, then what it is (the sender's name only for screen readers; owner,
+// 25 Nov 2026: "in notifications, instead of name, use icon"); the message; the time; a Sage dot until it's opened. A
+// tap marks it read and opens its own screen (src/inbox.ts); one with no screen of its own shows the whole message in
+// place. Mark all read sits by the title, a gear for Settings (Account › Notifications) at the top right. It fills even
+// with push off.
+// The messages are the API's (src/inboxStore.ts): read again on opening and on a pull, the next 30 near the end.
+import { type Href, router, useFocusEffect } from 'expo-router';
+import { useCallback, useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Note, Page, Pill, SignInNote, styles as kit } from '../account/kit';
 import { type IconName, Icon } from '../icons';
 import { inboxDays, type InboxItem, timeLabel } from '../inbox';
-import { type Message, useInbox } from '../inboxStore';
-import { events, hosts, now } from '../mock';
+import { loadInbox, loadMore, markRead, type Message, useInbox, useUnread } from '../inboxStore';
+import { events, hosts } from '../mock';
 import { ORB } from '../orbitSays';
 import { CircleButton, Monogram, Poster, Section } from '../rows';
-import { markRead, useSignedIn } from '../session';
+import { useSignedIn } from '../session';
 import { color, font, space, stoneAt } from '../theme';
 
 const PICTURE = 44; // a logo or the orb; a poster is that wide at 3:4
@@ -37,8 +38,21 @@ const ICON: Record<InboxItem['type'], IconName> = {
 
 export default function Inbox() {
   const signedIn = useSignedIn();
-  const messages = useInbox();
+  const { messages, loaded, more } = useInbox();
+  const unread = useUnread(); // the API's count: pages not read in yet count too
   const [shown, setShown] = useState<string | null>(null); // a message with no screen, opened in place
+  const [refreshing, setRefreshing] = useState(false);
+  const [now, setNow] = useState(Date.now); // the day headings', taken again each time the inbox comes into view
+  useFocusEffect(
+    useCallback(() => {
+      setNow(Date.now());
+      void loadInbox();
+    }, []),
+  );
+  const refresh = () => {
+    setRefreshing(true);
+    void loadInbox().finally(() => setRefreshing(false));
+  };
   if (!signedIn)
     return (
       <Page title="Notifications">
@@ -46,25 +60,26 @@ export default function Inbox() {
       </Page>
     );
 
-  const unread = messages.filter((m) => m.unread).map((m) => m.id);
   const days = inboxDays(messages, now);
   const open = (m: Message) => {
-    markRead([m.id]);
+    if (m.unread) markRead([m.id]);
     if (m.href) router.push(m.href as Href);
     else setShown(shown === m.id ? null : m.id); // a second tap folds it again
   };
 
   return (
     <Page
+      refresh={{ refreshing, onRefresh: refresh }}
+      onEnd={more ? () => void loadMore() : undefined}
       bar={<CircleButton icon="gear" label="Notification settings" onPress={() => router.push('/account/notifications')} />}>
       <View style={styles.head}>
         <Text style={[kit.title, styles.title]} accessibilityRole="header">
           Notifications
         </Text>
-        {unread.length > 0 && <Pill label="Mark all read" size="small" onPress={() => markRead(unread)} />}
+        {unread && <Pill label="Mark all read" size="small" onPress={() => markRead()} />}
       </View>
       {days.length === 0 ? (
-        <Note>Nothing here yet.</Note>
+        loaded && <Note>Nothing here yet.</Note>
       ) : (
         days.map((d, i) => (
           <View key={d.day}>

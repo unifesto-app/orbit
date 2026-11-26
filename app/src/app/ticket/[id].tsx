@@ -27,7 +27,7 @@ import { calendarLink, isOpen, spacedCode, ticketActions } from '../../account/r
 import { Fact, FactCard } from '../../fact';
 import { Glass } from '../../glass';
 import { dayLabel, timeLabel } from '../../inbox';
-import { announcementFor } from '../../inboxStore';
+import { useAnnouncement } from '../../inboxStore';
 import { type Event, type Host, toEvent, toHost } from '../../events';
 import { useLoad } from '../../load';
 import { events, hosts, now as mockNow } from '../../mock';
@@ -133,7 +133,7 @@ function TicketView({ t }: { t: Shown }) {
   const { e, host, now, paid, refund } = t;
   // The host's newest announcement sits on top (Notifications doc: a host announcement opens "the ticket, with the
   // announcement on top").
-  const news = announcementFor(e.id);
+  const news = useAnnouncement(e.id);
   const can = ticketActions({ paid: !!paid, startsAt: e.startsAt, refundOpen: !!refund, now });
   const place = `${e.venue.name}, ${e.venue.address}`;
   // As big as the page allows inside the plate, but no bigger than a scanner needs.

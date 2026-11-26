@@ -147,11 +147,12 @@ export function hostsRoutes({ db, notify, secret, now = Date.now }: Deps) {
   });
 
   // GET /me/follows: newest first. Hosts gone private, paused, suspended or archived are hidden, never deleted.
+  // `notify`: whether the host's new events push and email (all) or only reach the inbox (off).
   app.get("/me/follows", auth, async (c) =>
     c.json(
       (
         await db
-          .select({ id: hosts.id, slug: hosts.slug, name: hosts.name, city: hosts.city, verifiedAt: hosts.verifiedAt, logo: hosts.logo })
+          .select({ id: hosts.id, slug: hosts.slug, name: hosts.name, city: hosts.city, verifiedAt: hosts.verifiedAt, logo: hosts.logo, notify: follows.notify })
           .from(follows)
           .innerJoin(hosts, eq(hosts.id, follows.hostId))
           .where(and(eq(follows.userId, c.var.user.id), visible))
