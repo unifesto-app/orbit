@@ -23,3 +23,4 @@ export * from "./bookings.ts";
 export * from "./requests.ts";
 export * from "./announcements.ts";
 export * from "./broadcasts.ts";
+export * from "./checkin.ts";

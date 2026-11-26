@@ -1,5 +1,5 @@
 {
-  "id": "13066e66-905f-41e1-805b-8ffc8b93c94e",
+  "id": "70cd59d3-9879-48d3-8183-60acf0d1b3ff",
   "prevId": "2d7cd291-53b7-4f68-9c5d-f2d7926abdf5",
   "version": "7",
   "dialect": "postgresql",
@@ -673,6 +673,25 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "admitted": {
+          "name": "admitted",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "checked_in_at": {
+          "name": "checked_in_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "checked_in_by": {
+          "name": "checked_in_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -801,6 +820,19 @@
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
+        },
+        "bookings_checked_in_by_users_id_fk": {
+          "name": "bookings_checked_in_by_users_id_fk",
+          "tableFrom": "bookings",
+          "tableTo": "users",
+          "columnsFrom": [
+            "checked_in_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -832,180 +864,12 @@
         "bookings_quantity_range": {
           "name": "bookings_quantity_range",
           "value": "\"bookings\".\"quantity\" between 1 and 10"
+        },
+        "bookings_admitted_in_quantity": {
+          "name": "bookings_admitted_in_quantity",
+          "value": "\"bookings\".\"admitted\" between 0 and \"bookings\".\"quantity\""
         }
       },
-      "isRLSEnabled": false
-    },
-    "public.broadcasts": {
-      "name": "broadcasts",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "type": {
-          "name": "type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "segment": {
-          "name": "segment",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "channels": {
-          "name": "channels",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "content": {
-          "name": "content",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "confirmed_by": {
-          "name": "confirmed_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "send_at": {
-          "name": "send_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "audience_count": {
-          "name": "audience_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "sent": {
-          "name": "sent",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "failed": {
-          "name": "failed",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "cursor": {
-          "name": "cursor",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "auto_at": {
-          "name": "auto_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "broadcasts_status_index": {
-          "name": "broadcasts_status_index",
-          "columns": [
-            {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "broadcasts_created_at_index": {
-          "name": "broadcasts_created_at_index",
-          "columns": [
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "broadcasts_created_by_users_id_fk": {
-          "name": "broadcasts_created_by_users_id_fk",
-          "tableFrom": "broadcasts",
-          "tableTo": "users",
-          "columnsFrom": [
-            "created_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "broadcasts_confirmed_by_users_id_fk": {
-          "name": "broadcasts_confirmed_by_users_id_fk",
-          "tableFrom": "broadcasts",
-          "tableTo": "users",
-          "columnsFrom": [
-            "confirmed_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.deliveries": {
@@ -1202,19 +1066,6 @@
           "tableTo": "users",
           "columnsFrom": [
             "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "deliveries_broadcast_id_broadcasts_id_fk": {
-          "name": "deliveries_broadcast_id_broadcasts_id_fk",
-          "tableFrom": "deliveries",
-          "tableTo": "broadcasts",
-          "columnsFrom": [
-            "broadcast_id"
           ],
           "columnsTo": [
             "id"

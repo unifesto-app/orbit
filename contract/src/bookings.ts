@@ -28,6 +28,8 @@ export type Ticket = {
   id: string;
   status: BookingStatus;
   quantity: number; // how many it admits
+  admitted: number; // how many are in (check-in); attended is admitted > 0
+  checkedInAt: string | null;
   qr: string | null;
   code: string | null;
   link: string | null; // heyorbit.in/t/<link>

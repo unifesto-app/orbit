@@ -47,7 +47,7 @@ async function tickets(db: Db, rows: Row[]): Promise<Ticket[]> {
   return rows.map((r) => {
     const live = r.status === "confirmed";
     return {
-      id: r.id, status: r.status, quantity: r.quantity,
+      id: r.id, status: r.status, quantity: r.quantity, admitted: r.admitted, checkedInAt: r.checkedInAt?.toISOString() ?? null,
       qr: live ? r.qr : null, code: live ? r.code : null, link: live ? r.link : null,
       createdAt: r.createdAt.toISOString(), cancelledAt: r.cancelledAt?.toISOString() ?? null,
       ticketType: tiers.get(r.ticketTypeId)!, event: byId.get(r.eventId)!, onlineLink: live ? (links.get(r.eventId) ?? null) : null,
@@ -153,6 +153,7 @@ export function bookingsRoutes({ db, secret, now = Date.now }: Deps) {
       const [row] = await tx.select().from(bookings).where(and(eq(bookings.id, id), eq(bookings.userId, c.var.user.id))).for("update");
       if (!row) return nothing(c);
       if (row.status !== "confirmed") return fail(c, 409, "notNow", "This ticket is already cancelled.");
+      if (row.admitted > 0) return fail(c, 409, "checkedIn", "You've checked in, so this ticket can't be cancelled.");
       const [e] = await tx.select({ startsAt: events.startsAt }).from(events).where(eq(events.id, row.eventId));
       if (!e!.startsAt || e!.startsAt.getTime() <= now()) return fail(c, 409, "started", "The event has started, so this ticket can't be cancelled.");
       const [tier] = await tx.select({ pricePaise: ticketTypes.pricePaise }).from(ticketTypes).where(eq(ticketTypes.id, row.ticketTypeId));
