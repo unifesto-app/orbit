@@ -1,6 +1,6 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import sharp from "sharp";
 import { KINDS, type NoticeKind, PUSH_SWITCHES } from "@orbit/contract";
 import { deliveries, events, follows, hosts, inboxItems, notificationPrefs, pushDevices, sessions, users } from "./db/schema.ts";
@@ -42,9 +42,10 @@ const ready = async (o: { email?: boolean; city?: string } = {}) => {
 };
 const settings = (a: A, body: object) => as(a)("PUT", "/me/notification-settings", body);
 const sent = (a: A, kind: NoticeKind, channel: "push" | "email") =>
-  t.db.select().from(deliveries).where(and(eq(deliveries.userId, a.me.id), eq(deliveries.kind, kind), eq(deliveries.channel, channel)));
+  t.db.select().from(deliveries).where(and(eq(deliveries.userId, a.me.id), eq(deliveries.kind, kind), eq(deliveries.channel, channel))).orderBy(asc(deliveries.createdAt));
 const last = async (a: A, kind: NoticeKind, channel: "push" | "email") => (await sent(a, kind, channel)).at(-1)!;
-const tell = (a: A, kind: NoticeKind, data: Record<string, unknown> = {}, key?: string) => t.notify({ to: { userId: a.me.id }, kind, data, key });
+// A millisecond on per notice, so last() can order by created time (the rows have no other order).
+const tell = (a: A, kind: NoticeKind, data: Record<string, unknown> = {}, key?: string) => (t.tick(1), t.notify({ to: { userId: a.me.id }, kind, data, key }));
 const inboxOf = (a: A) => t.db.select().from(inboxItems).where(eq(inboxItems.userId, a.me.id));
 
 // A push kind for each switch.

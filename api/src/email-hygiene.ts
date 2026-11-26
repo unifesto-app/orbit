@@ -149,7 +149,8 @@ export function sesHookRoutes({ db, topicArn, fetch: fetchImpl = fetch, now = Da
     if (!e || typeof e !== "object") return c.body(null, 200);
     const reason: "bounce" | "complaint" | null = e.notificationType === "Bounce" && e.bounce?.bounceType === "Permanent" ? "bounce" : e.notificationType === "Complaint" ? "complaint" : null;
     if (!reason) return c.body(null, 200); // a transient bounce, a delivery: nothing to keep
-    const list = addresses(reason === "bounce" ? e.bounce?.bouncedRecipients : e.complaint?.complainedRecipients);
+    // Once each: the upsert can't touch one row twice (Dup@ and dup@ are one address).
+    const list = [...new Set(addresses(reason === "bounce" ? e.bounce?.bouncedRecipients : e.complaint?.complainedRecipients))];
     const at = new Date(now());
     // Idempotent, as SNS retries. A bounce outranks a complaint (it stops Must email too); the first time stays.
     if (list.length)

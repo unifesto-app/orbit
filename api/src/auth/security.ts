@@ -209,13 +209,13 @@ export function securityRoutes({ db, store, notify, secret, now = Date.now, ways
     if (!r.ok) return codeError(c, r.error);
     try {
       await db.update(users).set({ email: to.email, emailVerifiedAt: at(), updatedAt: at() }).where(eq(users.id, before.id));
-      await unsuppress(db, to.email);
       await releaseContact(before.id, before.email);
     } catch (e) {
       if (taken(e)) return fail(c, 409, "emailTaken", "That email signs in to another Orbit account.");
       throw e;
     }
     await tellOld(before, { method: "email", change: before.email ? "changed" : "added" });
+    await unsuppress(db, to.email); // never throws (notifications.ts)
     return c.json({ email: to.email });
   });
 

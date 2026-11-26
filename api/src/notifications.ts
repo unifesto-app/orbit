@@ -106,10 +106,18 @@ const addressOf = (contact: string | null, person: typeof users.$inferSelect | u
 // An address SES reported (email-hygiene.ts): a hard bounce stops all email to it, a complaint only optional email.
 const suppressed = async (q: Tx | Db, address: string, kind: NoticeKind) => {
   const [row] = await q.select({ reason: emailSuppressions.reason }).from(emailSuppressions).where(eq(emailSuppressions.address, address.toLowerCase()));
-  return !!row && (row.reason === "bounce" || !isMust(kind));
+  return !!row && (row.reason === "bounce" || KINDS[kind]?.level !== "must"); // not isMust: it throws on a kind this build lacks
 };
-// A code just proved this address reaches its owner: whatever SES reported about it no longer holds.
-export const unsuppress = (q: Tx | Db, address: string) => q.delete(emailSuppressions).where(eq(emailSuppressions.address, address.toLowerCase()));
+// A code just proved this address reaches its owner, which answers a hard bounce (not a complaint: that was the
+// person's own word). Housekeeping: a failure is logged without the address and never fails the request.
+export const unsuppress = (q: Tx | Db, address: string) =>
+  q
+    .delete(emailSuppressions)
+    .where(and(eq(emailSuppressions.address, address.toLowerCase()), eq(emailSuppressions.reason, "bounce")))
+    .then(
+      () => undefined,
+      (e: unknown) => console.error(`[suppressions] not cleared: ${e instanceof Error ? e.message : "unknown"}`),
+    );
 
 type Base = Pick<typeof deliveries.$inferInsert, "userId" | "contact" | "kind" | "dedupeKey" | "payload" | "runAt" | "createdAt" | "inboxItemId">;
 // The email row for a notice: switched off, held, queued to its address, suppressed, or no address. `s` is null for Must

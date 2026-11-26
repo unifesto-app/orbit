@@ -198,20 +198,56 @@ test("a complaint stops optional email only; a hard bounce stops Must too; a cod
   await t.deliver();
   assert.deepEqual((await emailsOf(a, "accountLifted")).map((d) => [d.status, d.reason]), [["skipped", "suppressed"]]);
 
-  // Signing in with a code to the address proves it again.
-  t.tick(30_000);
-  await t.call("POST", "/auth/code", { to: a.email });
-  const v = await t.call("POST", "/auth/code/verify", { to: a.email, code: t.lastCode(a.email), device });
-  assert.equal(v.status, 200);
+  // A wrong code clears nothing; signing in with the right code to the address proves it again.
+  const sentCode = await codeTo(a.email);
+  assert.equal((await t.call("POST", "/auth/code/verify", { to: a.email, code: sentCode === "000000" ? "111111" : "000000", device })).status, 400);
+  assert.equal((await suppressions()).length, 1);
+  assert.equal((await t.call("POST", "/auth/code/verify", { to: a.email, code: sentCode, device })).status, 200);
   assert.equal((await suppressions()).length, 0);
 });
 
-test("a queued email of a kind this build doesn't know doesn't stop the worker", async () => {
+const codeTo = async (to: string) => {
+  t.tick(30_000);
+  assert.equal((await t.call("POST", "/auth/code", { to })).status, 200);
+  return t.lastCode(to)!;
+};
+const suppress = (address: string, reason: "bounce" | "complaint") => t.db.insert(emailSuppressions).values({ address, reason, at: new Date(t.now()) });
+
+test("a code answers a bounce, never a complaint: /auth/code/verify, /me/fresh and PUT /me/email", async () => {
   const a = await join();
-  await t.db.insert(deliveries).values({ userId: a.me.id, kind: "noSuchKind", channel: "email", target: a.email, dedupeKey: "x", payload: {}, status: "queued", runAt: new Date(t.now()) });
+  await suppress(a.email, "complaint");
+  assert.equal((await t.call("POST", "/auth/code/verify", { to: a.email, code: await codeTo(a.email), device })).status, 200);
+  assert.deepEqual((await suppressions()).map((s) => s.reason), ["complaint"]); // the person's own word stands
+
+  await t.db.delete(emailSuppressions);
+  await suppress(a.email, "bounce");
+  assert.equal((await t.call("POST", "/me/fresh", { via: "email", code: await codeTo(a.email) }, a.access)).status, 200);
+  assert.equal((await suppressions()).length, 0);
+
+  const next = `next${n}@example.com`;
+  await suppress(next, "bounce");
+  assert.equal((await t.call("PUT", "/me/email", { to: next, code: await codeTo(next) }, a.access)).status, 200);
+  assert.equal((await suppressions()).length, 0);
+});
+
+test("a bounce naming one address twice (Dup@, dup@) keeps one row", async () => {
+  assert.equal((await post(notification(bounce("m-7", ["Dup@example.com", "dup@example.com"])))).status, 200);
+  assert.deepEqual((await suppressions()).map((s) => s.address), ["dup@example.com"]);
+});
+
+test("a queued email of a kind this build doesn't know doesn't stop the worker, complained address or not", async () => {
+  const a = await join();
+  const queue = (dedupeKey: string) =>
+    t.db.insert(deliveries).values({ userId: a.me.id, kind: "noSuchKind", channel: "email", target: a.email, dedupeKey, payload: {}, status: "queued", runAt: new Date(t.now()) });
+  await queue("x");
   await t.deliver();
-  const [row] = await t.db.select().from(deliveries).where(eq(deliveries.kind, "noSuchKind"));
-  assert.notEqual(row!.status, "sending");
+  await suppress(a.email, "complaint");
+  await queue("y");
+  await t.deliver();
+  const rows = await t.db.select().from(deliveries).where(eq(deliveries.kind, "noSuchKind"));
+  assert.equal(rows.length, 2);
+  for (const r of rows) assert.notEqual(r.status, "sending");
+  assert.equal(rows.find((r) => r.dedupeKey === "y")!.reason, "suppressed"); // not Must: a complaint stops it
 });
 
 test("a signed subscription confirmation is confirmed by fetching its SubscribeURL", async () => {
@@ -310,7 +346,7 @@ test("MIME: headers present, subject encoded, no line breaks let in; sesMail sen
 
   const raws: string[] = [];
   const plain: unknown[] = [];
-  const mail = sesMail({ from: "f@x.com", send: async (i) => (plain.push(i), { MessageId: "p" }), sendRaw: async (r) => (raws.push(Buffer.from(r).toString()), { MessageId: "r" }) });
+  const mail = sesMail({ from: "f@x.com", send: async (i) => (plain.push(i), { MessageId: "p" }), sendRaw: async (r, to) => (assert.equal(to, "a@example.com"), raws.push(Buffer.from(r).toString()), { MessageId: "r" }) });
   assert.equal(await mail("a@example.com", { subject: "s", html: "h", text: "t", headers: { "List-Unsubscribe": "<u>" } }), "r");
   assert.equal(await mail("a@example.com", { subject: "s", html: "h", text: "t" }), "p");
   assert.deepEqual([raws.length, plain.length], [1, 1]);
