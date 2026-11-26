@@ -55,7 +55,8 @@ export const VerifyPayment = z.object({ paymentId: z.string().min(1).max(64), si
 export const PAYMENT_STATUSES = ["created", "paid", "refundPending", "refunded", "expired", "failed"] as const;
 export type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
 // "confirming": Razorpay hasn't captured it yet (or couldn't be asked); the webhook or the poller settles it.
-export type Verified = { status: PaymentStatus | "confirming"; bookingId: string | null };
+// `reason`, when it went back with no seat: seatCheck's code (fewLeft is sold out; cancelled, ended, closed, tooMany, booked…).
+export type Verified = { status: PaymentStatus | "confirming"; bookingId: string | null; reason?: string };
 
 // Galaxy's Money pages (staff with Money).
 export const REFUND_STATUSES = ["requested", "sent", "processed", "failed"] as const;
@@ -108,7 +109,7 @@ export type MyRefund = {
 
 // Galaxy's Bookings and tickets (X3): a booking with its ticket and the payment that paid for it, if any.
 export type StaffBooking = {
-  id: string; status: BookingStatus; quantity: number; code: string; createdAt: string; cancelledAt: string | null;
+  id: string; status: BookingStatus; quantity: number; createdAt: string; cancelledAt: string | null;
   userId: string; userName: string | null; eventId: string; eventTitle: string; hostId: string; hostName: string;
   ticketTypeName: string; pricePaise: number; payment: { id: string; status: PaymentStatus; amountPaise: number } | null;
 };

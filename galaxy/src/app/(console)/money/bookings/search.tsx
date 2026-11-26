@@ -14,8 +14,9 @@ const BOOKED: Record<BookingStatus, [string, "success" | "neutral" | "warning"]>
   cancelledByHost: ["Cancelled by host", "warning"],
 };
 
-// Find bookings by person or event, then cancel one. After a cancel the same search runs again so the row shows it.
-export function BookingSearch() {
+// Find bookings by person (with People) or event, then cancel one. After a cancel the same search runs again so the
+// row shows it.
+export function BookingSearch({ people }: { people: boolean }) {
   const [found, search, pending] = useActionState(searchBookings, { person: "", event: "" });
   const again = () => {
     const f = new FormData();
@@ -26,7 +27,7 @@ export function BookingSearch() {
   return (
     <>
       <form action={search} className={ui.row}>
-        <input className={ui.input} name="person" defaultValue={found.person} placeholder="Name, phone or email" aria-label="Person" minLength={3} />
+        {people && <input className={ui.input} name="person" defaultValue={found.person} placeholder="Name, phone or email" aria-label="Person" minLength={3} />}
         <input className={ui.input} name="event" defaultValue={found.event} placeholder="Event title or id" aria-label="Event" minLength={3} />
         <button className={`${ui.btn} ${ui.primary}`} disabled={pending}>
           Find
@@ -54,10 +55,8 @@ export function BookingSearch() {
                 {found.bookings.map((b) => (
                   <tr key={b.id}>
                     <td>
-                      {b.code}
-                      <div className={ui.secondary}>
-                        {b.quantity} × {b.ticketTypeName}, {b.pricePaise ? inr(b.pricePaise) : "Free"}
-                      </div>
+                      {b.quantity} × {b.ticketTypeName}
+                      <div className={ui.secondary}>{b.pricePaise ? inr(b.pricePaise) : "Free"}</div>
                     </td>
                     <td>
                       <Badge tone={BOOKED[b.status][1]}>{BOOKED[b.status][0]}</Badge>

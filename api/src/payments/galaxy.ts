@@ -10,6 +10,7 @@ import type { Db } from "../db/index.ts";
 import { auditLog, bookings, events, failedWebhooks, hosts, payments, payouts, refunds, ticketTypes, users } from "../db/schema.ts";
 import { fail, invalid, isUuid, listPage, PAGE_SIZE, parse, signedIn, taken, type Tx } from "../http.ts";
 import { adminsOf, holdersOf, requireFeature, type StaffEnv, tell } from "../roles/access.ts";
+import { holds } from "../roles/rules.ts";
 import { askedBack, CLAIM, refundPaid, sendRefund } from "./routes.ts";
 
 // Galaxy's Money pages (Money flow, "Galaxy"; X2), for holders of Money: payments with their frozen terms and a refund,
@@ -351,9 +352,12 @@ export function moneyRoutes({ db, secret, notify, razorpay: rz, now = Date.now }
 
   // GET /galaxy/bookings?person=&event=: bookings of a person (exact phone or email, else by name; 3 characters at
   // least) and/or of an event (its id, or by title), newest first, each with its ticket and payment. Logged by ids only.
+  // Finding a person also needs People, as People's own search does; by event, Money is enough. No entry code: staff
+  // never need the gate's credential.
   app.get("/galaxy/bookings", ...staff, async (c) => {
     const person = c.req.query("person")?.trim() ?? "", event = c.req.query("event")?.trim() ?? "";
     if ((person && person.length < 3) || (event && event.length < 3) || (!person && !event)) return fail(c, 400, "invalid", "Type at least 3 characters of a person or an event.");
+    if (person && !holds(c.var.actor, "people")) return fail(c, 403, "needsPeople", "Finding bookings by person needs People. Search by event instead.");
     const phone = person ? readPhone(person) : null;
     const by = !person ? null : typeof phone === "string" && phone !== "abroad" ? "phone" : person.includes("@") ? "email" : "name";
     const who =
@@ -375,7 +379,7 @@ export function moneyRoutes({ db, secret, notify, razorpay: rz, now = Date.now }
       .limit(100);
     await db.insert(auditLog).values({ actorId: c.var.actor.id, action: "bookings.search", data: { by, event: !!event, results: rows.map((r) => r.b.id) }, at: at() });
     const out: StaffBooking[] = rows.map(({ b, pay, ...r }) => ({
-      id: b.id, status: b.status, quantity: b.quantity, code: b.code, createdAt: b.createdAt.toISOString(), cancelledAt: b.cancelledAt?.toISOString() ?? null,
+      id: b.id, status: b.status, quantity: b.quantity, createdAt: b.createdAt.toISOString(), cancelledAt: b.cancelledAt?.toISOString() ?? null,
       userId: b.userId, eventId: b.eventId, ...r, payment: pay?.id ? pay : null,
     }));
     return c.json(out);
@@ -383,7 +387,8 @@ export function moneyRoutes({ db, secret, notify, razorpay: rz, now = Date.now }
 
   // POST /galaxy/bookings/:id/cancel {reason}: a confirmed booking is cancelled, its seats free; a paid one goes back in
   // full, fee included, through refundPaid in the same transaction, sent once it commits (the poller sends any that
-  // didn't go). Locks: the booking, then its payment (refundPaid), as event cancel and account deletion.
+  // didn't go). Locks: the holder, then the booking, then its payment (refundPaid), as mine() and account deletion take
+  // them (a booking's holder never changes, so reading it unlocked first is safe). Razorpay off: a free one still goes.
   // ponytail: no notice to the holder yet (bookingCancelled has no wording); they hear of the refund when it lands.
   app.post("/galaxy/bookings/:id/cancel", cap, ...staff, async (c) => {
     const id = c.req.param("id");
@@ -392,9 +397,16 @@ export function moneyRoutes({ db, secret, notify, razorpay: rz, now = Date.now }
     if (!b) return invalid(c);
     const actorId = c.var.actor.id;
     const done = await db.transaction(async (tx) => {
+      const [seen] = await tx.select({ userId: bookings.userId }).from(bookings).where(eq(bookings.id, id));
+      if (!seen) return fail(c, 404, "notFound", "There's nothing here.");
+      await tx.select({ id: users.id }).from(users).where(eq(users.id, seen.userId)).for("update");
       const [bk] = await tx.select().from(bookings).where(eq(bookings.id, id)).for("update");
       if (!bk) return fail(c, 404, "notFound", "There's nothing here.");
       if (bk.status !== "confirmed") return fail(c, 409, "notConfirmed", "This booking is already cancelled.");
+      if (!rz) {
+        const [paid] = await tx.select({ id: payments.id }).from(payments).where(and(eq(payments.bookingId, id), eq(payments.status, "paid")));
+        if (paid) return fail(c, 503, "paymentsOff", "Razorpay isn't set up on this server, so a paid booking can't be refunded.");
+      }
       await tx.update(bookings).set({ status: "cancelled", cancelledAt: at(), link: null }).where(eq(bookings.id, id));
       const back = await refundPaid(tx, eq(payments.bookingId, id), b.reason, at());
       const [e] = await tx.select({ hostId: events.hostId }).from(events).where(eq(events.id, bk.eventId));

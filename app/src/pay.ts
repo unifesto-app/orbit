@@ -9,7 +9,7 @@
 
 import type { MyPayment, MyRefund, PayOrder, Verified } from '@orbit/contract';
 
-import type { makeApi } from './api.ts';
+import type { makeApi, Result } from './api.ts';
 
 export type PayWith =
   | { kind: 'upiApp'; id: string }
@@ -121,6 +121,7 @@ export const paymentsApi = (api: Api) => ({
   order: (eventId: string, ticketTypeId: string, quantity: number) => api.authed<PayOrder>('POST', `/events/${eventId}/pay`, { ticketTypeId, quantity }),
   verify: (orderId: string, paymentId: string, signature: string) =>
     api.authed<Verified>('POST', `/payments/${encodeURIComponent(orderId)}/verify`, { paymentId, signature }),
+  status: (orderId: string) => api.authed<Verified>('GET', `/payments/${encodeURIComponent(orderId)}`),
   mine: () => api.authed<MyPayment[]>('GET', '/me/payments'),
   refunds: () => api.authed<MyRefund[]>('GET', '/me/refunds'),
 });
@@ -132,7 +133,65 @@ export const PAY_SAYS = {
   already: 'You’re already paying for this ticket. Finish there, or wait a few minutes.',
   confirming: 'We’re confirming your payment. Your ticket appears here within a few minutes.',
   refunded: 'That sold out while you were paying. We’ve refunded you in full.',
+  off: 'Orbit isn’t taking payments yet, so nothing was charged.',
 };
+
+/** Why a payment went back with no ticket (settle's reason, api/src/payments/routes.ts), in a short true line. */
+export function refundSays(reason?: string): string {
+  switch (reason) {
+    case 'fewLeft':
+      return PAY_SAYS.refunded;
+    case 'booked':
+      return 'You already have this ticket. We’ve refunded this payment in full.';
+    case 'cancelled':
+      return 'This event was cancelled. We’ve refunded you in full.';
+    case 'ended':
+      return 'This event has ended. We’ve refunded you in full.';
+    case 'closed':
+      return 'Booking closed while you were paying. We’ve refunded you in full.';
+    case 'notOpen':
+      return 'Booking isn’t open yet. We’ve refunded you in full.';
+    case 'tooMany':
+      return 'That’s more tickets than one person can book. We’ve refunded you in full.';
+    default:
+      return 'We couldn’t give you this ticket, so we’ve refunded you in full.';
+  }
+}
+
+/** What the booking sheet does next while paying. `again`: nothing was taken, so Pay can be tapped again; `reread`: the
+ * event changed, so it's read again and the pick shown; `confirming`: never reopen checkout, the ticket comes later. */
+export type PayNext =
+  | { next: 'open'; order: PayOrder }
+  | { next: 'already'; order: PayOrder; say: string }
+  | { next: 'ticket'; bookingId: string }
+  | { next: 'confirming'; say: string }
+  | { next: 'refunded'; say: string }
+  | { next: 'again'; say: string }
+  | { next: 'reread'; say: string };
+/** Every next step but opening checkout. */
+export type PayDone = Exclude<PayNext, { order: PayOrder }>;
+
+/** The answer to Pay's order request. An open order this sheet didn't make ("already") is said, not opened: the next tap
+ * opens it. One this sheet made is reused without a word. */
+export function orderNext(r: Result<PayOrder>, ours: ReadonlySet<string>): PayNext {
+  if (r.ok) return r.data.already && !ours.has(r.data.orderId) ? { next: 'already', order: r.data, say: PAY_SAYS.already } : { next: 'open', order: r.data };
+  if (r.status === 503 && r.error.error === 'paymentsOff') return { next: 'again', say: PAY_SAYS.off };
+  if (r.status === 409) return { next: 'reread', say: r.error.message };
+  return { next: 'again', say: r.error.message };
+}
+
+/** Where a payment stands once checkout is done: verify's answer after Razorpay took it (`closed` unset), or the order's
+ * status after checkout closed without it (`closed`: how). Only a bad signature, or an order still open, failed or
+ * expired, lets Pay go again; anything unknown is confirming, so checkout never reopens on money that may have gone. */
+export function paidNext(r: Result<Verified>, closed?: 'dismissed' | 'failed'): PayDone {
+  const confirming: PayDone = { next: 'confirming', say: PAY_SAYS.confirming };
+  if (!r.ok) return !closed && r.error.error === 'badSignature' ? { next: 'again', say: PAY_SAYS.failed } : confirming;
+  const v = r.data;
+  if (v.status === 'paid' && v.bookingId) return { next: 'ticket', bookingId: v.bookingId };
+  if (v.status === 'refundPending' || v.status === 'refunded') return { next: 'refunded', say: refundSays(v.reason) };
+  if (closed && (v.status === 'created' || v.status === 'failed' || v.status === 'expired')) return { next: 'again', say: PAY_SAYS[closed] };
+  return confirming;
+}
 
 /** Whether Razorpay's checkout closed because the payer closed it (no money tried): code 0 on Android, 2 on iOS, and
  * either says "cancel" in its reason. Anything else is a failed payment. */

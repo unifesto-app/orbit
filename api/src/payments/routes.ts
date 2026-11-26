@@ -26,7 +26,18 @@ const FIRST_TRY = 15 * MIN; // a new refund's first try is its sender's; the pol
 export const CLAIM = 10 * MIN; // a send in flight holds its refund this long
 
 type Pay = typeof payments.$inferSelect;
-type Settled = { status: Pay["status"]; bookingId: string | null; refundIds: string[] };
+type Settled = { status: Pay["status"]; bookingId: string | null; refundIds: string[]; reason?: string };
+
+// Why a payment that found no seat went back: seatCheck's code (fewLeft, cancelled, ended, closed, tooMany, booked, …),
+// kept in its automatic refund's reason by settle. Undefined for anything else.
+const COULDNT = "Couldn't confirm: ";
+const reasonOf = async (q: Db | Tx, paymentId: string) => {
+  const [r] = await q
+    .select({ reason: refunds.reason })
+    .from(refunds)
+    .where(and(eq(refunds.paymentId, paymentId), eq(refunds.kind, "auto"), sql`${refunds.reason} like ${COULDNT + "%"}`));
+  return r?.reason.slice(COULDNT.length);
+};
 
 const off = (c: Context) => fail(c, 503, "paymentsOff", "Paying isn't working right now. Try again later.");
 const nothing = (c: Context) => fail(c, 404, "notFound", "There's nothing here.");
@@ -85,7 +96,7 @@ export async function settle(db: Db, notify: Notify, orderId: string, paid: Pick
     if (!p) return null;
     const costs = { razorpayFeePaise: paid.fee ?? p.razorpayFeePaise, razorpayTaxPaise: paid.tax ?? p.razorpayTaxPaise };
     if (p.status === "paid" || p.status === "refundPending" || p.status === "refunded") {
-      const same: Settled = { status: p.status, bookingId: p.bookingId, refundIds: [] };
+      const same: Settled = { status: p.status, bookingId: p.bookingId, refundIds: [], reason: p.bookingId ? undefined : await reasonOf(tx, p.id) };
       if (p.razorpayPaymentId === paid.id) {
         // The webhook after /verify: nothing to do but keep Razorpay's fee once it reports it.
         if (paid.fee != null && p.razorpayFeePaise == null) await tx.update(payments).set({ ...costs, updatedAt: at }).where(eq(payments.id, p.id));
@@ -112,10 +123,10 @@ export async function settle(db: Db, notify: Notify, orderId: string, paid: Pick
       : ({ error: "signedOut" } as const);
     if ("error" in ok) {
       await tx.update(payments).set({ status: "refundPending", razorpayPaymentId: paid.id, ...costs, updatedAt: at }).where(eq(payments.id, p.id));
-      const id = await autoRefund(tx, p, paid.id, `Couldn't confirm: ${ok.error}`, at);
+      const id = await autoRefund(tx, p, paid.id, COULDNT + ok.error, at);
       const kind = ok.error === "booked" ? "paidTwice" : "soldOutWhilePaying";
       await notify({ to: { userId: p.userId }, kind, data: { eventId: p.eventId, reason: ok.error }, key: `refund:${id}` }, tx);
-      return { status: "refundPending", bookingId: null, refundIds: [id] };
+      return { status: "refundPending", bookingId: null, refundIds: [id], reason: ok.error };
     }
     const [b] = await tx
       .insert(bookings)
@@ -336,7 +347,33 @@ export function paymentsRoutes({ db, secret, notify, razorpay: rz, now = Date.no
       return c.json(out);
     }
     const s = (await settleAndSend(db, rz, notify, orderId, got, now()))!;
-    const out: Verified = { status: s.status, bookingId: s.bookingId };
+    const out: Verified = { status: s.status, bookingId: s.bookingId, reason: s.reason };
+    return c.json(out);
+  });
+
+  // GET /payments/:orderId: where the payer's order stands, for the app when checkout closes without an answer (closed,
+  // or failed). Razorpay is asked about an open one: money captured settles here as the poller would; a payment only
+  // authorized, or no answer from Razorpay, is "confirming". Only created, failed or expired means nothing was taken.
+  app.get("/payments/:orderId", auth, async (c) => {
+    if (!rz) return off(c);
+    const orderId = c.req.param("orderId");
+    const [p] = await db.select().from(payments).where(and(eq(payments.razorpayOrderId, orderId), eq(payments.userId, c.var.user.id)));
+    if (!p) return nothing(c);
+    const confirming: Verified = { status: "confirming", bookingId: null };
+    if (p.status === "paid" || p.status === "refundPending" || p.status === "refunded") {
+      const out: Verified = { status: p.status, bookingId: p.bookingId, reason: p.bookingId ? undefined : await reasonOf(db, p.id) };
+      return c.json(out);
+    }
+    const tried = await rz.orderPayments(orderId).catch((e: Error) => (console.error("[payments] status", e.message), null));
+    if (!tried) return c.json(confirming);
+    const got = tried.find((x) => x.status === "captured");
+    if (got) {
+      const s = (await settleAndSend(db, rz, notify, orderId, got, now()))!;
+      const out: Verified = { status: s.status, bookingId: s.bookingId, reason: s.reason };
+      return c.json(out);
+    }
+    if (tried.some((x) => x.status === "authorized")) return c.json(confirming);
+    const out: Verified = { status: p.status, bookingId: null };
     return c.json(out);
   });
 
@@ -407,6 +444,8 @@ export function paymentsRoutes({ db, secret, notify, razorpay: rz, now = Date.no
         ? await db
             .select({ id: refunds.paymentId, n: sql<number>`sum(${refunds.amountPaise})::int`, at: max(refunds.updatedAt) })
             .from(refunds)
+            // Only the payment's own Razorpay payment, as askedBack: a paid-twice refund is money that never bought this.
+            .innerJoin(payments, and(eq(payments.id, refunds.paymentId), eq(payments.razorpayPaymentId, refunds.razorpayPaymentId)))
             .where(and(inArray(refunds.paymentId, ids), eq(refunds.status, "processed")))
             .groupBy(refunds.paymentId)
         : []
