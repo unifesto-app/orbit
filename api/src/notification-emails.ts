@@ -86,6 +86,10 @@ const WORDS: Partial<Record<NoticeKind, (d: Data) => Words>> = {
   staffGrantEnded: (d) => ({ subject: "Staff access ended", line: `Feature: ${str(d.feature)}. Reason: ${str(d.reason)}.` }),
   staffRiskyAction: (d) => ({ subject: `A staff action was taken: ${str(d.action)}`, line: `Reason: ${str(d.reason)}. ${AUDIT}` }),
   staffHeavyPaging: (d) => ({ subject: "Someone is paging through many people", line: `${str(d.pages)} pages today. ${AUDIT}` }),
+  providerFailing: (d) => ({
+    subject: `Orbit ${d.channel === "push" ? "push" : "email"} sending is failing`,
+    line: `${str(d.failed)} of ${str(d.total)} ${d.channel === "push" ? "pushes" : "emails"} failed in the last hour. See Sentry and the provider’s status page.`,
+  }),
 };
 
 // The plain line for a kind with no wording yet, so a later slice can call it before its words land.

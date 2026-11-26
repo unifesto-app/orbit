@@ -1,15 +1,17 @@
-import { and, countDistinct, eq, gt, gte, inArray, isNull, lt, lte, notInArray, or, sql } from "drizzle-orm";
+import { and, count, countDistinct, eq, gt, gte, inArray, isNull, lt, lte, notInArray, or, sql } from "drizzle-orm";
 import { inboxApp, type InboxApp, isMust, KINDS, type NoticeKind, type NotificationSettings, SWITCH_KEYS, type SwitchKey } from "@orbit/contract";
 import { type Mail, NotSent } from "./auth/senders.ts";
 import type { Db } from "./db/index.ts";
 import { deliveries, events, inboxItems, notificationPrefs, pushDevices, sessions, users } from "./db/schema.ts";
 import { isUuid, type Notice, type Notify, type Tx } from "./http.ts";
 import { emailFor, inboxFor } from "./notification-emails.ts";
+import type { Push } from "./push.ts";
+import { holdersOf, tell } from "./roles/access.ts";
 
 // Notifications (build plan PR 1 and 2; contract/src/notifications.ts). notify() writes the inbox item and one deliveries
 // row per channel (per device for push), inside the caller's transaction when given one; the worker sends queued email
-// rows and releases held pushes. The queue is the deliveries table: no Redis, no queue service. WhatsApp is never a
-// channel. Email "fallback" kinds write nothing until the push sender lands.
+// rows and pushes (APNs, FCM: push.ts) and releases held pushes. The queue is the deliveries table: no Redis, no queue
+// service. WhatsApp is never a channel. Email "fallback" kinds email only when the push can't land.
 
 const DAY = 86_400_000;
 const HOUR = 3_600_000;
@@ -53,7 +55,7 @@ const switchedOff = (s: NotificationSettings, kind: NoticeKind, channel: "push" 
 // A device is live while its session is (not ended, not expired). One device when sessionId is given.
 const liveDevices = (q: Tx | Db, userId: string, app: InboxApp, at: Date, sessionId?: string) =>
   q
-    .select({ sessionId: pushDevices.sessionId })
+    .select({ sessionId: pushDevices.sessionId, app: pushDevices.app, platform: pushDevices.platform, env: pushDevices.env, token: pushDevices.token })
     .from(pushDevices)
     .innerJoin(sessions, eq(sessions.id, pushDevices.sessionId))
     .where(
@@ -93,6 +95,49 @@ const pushesOn = async (q: Tx | Db, userId: string, day: Date, hostId?: string) 
 const clean = (data: Record<string, unknown> | undefined): Record<string, unknown> =>
   JSON.parse(JSON.stringify(data ?? {}, (_, v) => (typeof v === "string" ? v.toWellFormed().replaceAll("\u0000", "") : v)));
 
+// Where a notice's email goes: a {contact} notice to that contact itself, never the matched account's other email (D7);
+// else the account's proved email.
+const addressOf = (contact: string | null, person: typeof users.$inferSelect | undefined) =>
+  contact ? (contact.includes("@") ? contact : null) : person?.emailVerifiedAt ? person.email : null;
+
+type Base = Pick<typeof deliveries.$inferInsert, "userId" | "contact" | "kind" | "dedupeKey" | "payload" | "runAt" | "createdAt" | "inboxItemId">;
+// The email row for a notice: switched off, held (optional), queued to its address, or no address. `s` is null for Must
+// kinds and notices with no account. Used by "always" kinds in write() and by "fallback" kinds when the push can't land.
+const writeEmail = (q: Tx | Db, row: Base, s: NotificationSettings | null, address: string | null) => {
+  const kind = row.kind as NoticeKind;
+  const must = isMust(kind);
+  const v: Pick<typeof deliveries.$inferInsert, "status" | "reason" | "target"> =
+    s && switchedOff(s, kind, "email")
+      ? { status: "skipped", reason: "switchOff", target: "" }
+      : // ponytail: optional email (not Must, not the one-off welcome) waits for unsubscribe links; lifts in PR 6.
+        !must && kind !== "welcome"
+        ? { status: "skipped", reason: "optionalHeld", target: "" }
+        : address
+          ? { status: "queued", target: address }
+          : { status: "skipped", reason: "noEmail", target: "" };
+  return q.insert(deliveries).values({ ...row, channel: "email", ...v }).onConflictDoNothing({ target: [deliveries.dedupeKey, deliveries.channel, deliveries.target] });
+};
+
+// A "fallback" kind's email once one of its pushes ended unsent (failed, dropped but not stale, skipped notSetUp):
+// written only when no other push row of the notice is still on its way or sent. Two workers finishing a notice's last
+// two devices at once can both get here: the deliveries unique key (dedupe_key, channel, target) with
+// onConflictDoNothing makes the second insert a no-op.
+const fallBack = async (db: Db, d: typeof deliveries.$inferSelect, at: Date) => {
+  const kind = d.kind as NoticeKind;
+  if (KINDS[kind]?.email !== "fallback" || !d.userId) return;
+  const [live] = await db
+    .select({ id: deliveries.id })
+    .from(deliveries)
+    .where(and(eq(deliveries.dedupeKey, d.dedupeKey), eq(deliveries.channel, "push"), inArray(deliveries.status, ["queued", "held", "sending", "sent", "delivered"])))
+    .limit(1);
+  if (live) return;
+  const [person] = await db.select().from(users).where(eq(users.id, d.userId));
+  if (!person || person.deletedAt) return;
+  const s = isMust(kind) ? null : await settingsOf(db, person.id, person.city);
+  const row = { userId: d.userId, contact: d.contact, kind, dedupeKey: d.dedupeKey, payload: d.payload, runAt: at, createdAt: at, inboxItemId: d.inboxItemId };
+  await writeEmail(db, row, s, addressOf(d.contact, person));
+};
+
 export function createNotifier({ db, now }: { db: Db; now: () => number }): Notify {
   const write = async (n: Notice, q: Tx) => {
     const def = KINDS[n.kind];
@@ -101,21 +146,19 @@ export function createNotifier({ db, now }: { db: Db; now: () => number }): Noti
     // Who it's for. A {contact} notice goes to that contact itself, never the matched account's other email (D7); its
     // inbox item goes to the account it names, else the one holding the contact.
     let person: typeof users.$inferSelect | undefined;
-    let address: string | null = null;
     if ("contact" in n.to) {
       const c = n.to.contact;
       [person] = await q
         .select()
         .from(users)
         .where(and(isNull(users.deletedAt), n.to.userId ? eq(users.id, n.to.userId) : or(eq(users.phone, c), eq(users.email, c))));
-      address = c.includes("@") ? c : null;
     } else {
       [person] = await q.select().from(users).where(eq(users.id, n.to.userId));
       if (!person || person.deletedAt) return void console.log(`[notify] ${n.kind} dropped: no account`);
-      address = person.emailVerifiedAt ? person.email : null;
     }
     const userId = person?.id ?? null;
     const contact = "contact" in n.to ? n.to.contact : null;
+    const address = addressOf(contact, person);
     const dedupeKey = n.key ? `${n.kind}:${contact ?? userId}:${n.key}` : crypto.randomUUID(); // no key: no dedupe (D3)
     const payload = clean(n.data);
     const row = { userId, contact, kind: n.kind, dedupeKey, payload, runAt: at, createdAt: at };
@@ -148,15 +191,14 @@ export function createNotifier({ db, now }: { db: Db; now: () => number }): Noti
     // The person's switches, caps and quiet hours. Must kinds skip all three. Whatever happens here, the inbox item landed.
     const must = isMust(n.kind);
     const s = person && !must ? await settingsOf(q, person.id, person.city) : null;
-    if (def.email === "always") {
-      if (s && switchedOff(s, n.kind, "email")) await log({ channel: "email", status: "skipped", reason: "switchOff", target: "", inboxItemId });
-      // ponytail: optional email (not Must, not the one-off welcome) waits for unsubscribe links; lifts in PR 6.
-      else if (!must && n.kind !== "welcome") await log({ channel: "email", status: "skipped", reason: "optionalHeld", target: "", inboxItemId });
-      else await log(address ? { channel: "email", status: "queued", target: address, inboxItemId } : { channel: "email", status: "skipped", reason: "noEmail", target: "", inboxItemId });
-    }
-    // ponytail: "fallback" email waits for the push sender, which knows whether the push landed.
+    const email = () => writeEmail(q, { ...row, inboxItemId }, s, address);
+    if (def.email === "always") await email();
     if (!def.push || !person) return;
-    const skip = (reason: string) => log({ channel: "push", status: "skipped", reason, target: "", inboxItemId });
+    // No push for a "fallback" kind (switched off, no device): its email goes now. A cap or quiet hours isn't that.
+    const skip = async (reason: string) => {
+      await log({ channel: "push", status: "skipped", reason, target: "", inboxItemId });
+      if (def.email === "fallback" && reason !== "capReached") await email();
+    };
     if (s && switchedOff(s, n.kind, "push")) return void (await skip("switchOff"));
     // Low pushes are held in quiet hours and capped at 5 a day (by the day they deliver); followedHostEvent at 1 a day per
     // host. Normal pushes are neither held nor counted toward the 5.
@@ -190,7 +232,11 @@ export async function releaseHeld({ db, now, limit = 100 }: { db: Db; now: () =>
   const at = new Date(now());
   const due = await db.select().from(deliveries).where(and(eq(deliveries.status, "held"), lte(deliveries.runAt, at))).orderBy(deliveries.runAt).limit(limit);
   for (const d of due) {
-    const move = (v: Partial<typeof deliveries.$inferInsert>) => db.update(deliveries).set(v).where(and(eq(deliveries.id, d.id), eq(deliveries.status, "held")));
+    // A drop (but not stale: the event it was about is over) can send a fallback kind's email.
+    const move = async (v: Partial<typeof deliveries.$inferInsert>) => {
+      const moved = await db.update(deliveries).set(v).where(and(eq(deliveries.id, d.id), eq(deliveries.status, "held"))).returning({ id: deliveries.id });
+      if (moved.length && v.status === "dropped" && v.reason !== "stale") await fallBack(db, d, at);
+    };
     try {
       const def = KINDS[d.kind as NoticeKind];
       if (!def || !d.userId) {
@@ -221,7 +267,7 @@ const stale = async (db: Db, eventId: unknown, at: Date) => {
 // One pass of the worker: releases due held pushes, then claims due rows (queued, or stuck in sending past their lock) in
 // one statement, so the claim commits before any send, then sends each. Retries after 1, 5 and 30 minutes, then failed.
 // Returns rows handled.
-export async function runDeliveries({ db, mail, now, limit = 20 }: { db: Db; mail: Mail | undefined; now: () => number; limit?: number }) {
+export async function runDeliveries({ db, mail, push, now, limit = 20 }: { db: Db; mail: Mail | undefined; push?: Push; now: () => number; limit?: number }) {
   await releaseHeld({ db, now });
   const at = new Date(now());
   const due = db
@@ -240,11 +286,48 @@ export async function runDeliveries({ db, mail, now, limit = 20 }: { db: Db; mai
   for (const d of claimed) {
     // Only while the row is still this pass's: a slow pass whose lock lapsed has lost it to another worker's claim.
     const ours = and(eq(deliveries.id, d.id), eq(deliveries.status, "sending"), eq(deliveries.tries, d.tries));
-    const done = (v: Partial<typeof deliveries.$inferInsert>) => db.update(deliveries).set({ lockedUntil: null, ...v }).where(ours);
+    // True when this pass still held the row and wrote it.
+    const done = async (v: Partial<typeof deliveries.$inferInsert>) =>
+      (await db.update(deliveries).set({ lockedUntil: null, ...v }).where(ours).returning({ id: deliveries.id })).length > 0;
+    // A send that threw: not set up is skipped; refused, gone or the 4th try failed; else again after 1, 5, 30 minutes.
+    // True when the row ended (not queued again) and was written. Only the reason word is logged: the provider's text
+    // can hold the address or the token.
+    const settle = async (e: unknown) => {
+      const reason = e instanceof NotSent ? e.reason : "unknown";
+      (reason === "gone" ? console.log : console.error)(`[deliveries] ${d.kind} ${d.id} not sent (${reason}), try ${d.tries}`);
+      if (reason === "notSetUp") return done({ status: "skipped", reason });
+      if (reason === "refused" || reason === "gone" || d.tries >= 4) return done({ status: "failed", reason });
+      await done({ status: "queued", reason, runAt: new Date(now() + [1, 5, 30][d.tries - 1]! * MIN) });
+      return false;
+    };
     const relet = await db.update(deliveries).set({ lockedUntil: new Date(now() + 2 * MIN) }).where(ours).returning({ id: deliveries.id });
     if (!relet.length) continue;
-    // ponytail: no push sender until APNs and FCM land (PR 4); a claimed push is recorded as not set up.
-    if (d.channel === "push" || !mail) {
+
+    if (d.channel === "push") {
+      // The device behind the row's session, while that sign-in is live: sign-out, security sweeps and deletion keep
+      // the device row, so this is what keeps a push off an ended session.
+      const kind = d.kind as NoticeKind;
+      const [device] = KINDS[kind] && d.userId ? await liveDevices(db, d.userId, inboxApp(kind, d.payload) ?? "orbit", at, d.target) : [];
+      const send = device && push?.[device.platform];
+      let ended: boolean;
+      if (!device) ended = await done({ status: "dropped", reason: "noDevice" });
+      else if (!send) ended = await done({ status: "skipped", reason: "notSetUp" });
+      else {
+        try {
+          const words = inboxFor(kind, d.payload);
+          const badge = device.platform === "ios" ? await unread(db, d.userId!, device.app) : undefined;
+          const providerId = await send(device, { title: words.fromName, body: words.text, data: { id: d.inboxItemId, opens: words.opens }, badge });
+          await done({ status: "sent", sentAt: new Date(now()), providerId: providerId ?? null });
+          ended = false;
+        } catch (e) {
+          if (e instanceof NotSent && e.reason === "gone") await db.delete(pushDevices).where(eq(pushDevices.sessionId, d.target));
+          ended = await settle(e);
+        }
+      }
+      if (ended) await fallBack(db, d, at);
+      continue;
+    }
+    if (!mail) {
       await done({ status: "skipped", reason: "notSetUp" });
       continue;
     }
@@ -252,15 +335,38 @@ export async function runDeliveries({ db, mail, now, limit = 20 }: { db: Db; mai
       await mail(d.target, emailFor(d.kind, d.payload));
       await done({ status: "sent", sentAt: new Date(now()) });
     } catch (e) {
-      const reason = e instanceof NotSent ? e.reason : "unknown";
-      // Only the reason word: the provider's text can hold the address.
-      console.error(`[deliveries] ${d.kind} ${d.id} not sent (${reason}), try ${d.tries}`);
-      if (reason === "notSetUp") await done({ status: "skipped", reason });
-      else if (reason === "refused" || d.tries >= 4) await done({ status: "failed", reason });
-      else await done({ status: "queued", reason, runAt: new Date(now() + [1, 5, 30][d.tries - 1]! * MIN) });
+      await settle(e);
     }
   }
   return claimed.length;
+}
+
+// A person's unread inbox items on one app: the iOS badge.
+const unread = async (db: Db, userId: string, app: InboxApp) =>
+  (await db.select({ n: count() }).from(inboxItems).where(and(eq(inboxItems.userId, userId), eq(inboxItems.app, app), isNull(inboxItems.readAt))))[0]!.n;
+
+// The hourly provider check: per channel, over rows made in the last hour, sent or delivered against failed, not counting
+// a dead phone or a bad address (gone, refused). At least 20 finished and more than 20% failed: an error line (Sentry
+// picks it up through captureConsoleIntegration) and providerFailing to every Platform holder, once per channel an hour.
+export async function checkProviders({ db, notify, now }: { db: Db; notify: Notify; now: () => number }) {
+  const at = new Date(now());
+  const counts = await db
+    .select({ channel: deliveries.channel, failed: sql<number>`count(*) filter (where ${deliveries.status} = 'failed')`.mapWith(Number), total: count() })
+    .from(deliveries)
+    .where(
+      and(
+        gte(deliveries.createdAt, new Date(at.getTime() - HOUR)),
+        inArray(deliveries.status, ["sent", "delivered", "failed"]),
+        or(isNull(deliveries.reason), notInArray(deliveries.reason, ["gone", "refused"])),
+      ),
+    )
+    .groupBy(deliveries.channel);
+  const hour = new Date(Math.floor(at.getTime() / HOUR) * HOUR).toISOString();
+  for (const { channel, failed, total } of counts) {
+    if (total < 20 || failed * 5 <= total) continue;
+    console.error(`[providers] ${channel} failing: ${failed}/${total} in the last hour`);
+    await tell(notify, await holdersOf(db, "platform", at), "providerFailing", { channel, failed, total }, `${channel}:${hour}`);
+  }
 }
 
 // Inbox items and deliveries go after 180 days; push devices unseen for 270.

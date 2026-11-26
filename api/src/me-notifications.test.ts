@@ -65,7 +65,8 @@ test("each switch off skips its channel's row; master push off skips every non-M
     await settings(a, { switches: { [`push.${sw}`]: true } });
   }
   // Email: the switches with an "always" kind behind them. Reminders and follows only govern "fallback" email (PR 4),
-  // which writes nothing yet. Optional email is held until PR 6 either way; a switch off says why first.
+  // written above when their push was switched off. Optional email is held until PR 6 either way; a switch off says why
+  // first.
   for (const [sw, kind] of [["announcements", "hostAnnouncement"], ["orbit", "orbitNews"], ["yourHosts", "teamRoleStarted"]] as const) {
     await tell(a, kind);
     assert.equal((await last(a, kind, "email")).reason, "optionalHeld", sw);
@@ -73,7 +74,8 @@ test("each switch off skips its channel's row; master push off skips every non-M
     await tell(a, kind);
     assert.deepEqual([(await last(a, kind, "email")).status, (await last(a, kind, "email")).reason], ["skipped", "switchOff"], sw);
   }
-  for (const kind of ["eventTomorrow", "followedHostEvent"] as const) assert.equal((await sent(a, kind, "email")).length, 0);
+  for (const kind of ["eventTomorrow", "followedHostEvent"] as const)
+    assert.deepEqual((await sent(a, kind, "email")).map((d) => d.reason), ["optionalHeld"], kind); // the push couldn't land
 
   const b = await ready({ city: "Hyderabad" });
   await settings(b, { push: false });
@@ -118,7 +120,7 @@ test("quiet hours: a Low push at 23:00 is held until 07:00, then queued; a cance
   const byEvent = (id: string) => out.find((d) => d.payload.eventId === id)!;
   assert.deepEqual([byEvent(one.eventId).status, byEvent(one.eventId).runAt.getTime()], ["queued", t.now()]);
   assert.deepEqual([byEvent(two.eventId).status, byEvent(two.eventId).reason], ["dropped", "stale"]);
-  // No push sender yet (PR 4): the worker records it as not set up.
+  // No push sender given: the worker records it as not set up.
   await t.deliver();
   assert.deepEqual([(await sent(a, "eventStartingSoon", "push")).find((d) => d.id === byEvent(one.eventId).id)!.status], ["skipped"]);
 });

@@ -5,10 +5,11 @@ import { and, eq, sql } from "drizzle-orm";
 import { KINDS, type NoticeKind } from "@orbit/contract";
 import { runDeletions } from "./auth/deletion.ts";
 import { NotSent } from "./auth/senders.ts";
-import { deliveries, inboxItems, users } from "./db/schema.ts";
+import { deliveries, inboxItems, pushDevices, users } from "./db/schema.ts";
 import type { Notice } from "./http.ts";
 import { emailFor, inboxFor, opensFor } from "./notification-emails.ts";
-import { pruneNotifications } from "./notifications.ts";
+import { checkProviders, pruneNotifications } from "./notifications.ts";
+import type { Device, Push, PushMessage } from "./push.ts";
 import { testApp } from "./testkit.ts";
 
 // Notifications PR 1 against a real database: notify's rows, the worker's sends and retries, and the wording.
@@ -454,4 +455,168 @@ test("inbox rows open the app's screen with the id from the data, or nothing wit
   const known = [...account, "ticket", "refund", "event", "room", "slot", "host"];
   for (const [kind, def] of Object.entries(KINDS))
     if (def.opens) assert.ok(known.includes(def.opens) && (def.app === "orbit" || !def.inbox || account.includes(def.opens)), kind);
+});
+
+// ---- Push (PR 4): the worker with a fake sender, the email fallback and the provider check.
+
+type Pushed = { d: Device; m: PushMessage };
+// A fake sender for both platforms; `answer` throws to fail a send, else the provider id.
+const fakePush = (answer?: (d: Device, i: number) => string) => {
+  const got: Pushed[] = [];
+  const one = async (d: Device, m: PushMessage) => {
+    got.push({ d, m });
+    return answer ? answer(d, got.length) : `pid-${got.length}`;
+  };
+  return { push: { ios: one, android: one } as Push, got };
+};
+const addDevice = async (access: string, platform: "ios" | "android" = "ios") =>
+  assert.equal((await t.call("PUT", "/me/push-device", { app: "orbit", platform, env: "sandbox", token: `tok-${++n}` }, access)).status, 204);
+const pushRows = async (userId: string, kind: string) =>
+  (await t.db.select().from(deliveries).where(and(eq(deliveries.userId, userId), eq(deliveries.kind, kind), eq(deliveries.channel, "push")))).sort((x, y) => x.target.localeCompare(y.target));
+const changed: Notice["data"] = { method: "passkey", change: "added" };
+
+test("push: a live device gets title, body and {id, opens}, and the row keeps the provider's id", async () => {
+  const a = await join();
+  await addDevice(a.access);
+  await t.notify({ to: { userId: a.me.id }, kind: "signInMethodChanged", data: changed });
+  const [r0] = await pushRows(a.me.id, "signInMethodChanged");
+  assert.equal(r0!.status, "queued");
+  const { push, got } = fakePush();
+  await t.deliver(push);
+  const item = (await inbox(a.me.id)).find((i) => i.kind === "signInMethodChanged")!;
+  const words = inboxFor("signInMethodChanged", changed);
+  assert.equal(got.length, 1);
+  assert.deepEqual(got[0]!.m, { title: "Orbit", body: words.text, data: { id: item.id, opens: { to: "security" } }, badge: 1 });
+  assert.deepEqual([got[0]!.d.platform, got[0]!.d.app, got[0]!.d.env], ["ios", "orbit", "sandbox"]);
+  const after = await row(r0!.id);
+  assert.deepEqual([after.status, after.providerId], ["sent", "pid-1"]);
+  assert.ok(after.sentAt);
+});
+
+test("push: a signed-out session is dropped as noDevice and nothing is sent", async () => {
+  const a = await join();
+  await addDevice(a.access);
+  await t.notify({ to: { userId: a.me.id }, kind: "signInMethodChanged", data: changed });
+  assert.equal((await t.call("POST", "/auth/signout", undefined, a.access)).status, 204);
+  const { push, got } = fakePush();
+  await t.deliver(push);
+  assert.equal(got.length, 0);
+  const [r] = await pushRows(a.me.id, "signInMethodChanged");
+  assert.deepEqual([r!.status, r!.reason], ["dropped", "noDevice"]);
+});
+
+test("push: a dead token fails as gone and its device goes; the next notice finds no device", async () => {
+  const a = await join();
+  await addDevice(a.access);
+  await t.notify({ to: { userId: a.me.id }, kind: "signInMethodChanged", data: changed });
+  const [r] = await pushRows(a.me.id, "signInMethodChanged");
+  const { push } = fakePush(() => {
+    throw new NotSent("push", "gone", "APNs 410");
+  });
+  await t.deliver(push);
+  assert.deepEqual([(await row(r!.id)).status, (await row(r!.id)).reason], ["failed", "gone"]);
+  assert.equal((await t.db.select().from(pushDevices).where(eq(pushDevices.userId, a.me.id))).length, 0);
+  await t.notify({ to: { userId: a.me.id }, kind: "signInMethodChanged", data: changed });
+  const next = (await pushRows(a.me.id, "signInMethodChanged")).find((d) => d.id !== r!.id);
+  assert.deepEqual([next!.status, next!.reason], ["skipped", "noDevice"]);
+});
+
+test("push: with no sender at all, pushes are skipped as not set up and emails still go", async () => {
+  const a = await join(true);
+  await addDevice(a.access);
+  await t.notify({ to: { userId: a.me.id }, kind: "signInMethodChanged", data: changed });
+  await t.deliver();
+  const [r] = await pushRows(a.me.id, "signInMethodChanged");
+  assert.deepEqual([r!.status, r!.reason], ["skipped", "notSetUp"]);
+  assert.deepEqual(mailed.map((m) => m.to), [a.email]);
+  // A sender for the other platform only: the same.
+  await t.notify({ to: { userId: a.me.id }, kind: "signInMethodChanged", data: changed });
+  await t.deliver({ android: fakePush().push.android });
+  const l = (await pushRows(a.me.id, "signInMethodChanged")).find((d) => d.id !== r!.id);
+  assert.deepEqual([l!.status, l!.reason], ["skipped", "notSetUp"]);
+});
+
+test("push: throttled is queued again after 1 minute", async () => {
+  const a = await join();
+  await addDevice(a.access, "android");
+  await t.notify({ to: { userId: a.me.id }, kind: "signInMethodChanged", data: changed });
+  const [r] = await pushRows(a.me.id, "signInMethodChanged");
+  const { push, got } = fakePush(() => {
+    throw new NotSent("push", "throttled", "FCM 429");
+  });
+  await t.deliver(push);
+  const after = await row(r!.id);
+  assert.deepEqual([after.status, after.reason, after.runAt.getTime()], ["queued", "throttled", t.now() + MIN]);
+  assert.equal(got[0]!.m.badge, undefined); // no badge on Android
+});
+
+test("fallback: no device emails at once; with two devices, only once the second push fails", async () => {
+  const kind = "eventTomorrow"; // Normal, push + inbox + email fallback
+  const data = { eventId: crypto.randomUUID(), title: "Run club" };
+  const a = await join(true);
+  await t.notify({ to: { userId: a.me.id }, kind, data });
+  const emails = async (userId: string) => (await rows(kind)).filter((d) => d.userId === userId && d.channel === "email");
+  assert.equal((await pushRows(a.me.id, kind))[0]!.reason, "noDevice");
+  const [mail] = await emails(a.me.id);
+  assert.deepEqual([mail!.status, mail!.reason], ["skipped", "optionalHeld"]); // held until PR 6, as optional "always" mail
+
+  const b = await join(true);
+  await addDevice(b.access);
+  t.tick(30_000);
+  const v = await verify(b.p, { device: { ...device, id: "second" } }); // a second sign-in, a second device
+  const again = await t.call("POST", "/auth/confirm", { ticket: v.body.ticket, me: true, device: { ...device, id: "second" } });
+  assert.equal(again.body.step, "signedIn");
+  await addDevice(again.body.access, "android");
+  await t.notify({ to: { userId: b.me.id }, kind, data });
+  assert.equal((await pushRows(b.me.id, kind)).length, 2);
+  assert.equal((await emails(b.me.id)).length, 0);
+  // The iPhone is refused; the Android is throttled, so still on its way: no email yet.
+  const first = fakePush((d) => {
+    throw new NotSent("push", d.platform === "ios" ? "refused" : "throttled", "x");
+  });
+  await t.deliver(first.push);
+  assert.deepEqual((await pushRows(b.me.id, kind)).map((d) => d.status).sort(), ["failed", "queued"]);
+  assert.equal((await emails(b.me.id)).length, 0);
+  t.tick(MIN);
+  await t.deliver(fakePush(() => { throw new NotSent("push", "refused", "x"); }).push);
+  assert.deepEqual((await pushRows(b.me.id, kind)).map((d) => d.status), ["failed", "failed"]);
+  const [late] = await emails(b.me.id);
+  assert.deepEqual([late!.status, late!.reason, late!.inboxItemId !== null], ["skipped", "optionalHeld", true]);
+  assert.equal((await emails(b.me.id)).length, 1);
+});
+
+test("providers: over 20% failed of at least 20 alerts Platform holders once an hour; gone and refused don't count", async () => {
+  const owner = await join(true);
+  await t.db.update(users).set({ platformOwner: false }).where(eq(users.platformOwner, true));
+  await t.db.update(users).set({ platformOwner: true }).where(eq(users.id, owner.me.id));
+  const fill = (total: number, failed: number, reason = "unknown") =>
+    t.db.insert(deliveries).values(
+      Array.from({ length: total }, (_, i) => ({
+        kind: "accountLifted", channel: "email" as const, target: `p${i}@example.com`, dedupeKey: `pv-${++n}`, payload: {},
+        status: i < failed ? ("failed" as const) : ("sent" as const), reason: i < failed ? reason : null,
+        runAt: new Date(t.now()), createdAt: new Date(t.now() - MIN),
+      })),
+    );
+  const alerts = () => t.notices.filter((x) => x.kind === "providerFailing").length;
+  const check = () => checkProviders({ db: t.db, notify: t.notify, now: t.now });
+
+  await fill(25, 6); // 24%
+  await check();
+  assert.equal(alerts(), 1);
+  const sent = await rows("providerFailing");
+  assert.deepEqual([sent.length, sent[0]!.userId, sent[0]!.status, sent[0]!.target], [1, owner.me.id, "queued", owner.email]);
+  assert.deepEqual(sent[0]!.payload, { channel: "email", failed: 6, total: 25 });
+  await check(); // the same hour: nothing new
+  assert.equal((await rows("providerFailing")).length, 1);
+
+  await t.db.delete(deliveries);
+  const before = alerts();
+  await fill(25, 6, "gone");
+  await check();
+  await t.db.delete(deliveries);
+  await fill(10, 10);
+  await check();
+  assert.equal(alerts(), before);
+  assert.equal((await rows("providerFailing")).length, 0);
+  await t.db.update(users).set({ platformOwner: false }).where(eq(users.id, owner.me.id));
 });

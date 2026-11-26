@@ -119,8 +119,8 @@ export const holdersOf = async (db: Db, f: StaffFeature, at: Date) => {
     .where(and(eq(staffGrants.feature, f), isNull(staffGrants.endedAt), isNotNull(staffGrants.startsAt), lte(staffGrants.startsAt, at)));
   return [...new Set([...owners, ...granted].map((r) => r.id))];
 };
-export const tell = async (notify: Notify, ids: string[], kind: NoticeKind, data: Record<string, unknown>) => {
-  for (const userId of ids) await notify({ to: { userId }, kind, data });
+export const tell = async (notify: Notify, ids: string[], kind: NoticeKind, data: Record<string, unknown>, key?: string) => {
+  for (const userId of ids) await notify({ to: { userId }, kind, data, key });
 };
 
 // A person as Galaxy shows them: contacts stay masked until a reveal (a later slice).

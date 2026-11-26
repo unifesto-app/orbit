@@ -66,7 +66,7 @@ export async function sendCode(store: Store, send: Sender, secret: string, to: C
     // It may yet arrive: keep it, and let them ask again after the usual wait.
     if (e.reason === "unknown") return keep().then(() => ({ ok: true, unsure: true }));
     await store.del(`send:gap:${id}:${ip}`); // it never went, so no wait before trying again
-    return { ok: false, error: "notSent", reason: e.reason };
+    return { ok: false, error: "notSent", reason: e.reason === "gone" ? "refused" : e.reason }; // gone is push-only
   }
   await keep(); // only now, so a send that never went leaves the last code good
   return { ok: true };

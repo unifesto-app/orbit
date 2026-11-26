@@ -10,13 +10,14 @@ import type { Sender } from "./codes.ts";
 // - throttled: the provider is rate-limiting us; it never went, and a try a little later may work.
 // - notSetUp: this channel has no keys here, or its keys were refused (expired token, revoked key).
 // - unknown: a timeout, a provider fault or an unclear answer, so it may yet arrive.
+// - gone (push only): the device token is dead (app deleted, a token for another app), so its device row goes.
 // A WhatsApp number that isn't on WhatsApp is accepted at send time and fails later, on Meta's status callback
 // (not read yet), so it shows as sent.
 export class NotSent extends Error {
-  readonly channel: Contact["kind"];
-  readonly reason: "refused" | "throttled" | "notSetUp" | "unknown";
-  constructor(channel: Contact["kind"], reason: NotSent["reason"], detail: string) {
-    super(`${channel} code not sent (${reason}): ${detail}`);
+  readonly channel: Contact["kind"] | "push";
+  readonly reason: "refused" | "throttled" | "notSetUp" | "unknown" | "gone";
+  constructor(channel: NotSent["channel"], reason: NotSent["reason"], detail: string) {
+    super(`${channel} ${channel === "push" ? "" : "code "}not sent (${reason}): ${detail}`);
     this.channel = channel;
     this.reason = reason;
   }
