@@ -7,8 +7,8 @@ export const inboxPath = (app: Variant) => `/me/inbox?app=${app}`;
 export const readBody = (app: Variant, ids?: readonly string[]) => ({ app, ...(ids && { ids }) });
 
 // Where a tapped push goes. A push's `opens` is the inbox's Opens shape; on Android FCM data values are strings, so it
-// may come as JSON text. Event Partner opens its Event Request on `{to: 'request'}`; anything else (most host kinds open
-// nothing) opens the Inbox.
+// may come as JSON text. Event Partner opens its Event Request on `{to: 'request'}`, Play Partner its Today on
+// `{to: 'today'}` (slotBooked, slotCancelled); anything else (most host kinds open nothing) opens the Inbox.
 export function pushHref(app: Variant, opens: unknown): string {
   let o = opens;
   if (typeof o === 'string') {
@@ -19,5 +19,5 @@ export function pushHref(app: Variant, opens: unknown): string {
     }
   }
   const to = o && typeof o === 'object' ? (o as { to?: unknown }).to : undefined;
-  return app === 'launch' && to === 'request' ? '/request' : '/inbox';
+  return app === 'launch' && to === 'request' ? '/request' : app === 'station' && to === 'today' ? '/today' : '/inbox';
 }

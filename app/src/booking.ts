@@ -91,7 +91,7 @@ export { slotPrice } from '@orbit/contract';
  * The ticket's line (Play): "3 × PC, Sat 21 Nov, 6:30 to 8:30 PM"; a whole pitch or court has no count. The start
  * keeps its AM or PM when the end's differs: "11:00 AM to 1:00 PM".
  */
-export function slotLine(v: Venue, s: Station, start: number, hours: number, count = 1): string {
+export function slotLine(v: Pick<Venue, 'kind'>, s: Pick<Station, 'name'> & { unit: readonly string[] }, start: number, hours: number, count = 1): string {
   const what = v.kind === 'gaming' ? `${count} × ${s.unit[0]}` : s.name;
   const from = timeLabel(start);
   const to = timeLabel(start + hours * HOUR);

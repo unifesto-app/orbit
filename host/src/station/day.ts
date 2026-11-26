@@ -60,6 +60,8 @@ export type Claim = {
   refunded?: boolean;
   again?: number; // times the desk let someone in again after Already in (logged)
   held?: boolean; // a booking still being paid for (the API's held): it takes its stations but nobody's due yet
+  holdEnds?: number; // a held one's: when it lapses unless paid (or confirmed)
+  paying?: boolean; // a held one on a priced station: being paid for; else a free one waiting on its confirm
 };
 
 /** Where a booking stands at the counter. */
@@ -119,6 +121,11 @@ export function taken(claims: readonly Claim[], t: StationType, at: number) {
 
 /** A booking the counter waits for: in Next up, the no-show banner, Check in and Release. Not one still being paid for. */
 export const atDoor = (c: Claim) => c.kind === 'booking' && !c.held;
+/** An online hold still live, as Next up says it: "Paying… · 7 min left" ("Holding" on a free one); null once it's lapsed. */
+export function heldLine(c: Claim, now: number): string | null {
+  if (c.kind !== 'booking' || !c.held || !c.holdEnds || c.holdEnds <= now) return null;
+  return `${c.paying ? 'Paying…' : 'Holding'} · ${Math.ceil((c.holdEnds - now) / MIN)} min left`;
+}
 
 export function door(c: Claim, now: number): Door {
   if (c.released) return 'released';

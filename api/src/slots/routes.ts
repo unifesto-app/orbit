@@ -73,6 +73,7 @@ const shortName = (name: string | null) => {
 
 const counterStation = (s: Station): CounterStation => ({
   id: s.id, name: s.name, unit: s.unit, tile: s.tile, count: s.count, whole: s.whole, step: s.step as 30 | 60, archived: s.archivedAt !== null,
+  charges: s.pricePaise > 0,
 });
 export const stationRow = (s: Station): StationRow => ({
   ...counterStation(s),
@@ -104,6 +105,7 @@ export function slotsRoutes({ db, notify, secret, now = Date.now }: Deps) {
     id: r.id, stationId: r.stationId, kind: r.kind, status: r.status, count: r.count, start: r.startsAt.toISOString(), end: r.endsAt.toISOString(),
     who: r.userId ? (who.get(r.userId) ?? null) : null, why: r.reason, admitted: r.admitted,
     checkedInAt: isoOrNull(r.checkedInAt), checkedInBy: r.checkedInBy ? (who.get(r.checkedInBy) ?? null) : null, releasedAt: isoOrNull(r.releasedAt),
+    holdEndsAt: r.status === "held" ? isoOrNull(r.holdEndsAt) : null,
   });
   const oneClaim = async (r: Row) => claimOut(r, await names([r.userId, r.checkedInBy]));
 

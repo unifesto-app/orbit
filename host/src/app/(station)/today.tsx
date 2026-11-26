@@ -15,7 +15,7 @@ import { type ReactElement, useCallback, useEffect, useState } from 'react';
 import { AppState, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { type Claim, type Door, type StationType, type Venue, MIN, atDoor, dayLabel, door, hourWord, steps, taken, timeLabel } from '../../station/day';
+import { type Claim, type Door, type StationType, type Venue, MIN, atDoor, dayLabel, door, heldLine, hourWord, steps, taken, timeLabel } from '../../station/day';
 import { PushAsk } from '../../push';
 import { blank } from '../../station/live';
 import { useStation, useToday } from '../../station/state';
@@ -138,12 +138,14 @@ function NoShow({ venue: v, claim: c, now, onWait, onRelease }: { venue: Venue; 
 function NextUp({ touched, onTouch }: { touched: ReadonlySet<string>; onTouch: (id: string) => void }) {
   const { venue: v, claims, now, hours: h, checkIn, busy } = useToday();
   const from = Math.max(now, h.opens);
+  // An online booking still being paid for (or confirmed, when free) shows with its minutes left, whenever it starts.
   const rows = claims.filter(
     (c) =>
-      atDoor(c) &&
-      (touched.has(c.id) ||
-        (['soon', 'open', 'late', 'noShow'].includes(door(c, now)) && c.start <= from + SOON) ||
-        (door(c, now) === 'here' && (c.in ?? 0) < c.count)), // part of a group in: the rest are still due
+      heldLine(c, now) !== null ||
+      (atDoor(c) &&
+        (touched.has(c.id) ||
+          (['soon', 'open', 'late', 'noShow'].includes(door(c, now)) && c.start <= from + SOON) ||
+          (door(c, now) === 'here' && (c.in ?? 0) < c.count))), // part of a group in: the rest are still due
   );
   return (
     <>
@@ -154,6 +156,7 @@ function NextUp({ touched, onTouch }: { touched: ReadonlySet<string>; onTouch: (
         <View style={styles.rows}>
           {rows.map((c, i) => {
             const d = door(c, now);
+            const holding = heldLine(c, now);
             const mins = Math.round((now - c.start) / MIN);
             const lines: Record<Door, [object, string]> = {
               soon: [styles.dotSoon, `Check-in opens at ${timeLabel(c.start - 15 * MIN)}`],
@@ -165,7 +168,7 @@ function NextUp({ touched, onTouch }: { touched: ReadonlySet<string>; onTouch: (
               missed: [styles.dotLate, 'Never came'],
               released: [styles.dotLate, 'Released'],
             };
-            const [dot, line] = lines[d];
+            const [dot, line] = holding ? [styles.dotSoon, holding] : lines[d];
             return (
               <View key={c.id} style={[styles.row, i > 0 && styles.rule]}>
                 <View style={styles.grow}>
@@ -178,7 +181,7 @@ function NextUp({ touched, onTouch }: { touched: ReadonlySet<string>; onTouch: (
                     <Text style={styles.meta}>{line}</Text>
                   </View>
                 </View>
-                {['open', 'late', 'noShow'].includes(d) && <Pill label={busy.has(`claim:${c.id}`) ? 'Checking in…' : 'Check in'} disabled={busy.has(`claim:${c.id}`)} onPress={() => {
+                {!holding && ['open', 'late', 'noShow'].includes(d) && <Pill label={busy.has(`claim:${c.id}`) ? 'Checking in…' : 'Check in'} disabled={busy.has(`claim:${c.id}`)} onPress={() => {
                       checkIn(c.id);
                       onTouch(c.id);
                     }} />}

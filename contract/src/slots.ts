@@ -99,6 +99,7 @@ const OffPeakRow = z.object({ from: z.number(), to: z.number(), weekdays: z.bool
 export const CounterStation = z.object({
   id: z.string(), name: z.string(), unit: z.string(), tile: StationTile, count: z.number(),
   whole: z.boolean(), step: z.union([z.literal(30), z.literal(60)]), archived: z.boolean(),
+  charges: z.boolean(), // false: booked at ₹0, a hold confirmed, never paid for (no amount, so Desk still sees no money)
 });
 export type CounterStation = z.infer<typeof CounterStation>;
 export const StationRow = CounterStation.extend({
@@ -117,6 +118,7 @@ export const SlotClaim = z.object({
   id: z.string(), stationId: z.string(), kind: z.enum(CLAIM_KINDS), status: z.enum(CLAIM_STATUSES), count: z.number(),
   start: z.string(), end: z.string(), who: z.string().nullable(), why: z.string().nullable(), admitted: z.number(),
   checkedInAt: z.string().nullable(), checkedInBy: z.string().nullable(), releasedAt: z.string().nullable(),
+  holdEndsAt: z.string().nullable(), // a held booking's: when it lapses unless paid (or confirmed, when free)
 });
 export type SlotClaim = z.infer<typeof SlotClaim>;
 export const VenueDay = z.object({

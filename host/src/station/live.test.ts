@@ -3,19 +3,19 @@ import { test } from 'node:test';
 
 import type { VenueDay } from '@orbit/contract';
 
-import { HOUR, MIN, atDoor, door, steps, taken } from './day.ts';
+import { HOUR, MIN, atDoor, door, heldLine, steps, taken } from './day.ts';
 import { fromApi, plural } from './live.ts';
 
 const day = Date.UTC(2026, 10, 22) - 330 * MIN; // Sun 22 Nov 2026, midnight in India
 const iso = (h: number, m = 0) => new Date(day + h * HOUR + m * MIN).toISOString();
 const host = { hostId: 'h1', name: 'Respawn Zone' };
-const claim = { who: null, why: null, admitted: 0, checkedInAt: null, checkedInBy: null, releasedAt: null };
+const claim = { who: null, why: null, admitted: 0, checkedInAt: null, checkedInBy: null, releasedAt: null, holdEndsAt: null };
 const api: VenueDay = {
   opening: { day: iso(0), opens: iso(11), closes: iso(26), state: 'open' },
   logsWalkIns: false,
   stations: [
-    { id: 'pc', name: 'Gaming PC', unit: 'PC', tile: 'gaming', count: 12, whole: false, step: 30, archived: false },
-    { id: 'old', name: 'Old PC', unit: 'PC', tile: 'gaming', count: 2, whole: false, step: 30, archived: true },
+    { id: 'pc', name: 'Gaming PC', unit: 'PC', tile: 'gaming', count: 12, whole: false, step: 30, archived: false, charges: true },
+    { id: 'old', name: 'Old PC', unit: 'PC', tile: 'gaming', count: 2, whole: false, step: 30, archived: true, charges: true },
   ],
   claims: [
     { ...claim, id: 'b1', stationId: 'pc', kind: 'booking', status: 'paid', count: 2, start: iso(18), end: iso(20), who: 'Rahul S.' },
@@ -64,8 +64,18 @@ test('a held booking takes its stations but nobody is due at the door', () => {
   assert.equal(atDoor(fromApi(api, host, day).claims[0]!), true); // a paid one is
 });
 
+test('a held online booking: Paying… on a priced station, Holding on a free one, with minutes left, gone once lapsed', () => {
+  const now = day + 18 * HOUR;
+  const pitch = { id: 'pitch', name: 'Pitch', unit: 'pitch', tile: 'sports' as const, count: 1, whole: true, step: 60 as const, archived: false, charges: false };
+  const h = (id: string, stationId: string, ends: number) =>
+    ({ ...claim, id, stationId, kind: 'booking' as const, status: 'held' as const, count: 1, start: iso(20), end: iso(21), holdEndsAt: new Date(ends).toISOString() });
+  const t = fromApi({ ...api, stations: [...api.stations, pitch], claims: [h('a', 'pc', now + 7 * MIN), h('b', 'pitch', now + 90_000), h('c', 'pc', now - 1)] }, host, now);
+  assert.deepEqual(t.claims.map((c) => heldLine(c, now)), ['Paying… · 7 min left', 'Holding · 2 min left', null]);
+  assert.equal(heldLine(fromApi(api, host, now).claims[0]!, now), null); // a paid one isn't held
+});
+
 test('a pitch booked whole by the hour, and a claim on an archived station', () => {
-  const pitch = { id: 'pitch', name: '5-a-side football', unit: 'pitch', tile: 'sports' as const, count: 2, whole: true, step: 60 as const, archived: false };
+  const pitch = { id: 'pitch', name: '5-a-side football', unit: 'pitch', tile: 'sports' as const, count: 2, whole: true, step: 60 as const, archived: false, charges: false };
   const onOld = { ...claim, id: 'o', stationId: 'old', kind: 'walkin' as const, status: 'paid' as const, count: 1, start: iso(18), end: iso(19) };
   const t = fromApi({ ...api, stations: [...api.stations, pitch], claims: [onOld] }, host, day + 18 * HOUR);
   const p = t.venue.types.find((x) => x.id === 'pitch')!;

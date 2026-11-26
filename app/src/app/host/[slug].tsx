@@ -28,6 +28,8 @@ import { hostsApi, kindLabel, markOf } from '../../hosts';
 import { Icon } from '../../icons';
 import { countLine, fromPricePaise, perHour, startsLine, type Venue, venues } from '../../kinds';
 import { useLoad } from '../../load';
+import { timeLabel } from '../../booking';
+import { slotsApi, venueBar } from '../../slots';
 import { past as history } from '../../account/data';
 import { events, hosts, now } from '../../mock';
 import { OrbitSays } from '../../orbitSays';
@@ -206,6 +208,11 @@ function LiveHost({ slug }: { slug: string }) {
   const list = useLoad(`events|${slug}`, () => eventsApi(api).hostEvents(slug));
   // Your tap, shown until the next answer replaces the one it was made on.
   const [mine, setMine] = useState<{ of: PublicHost; on: boolean } | null>(null);
+  // A real place to play (a Venue host) gets the Book a slot bar from today's free slots (X8): the cheapest hour and the
+  // next start with room. A venue not set up or not live answers 404: no bar.
+  const venueId = page.data?.kind === 'venue' ? page.data.id : null;
+  const slots = useLoad(venueId && `slots|${venueId}`, () => slotsApi(api).publicSlots(venueId!));
+  const [bar, setBar] = useState(insets.bottom + 108); // room for the bar, a guess until measured
   if (page.loading) return <Waiting />;
   if (page.status === 404) {
     const mock = hosts.find((h) => h.id === slug);
@@ -215,6 +222,7 @@ function LiveHost({ slug }: { slug: string }) {
 
   const h = page.data;
   const mark = markOf(h);
+  const book = slots.data && venueBar(slots.data);
   const following = mine?.of === h ? mine.on : !!h.following;
   const followers = h.followers === null ? null : followersLine(h.followers);
   const follow = () =>
@@ -237,7 +245,7 @@ function LiveHost({ slug }: { slug: string }) {
       <Glow tint={mark.bg} />
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingTop: insets.top + TOP, paddingBottom: (Platform.OS === 'ios' ? insets.bottom : 0) + space.big }}>
+        contentContainerStyle={{ paddingTop: insets.top + TOP, paddingBottom: book ? bar : (Platform.OS === 'ios' ? insets.bottom : 0) + space.big }}>
         <View style={styles.head}>
           <Glass style={styles.logoRim}>
             <Monogram mark={mark} size={LOGO} />
@@ -316,6 +324,17 @@ function LiveHost({ slug }: { slug: string }) {
           </>
         )}
       </ScrollView>
+      {book && (
+        <BookBar
+          dark
+          price={perHour(book.fromPaise)}
+          from
+          note={book.next !== null ? `Next free ${timeLabel(book.next)}` : 'Nothing free today'}
+          action="Book a slot"
+          onAction={() => needsAccount(() => router.push({ pathname: '/slot/[venue]', params: { venue: h.id, name: h.name } }))}
+          onHeight={setBar}
+        />
+      )}
       <BackBar dark>
         <MenuButton
           tint={DARK_TINT}
