@@ -4,6 +4,7 @@ import { authRoutes, type Deps } from "./auth/routes.ts";
 import { deletionRoutes } from "./auth/deletion.ts";
 import { securityRoutes } from "./auth/security.ts";
 import { eventsRoutes } from "./events/routes.ts";
+import { galaxyEventsRoutes } from "./events/galaxy.ts";
 import { announcementsRoutes } from "./announcements.ts";
 import { publicEventsRoutes } from "./events/public.ts";
 import { savesRoutes } from "./saves.ts";
@@ -45,6 +46,7 @@ export function createApp(deps?: Deps) {
     app.route("/", hostsRoutes(deps));
     app.route("/", requestsRoutes(deps));
     app.route("/", eventsRoutes(deps));
+    app.route("/", galaxyEventsRoutes(deps));
     app.route("/", announcementsRoutes(deps));
     app.route("/", publicEventsRoutes(deps));
     app.route("/", savesRoutes(deps));

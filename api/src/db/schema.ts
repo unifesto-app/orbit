@@ -67,6 +67,9 @@ export const hosts = pgTable("hosts", {
   parentId: uuid("parent_id").references((): AnyPgColumn => hosts.id),
   suspendReason: text("suspend_reason"), // what staff said, shown to the host's Admins
   liftTo: text("lift_to", { enum: ["live", "paused", "archived"] }), // where a staff lift returns a staff-suspended host
+  // How Orbit's 5% fee splits (owner, 25 Nov 2026): 3% from the buyer + 2% from the host, or 5% from the buyer + 0%.
+  // Only stored here; charging it is the payments slice's (X2/X3).
+  feePlan: text("fee_plan", { enum: ["3+2", "5+0"] }).notNull().default("3+2"),
   createdAt: at("created_at").notNull().defaultNow(),
   updatedAt: at("updated_at").notNull().defaultNow(),
 }, (t) => [index().on(t.parentId)]);
