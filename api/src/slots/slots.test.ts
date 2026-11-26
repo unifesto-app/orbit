@@ -591,3 +591,54 @@ test("a Desk invite nobody has accepted doesn't keep a host a Venue, and can't s
     await t.close();
   }
 });
+
+test("a seat on a venue not set up yet hears noVenue; no seat, or a removed one, hears notFound", async () => {
+  const w = await world();
+  const { t, as, admin, desk, stranger, A } = w;
+  try {
+    for (const [u, path] of [[admin, `/venues/${A}`], [admin, `/venues/${A}/day`], [desk, `/venues/${A}/day`]] as const) {
+      const r = await as(u)("GET", path);
+      assert.equal(r.status, 404);
+      assert.equal(r.body.error, "noVenue", `${u.name} ${path}`);
+    }
+    await w.setup(A, w.everyDay([11, 26]));
+    assert.equal((await as(desk)("GET", `/venues/${A}/day`)).status, 200);
+    const out = await as(stranger)("GET", `/venues/${A}/day`);
+    assert.equal(out.status, 404);
+    assert.equal(out.body.error, "notFound");
+    // The Desk seat removed: the same read is notFound now.
+    const seat = (await as(admin)("GET", `/hosts/${A}/team`)).body.members.find((m: any) => m.userId === desk.me.id).id;
+    assert.equal((await as(admin)("DELETE", `/hosts/${A}/team/${seat}`)).status, 204);
+    const gone = await as(desk)("GET", `/venues/${A}/day`);
+    assert.equal(gone.status, 404);
+    assert.equal(gone.body.error, "notFound");
+  } finally {
+    await t.close();
+  }
+});
+
+test("anyone signed in holds a slot through the route", async () => {
+  const w = await world();
+  const { t, as, booker, booker2, A, C } = w;
+  try {
+    await w.setup(A, w.everyDay([11, 26]));
+    const s = await w.station(A, w.pc(2));
+    const seven = w.base + 40 * MIN;
+    const body = { stationId: s.id, start: iso(seven), hours: 1, count: 2 };
+    const ok = await as(booker)("POST", `/venues/${A}/holds`, body);
+    assert.equal(ok.status, 201, JSON.stringify(ok.body));
+    assert.deepEqual(ok.body, { id: ok.body.id, stationId: s.id, start: iso(seven), end: iso(seven + HOUR), count: 2, holdEndsAt: iso(t.now() + 10 * MIN) });
+    // Someone else finds it full.
+    const full = await as(booker2)("POST", `/venues/${A}/holds`, { ...body, count: 1 });
+    assert.equal(full.status, 409);
+    assert.equal(full.body.error, "full");
+    assert.equal((await as(booker2)("POST", `/venues/${A}/holds`, { ...body, hours: 0 })).status, 400);
+    assert.equal((await as(booker2)("POST", `/venues/${A}/holds`, { ...body, start: "7 PM" })).status, 400);
+    assert.equal((await as(booker2)("POST", `/venues/${A}/holds`, { ...body, start: iso(seven + 7 * MIN), count: 1 })).body.error, "badTime");
+    assert.equal((await as(booker2)("POST", `/venues/${C}/holds`, body)).status, 404);
+    assert.equal((await as(booker2)("POST", `/venues/abc/holds`, body)).status, 404);
+    assert.equal((await t.call("POST", `/venues/${A}/holds`, body)).status, 401);
+  } finally {
+    await t.close();
+  }
+});

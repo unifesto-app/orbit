@@ -1,16 +1,23 @@
 import { and, eq, gt, inArray } from "drizzle-orm";
 import type { Db } from "../db/index.ts";
 import { hosts, stationClaims, stations, users, venues } from "../db/schema.ts";
-import { fits, hours, HOUR, MIN } from "./rules.ts";
-import { toClaim } from "./routes.ts";
+import { type Claim, fits, hours, HOUR, MIN } from "./rules.ts";
 
 // A player's hold on a slot while they pay (Play, "Backend shape"). It counts for 10 minutes and then lapses by itself:
 // no job, the counting rule just stops reading it.
-// ponytail: no route yet. There's no checkout to pay a hold, so the booking slice wraps this; until then only tests call it.
+// POST /venues/:hostId/holds (routes.ts) makes one. ponytail: nothing pays a hold yet; that waits on the booking/checkout
+// slice, so for now every hold simply lapses.
 export const HOLD_MINUTES = 10;
 const IST = 330 * MIN;
 const DAY = 24 * HOUR;
 const SLOT_DAYS = 14; // today's opening, or one of the next 13
+
+// The rules' view of a stored claim. Here, not in routes.ts, so routes can import hold without a cycle.
+export const toClaim = (r: Held): Claim => ({
+  id: r.id, stationId: r.stationId, kind: r.kind, status: r.status, count: r.count, start: r.startsAt.getTime(), end: r.endsAt.getTime(),
+  holdEnd: r.holdEndsAt?.getTime() ?? null, admitted: r.admitted, checkedIn: r.checkedInAt?.getTime() ?? null, checkedInBy: r.checkedInBy,
+  released: r.releasedAt?.getTime() ?? null,
+});
 
 export type HoldInput = { hostId: string; stationId: string; userId: string; start: number; hours: number; count: number };
 export type Held = typeof stationClaims.$inferSelect;

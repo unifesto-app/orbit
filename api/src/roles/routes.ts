@@ -86,7 +86,10 @@ export function rolesRoutes({ db, store, notify, secret, now = Date.now }: Deps)
       t.mine.role === "admin"
         ? rows
             .filter((r) => waiting(r.seat, now()))
-            .map((r) => ({ id: r.seat.id, contact: r.seat.contact, accepted: !!r.seat.acceptedAt, acceptedBy: r.seat.acceptedAt ? r.name : null, addedBy: r.seat.addedBy }))
+            .map((r) => ({
+              id: r.seat.id, contact: r.seat.contact, role: r.seat.role, sentAt: r.seat.addedAt.toISOString(), accepted: !!r.seat.acceptedAt,
+              acceptedBy: r.seat.acceptedAt ? r.name : null, addedBy: r.seat.addedBy,
+            }))
         : [];
     return c.json({ members, invites });
   });

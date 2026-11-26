@@ -1,4 +1,6 @@
 // Venue's words and checks (Station take 4, approved 22 Nov 2026), pure so venue.test.ts runs them on Node.
+import type { VenueGone } from '@orbit/contract';
+
 import { paiseFrom, rupees } from '../money.ts';
 import { HOUR, hourWord, type StationType } from './day.ts';
 
@@ -72,7 +74,7 @@ export type Authed = <T>(method: Method, path: string, body?: unknown) => Promis
 /** GET /hosts/:id/team as an Admin reads it. */
 export type TeamList = {
   members: { id: string; userId: string | null; name: string | null; role: string; owner: boolean }[];
-  invites: { id: string; contact: string; accepted: boolean; acceptedBy: string | null; addedBy: string }[];
+  invites: { id: string; contact: string; role?: string; sentAt?: string; accepted: boolean; acceptedBy: string | null; addedBy: string }[];
 };
 /** The station fields the API takes and sends (contract NewStation / StationRow), money in paise. */
 export type StationBody = { name: string; unit: string; count: number; pricePaise: number; coopPaise: number | null; offPeak: { from: number; to: number; weekdays: boolean; pricePaise: number } | null; games: string | null };
@@ -82,10 +84,7 @@ export type Pin = { lat: number; lng: number; placeId: string | null };
 export type Settings = { address: string; area: string; lat: number; lng: number; placeId: string | null; deskPhone: string; week: ([number, number] | null)[]; cutoffMinutes: number; logsWalkIns: boolean };
 /** Someone on the team (`id` is their seat). */
 export type Member = { id: string; name: string; role: 'Admin' | 'Desk'; you?: boolean; owner?: boolean };
-/**
- * An invite waiting (`id` is the seat it makes). An accepted Admin invite waits for its adder's confirm.
- * ponytail: no role or sent time from GET /hosts/:id/team yet; they show once the API sends them.
- */
+/** An invite waiting (`id` is the seat it makes). An accepted Admin invite waits for its adder's confirm. */
 export type Invite = { id: string; contact: string; role?: 'Admin' | 'Desk'; sent?: number; accepted?: boolean; acceptedBy?: string | null; addedBy?: string; byYou?: boolean; adder?: string | null };
 /**
  * A venue's page and settings as Venue draws them, with its team and weekly hours (Sunday first). The API's area and map
@@ -160,9 +159,17 @@ export function pinFrom(text: string): { lat: number; lng: number } | undefined 
 export const refusal = (r: { status: number; error: { message: string } }, sent = false) =>
   r.status !== 0 ? r.error.message : sent ? 'It may have gone through. Check before trying again.' : 'Can’t reach Orbit. Try again.';
 
-/** GET /venues/:hostId's answer: a 404 is a venue not set up yet (null); a payload `check` can't read is an error. */
+/** A 404 from GET /venues/:hostId or its /day saying the seat is there but the venue isn't set up yet. */
+const NO_VENUE: VenueGone = 'noVenue';
+export const notSetUp = (r: { status: number; error: { error: string } | null }) => r.status === 404 && r.error?.error === NO_VENUE;
+/** Any other 404 there: no seat (removed from the team, or the host no longer a Venue). */
+export const LOST_SEAT = 'You’re no longer on this venue’s team.';
+/**
+ * GET /venues/:hostId's answer: a venue not set up yet is null; a payload `check` can't read is an error. Any other 404
+ * (notFound) is the seat gone, an error the screen says as such.
+ */
 export function readVenue<T>(r: Res<unknown>, check: (x: unknown) => T | undefined): Res<T | null> {
-  if (!r.ok) return r.status === 404 ? { ok: true, data: null } : r;
+  if (!r.ok) return notSetUp(r) ? { ok: true, data: null } : r;
   const d = check(r.data);
   return d === undefined ? { ok: false, status: 200, error: { error: 'unreadable', message: 'Orbit sent a venue this app can’t read. Update the app.' } } : { ok: true, data: d };
 }
@@ -224,7 +231,14 @@ export function teamFrom(list: TeamList, meId: string): { team: Member[]; invite
     .map((m): Member => ({ id: m.id, name: m.name ?? 'Someone', role: m.role === 'admin' ? 'Admin' : 'Desk', you: m.userId === meId || undefined, owner: m.owner || undefined }))
     .sort((a, b) => Number(!!b.owner) - Number(!!a.owner));
   // Only whoever sent an Admin invite confirms it (api/src/roles/rules.ts confirmSeatRule): `byYou`, else who to wait for.
-  // ponytail: no role or sent time on an invite; GET /hosts/:id/team would need to send them.
+  // An older API sends no role or sent time: they're left out, and the row says Waiting.
   const adder = (id: string) => list.members.find((m) => m.userId === id)?.name ?? null;
-  return { team, invites: list.invites.map((x) => ({ id: x.id, contact: x.contact, accepted: x.accepted, acceptedBy: x.acceptedBy, addedBy: x.addedBy, byYou: x.addedBy === meId, adder: adder(x.addedBy) })) };
+  const sent = (at: string | undefined) => (at && Number.isFinite(Date.parse(at)) ? Date.parse(at) : undefined);
+  return {
+    team,
+    invites: list.invites.map((x) => ({
+      id: x.id, contact: x.contact, role: x.role === 'admin' ? 'Admin' : x.role === 'crew' ? 'Desk' : undefined, sent: sent(x.sentAt), accepted: x.accepted,
+      acceptedBy: x.acceptedBy, addedBy: x.addedBy, byYou: x.addedBy === meId, adder: adder(x.addedBy),
+    })),
+  };
 }
