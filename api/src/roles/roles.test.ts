@@ -530,7 +530,8 @@ test("a people search stores how, and the ids, never the query", async () => {
   const s = await join(), other = await join();
   await give(s, "people");
   await as(s)("GET", `/galaxy/people?q=${encodeURIComponent(e164(other.p))}`);
-  const row = (await audits("people.search")).at(-1)!;
+  // Rows come back in no set order, so take the one this searcher wrote, not the last.
+  const row = (await audits("people.search")).find((a) => a.actorId === s.me.id)!;
   assert.deepEqual(row.data, { by: "phone", results: [other.me.id] });
   assert.ok(!JSON.stringify(row.data).includes(other.p));
 });
