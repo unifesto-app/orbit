@@ -1,4 +1,4 @@
-import { and, count, eq, gt, isNull } from "drizzle-orm";
+import { and, count, eq, getTableColumns, gt, isNull, lt, or, sql } from "drizzle-orm";
 import type { Db } from "../db/index.ts";
 import { hosts, slotAlerts, stations, venues } from "../db/schema.ts";
 import type { Notify } from "../http.ts";
@@ -11,6 +11,8 @@ import { type Claim, fits, HOUR } from "./rules.ts";
 
 // ponytail: a guess, against one account filling the table; per user, waiting ones only.
 export const MAX_OPEN_ALERTS = 5;
+const KEEP_DAYS = 30;
+const DAY = 24 * HOUR;
 
 export type Alert = typeof slotAlerts.$inferSelect;
 export type AlertResult = { ok: true; alert: Alert; made: boolean } | { ok: false; error: "notFound" | "hostClosed" | "badTime" | "badCount" | "tooMany" | "tooOften" | "notFull" };
@@ -32,26 +34,34 @@ export async function askAlert(db: Db, i: HoldInput, now: number): Promise<Alert
   const claims = (await claimsFrom(db, s.id, start, at)).filter((r) => !(r.kind === "booking" && r.status === "held" && r.userId === i.userId));
   if (fits(claims.map(toClaim), stationRule(s), i.start, end, i.count, now)) return { ok: false, error: "notFull" };
   const mine = and(eq(slotAlerts.userId, i.userId), eq(slotAlerts.stationId, s.id), eq(slotAlerts.startsAt, start), isNull(slotAlerts.sentAt));
-  const [had] = await db.select().from(slotAlerts).where(mine);
-  if (had) return { ok: true, alert: had, made: false };
-  // ponytail: two asks at once can both pass the cap by one; harmless at 5.
-  const [open] = await db.select({ n: count() }).from(slotAlerts).where(and(eq(slotAlerts.userId, i.userId), isNull(slotAlerts.sentAt), gt(slotAlerts.startsAt, at)));
-  if (open!.n >= MAX_OPEN_ALERTS) return { ok: false, error: "tooOften" };
-  const [made] = await db
+  const values = { endsAt: new Date(end), count: i.count };
+  // Asking again is one ask: a waiting one takes the new hours and count (and isn't held to the cap).
+  const [had] = await db.select({ id: slotAlerts.id }).from(slotAlerts).where(mine);
+  if (!had) {
+    // ponytail: two asks at once can both pass the cap by one; harmless at 5.
+    const [open] = await db.select({ n: count() }).from(slotAlerts).where(and(eq(slotAlerts.userId, i.userId), isNull(slotAlerts.sentAt), gt(slotAlerts.startsAt, at)));
+    if (open!.n >= MAX_OPEN_ALERTS) return { ok: false, error: "tooOften" };
+  }
+  // The upsert answers the race too: a twin ask landing between the read and here is updated, not a 500.
+  const [row] = await db
     .insert(slotAlerts)
-    .values({ userId: i.userId, stationId: s.id, startsAt: start, endsAt: new Date(end), count: i.count, createdAt: at })
-    .onConflictDoNothing()
-    .returning();
-  return made ? { ok: true, alert: made, made: true } : { ok: true, alert: (await db.select().from(slotAlerts).where(mine))[0]!, made: false };
+    .values({ userId: i.userId, stationId: s.id, startsAt: start, createdAt: at, ...values })
+    .onConflictDoUpdate({ target: [slotAlerts.userId, slotAlerts.stationId, slotAlerts.startsAt], targetWhere: isNull(slotAlerts.sentAt), set: values })
+    .returning({ ...getTableColumns(slotAlerts), made: sql<boolean>`xmax = 0` });
+  const { made, ...alert } = row!;
+  return { ok: true, alert, made };
 }
 
 /**
  * Every waiting alert (not sent, start ahead) whose slot fits again is marked sent and pushed, once. Run every minute
- * (server.ts). ponytail: one box; on more than one, each runs it and the conditional update (sent_at still null) makes
+ * (server.ts). One alert failing is logged and never stops the rest (it's tried again next minute). Alerts sent, or
+ * whose slot started, more than 30 days ago are deleted. ponytail: one box; on more than one, each runs it and the conditional update (sent_at still null) makes
  * only one of them send.
  */
 export async function sweepSlotAlerts(db: Db, notify: Notify, now: number) {
   const at = new Date(now);
+  const old = new Date(now - KEEP_DAYS * DAY);
+  await db.delete(slotAlerts).where(or(lt(slotAlerts.sentAt, old), lt(slotAlerts.startsAt, old)));
   const open = await db
     .select({ a: slotAlerts, s: stations, hostName: hosts.name, hostStatus: hosts.status })
     .from(slotAlerts)
@@ -64,12 +74,16 @@ export async function sweepSlotAlerts(db: Db, notify: Notify, now: number) {
     let claims = byStation.get(s.id);
     if (!claims) byStation.set(s.id, (claims = (await claimsFrom(db, s.id, at, at)).map(toClaim)));
     if (!fits(claims, stationRule(s), a.startsAt.getTime(), a.endsAt.getTime(), a.count, now)) continue;
-    await db.transaction(async (tx) => {
-      const [sent] = await tx.update(slotAlerts).set({ sentAt: at }).where(and(eq(slotAlerts.id, a.id), isNull(slotAlerts.sentAt))).returning({ id: slotAlerts.id });
-      if (!sent) return;
-      // venueId: the app's slot screen opens by it (a venue's id is its host's).
-      const data = { alertId: a.id, hostId: s.hostId, venueId: s.hostId, hostName, station: s.name, start: a.startsAt.toISOString() };
-      await notify({ to: { userId: a.userId }, kind: "slotFreedAgain", data, key: a.id }, tx);
-    });
+    try {
+      await db.transaction(async (tx) => {
+        const [sent] = await tx.update(slotAlerts).set({ sentAt: at }).where(and(eq(slotAlerts.id, a.id), isNull(slotAlerts.sentAt))).returning({ id: slotAlerts.id });
+        if (!sent) return;
+        // venueId: the app's slot screen opens by it (a venue's id is its host's).
+        const data = { alertId: a.id, hostId: s.hostId, venueId: s.hostId, hostName, station: s.name, start: a.startsAt.toISOString() };
+        await notify({ to: { userId: a.userId }, kind: "slotFreedAgain", data, key: a.id }, tx);
+      });
+    } catch (e) {
+      console.error(`[slot alerts] ${a.id}`, e);
+    }
   }
 }

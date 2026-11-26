@@ -107,20 +107,22 @@ export const stationRule = (s: typeof stations.$inferSelect) => ({ id: s.id, ste
 // A claim's world, locked in hold()'s order: its person (no key update), the host and venue (share), the station (for
 // update), then the claim (for update). The claim's person and station never change, so reading them first is safe.
 // Locking twice in one transaction is a no-op, so a caller may lock, check, then call confirmHold.
-export async function lockHold(tx: Tx, claimId: string) {
+// `only`: a player's route; someone else's claim, or one at another host, is null before any lock is taken.
+// Null too when the claim is gone by the time it's locked.
+export async function lockHold(tx: Tx, claimId: string, only?: { userId: string; hostId: string }) {
   const [peek] = await tx
-    .select({ userId: stationClaims.userId, hostId: stations.hostId })
+    .select({ userId: stationClaims.userId, hostId: stations.hostId, stationId: stationClaims.stationId })
     .from(stationClaims)
     .innerJoin(stations, eq(stations.id, stationClaims.stationId))
     .where(eq(stationClaims.id, claimId));
-  if (!peek) return null;
+  if (!peek || (only && (peek.userId !== only.userId || peek.hostId !== only.hostId))) return null;
   if (peek.userId) await tx.select({ id: users.id }).from(users).where(eq(users.id, peek.userId)).for("no key update");
   const [host] = await tx.select().from(hosts).where(eq(hosts.id, peek.hostId)).for("share");
   const [venue] = await tx.select().from(venues).where(eq(venues.hostId, peek.hostId)).for("share");
-  const [claim] = await tx.select().from(stationClaims).where(eq(stationClaims.id, claimId));
-  const [station] = await tx.select().from(stations).where(eq(stations.id, claim!.stationId)).for("update");
-  const [locked] = await tx.select().from(stationClaims).where(eq(stationClaims.id, claimId)).for("update");
-  return { host: host!, venue: venue!, station: station!, claim: locked! };
+  const [station] = await tx.select().from(stations).where(eq(stations.id, peek.stationId)).for("update");
+  const [claim] = await tx.select().from(stationClaims).where(eq(stationClaims.id, claimId)).for("update");
+  if (!host || !venue || !station || !claim) return null;
+  return { host, venue, station, claim };
 }
 
 export type ConfirmResult = { ok: true; claim: Held } | { ok: false; error: "notFound" | "notHeld" | "full" };
@@ -130,12 +132,14 @@ export type ConfirmResult = { ok: true; claim: Held } | { ok: false; error: "not
  * it runs inside the caller's transaction:
  * - POST /venues/:hostId/holds/:claimId/confirm calls it for a free slot (no money);
  * - X2 (Razorpay) calls this same function from its payment webhook, after verifying the order.
- * The rule:
- * - a live hold confirms;
- * - a lapsed hold (still "held", hold_ends_at <= now: money landed late, or a free confirm after the 10 minutes)
- *   confirms only if the slot still fits its window and count, with the claim itself left out of the counted claims,
- *   on a live venue and a station not archived, and before its start. Otherwise { ok: false, error: "full" } and
- *   nothing changes: X2 then refunds;
+ * The rule, checked under the station's lock whatever `now` the caller read before locking:
+ * - the venue is live and the station not archived;
+ * - the slot still fits its window and count, with the claim itself left out of the counted claims (so a stale `now`
+ *   that still calls the hold live can't double book);
+ * - a lapsed hold (still "held", hold_ends_at <= now: money landed late, or a free confirm after the 10 minutes) also
+ *   only before its start and inside the venue's hours as they are now.
+ * Otherwise { ok: false, error: "full" } and nothing changes: X2 then refunds. A hold let go (released_at) still
+ * confirms here, as money landed for it; released_at is cleared so the ticket reads as booked.
  * - any other status is "notHeld" (already paid: the caller answers a retry as it likes).
  * ponytail: a QR or code that meets another's fails the unique check and the caller's transaction (30^8 codes; bookings
  * retry, this doesn't yet).
@@ -143,17 +147,21 @@ export type ConfirmResult = { ok: true; claim: Held } | { ok: false; error: "not
 export async function confirmHold(tx: Tx, claimId: string, now: number): Promise<ConfirmResult> {
   const k = await lockHold(tx, claimId);
   if (!k) return { ok: false, error: "notFound" };
-  const { claim: c, station: s, host } = k;
+  const { claim: c, station: s, host, venue } = k;
   if (c.kind !== "booking" || c.status !== "held") return { ok: false, error: "notHeld" };
   const at = new Date(now);
+  if (s.archivedAt || host.status !== "live") return { ok: false, error: "full" };
+  const start = c.startsAt.getTime();
+  const end = c.endsAt.getTime();
   if (c.holdEndsAt! <= at) {
-    if (s.archivedAt || host.status !== "live" || c.startsAt < at) return { ok: false, error: "full" };
-    const rows = (await claimsFrom(tx, s.id, c.startsAt, at)).filter((r) => r.id !== c.id);
-    if (!fits(rows.map(toClaim), stationRule(s), c.startsAt.getTime(), c.endsAt.getTime(), c.count, now)) return { ok: false, error: "full" };
+    const open = hours(venue.week, start);
+    if (start < now || start < open.opens || end > open.closes) return { ok: false, error: "full" };
   }
+  const rows = (await claimsFrom(tx, s.id, c.startsAt, at)).filter((r) => r.id !== c.id);
+  if (!fits(rows.map(toClaim), stationRule(s), start, end, c.count, now)) return { ok: false, error: "full" };
   const [row] = await tx
     .update(stationClaims)
-    .set({ status: "paid", holdEndsAt: null, qr: token(), code: code(), updatedAt: at })
+    .set({ status: "paid", holdEndsAt: null, releasedAt: null, releasedBy: null, qr: token(), code: code(), updatedAt: at })
     .where(eq(stationClaims.id, c.id))
     .returning();
   return { ok: true, claim: row! };

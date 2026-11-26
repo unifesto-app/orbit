@@ -54,7 +54,8 @@ export function galaxySlotsRoutes({ db, secret, notify, now = Date.now }: Deps) 
     return c.json(body);
   });
 
-  // POST /galaxy/slot-holds/:claimId/release: a live hold ends now, as if the player let go.
+  // POST /galaxy/slot-holds/:claimId/release: a live hold ends now, as if the player let go (released_at, so the free
+  // confirm refuses it).
   app.post("/galaxy/slot-holds/:claimId/release", auth, staff, async (c) => {
     const claimId = c.req.param("claimId");
     if (!isUuid(claimId)) return fail(c, 404, "notFound", "There's nothing here.");
@@ -65,7 +66,7 @@ export function galaxySlotsRoutes({ db, secret, notify, now = Date.now }: Deps) 
     const done = await db.transaction(async (tx) => {
       const k = await lockHold(tx, claimId);
       if (!k || k.claim.kind !== "booking" || k.claim.status !== "held" || k.claim.holdEndsAt! <= at) return null;
-      await tx.update(stationClaims).set({ holdEndsAt: at, updatedAt: at }).where(eq(stationClaims.id, claimId));
+      await tx.update(stationClaims).set({ holdEndsAt: at, releasedAt: at, releasedBy: actorId, updatedAt: at }).where(eq(stationClaims.id, claimId));
       await tx.insert(auditLog).values({ actorId, action: "slots.releaseHold", targetUser: k.claim.userId, targetHost: k.host.id, reason: b.reason, data: { claimId }, at });
       return k.host;
     });

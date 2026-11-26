@@ -2,9 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { and, eq } from "drizzle-orm";
 import { testApp } from "../testkit.ts";
-import { auditLog, hosts, slotAlerts, staffGrants, stationClaims } from "../db/schema.ts";
+import { auditLog, hosts, slotAlerts, staffGrants, stationClaims, stations, users, venues } from "../db/schema.ts";
+import { runDeletions } from "../auth/deletion.ts";
 import { sweepSlotAlerts } from "./alerts.ts";
-import { hold } from "./hold.ts";
+import { confirmHold, hold } from "./hold.ts";
 
 // The slots API against a real database. Every test starts a fresh world and moves the clock to 6:20 PM India time.
 const device = { name: "iPhone", client: "app" as const };
@@ -878,6 +879,189 @@ test("Galaxy lists live holds and alerts and releases a hold, for holders of Hos
     assert.equal(logged.length, 1);
     assert.equal(logged[0]!.targetUser, booker.me.id);
     assert.equal((await as(booker2)("POST", `/venues/${A}/holds`, body)).status, 201);
+  } finally {
+    await t.close();
+  }
+});
+
+test("a hold let go, by the player or Galaxy, can't be confirmed free; a late payment still confirms it", async () => {
+  const w = await world();
+  const { t, as, booker, booker2, stranger, A } = w;
+  try {
+    const { s, seven } = await freeVenue(w);
+    const body = { stationId: s.id, start: iso(seven), hours: 1, count: 1 };
+    const h = (await as(booker)("POST", `/venues/${A}/holds`, body)).body;
+    assert.equal((await as(booker)("DELETE", `/venues/${A}/holds/${h.id}`)).status, 204);
+    const [row] = await t.db.select().from(stationClaims).where(eq(stationClaims.id, h.id));
+    assert.equal(row!.releasedBy, booker.me.id);
+    const refused = await as(booker)("POST", `/venues/${A}/holds/${h.id}/confirm`);
+    assert.equal(refused.status, 409);
+    assert.equal(refused.body.error, "letGo");
+
+    await t.db.insert(staffGrants).values({ userId: stranger.me.id, feature: "hosts", addedBy: stranger.me.id, addedAt: new Date(t.now() - 2 * DAY), startsAt: new Date(t.now() - DAY) });
+    const g = (await as(booker2)("POST", `/venues/${A}/holds`, { ...body, start: iso(seven + HOUR) })).body;
+    assert.equal((await as(stranger)("POST", `/galaxy/slot-holds/${g.id}/release`, { reason: "Stuck" })).status, 204);
+    const [gr] = await t.db.select().from(stationClaims).where(eq(stationClaims.id, g.id));
+    assert.equal(gr!.releasedBy, stranger.me.id);
+    assert.equal((await as(booker2)("POST", `/venues/${A}/holds/${g.id}/confirm`)).body.error, "letGo");
+
+    // Money landed for the one let go (X2's webhook): it confirms, and reads as booked, not released.
+    const paid = await t.db.transaction((tx) => confirmHold(tx, h.id, t.now()));
+    assert.equal(paid.ok, true);
+    assert.equal(paid.ok && paid.claim.releasedAt, null);
+    assert.equal(paid.ok && paid.claim.status, "paid");
+  } finally {
+    await t.close();
+  }
+});
+
+test("confirmHold with a stale now can't double book", async () => {
+  const w = await world();
+  const { t, as, booker, booker2, A } = w;
+  try {
+    const { s, seven } = await freeVenue(w);
+    const body = { stationId: s.id, start: iso(seven), hours: 1, count: 1 };
+    const stale = t.now();
+    const first = (await as(booker)("POST", `/venues/${A}/holds`, body)).body;
+    t.tick(11 * MIN);
+    assert.equal((await as(booker2)("POST", `/venues/${A}/holds`, body)).status, 201);
+    // A webhook that read the clock before the first hold lapsed still sees the second.
+    const r = await t.db.transaction((tx) => confirmHold(tx, first.id, stale + MIN));
+    assert.deepEqual(r, { ok: false, error: "full" });
+    await w.invariant(s.id, 1);
+  } finally {
+    await t.close();
+  }
+});
+
+test("a lapsed hold won't confirm after its start, on an archived station, a closed venue, or outside new hours", async () => {
+  const w = await world();
+  const { t, booker, A } = w;
+  try {
+    const { s, seven } = await freeVenue(w);
+    const lapsed = async (start: number) =>
+      (await t.db.insert(stationClaims).values({
+        stationId: s.id, kind: "booking", status: "held", count: 1, startsAt: new Date(start), endsAt: new Date(start + HOUR),
+        holdEndsAt: new Date(t.now() - MIN), userId: booker.me.id,
+      }).returning())[0]!;
+    const confirm = (id: string) => t.db.transaction((tx) => confirmHold(tx, id, t.now()));
+    const FULL = { ok: false, error: "full" };
+
+    assert.deepEqual(await confirm((await lapsed(t.now() - 30 * MIN)).id), FULL); // started
+
+    const later = await lapsed(seven + 2 * HOUR);
+    await t.db.update(stations).set({ archivedAt: new Date(t.now()) }).where(eq(stations.id, s.id));
+    assert.deepEqual(await confirm(later.id), FULL);
+    await t.db.update(stations).set({ archivedAt: null }).where(eq(stations.id, s.id));
+
+    await t.db.update(hosts).set({ status: "paused" }).where(eq(hosts.id, A));
+    assert.deepEqual(await confirm(later.id), FULL);
+    await t.db.update(hosts).set({ status: "live" }).where(eq(hosts.id, A));
+
+    // The venue now closes at 8 PM: a 9 PM slot is outside its hours.
+    await t.db.update(venues).set({ week: w.everyDay([11, 20]) }).where(eq(venues.hostId, A));
+    assert.deepEqual(await confirm(later.id), FULL);
+    await t.db.update(venues).set({ week: w.everyDay([11, 26]) }).where(eq(venues.hostId, A));
+    assert.equal((await confirm(later.id)).ok, true);
+  } finally {
+    await t.close();
+  }
+});
+
+test("confirm and let go answer 404 on the wrong host", async () => {
+  const w = await world();
+  const { t, as, booker, A, B } = w;
+  try {
+    const { s, seven } = await freeVenue(w);
+    const h = (await as(booker)("POST", `/venues/${A}/holds`, { stationId: s.id, start: iso(seven), hours: 1, count: 1 })).body;
+    assert.equal((await as(booker)("POST", `/venues/${B}/holds/${h.id}/confirm`)).status, 404);
+    assert.equal((await as(booker)("DELETE", `/venues/${B}/holds/${h.id}`)).status, 404);
+    const [row] = await t.db.select().from(stationClaims).where(eq(stationClaims.id, h.id));
+    assert.equal(row!.status, "held");
+    assert.equal(row!.releasedAt, null);
+  } finally {
+    await t.close();
+  }
+});
+
+test("the alert sweep carries on past one that fails and sends it once next time; old alerts are pruned", async () => {
+  const w = await world();
+  const { t, as, booker, booker2, stranger, A } = w;
+  try {
+    const { s, seven } = await freeVenue(w);
+    const body = { stationId: s.id, start: iso(seven), hours: 1, count: 1 };
+    await as(booker)("POST", `/venues/${A}/holds`, body);
+    assert.equal((await as(booker2)("POST", `/venues/${A}/alerts`, body)).status, 201);
+    assert.equal((await as(stranger)("POST", `/venues/${A}/alerts`, body)).status, 201);
+    // Asking again with another count updates the waiting ask.
+    const re = await as(stranger)("POST", `/venues/${A}/alerts`, { ...body, hours: 2 });
+    assert.equal(re.status, 200);
+    assert.equal(re.body.end, iso(seven + 2 * HOUR));
+    t.tick(11 * MIN);
+    const err = console.error;
+    console.error = () => {};
+    let calls = 0;
+    try {
+      await sweepSlotAlerts(t.db, async (n, tx) => {
+        if (calls++ === 0) throw new Error("push down");
+        await t.notify(n, tx);
+      }, t.now());
+    } finally {
+      console.error = err;
+    }
+    assert.equal(calls, 2);
+    assert.equal(t.notices.filter((n) => n.kind === "slotFreedAgain").length, 1);
+    await sweepSlotAlerts(t.db, t.notify, t.now());
+    await sweepSlotAlerts(t.db, t.notify, t.now());
+    const sent = t.notices.filter((n) => n.kind === "slotFreedAgain").map((n) => (n.to as any).userId).sort();
+    assert.deepEqual(sent, [booker2.me.id, stranger.me.id].sort());
+
+    t.tick(31 * DAY);
+    await sweepSlotAlerts(t.db, t.notify, t.now());
+    assert.equal((await t.db.select().from(slotAlerts)).length, 0);
+  } finally {
+    await t.close();
+  }
+});
+
+test("the public read: a bad day is 400, only holdable starts, no people", async () => {
+  const w = await world();
+  const { t, as, booker, A } = w;
+  try {
+    const { s, seven } = await freeVenue(w);
+    await as(booker)("POST", `/venues/${A}/holds`, { stationId: s.id, start: iso(seven), hours: 1, count: 1 });
+    assert.equal((await t.call("GET", `/public/venues/${A}/slots?day=`)).status, 400);
+    const r = await t.call("GET", `/public/venues/${A}/slots`);
+    assert.equal(r.status, 200);
+    const starts = r.body.stations[0].free.map((f: any) => f.at as string);
+    // Closes at 2 AM: 1 AM is the last start a one-hour hold fits.
+    assert.equal(ist(Date.parse(starts.at(-1))), "1:00");
+    const text = JSON.stringify(r.body);
+    for (const x of [booker.me.id, booker.name, "userId", "qr", "code"]) assert.ok(!text.includes(x), x);
+  } finally {
+    await t.close();
+  }
+});
+
+test("deleting an account drops its alerts, lapses its holds and releases its upcoming slot bookings", async () => {
+  const w = await world();
+  const { t, as, booker, booker2, A } = w;
+  try {
+    const { s, seven } = await freeVenue(w, 2);
+    const body = { stationId: s.id, start: iso(seven), hours: 1, count: 2 };
+    await as(booker2)("POST", `/venues/${A}/holds`, body);
+    assert.equal((await as(booker)("POST", `/venues/${A}/alerts`, body)).status, 201);
+    const h = (await as(booker)("POST", `/venues/${A}/holds`, { ...body, start: iso(seven + 2 * HOUR), count: 1 })).body;
+    const booked = await w.claim(s.id, booker.me.id, seven + 4 * HOUR, seven + 5 * HOUR, 1);
+    const past = await w.claim(s.id, booker.me.id, t.now() - 3 * HOUR, t.now() - 2 * HOUR, 1);
+    await t.db.update(users).set({ deletionRequestedAt: new Date(t.now() - 31 * DAY), deletionDueAt: new Date(t.now() - 1000) }).where(eq(users.id, booker.me.id));
+    await runDeletions(t.db, async (x) => void t.notices.push(x), t.now());
+    assert.equal((await t.db.select().from(slotAlerts).where(eq(slotAlerts.userId, booker.me.id))).length, 0);
+    const row = async (id: string) => (await t.db.select().from(stationClaims).where(eq(stationClaims.id, id)))[0]!;
+    assert.ok((await row(h.id)).holdEndsAt!.getTime() <= t.now());
+    assert.equal((await row(booked.id)).status, "released");
+    assert.equal((await row(booked.id)).releasedAt!.getTime(), t.now());
+    assert.equal((await row(past.id)).status, "paid");
   } finally {
     await t.close();
   }
