@@ -1,0 +1,17 @@
+diff --git a/Common/cpp/reanimated/LayoutAnimations/LayoutAnimationsProxy.cpp b/Common/cpp/reanimated/LayoutAnimations/LayoutAnimationsProxy.cpp
+index c0825bb..e32be65 100644
+--- a/Common/cpp/reanimated/LayoutAnimations/LayoutAnimationsProxy.cpp
++++ b/Common/cpp/reanimated/LayoutAnimations/LayoutAnimationsProxy.cpp
+@@ -443,7 +443,11 @@ void LayoutAnimationsProxy::updateLightTree(
+             ? layoutAnimationsManager_->getLayoutAnimationConfig(tag, ENTERING)
+             : nullptr;
+         if (moved.contains(tag)) {
+-          const auto offset = reparentOffset(oldChains.at(tag), ancestorOrigins(parent, {}));
++          // Orbit patch: a moved view whose Remove took the other branch has no old chain, and .at() threw
++          // std::out_of_range on the main thread (ORBIT-APP-1, SIGABRT). No chain means no reparent offset.
++          const auto oldChainIt = oldChains.find(tag);
++          const auto offset = oldChainIt == oldChains.end() ? react::Point{}
++                                                             : reparentOffset(oldChainIt->second, ancestorOrigins(parent, {}));
+           node->previous.layoutMetrics.frame.origin += offset;
+           if (const auto currentView = reparentLayoutAnimation(tag, mutation.parentTag, node->current, offset)) {
+             filteredMutations.push_back(
