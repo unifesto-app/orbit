@@ -78,6 +78,18 @@ export async function setParent(_: Done, f: FormData) {
   return run("PUT", `/galaxy/hosts/${path(f, "id")}/parent`, { parentId, reason: text(f, "reason") });
 }
 
+// ─── Event Requests ───
+// Approve makes the host and its draft event; changes and decline send the reason to the requester.
+export async function approveRequest(_: Done, f: FormData) {
+  return run("POST", `/galaxy/event-requests/${path(f, "id")}/approve`, { reason: text(f, "reason") });
+}
+export async function askChanges(_: Done, f: FormData) {
+  return run("POST", `/galaxy/event-requests/${path(f, "id")}/changes`, { reason: text(f, "reason") });
+}
+export async function declineRequest(_: Done, f: FormData) {
+  return run("POST", `/galaxy/event-requests/${path(f, "id")}/decline`, { reason: text(f, "reason") });
+}
+
 // ─── Staff ───
 export async function grantFeatures(_: Done, f: FormData) {
   const features = f.getAll("feature").map(String);
