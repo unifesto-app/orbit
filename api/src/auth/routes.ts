@@ -27,6 +27,7 @@ import {
 } from "@orbit/contract";
 import type { Db } from "../db/index.ts";
 import { identities, legalAcceptances, users } from "../db/schema.ts";
+import { unsuppress } from "../notifications.ts";
 import { clientIp, contactOf, type Env, fail, invalid, type Notify, parse, signedIn, suspended, taken } from "../http.ts";
 import { drop, linkOf, type Media, newKey, squareImage } from "../media.ts";
 import { clearLapsedSuspension, rolesOf } from "../roles/access.ts";
@@ -179,6 +180,7 @@ export function authRoutes({ db, store, send, notify, secret, now = Date.now, co
       if (check.error === "expired") return fail(c, 400, "codeExpired", "That code has expired. Send a new one.");
       return fail(c, 400, "wrongCode", "That code isn't right. Check the latest message, or send a new code.");
     }
+    if (to.kind === "email") await unsuppress(db, to.email);
 
     const [found] = await db
       .select()

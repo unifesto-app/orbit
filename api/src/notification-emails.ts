@@ -99,18 +99,21 @@ const words = (kind: string, d: Data): Words => WORDS[kind as NoticeKind]?.(d) ?
 const WHY = "You’re getting this because it’s about your Orbit account. Account and security emails can’t be switched off.";
 const WHY_STAFF = "You’re getting this because you hold staff access on Orbit.";
 
-// The person's email switches as the app names them (app/src/app/account/notifications.tsx).
-export const SWITCH_LABEL: Record<EmailSwitch, string> = {
-  reminders: "Reminders",
-  follows: "From hosts you follow",
-  announcements: "Host announcements",
-  orbit: "From Orbit",
-  yourHosts: "Your hosts",
+// What each email switch's emails are about, to follow "emails about" (the app's switches,
+// app/src/app/account/notifications.tsx).
+export const SWITCH_ABOUT: Record<EmailSwitch, string> = {
+  reminders: "events you’re going to",
+  follows: "hosts you follow",
+  announcements: "host announcements",
+  orbit: "news from Orbit",
+  yourHosts: "your hosts",
 };
-// An optional email's switch: not Must, not the one-off welcome, and governed by an email switch. Null for the rest.
+// An optional email's switch: not Must, not the one-off welcome, and governed by an email switch. Null for the rest,
+// and for a kind the catalog doesn't know (a row left from an older build).
 export const optionalSwitch = (kind: NoticeKind): EmailSwitch | null => {
-  const sw = KINDS[kind]?.switch;
-  return !isMust(kind) && kind !== "welcome" && (EMAIL_SWITCHES as readonly string[]).includes(sw ?? "") ? (sw as EmailSwitch) : null;
+  const def = KINDS[kind] as (typeof KINDS)[NoticeKind] | undefined;
+  if (!def || def.level === "must" || kind === "welcome") return null;
+  return (EMAIL_SWITCHES as readonly string[]).includes(def.switch ?? "") ? (def.switch as EmailSwitch) : null;
 };
 
 // The unsubscribe token: {u, s} and its HMAC, keyed apart from every other use of AUTH_SECRET. No expiry, so an old
@@ -140,7 +143,7 @@ export const readUnsubscribeToken = (secret: string, t: string): { u: string; s:
 export function emailFor(kind: string, data: Data = {}, site = SITE, unsubscribe?: { s: EmailSwitch; link: string }) {
   const { subject, line = "" } = words(kind, data);
   const why = unsubscribe
-    ? `You’re getting this because ${SWITCH_LABEL[unsubscribe.s]} emails are on. Stop them: ${unsubscribe.link}`
+    ? `You’re getting this because emails about ${SWITCH_ABOUT[unsubscribe.s]} are on. Stop them: ${unsubscribe.link}`
     : KINDS[kind as NoticeKind]?.group === "staff"
       ? WHY_STAFF
       : WHY;

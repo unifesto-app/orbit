@@ -4,6 +4,7 @@ import { AddPasskey, AddWay, AppleProof, ChangeContact, FreshCheck, GoogleProof,
 import type { Db } from "../db/index.ts";
 import { identities, passkeys, sessions, teamRoles, users } from "../db/schema.ts";
 import { clientIp, contactOf, type Env, fail, invalid, isUuid, type Notify, parse, signedIn, taken } from "../http.ts";
+import { unsuppress } from "../notifications.ts";
 import { checkCode } from "./codes.ts";
 import type { User } from "./sessions.ts";
 import type { Store } from "./store.ts";
@@ -146,6 +147,7 @@ export function securityRoutes({ db, store, notify, secret, now = Date.now, ways
       if (!to) return fail(c, 400, "invalid", b.via === "email" ? "Your account has no email. Use a code to your number." : "Your account has no number. Use another way in.");
       const r = await checkCode(store, secret, to, b.code, clientIp(c));
       if (!r.ok) return codeError(c, r.error);
+      if (to.kind === "email") await unsuppress(db, to.email);
       await mark(b.via, null);
       return c.json({ fresh: true });
     }
@@ -207,6 +209,7 @@ export function securityRoutes({ db, store, notify, secret, now = Date.now, ways
     if (!r.ok) return codeError(c, r.error);
     try {
       await db.update(users).set({ email: to.email, emailVerifiedAt: at(), updatedAt: at() }).where(eq(users.id, before.id));
+      await unsuppress(db, to.email);
       await releaseContact(before.id, before.email);
     } catch (e) {
       if (taken(e)) return fail(c, 409, "emailTaken", "That email signs in to another Orbit account.");

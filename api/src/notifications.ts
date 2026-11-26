@@ -103,9 +103,13 @@ const heldAt = (p: typeof users.$inferSelect, at: Date) => !!((p.suspendedAt && 
 const addressOf = (contact: string | null, person: typeof users.$inferSelect | undefined) =>
   contact ? (contact.includes("@") ? contact : null) : person?.emailVerifiedAt ? person.email : null;
 
-// An address SES reported as a hard bounce or complaint (ses-hook.ts).
-const suppressed = async (q: Tx | Db, address: string) =>
-  (await q.select({ a: emailSuppressions.address }).from(emailSuppressions).where(eq(emailSuppressions.address, address.toLowerCase()))).length > 0;
+// An address SES reported (email-hygiene.ts): a hard bounce stops all email to it, a complaint only optional email.
+const suppressed = async (q: Tx | Db, address: string, kind: NoticeKind) => {
+  const [row] = await q.select({ reason: emailSuppressions.reason }).from(emailSuppressions).where(eq(emailSuppressions.address, address.toLowerCase()));
+  return !!row && (row.reason === "bounce" || !isMust(kind));
+};
+// A code just proved this address reaches its owner: whatever SES reported about it no longer holds.
+export const unsuppress = (q: Tx | Db, address: string) => q.delete(emailSuppressions).where(eq(emailSuppressions.address, address.toLowerCase()));
 
 type Base = Pick<typeof deliveries.$inferInsert, "userId" | "contact" | "kind" | "dedupeKey" | "payload" | "runAt" | "createdAt" | "inboxItemId">;
 // The email row for a notice: switched off, held, queued to its address, suppressed, or no address. `s` is null for Must
@@ -120,7 +124,7 @@ const writeEmail = async (q: Tx | Db, row: Base, s: NotificationSettings | null,
         ? { status: "skipped", reason: "optionalHeld", target: "" }
         : !address
           ? { status: "skipped", reason: "noEmail", target: "" }
-          : (await suppressed(q, address))
+          : (await suppressed(q, address, kind))
             ? { status: "skipped", reason: "suppressed", target: address }
             : { status: "queued", target: address };
   return q.insert(deliveries).values({ ...row, channel: "email", ...v }).onConflictDoNothing({ target: [deliveries.dedupeKey, deliveries.channel, deliveries.target] });
@@ -360,9 +364,17 @@ export async function runDeliveries({
       await done({ status: "skipped", reason: "notSetUp" });
       continue;
     }
-    if (await suppressed(db, d.target)) {
-      await done({ status: "skipped", reason: "suppressed" }); // bounced or complained since it was queued
+    // Rechecked just before sending: a bounce, a complaint or an unsubscribe since the row was queued.
+    if (await suppressed(db, d.target, d.kind as NoticeKind)) {
+      await done({ status: "skipped", reason: "suppressed" });
       continue;
+    }
+    if (sw && d.userId) {
+      const [person] = await db.select({ city: users.city }).from(users).where(eq(users.id, d.userId));
+      if (!person || switchedOff(await settingsOf(db, d.userId, person.city), d.kind as NoticeKind, "email")) {
+        await done({ status: "skipped", reason: "switchOff" });
+        continue;
+      }
     }
     try {
       const providerId = await mail(d.target, emailFor(d.kind, d.payload, undefined, sw && link ? { s: sw, link } : undefined));
@@ -379,13 +391,13 @@ const unread = async (db: Db, userId: string, app: InboxApp) =>
   (await db.select({ n: count() }).from(inboxItems).where(and(eq(inboxItems.userId, userId), eq(inboxItems.app, app), isNull(inboxItems.readAt))))[0]!.n;
 
 // The hourly provider check: per channel, over rows made in the last hour. Failing: failed (not counting a dead phone or
-// a bad address: gone, refused), and rows waiting on a retry after unknown or throttled, since only a 4th try fails and
+// a bad address: gone, refused, bounced, complained), and rows waiting on a retry after unknown or throttled, since only a 4th try fails and
 // that is 36 minutes on. OK: sent and delivered. At least 20 of those and more than 20% failing: an error line (Sentry
 // picks it up through captureConsoleIntegration) and providerFailing to every Platform holder, once per channel an hour.
 export async function checkProviders({ db, notify, now }: { db: Db; notify: Notify; now: () => number }) {
   const at = new Date(now());
   const failing = or(
-    and(eq(deliveries.status, "failed"), or(isNull(deliveries.reason), notInArray(deliveries.reason, ["gone", "refused"]))),
+    and(eq(deliveries.status, "failed"), or(isNull(deliveries.reason), notInArray(deliveries.reason, ["gone", "refused", "bounced", "complained"]))),
     and(inArray(deliveries.status, ["queued", "sending"]), inArray(deliveries.reason, ["unknown", "throttled"])),
   )!;
   const counts = await db

@@ -119,12 +119,21 @@ test("signature version 1 verifies too; a forged body, the wrong topic or an off
     "http://sns.ap-south-1.amazonaws.com/cert.pem",
     "https://sns.ap-south-1.amazonaws.com.evil.com/cert.pem",
     "https://sns.ap-south-1.amazonaws.com/cert.txt",
+    "https://sns.s3.amazonaws.com/cert.pem", // an S3 bucket anyone can own
+    "https://sns.us-east-1.amazonaws.com/cert.pem", // not the topic's region
+    "https://user:pw@sns.ap-south-1.amazonaws.com/cert.pem",
+    "https://sns.ap-south-1.amazonaws.com:8443/cert.pem",
+    "https://sns.ap-south-1.amazonaws.com/cert.pem?x=1",
   ]) {
     assert.equal((await post({ ...good, SigningCertURL: url })).status, 403, url);
   }
   assert.deepEqual(fetched, []); // refused without a fetch
   assert.equal((await suppressions()).length, 0);
   assert.equal((await ses.request("/hooks/ses", { method: "POST", body: "not json" })).status, 403);
+  for (const body of ["null", "[]", "1"]) assert.equal((await ses.request("/hooks/ses", { method: "POST", body })).status, 403, body);
+  // Prototype keys as the Type: refused, never a 500. A signed Message that isn't an object: nothing to do.
+  for (const Type of ["constructor", "__proto__", "toString"]) assert.equal((await post({ ...good, Type })).status, 403, Type);
+  assert.equal((await post(signed({ Type: "Notification", MessageId: "1", TopicArn: TOPIC, Message: "null", Timestamp: "t" }))).status, 200);
 
   assert.equal((await post(signed({ Type: "Notification", MessageId: "1", TopicArn: TOPIC, Message: JSON.stringify(bounce("m-2", [a.email])), Timestamp: "t" }, "1"))).status, 200);
   assert.equal((await suppressions()).length, 1);
@@ -143,6 +152,66 @@ test("a transient bounce keeps nothing; a complaint suppresses and marks its del
   assert.deepEqual((await suppressions()).map((s) => s.reason), ["complaint"]);
   const [marked] = await emailsOf(a, "accountLifted");
   assert.deepEqual([marked!.status, marked!.reason], ["failed", "complained"]);
+});
+
+test("a certificate that doesn't come (5xx, timeout) answers 503 and isn't kept; the next try fetches again", async () => {
+  const a = await join();
+  const answers: (number | "throw")[] = [500, "throw"];
+  const tries: string[] = [];
+  const flaky = sesHookRoutes({
+    db: t.db,
+    topicArn: TOPIC,
+    now: t.now,
+    fetch: (async (url: string | URL) => {
+      tries.push(String(url));
+      const next = answers.shift() ?? 200;
+      if (next === "throw") throw new Error("timed out");
+      return new Response(next === 200 ? pem : "", { status: next });
+    }) as typeof fetch,
+  });
+  const body = notification(bounce("m-9", [a.email]));
+  const send = (b: object = body) => flaky.request("/hooks/ses", { method: "POST", body: JSON.stringify(b) });
+  assert.equal((await send()).status, 503);
+  assert.equal((await send()).status, 503);
+  assert.equal((await suppressions()).length, 0);
+  assert.equal((await send()).status, 200);
+  assert.equal((await send()).status, 200);
+  assert.equal(tries.length, 3); // the two failures weren't kept; the good one was
+  assert.equal((await suppressions()).length, 1);
+  // A bad signature stays 403 with the certificate in hand.
+  assert.equal((await send({ ...body, Signature: "AAAA" })).status, 403);
+});
+
+test("a complaint stops optional email only; a hard bounce stops Must too; a code to the address clears it", async () => {
+  const a = await join();
+  const complaint = { notificationType: "Complaint", mail: { messageId: "m-5" }, complaint: { complainedRecipients: [{ emailAddress: a.email }] } };
+  assert.equal((await post(notification(complaint))).status, 200);
+  await t.notify({ to: { userId: a.me.id }, kind: "accountLifted", data: {} }); // Must
+  await t.notify({ to: { userId: a.me.id }, kind: "hostAnnouncement", data: {} }); // optional
+  assert.deepEqual((await emailsOf(a, "accountLifted")).map((d) => d.status), ["queued"]);
+  assert.deepEqual((await emailsOf(a, "hostAnnouncement")).map((d) => [d.status, d.reason]), [["skipped", "suppressed"]]);
+
+  // A bounce after the complaint outranks it; a complaint after a bounce doesn't lower it.
+  assert.equal((await post(notification(bounce("m-6", [a.email])))).status, 200);
+  assert.equal((await post(notification(complaint))).status, 200);
+  assert.deepEqual((await suppressions()).map((s) => s.reason), ["bounce"]);
+  await t.deliver();
+  assert.deepEqual((await emailsOf(a, "accountLifted")).map((d) => [d.status, d.reason]), [["skipped", "suppressed"]]);
+
+  // Signing in with a code to the address proves it again.
+  t.tick(30_000);
+  await t.call("POST", "/auth/code", { to: a.email });
+  const v = await t.call("POST", "/auth/code/verify", { to: a.email, code: t.lastCode(a.email), device });
+  assert.equal(v.status, 200);
+  assert.equal((await suppressions()).length, 0);
+});
+
+test("a queued email of a kind this build doesn't know doesn't stop the worker", async () => {
+  const a = await join();
+  await t.db.insert(deliveries).values({ userId: a.me.id, kind: "noSuchKind", channel: "email", target: a.email, dedupeKey: "x", payload: {}, status: "queued", runAt: new Date(t.now()) });
+  await t.deliver();
+  const [row] = await t.db.select().from(deliveries).where(eq(deliveries.kind, "noSuchKind"));
+  assert.notEqual(row!.status, "sending");
 });
 
 test("a signed subscription confirmation is confirmed by fetching its SubscribeURL", async () => {
@@ -176,20 +245,20 @@ test("optional email: sent with the unsubscribe headers and footer; GET asks, on
   const link = m.headers!["List-Unsubscribe"]!.slice(1, -1);
   assert.match(link, /^https:\/\/api\.test\/public\/unsubscribe\?t=/);
   assert.equal(m.headers!["List-Unsubscribe-Post"], "List-Unsubscribe=One-Click");
-  assert.ok(m.text.includes(`Host announcements emails are on. Stop them: ${link}`));
+  assert.ok(m.text.includes(`emails about host announcements are on. Stop them: ${link}`));
   assert.ok(m.html.includes(`href="${link}"`));
   const path = link.replace("https://api.test", "");
 
   const get = await t.app.request(path);
   assert.equal(get.status, 200);
-  assert.match(await get.text(), /Stop Host announcements emails from Orbit\?/);
+  assert.match(await get.text(), /Stop emails about host announcements\?/);
   assert.equal((await t.db.select().from(notificationPrefs).where(eq(notificationPrefs.userId, a.me.id))).length, 0); // GET changes nothing
 
   const one = () =>
     t.app.request(path, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: "List-Unsubscribe=One-Click" });
   const res = await one();
   assert.equal(res.status, 200);
-  assert.match(await res.text(), /Done\. You can turn it back on/);
+  assert.match(await res.text(), /Done\. Emails about host announcements are off\./);
   assert.equal((await one()).status, 200); // again: the same
   const s = await t.call("GET", "/me/notification-settings", undefined, a.access);
   assert.equal(s.body.switches["email.announcements"], false);
@@ -198,6 +267,16 @@ test("optional email: sent with the unsubscribe headers and footer; GET asks, on
   await t.notify({ to: { userId: a.me.id }, kind: "hostAnnouncement", data: {} });
   const last = (await emailsOf(a, "hostAnnouncement")).find((d) => d.status === "skipped")!;
   assert.equal(last.reason, "switchOff");
+
+  // Queued, then unsubscribed before the worker came: skipped at send time.
+  await t.call("PUT", "/me/notification-settings", { switches: { "email.announcements": true } }, a.access);
+  await t.notify({ to: { userId: a.me.id }, kind: "hostAnnouncement", data: { n: 2 } });
+  assert.equal((await emailsOf(a, "hostAnnouncement")).filter((d) => d.status === "queued").length, 1);
+  await one();
+  const before = mailed.length;
+  await t.deliver();
+  assert.equal(mailed.length, before);
+  assert.equal((await emailsOf(a, "hostAnnouncement")).filter((d) => d.reason === "switchOff").length, 2);
 
   assert.equal((await t.app.request("/public/unsubscribe?t=bad", { method: "POST" })).status, 400);
   assert.equal((await t.app.request("/public/unsubscribe?t=bad")).status, 400);

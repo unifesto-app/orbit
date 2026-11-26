@@ -828,6 +828,7 @@ export const deliveries = pgTable(
     index("deliveries_due_idx").on(t.runAt).where(sql`${t.status} in ('queued', 'held', 'sending')`),
     index("deliveries_user_idx").on(t.userId, t.createdAt),
     index("deliveries_created_idx").on(t.createdAt),
+    index("deliveries_provider_idx").on(t.providerId).where(sql`${t.providerId} is not null`), // SES bounce lookups
   ],
 );
 

@@ -1,5 +1,5 @@
 {
-  "id": "35407f43-4174-4355-8628-a673cac823f2",
+  "id": "78a25b7a-00c8-4a0a-b046-73f49bf0eceb",
   "prevId": "8e92bca2-79af-4af1-8cab-ec8975f3bbeb",
   "version": "7",
   "dialect": "postgresql",
@@ -895,6 +895,22 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "deliveries_provider_idx": {
+          "name": "deliveries_provider_idx",
+          "columns": [
+            {
+              "expression": "provider_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"deliveries\".\"provider_id\" is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}

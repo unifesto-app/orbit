@@ -88,7 +88,7 @@ export function codeEmail(code: string) {
 // The SES calls, so tests can stand in for AWS. SendEmail can't carry custom headers; SendRawEmail (a whole MIME
 // message) can, for List-Unsubscribe.
 export type SesSend = (input: ConstructorParameters<typeof SendEmailCommand>[0]) => Promise<{ MessageId?: string }>;
-export type SesRawSend = (raw: Uint8Array) => Promise<{ MessageId?: string }>;
+export type SesRawSend = (raw: Uint8Array, to: string) => Promise<{ MessageId?: string }>;
 const client = (region: string) => new SESClient({ region, maxAttempts: 2, requestHandler: { connectionTimeout: 5_000, requestTimeout: TIMEOUT_MS } });
 export const sesClient = (region: string): SesSend => {
   const ses = client(region);
@@ -96,7 +96,7 @@ export const sesClient = (region: string): SesSend => {
 };
 export const sesRawClient = (region: string): SesRawSend => {
   const ses = client(region);
-  return (raw) => ses.send(new SendRawEmailCommand({ RawMessage: { Data: raw } }));
+  return (raw, to) => ses.send(new SendRawEmailCommand({ Destinations: [to], RawMessage: { Data: raw } }));
 };
 
 // AWS errors that mean our side is misconfigured, not the address.
@@ -153,7 +153,7 @@ export const sesMail =
     let out: { MessageId?: string };
     try {
       out = raw
-        ? await c.sendRaw!(Buffer.from(raw))
+        ? await c.sendRaw!(Buffer.from(raw), email)
         : await c.send({
             Source: c.from,
             Destination: { ToAddresses: [email] },

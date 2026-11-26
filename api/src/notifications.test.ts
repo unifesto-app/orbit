@@ -710,9 +710,11 @@ test("providers: over 20% failing of at least 20 alerts Platform holders once an
   const [push] = await run("push", [[17, "sent", null], [2, "delivered", null], [3, "queued", "throttled"], [2, "sending", "unknown"]]);
   assert.deepEqual(push!.data, { channel: "push", failed: 5, total: 24 });
 
-  // No alert: gone or refused failures; rows over an hour old; under 20 rows; exactly 20%.
+  // No alert: gone, refused, bounced or complained failures; rows over an hour old; under 20 rows; exactly 20%.
   assert.equal((await run("email", [[19, "sent", null], [6, "failed", "gone"]])).length, 0);
   assert.equal((await run("email", [[19, "sent", null], [6, "failed", "refused"]])).length, 0);
+  assert.equal((await run("email", [[19, "sent", null], [6, "failed", "bounced"]])).length, 0); // SES said so (email-hygiene.ts)
+  assert.equal((await run("email", [[19, "sent", null], [6, "failed", "complained"]])).length, 0);
   assert.equal((await run("push", [[19, "sent", null], [6, "failed", "unknown", 61]])).length, 0);
   assert.equal((await run("email", [[10, "failed", "unknown"]])).length, 0);
   assert.equal((await run("email", [[20, "sent", null], [5, "failed", "unknown"]])).length, 0);
