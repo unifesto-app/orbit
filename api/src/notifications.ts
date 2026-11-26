@@ -234,7 +234,7 @@ export function createNotifier({ db, now }: { db: Db; now: () => number }): Noti
     if (s && switchedOff(s, n.kind, "push")) return void (await skip("switchOff"));
     // Low pushes are held in quiet hours and capped at 5 a day (by the day they deliver); followedHostEvent at 1 a day per
     // host. Normal pushes are neither held nor counted toward the 5.
-    // ponytail: the 3-a-day per-event announcement cap comes with announcements (PR 10).
+    // The 3-a-day per-event announcement cap is the route's (announcements.ts): a 4th is refused, not sent.
     const low = def.level === "low";
     const quiet = low && s?.quiet ? quietUntil(at.getTime()) : null;
     const day = quiet ?? at;

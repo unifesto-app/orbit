@@ -69,6 +69,8 @@ export default function Layout() {
             push about a seat just ended still opens it. */}
         <Stack.Protected guard={signedIn}>
           <Stack.Screen name="inbox" />
+          {/* An event's announcements and automatic messages, from Messages on its card. */}
+          <Stack.Screen name="event/[id]" />
         </Stack.Protected>
       </Stack>
     </>
