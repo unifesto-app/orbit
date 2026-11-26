@@ -104,9 +104,12 @@ const addressOf = (contact: string | null, person: typeof users.$inferSelect | u
   contact ? (contact.includes("@") ? contact : null) : person?.emailVerifiedAt ? person.email : null;
 
 // Galaxy's kill switches (PR 7): the channels switched off for this kind, its own or the whole channel's (kind *). Read
-// on every notice and every worker pass, so a switch takes hold at once.
+// on every notice and every worker pass, so a switch takes hold at once. The whole-email switch never stops staff kinds:
+// they are how Platform hears that email was switched off or a provider is failing, so they always try SES.
+export const stops = (sw: { kind: string; channel: string }, kind: string) =>
+  (sw.kind === kind || sw.kind === "*") && !(sw.kind === "*" && sw.channel === "email" && KINDS[kind as NoticeKind]?.group === "staff");
 export const killedFor = async (q: Tx | Db, kind: string) =>
-  new Set((await q.select({ channel: notificationSwitches.channel }).from(notificationSwitches).where(inArray(notificationSwitches.kind, [kind, "*"]))).map((r) => r.channel));
+  new Set((await q.select().from(notificationSwitches).where(inArray(notificationSwitches.kind, [kind, "*"]))).filter((sw) => stops(sw, kind)).map((r) => r.channel));
 
 type Base = Pick<typeof deliveries.$inferInsert, "userId" | "contact" | "kind" | "dedupeKey" | "payload" | "runAt" | "createdAt" | "inboxItemId">;
 // The email row for a notice: switched off, held (optional), queued to its address, or no address. `s` is null for Must
@@ -296,7 +299,7 @@ export async function runDeliveries({ db, mail, push, now, limit = 20 }: { db: D
     .where(inArray(deliveries.id, due))
     .returning();
   // Galaxy's kill switches, read once a pass: a claimed row on a channel switched off since it was queued is skipped.
-  const off = new Set((await db.select().from(notificationSwitches)).map((r) => `${r.kind}:${r.channel}`));
+  const off = await db.select().from(notificationSwitches);
 
   for (const d of claimed) {
     // Only while the row is still this pass's: a slow pass whose lock lapsed has lost it to another worker's claim.
@@ -318,7 +321,7 @@ export async function runDeliveries({ db, mail, push, now, limit = 20 }: { db: D
     const relet = await db.update(deliveries).set({ lockedUntil: new Date(now() + 2 * MIN) }).where(ours).returning({ id: deliveries.id });
     if (!relet.length) continue;
 
-    if (off.has(`${d.kind}:${d.channel}`) || off.has(`*:${d.channel}`)) {
+    if (off.some((sw) => sw.channel === d.channel && stops(sw, d.kind))) {
       if ((await done({ status: "skipped", reason: "killSwitch" })) && d.channel === "push") await fallBack(db, d, at);
       continue;
     }

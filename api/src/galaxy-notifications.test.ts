@@ -111,7 +111,17 @@ test("the whole channel (*) stops Must kinds too; inbox off writes a skipped inb
   await give(st, "platform");
   const a = await join();
   await t.db.update(users).set({ email: `k${n}@example.com`, emailVerifiedAt: new Date(t.now()) }).where(eq(users.id, a.me.id));
+  await t.db.update(users).set({ email: `st${n}@example.com`, emailVerifiedAt: new Date(t.now()) }).where(eq(users.id, st.me.id));
   assert.equal((await as(st)("PUT", "/galaxy/notifications/switches/*/email", { off: true, reason: "SES is down" })).status, 200);
+  // Staff emails still try SES: the alert that email is off goes out.
+  const told = (await rowsOf(st.me.id, "staffRiskyAction")).filter((d) => (d.payload as any).reason === "SES is down");
+  assert.deepEqual(told.map((d) => [d.channel, d.status]), [["email", "queued"]]);
+  // The same switch again: nothing changes, nothing logged or emailed, the first who and why stay.
+  const audits = async () => (await t.db.select().from(auditLog).where(eq(auditLog.action, "notifications.switch"))).length;
+  const before = [await audits(), t.notices.length];
+  assert.equal((await as(st)("PUT", "/galaxy/notifications/switches/*/email", { off: true, reason: "Still down" })).status, 200);
+  assert.deepEqual([await audits(), t.notices.length], before);
+  assert.equal((await as(st)("GET", "/galaxy/notifications/kinds")).body.all.email.reason, "SES is down");
   await t.notify({ to: { userId: a.me.id }, kind: "accountLifted", data: {} });
   assert.deepEqual((await rowsOf(a.me.id, "accountLifted")).map((d) => [d.channel, d.status, d.reason]), [["email", "skipped", "killSwitch"]]);
   assert.equal((await as(st)("GET", "/galaxy/notifications/kinds")).body.all.email.reason, "SES is down");
@@ -122,6 +132,10 @@ test("the whole channel (*) stops Must kinds too; inbox off writes a skipped inb
   assert.ok((await rowsOf(a.me.id, "hostAnnouncement")).some((d) => d.channel === "inbox" && d.reason === "killSwitch"));
   assert.equal((await t.db.select().from(inboxItems).where(and(eq(inboxItems.userId, a.me.id), eq(inboxItems.kind, "hostAnnouncement")))).length, 0);
   await as(st)("PUT", "/galaxy/notifications/switches/hostAnnouncement/inbox", { off: false, reason: "Fixed" });
+  // Switching on what is already on: no audit row either.
+  const n0 = await audits();
+  assert.equal((await as(st)("PUT", "/galaxy/notifications/switches/hostAnnouncement/inbox", { off: false, reason: "Fixed again" })).status, 200);
+  assert.equal(await audits(), n0);
 });
 
 test("the delivery log finds a person by phone, masks the email and device, never returns a token, and is audited", async () => {
@@ -152,4 +166,10 @@ test("the delivery log finds a person by phone, masks the email and device, neve
   assert.equal((await as(people)("GET", "/galaxy/notifications/deliveries?q=riya")).status, 400);
   const none = await as(people)("GET", "/galaxy/notifications/deliveries?q=nobody@example.com");
   assert.deepEqual(none.body, { person: null, deliveries: [] });
+
+  // Platform alone sees the rows and the id, never the name.
+  const plat = await join();
+  await give(plat, "platform");
+  const p = await as(plat)("GET", `/galaxy/notifications/deliveries?q=${a.p}`);
+  assert.deepEqual([p.body.person, p.body.deliveries.length], [{ id: a.me.id, name: null }, rows.length]);
 });

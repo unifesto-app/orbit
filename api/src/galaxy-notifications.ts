@@ -1,4 +1,4 @@
-import { and, desc, eq, or, sql } from "drizzle-orm";
+import { and, desc, eq, or, type SQL, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import {
   type Channel,
@@ -18,6 +18,7 @@ import type { Deps } from "./auth/routes.ts";
 import { auditLog, deliveries, notificationSwitches, pushDevices, users } from "./db/schema.ts";
 import { fail, invalid, isUuid, parse, signedIn } from "./http.ts";
 import { holdersOf, requireFeature, type StaffEnv, tell } from "./roles/access.ts";
+import { holds } from "./roles/rules.ts";
 
 // Galaxy's Notifications (build plan PR 7): the catalog with Galaxy's kill switches, and the delivery log by person.
 // Changing a switch needs Platform; reading is open to People too, since support looks people up here. Every change and
@@ -62,13 +63,15 @@ export function galaxyNotificationsRoutes({ db, secret, notify, now = Date.now }
     const actorId = c.var.actor.id;
     const at = new Date(now());
     const ch = channel as Channel;
-    await db.transaction(async (tx) => {
-      if (b.off) {
-        const row = { offBy: actorId, offAt: at, reason: b.reason };
-        await tx.insert(notificationSwitches).values({ kind, channel: ch, ...row }).onConflictDoUpdate({ target: [notificationSwitches.kind, notificationSwitches.channel], set: row });
-      } else await tx.delete(notificationSwitches).where(and(eq(notificationSwitches.kind, kind), eq(notificationSwitches.channel, ch)));
-      await tx.insert(auditLog).values({ actorId, action: "notifications.switch", reason: b.reason, data: { kind, channel: ch, off: b.off }, at });
+    // Already as asked: nothing changes, nothing is logged or emailed, and the first switch-off's who and why stay.
+    const changed = await db.transaction(async (tx) => {
+      const [hit] = b.off
+        ? await tx.insert(notificationSwitches).values({ kind, channel: ch, offBy: actorId, offAt: at, reason: b.reason }).onConflictDoNothing().returning()
+        : await tx.delete(notificationSwitches).where(and(eq(notificationSwitches.kind, kind), eq(notificationSwitches.channel, ch))).returning();
+      if (hit) await tx.insert(auditLog).values({ actorId, action: "notifications.switch", reason: b.reason, data: { kind, channel: ch, off: b.off }, at });
+      return !!hit;
     });
+    if (!changed) return c.json({ kind, channel: ch, off: b.off });
     const action = `notifications ${all ? "all" : kind} ${ch} ${b.off ? "off" : "on"}`;
     await tell(notify, await holdersOf(db, "platform", at), "staffRiskyAction", { action, reason: b.reason, by: actorId });
     return c.json({ kind, channel: ch, off: b.off });
@@ -87,16 +90,20 @@ export function galaxyNotificationsRoutes({ db, secret, notify, now = Date.now }
       .from(users)
       .where(contact ? or(eq(users.phone, contact), eq(users.email, contact)) : eq(users.id, q))
       .limit(1);
-    const rows =
-      person || contact
-        ? await db
-            .select({ d: deliveries, platform: pushDevices.platform, app: pushDevices.app })
-            .from(deliveries)
-            .leftJoin(pushDevices, sql`${deliveries.channel} = 'push' and ${pushDevices.sessionId}::text = ${deliveries.target}`)
-            .where(or(person ? eq(deliveries.userId, person.id) : undefined, contact ? eq(deliveries.contact, contact) : undefined))
-            .orderBy(desc(deliveries.createdAt), desc(deliveries.id))
-            .limit(DELIVERY_LOG_MAX)
-        : [];
+    // By account (indexed) and by the contact typed, apart, so each can use its own plan; merged newest first.
+    // ponytail: the contact query scans deliveries (no index on contact); add one if the log grows large.
+    const by = (where: SQL) =>
+      db
+        .select({ d: deliveries, platform: pushDevices.platform, app: pushDevices.app })
+        .from(deliveries)
+        .leftJoin(pushDevices, sql`${deliveries.channel} = 'push' and ${pushDevices.sessionId}::text = ${deliveries.target}`)
+        .where(where)
+        .orderBy(desc(deliveries.createdAt), desc(deliveries.id))
+        .limit(DELIVERY_LOG_MAX);
+    const found = [...(person ? await by(eq(deliveries.userId, person.id)) : []), ...(contact ? await by(eq(deliveries.contact, contact)) : [])];
+    const rows = [...new Map(found.map((r) => [r.d.id, r])).values()]
+      .sort((x, y) => y.d.createdAt.getTime() - x.d.createdAt.getTime() || (y.d.id > x.d.id ? 1 : -1))
+      .slice(0, DELIVERY_LOG_MAX);
     await db.insert(auditLog).values({
       actorId: c.var.actor.id,
       action: "notifications.search",
@@ -107,7 +114,8 @@ export function galaxyNotificationsRoutes({ db, secret, notify, now = Date.now }
     const to = (r: (typeof rows)[number]) =>
       r.d.channel === "email" ? (r.d.target.includes("@") ? maskEmail(r.d.target) : null) : r.d.channel === "push" && r.d.target ? (r.platform ? `${r.platform} · ${r.app}` : "a removed device") : null;
     const body: DeliveryLog = {
-      person: person ?? null,
+      // The name is People's to see; Platform alone gets the id, to match rows up.
+      person: person ? { id: person.id, name: holds(c.var.actor, "people") ? person.name : null } : null,
       deliveries: rows.map((r) => ({
         id: r.d.id,
         kind: r.d.kind,

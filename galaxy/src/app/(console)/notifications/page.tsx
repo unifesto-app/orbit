@@ -42,7 +42,7 @@ async function Body() {
   return (
     <>
       <Container title="Whole channel">
-        <p className={ui.secondary}>Stops every kind on that channel, Must kinds too. For when a provider is broken.</p>
+        <p className={ui.secondary}>Stops every kind on that channel, Must kinds too, but never Galaxy staff emails. For when a provider is broken.</p>
         <table className={ui.table}>
           <thead>
             <tr>
@@ -85,6 +85,9 @@ async function Body() {
                       <td key={ch}>
                         {!k.channels.includes(ch) ? (
                           <span className={ui.secondary}>–</span>
+                        ) : r.data.all[ch] && !(ch === "email" && k.group === "staff") ? (
+                          // The whole channel is off (staff emails always try: api/src/notifications.ts, stops).
+                          <Badge tone="error">Off (whole channel)</Badge>
                         ) : k.level === "must" ? (
                           <span className={ui.secondary}>Always on</span>
                         ) : (
