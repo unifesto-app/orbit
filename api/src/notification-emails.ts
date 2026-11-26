@@ -73,6 +73,7 @@ const WORDS: Partial<Record<NoticeKind, (d: Data) => Words>> = {
     line: `Reason: ${str(d.reason)}. ${d.until ? `Until ${day(d.until)}.` : "No end date."} Reply to this email to ask about it.`,
   }),
   accountLifted: () => ({ subject: "Your Orbit account is open again", line: "You can sign in as before." }),
+  supportReply: () => ({ subject: "Orbit replied to your message", line: "Open Help and support in the app to read it." }),
   // A fixed subject: the host name is typed by whoever invites, so it stays in the body.
   teamInvite: (d) => ({
     subject: "You’re invited to a team on Orbit",
@@ -115,6 +116,7 @@ const WORDS: Partial<Record<NoticeKind, (d: Data) => Words>> = {
     subject: `${str(d.hostName)}’s fee plan changed`,
     line: `${d.plan === "5+0" ? "5% from the buyer, no commission" : "3% from the buyer and 2% commission"}, ${d.feeIncluded ? "with the fee included in your prices" : "with the fee on top of your prices"}. It applies to sales from now on.`,
   }),
+  slotConfirmed: (d) => ({ subject: `You’re booked at ${str(d.hostName)}`, line: `${str(d.station)}, ${dayTime(d.start)}. Show code ${str(d.code)} at the counter.` }),
   slotReleased: (d) => ({ subject: `Your slot at ${str(d.hostName)} was released`, line: `You didn’t check in for ${dayTime(d.start)}, so the slot was freed.` }),
   hostAnnouncement: (d) => ({ subject: `${str(d.hostName) || "The host"} about ${str(d.title)}`, line: str(d.text) }),
   eventTomorrow: (d) => ({ subject: `Coming up: ${str(d.title)}`, line: `${str(d.title)} starts tomorrow at ${time(d.startsAt)}.` }),
@@ -178,6 +180,7 @@ export const VARS: Partial<Record<NoticeKind, Record<string, Var>>> = {
   payoutCancelled: { amountPaise: [1250000, rupees], ...R },
   feeChange: { ...H, plan: ["5+0"], feeIncluded: [false] },
   slotReleased: { ...H, start: [SOON, dayTime] },
+  slotConfirmed: { ...H, station: ["5-a-side"], start: [SOON, dayTime], code: ["K7QX2M4P"] },
   hostAnnouncement: { ...H, ...T, text: ["Doors open at 6:30, half an hour early."] },
   eventTomorrow: { ...T, startsAt: [SOON, time] },
   eventStartingSoon: T,

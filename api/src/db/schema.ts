@@ -985,6 +985,8 @@ export const payments = pgTable(
     razorpayTaxPaise: integer("razorpay_tax_paise"),
     status: text("status", { enum: ["created", "paid", "refundPending", "refunded", "expired", "failed"] }).notNull().default("created"),
     bookingId: uuid("booking_id").references(() => bookings.id),
+    // A slot payment that booked its claim (settle's success): the venue's sale. Paid twice or too late, it stays false.
+    slotBooked: boolean("slot_booked").notNull().default(false),
     createdAt: at("created_at").notNull(),
     updatedAt: at("updated_at").notNull(),
   },
@@ -1035,12 +1037,13 @@ export const refunds = pgTable(
 );
 
 // Bank transfers to hosts, by hand, each with its UTR once paid (6 to 40 characters, stored upper case, never reused).
+// `eventId` null: a venue's slot money (one pot per venue).
 export const payouts = pgTable(
   "payouts",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     hostId: uuid("host_id").notNull().references(() => hosts.id),
-    eventId: uuid("event_id").notNull().references(() => events.id),
+    eventId: uuid("event_id").references(() => events.id),
     amountPaise: integer("amount_paise").notNull(),
     status: text("status", { enum: ["requested", "paid", "cancelled"] }).notNull().default("requested"),
     utr: text("utr").unique(),
@@ -1054,6 +1057,7 @@ export const payouts = pgTable(
     check("payouts_utr", sql`${t.utr} is null or (length(${t.utr}) between 6 and 40 and ${t.utr} = upper(${t.utr}))`),
     check("payouts_status", sql`${t.status} in ('requested', 'paid', 'cancelled')`),
     index().on(t.eventId),
+    index().on(t.hostId),
   ],
 );
 
@@ -1153,4 +1157,39 @@ export const reports = pgTable(
     index().on(t.eventId),
     index().on(t.hostId),
   ],
+);
+
+// Help and support (X16, support.ts): one thread per person per app at a time, from Help's Write to us. Staff with Queues
+// read and answer them in Galaxy; a reply reaches the person as a supportReply notice. A thread that isn't closed takes
+// the person's next message; once closed, the next one starts a new thread.
+export const supportThreads = pgTable(
+  "support_threads",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").notNull().references(() => users.id),
+    app: text("app", { enum: ["orbit", "launch", "station"] }).notNull(),
+    status: text("status", { enum: ["open", "answered", "closed"] }).notNull().default("open"),
+    createdAt: at("created_at").notNull(),
+    updatedAt: at("updated_at").notNull(), // the last message
+  },
+  (t) => [
+    check("support_threads_app", sql`${t.app} in ('orbit', 'launch', 'station')`),
+    check("support_threads_status", sql`${t.status} in ('open', 'answered', 'closed')`),
+    index().on(t.status, t.updatedAt),
+    // One thread that isn't closed per person per app, even for two sends at once.
+    uniqueIndex("support_threads_one_live").on(t.userId, t.app).where(sql`${t.status} <> 'closed'`),
+  ],
+);
+
+export const supportMessages = pgTable(
+  "support_messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    threadId: uuid("thread_id").notNull().references(() => supportThreads.id, { onDelete: "cascade" }),
+    from: text("from", { enum: ["person", "staff"] }).notNull(),
+    staffId: uuid("staff_id").references(() => users.id),
+    body: text("body").notNull(),
+    createdAt: at("created_at").notNull(),
+  },
+  (t) => [check("support_messages_from", sql`${t.from} in ('person', 'staff')`), index().on(t.threadId, t.createdAt)],
 );

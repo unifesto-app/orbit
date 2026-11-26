@@ -61,7 +61,10 @@ export type Verified = { status: PaymentStatus | "confirming" | "pending"; booki
 // Galaxy's Money pages (staff with Money).
 export const REFUND_STATUSES = ["requested", "sent", "processed", "failed"] as const;
 export const StaffRefund = z.object({ amountPaise: z.number().int().min(1), reason: z.string().trim().min(3).max(500) });
-export const NewPayout = z.object({ eventId: z.uuid(), amountPaise: z.number().int().min(1), reason: z.string().trim().min(3).max(500) });
+// An event's payout (eventId), or a venue's slot money (hostId): one of the two.
+export const NewPayout = z
+  .object({ eventId: z.uuid().optional(), hostId: z.uuid().optional(), amountPaise: z.number().int().min(1), reason: z.string().trim().min(3).max(500) })
+  .refine((b) => !b.eventId !== !b.hostId);
 export const PayoutPaid = z.object({ utr: z.string().trim().regex(/^[A-Za-z0-9]{6,40}$/), reason: z.string().trim().max(500).optional() });
 export const MoneyReason = z.object({ reason: z.string().trim().min(3).max(500) });
 export const SetFees = z.object({ plan: FeePlan, feeIncluded: z.boolean(), reason: z.string().trim().min(3).max(500) });
@@ -83,13 +86,13 @@ export type PaymentList = { payments: PaymentRow[]; total: number; page: number;
 export type PaymentDetail = { payment: PaymentRow; refunds: RefundRow[]; refundablePaise: number };
 export type RefundQueue = { open: RefundRow[]; failed: RefundRow[] };
 export type PayoutRow = {
-  id: string; hostId: string; hostName: string; eventId: string; eventTitle: string; amountPaise: number;
+  id: string; hostId: string; hostName: string; eventId: string | null; eventTitle: string | null; amountPaise: number; // null: a venue's slot money
   status: "requested" | "paid" | "cancelled"; utr: string | null; reason: string | null; byName: string | null; at: string;
 };
-// One event's money, worked out once on the server: sales, minus commission (less what refunds handed back), minus any
-// fee the host included, minus refunded; then paid out and what's left.
+// One event's money (or a venue's slot money: `eventId` null), worked out once on the server: sales, minus commission
+// (less what refunds handed back), minus any fee the host included, minus refunded; then paid out and what's left.
 export type EventEarnings = {
-  eventId: string; eventTitle: string; hostId: string; hostName: string;
+  eventId: string | null; eventTitle: string | null; hostId: string; hostName: string;
   salesPaise: number; commissionPaise: number; includedPaise: number; refundedPaise: number;
   earningsPaise: number; paidOutPaise: number; requestedPaise: number; availablePaise: number;
 };
@@ -100,11 +103,11 @@ export type FailedWebhook = { id: string; receivedAt: string; reason: string; ex
 // The app's Account › Transactions and Refunds (X3): the signed-in person's own. A payment is listed once money moved
 // (a Razorpay payment on it); `refundedPaise` is what has reached them so far.
 export type MyPayment = {
-  id: string; eventId: string | null; eventTitle: string | null; quantity: number; pricePaise: number; feePaise: number;
+  id: string; eventId: string | null; eventTitle: string | null; hostName: string; quantity: number; pricePaise: number; feePaise: number;
   amountPaise: number; status: PaymentStatus; razorpayPaymentId: string; refundedPaise: number; refundedAt: string | null; createdAt: string;
 };
 export type MyRefund = {
-  id: string; eventId: string | null; eventTitle: string | null; amountPaise: number; status: (typeof REFUND_STATUSES)[number]; createdAt: string; updatedAt: string;
+  id: string; eventId: string | null; eventTitle: string | null; hostName: string; amountPaise: number; status: (typeof REFUND_STATUSES)[number]; createdAt: string; updatedAt: string;
 };
 
 // Galaxy's Bookings and tickets (X3): a booking with its ticket and the payment that paid for it, if any.

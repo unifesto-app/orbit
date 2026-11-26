@@ -398,6 +398,7 @@ const SAMPLES: Partial<Record<NoticeKind, Record<string, unknown>>> = {
   hostParentSet: { hostId: "h", hostName: "Hyderabad Runners", parentId: "p", parentName: "Runners India" },
   eventRequestAnswered: { requestId: "r", decision: "changes", name: "Hyderabad Runners", reason: "Add a date" },
   slotReleased: { claimId: "c", hostId: "h", hostName: "Turf 9", start: "2026-11-26T12:30:00.000Z" },
+  slotConfirmed: { claimId: "c", hostId: "h", hostName: "Turf 9", station: "5-a-side", start: "2026-11-26T12:30:00.000Z", count: 1, code: "K7QX2M4P" },
   slotFreedAgain: { alertId: "a", hostId: "h", venueId: "h", hostName: "Turf 9", station: "5-a-side", start: "2026-11-26T12:30:00.000Z" },
   slotBooked: { claimId: "c", hostId: "h", hostName: "Turf 9", station: "5-a-side", start: "2026-11-26T12:30:00.000Z", count: 1 },
   staffGrantAdded: { userId: "u", features: ["people", "hosts"], reason: "New hire", by: "b", startsAt: null, grants: ["g"] },

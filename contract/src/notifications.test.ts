@@ -4,7 +4,7 @@ import { CHANNELS, EMAIL_SWITCHES, inboxApp, KINDS, PUSH_SWITCHES } from "./noti
 
 const kinds = Object.entries(KINDS);
 
-test("99 kinds: the plan's 94 plus the five host kinds (D1)", () => assert.equal(kinds.length, 99));
+test("100 kinds: the plan's 94, the five host kinds (D1) and slotConfirmed (X8)", () => assert.equal(kinds.length, 100));
 
 test("a kind has an inbox exactly when it names whose", () => {
   for (const [name, d] of kinds) assert.equal(d.inbox, d.app !== null, name);
@@ -31,6 +31,16 @@ test("the role's app: crew, desk, else Event Partner", () => {
   assert.equal(inboxApp("teamRoleStarted", { role: "admin" }), "launch");
   assert.equal(inboxApp("teamRemoved", {}), "launch");
   assert.equal(inboxApp("staffRiskyAction"), null);
+});
+
+test("a support reply lands in the app it was asked from, opening Help", () => {
+  assert.equal(inboxApp("supportReply", { app: "station" }), "station");
+  assert.equal(inboxApp("supportReply", { app: "launch" }), "launch");
+  assert.equal(inboxApp("supportReply", { app: "orbit" }), "orbit");
+  assert.equal(inboxApp("supportReply", { app: "crew" }), "crew");
+  assert.equal(inboxApp("supportReply", { app: "nope" }), "orbit");
+  assert.equal(inboxApp("supportReply"), "orbit");
+  assert.equal(KINDS.supportReply.opens, "help");
 });
 
 test("every optional kind has a switch, every Must kind none; email switches are push switches", () => {

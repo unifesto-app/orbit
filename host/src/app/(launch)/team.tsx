@@ -20,6 +20,7 @@ import { useLoad } from '@orbit/mobile/load';
 import { showPhone } from '@orbit/mobile/signin';
 import { useTabBarScroll } from '@orbit/mobile/tabBar';
 import { color, font, space } from '@orbit/mobile/theme';
+import { router } from 'expo-router';
 import { useState } from 'react';
 import { Alert, Linking, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -273,7 +274,7 @@ function HostTab({ host, me }: { host: HostOf; me: Me }) {
         <Section title="You" />
         <Card>
           <Row label="Account" value="Sign-in, security, delete" onPress={() => {}} />
-          <Row label="Help and support" onPress={() => {}} />
+          <Row label="Help and support" onPress={() => router.push('/help')} />
           <Row label="Open the web Console" external onPress={() => Linking.openURL('https://console.heyorbit.in').catch(() => {})} />
           <Row label="Sign out" plain onPress={signOut} />
         </Card>

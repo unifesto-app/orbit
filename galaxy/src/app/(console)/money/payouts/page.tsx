@@ -50,7 +50,7 @@ async function Body() {
             <tbody>
               {r.data.payouts.map((p) => (
                 <tr key={p.id}>
-                  <td>{p.eventTitle}</td>
+                  <td>{p.eventTitle ?? "Slots"}</td>
                   <td>{p.hostName}</td>
                   <td>{inr(p.amountPaise)}</td>
                   <td>
@@ -78,7 +78,7 @@ async function Body() {
           </table>
         )}
       </Container>
-      <Container title="Earnings by event" count={r.data.earnings.length}>
+      <Container title="Earnings by event or venue" count={r.data.earnings.length}>
         {r.data.earnings.length === 0 ? (
           <p className={ui.secondary}>No paid sales yet.</p>
         ) : (
@@ -99,8 +99,8 @@ async function Body() {
             </thead>
             <tbody>
               {r.data.earnings.map((e) => (
-                <tr key={e.eventId}>
-                  <td>{e.eventTitle}</td>
+                <tr key={e.eventId ?? e.hostId}>
+                  <td>{e.eventTitle ?? "Slots"}</td>
                   <td>{e.hostName}</td>
                   <td>{inr(e.salesPaise)}</td>
                   <td>{inr(e.commissionPaise + e.includedPaise)}</td>
@@ -111,7 +111,7 @@ async function Body() {
                   <td>{inr(e.availablePaise)}</td>
                   <td>
                     {e.availablePaise > 0 && (
-                      <Act label="New payout" action={newPayout} hidden={{ eventId: e.eventId }} who="Everyone with Money sees this">
+                      <Act label="New payout" action={newPayout} hidden={e.eventId ? { eventId: e.eventId } : { hostId: e.hostId }} who="Everyone with Money sees this">
                         <label>
                           Amount in rupees, up to {inr(e.availablePaise)}
                           <input className={ui.input} name="rupees" type="number" min="0.01" step="0.01" max={e.availablePaise / 100} required />

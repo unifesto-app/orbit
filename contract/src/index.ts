@@ -26,3 +26,4 @@ export * from "./broadcasts.ts";
 export * from "./checkin.ts";
 export * from "./ask.ts";
 export * from "./reports.ts";
+export * from "./support.ts";

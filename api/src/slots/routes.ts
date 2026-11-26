@@ -89,6 +89,9 @@ export async function tellTeam(tx: Tx, notify: Notify, claim: Held) {
     .where(and(eq(teamRoles.hostId, v!.hostId), isNotNull(teamRoles.startedAt), isNull(teamRoles.endedAt), isNotNull(teamRoles.userId)));
   const data = { claimId: claim.id, hostId: v!.hostId, hostName: v!.hostName, station: v!.station, start: claim.startsAt.toISOString(), count: claim.count };
   for (const t of team) await notify({ to: { userId: t.id! }, kind: "slotBooked", data, key: claim.id }, tx);
+  // And the player, with the code they show at the counter (a paid slot settles while the app may be closed).
+  if (claim.userId && claim.code)
+    await notify({ to: { userId: claim.userId }, kind: "slotConfirmed", data: { ...data, code: claim.code }, key: `booked:${claim.id}` }, tx);
 }
 
 export const stationRow = (s: Station): StationRow => ({
