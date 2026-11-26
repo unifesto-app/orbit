@@ -448,7 +448,10 @@ test("inbox rows open the app's screen with the id from the data, or nothing wit
   assert.equal(opensFor("slotReleased", { hostId: "h", claimId: "c" }), null);
   assert.equal(opensFor("orbitNews", { eventId: e }), null);
   assert.equal(opensFor("teamRemoved", { hostId: "h" }), null); // a host-app inbox: nothing of the people app's
-  // Every target names one the app knows, and no other app's inbox gets one (an email-only kind has no inbox at all).
-  const known = ["security", "help", "refunds", "request", "ticket", "refund", "event", "room", "slot", "host"];
-  for (const [kind, def] of Object.entries(KINDS)) if (def.opens) assert.ok(known.includes(def.opens) && (def.app === "orbit" || !def.inbox), kind);
+  // Every target names one the app knows. Another app's inbox only gets the account targets (security, help, refunds,
+  // request), never a people-app screen (an email-only kind has no inbox at all).
+  const account = ["security", "help", "refunds", "request"];
+  const known = [...account, "ticket", "refund", "event", "room", "slot", "host"];
+  for (const [kind, def] of Object.entries(KINDS))
+    if (def.opens) assert.ok(known.includes(def.opens) && (def.app === "orbit" || !def.inbox || account.includes(def.opens)), kind);
 });
