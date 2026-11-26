@@ -44,6 +44,8 @@ const UNCONFIRMED: Record<string, string> = {
   cancelled: "The event was cancelled",
   ended: "The event ended",
   notOpen: "Booking wasn’t open",
+  full: "That slot filled up",
+  notHeld: "That hold ran out",
 };
 
 const WORDS: Partial<Record<NoticeKind, (d: Data) => Words>> = {

@@ -75,6 +75,22 @@ const counterStation = (s: Station): CounterStation => ({
   id: s.id, name: s.name, unit: s.unit, tile: s.tile, count: s.count, whole: s.whole, step: s.step as 30 | 60, archived: s.archivedAt !== null,
   charges: s.pricePaise > 0,
 });
+// A booking just confirmed (free here, paid in payments/routes.ts settle): everyone on the venue's team (Admins and
+// Desk) hears of it in Orbit Play Partner, in the caller's transaction, once per claim.
+export async function tellTeam(tx: Tx, notify: Notify, claim: Held) {
+  const [v] = await tx
+    .select({ hostId: hosts.id, hostName: hosts.name, station: stations.name })
+    .from(stations)
+    .innerJoin(hosts, eq(hosts.id, stations.hostId))
+    .where(eq(stations.id, claim.stationId));
+  const team = await tx
+    .select({ id: teamRoles.userId })
+    .from(teamRoles)
+    .where(and(eq(teamRoles.hostId, v!.hostId), isNotNull(teamRoles.startedAt), isNull(teamRoles.endedAt), isNotNull(teamRoles.userId)));
+  const data = { claimId: claim.id, hostId: v!.hostId, hostName: v!.hostName, station: v!.station, start: claim.startsAt.toISOString(), count: claim.count };
+  for (const t of team) await notify({ to: { userId: t.id! }, kind: "slotBooked", data, key: claim.id }, tx);
+}
+
 export const stationRow = (s: Station): StationRow => ({
   ...counterStation(s),
   pricePaise: s.pricePaise,
@@ -563,13 +579,7 @@ export function slotsRoutes({ db, notify, secret, now = Date.now }: Deps) {
       if (totalPaise > 0) return { totalPaise };
       const done = await confirmHold(tx, claimId, now());
       if (!done.ok) return done.error === "full" ? no(409, "full", HOLD_NO.full[1]) : no(409, "notHeld", "That hold can't be booked any more.");
-      // Everyone on the venue's team (Admins and Desk) hears of it in Orbit Play Partner.
-      const team = await tx
-        .select({ id: teamRoles.userId })
-        .from(teamRoles)
-        .where(and(eq(teamRoles.hostId, hostId), isNotNull(teamRoles.startedAt), isNull(teamRoles.endedAt), isNotNull(teamRoles.userId)));
-      const data = { claimId, hostId, hostName: k.host.name, station: k.station.name, start: done.claim.startsAt.toISOString(), count: done.claim.count };
-      for (const t of team) await notify({ to: { userId: t.id! }, kind: "slotBooked", data, key: claimId }, tx);
+      await tellTeam(tx, notify, done.claim);
       return { claim: done.claim };
     });
     if ("no" in r) return said(c, r);

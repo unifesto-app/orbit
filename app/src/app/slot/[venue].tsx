@@ -11,20 +11,21 @@
 import { formatPrice, type NewHold, type SlotHold } from '@orbit/contract';
 import { router, useLocalSearchParams } from 'expo-router';
 import { type ComponentRef, useEffect, useReducer, useRef, useState } from 'react';
-import { AccessibilityInfo, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { AccessibilityInfo, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { BookBar } from '../../bookBar';
 import { bookingDays, freeAt, HOLD_MS, holdLeft, MAX_HOURS, mmss, slotLine, slotPrice, startTimes, timeLabel } from '../../booking';
 import { Fact, FactCard } from '../../fact';
 import { perHour, startsLine, venues } from '../../kinds';
 import { hosts, now } from '../../mock';
-import { payLabel, payReady } from '../../pay';
+import { checkoutCancelled, PAY_SAYS, payLabel, paymentsApi, payReady, prefillOf, RAZORPAY_KEY } from '../../pay';
 import { PayMark } from '../../payChoices';
 import { Chip, Stepper, Steps } from '../../pickers';
+import { razorpay } from '../../checkout';
 import { answerPush } from '../../push';
 import { Failed, NotFound, Sheet, SheetSays, Waiting } from '../../rows';
-import { api, needsAccount, real, usePayWith } from '../../session';
-import { confirmed, holdMsLeft, holdSheet, NO_HOLD, PAYS, payForHold, slotDays, slotMessage, slotsApi, startsFor } from '../../slots';
+import { api, needsAccount, real, usePayWith, useSession } from '../../session';
+import { confirmed, holdLapsed, holdMsLeft, holdSheet, NO_HOLD, PAYS, payForHold, payWord, slotDays, slotMessage, slotsApi, startsFor } from '../../slots';
 import { useLoad } from '../../load';
 import { color, font, space } from '../../theme';
 
@@ -241,21 +242,23 @@ function LiveSlots({ id, name }: { id: string; name?: string }) {
   const [clock, setClock] = useState(() => Date.now());
   const [bar, setBar] = useState(140);
   const pay = usePayWith();
+  const me = useSession()?.me;
   const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
   const first = useLoad(`slots|${id}`, () => slotsApi(api).publicSlots(id));
   const days = first.data ? slotDays(first.data.day, clock) : [];
   const dayText = di > 0 ? (days[di]?.day ?? null) : null;
   const other = useLoad(dayText && `slots|${id}|${dayText}`, () => slotsApi(api).publicSlots(id, dayText ?? undefined));
   const page = di === 0 ? first : other;
-  const { held, booked, busy, said, asked } = st;
+  const { held, booked, busy, said, asked, paying } = st;
   // A call out (a ref, so a second tap before the next render is caught too).
   const flying = useRef(false);
   // Leaving the sheet lets go of a live hold; so does a hold that comes back after it's gone.
   const mounted = useRef(true);
   const live = useRef<string | null>(null);
   useEffect(() => {
-    live.current = held && !booked ? held.id : null; // one that's run out answers 404 to a let go: harmless
-  }, [held, booked]);
+    // One that's run out answers 404 to a let go: harmless. One being paid for is never let go.
+    live.current = held && !booked && !paying ? held.id : null;
+  }, [held, booked, paying]);
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -264,7 +267,7 @@ function LiveSlots({ id, name }: { id: string; name?: string }) {
     };
   }, [id]);
   // While held, the countdown ticks every second, and stops itself once it's run out.
-  const ticking = held && !booked ? st.heldAt : null;
+  const ticking = held && !booked && !paying ? st.heldAt : null;
   useEffect(() => {
     if (ticking === null) return;
     const t = setInterval(() => {
@@ -274,6 +277,29 @@ function LiveSlots({ id, name }: { id: string; name?: string }) {
     }, 1000);
     return () => clearInterval(t);
   }, [ticking]);
+  // Money may have gone: the order's status every 5 seconds until it settles (booked, or refunded and said).
+  useEffect(() => {
+    if (!paying || !held) return;
+    let stop = false;
+    const t = setInterval(async () => {
+      const v = await paymentsApi(api).status(paying);
+      if (stop || !v.ok) return;
+      const gone = v.data.status === 'expired' || v.data.status === 'failed'; // nothing was taken after all
+      const c = await payWord(api, id, held.id, paying, v, gone ? 'dismissed' : undefined);
+      if (stop || 'confirming' in c) return;
+      stop = true;
+      clearInterval(t);
+      if ('booked' in c) step({ t: 'booked', hold: c.booked });
+      else {
+        step({ t: 'unpaid' });
+        step({ t: 'said', text: c.no });
+      }
+    }, 5000);
+    return () => {
+      stop = true;
+      clearInterval(t);
+    };
+  }, [paying, held, id]);
 
   if (!first.data) return first.status === 404 ? <NotFound what="place to play" /> : first.error ? <Failed message={first.error.message} retry={first.reload} /> : <Waiting />;
   const stations = page.data?.stations ?? first.data.stations;
@@ -295,7 +321,7 @@ function LiveSlots({ id, name }: { id: string; name?: string }) {
   const priced = cost !== null && cost > 0;
   const holdable = !!chosen && (PAYS || !priced); // a priced slot waits for payments (X2): never held to sit unpaid
   const left = holdMsLeft(st, clock);
-  const lapsed = !!held && !booked && left === 0;
+  const lapsed = holdLapsed(st, clock);
   const unitHours = `${hours} ${hours === 1 ? 'hour' : 'hours'}`;
 
   const say = (text: string) => {
@@ -319,7 +345,7 @@ function LiveSlots({ id, name }: { id: string; name?: string }) {
     });
   // A new pick lets go of a live hold, so the time is free for others at once. Ignored while a call is out.
   const pick = (fn: () => void) => {
-    if (flying.current || busy) return;
+    if (flying.current || busy || paying) return;
     fn();
     if (live.current) void slotsApi(api).letGo(id, live.current);
     step({ t: 'pick' });
@@ -345,11 +371,34 @@ function LiveSlots({ id, name }: { id: string; name?: string }) {
       if ('booked' in c) step({ t: 'booked', hold: c.booked });
       else if ('no' in c) say(c.no);
     });
+  // Pay: the API's order, Razorpay's checkout on the way you picked, then the API's word (payForHold, src/slots.ts).
   const payNow = () =>
     run(async () => {
-      const c = confirmed(await payForHold(id, held!.id));
+      const rp = razorpay();
+      if (!rp) return say(PAY_SAYS.off);
+      const c = await payForHold(api, id, held!.id, async (o) => {
+        try {
+          const p = await rp.open({
+            key: o.keyId || RAZORPAY_KEY,
+            order_id: o.orderId,
+            amount: o.amountPaise,
+            currency: 'INR',
+            name: 'Orbit',
+            description: line ?? name ?? 'Slot',
+            prefill: { name: me?.name ?? undefined, email: me?.email ?? undefined, contact: me?.phone ?? undefined, ...prefillOf(pay) },
+            theme: { color: color.accent },
+          });
+          return { paid: { id: p.razorpay_payment_id, signature: p.razorpay_signature ?? '' } };
+        } catch (err) {
+          return { closed: checkoutCancelled(err, Platform.OS) ? 'dismissed' : 'failed' };
+        }
+      });
+      if (!mounted.current) return;
       if ('booked' in c) step({ t: 'booked', hold: c.booked });
-      else if ('no' in c) say(c.no);
+      else if ('confirming' in c) {
+        step({ t: 'paying', orderId: c.orderId });
+        say(c.confirming);
+      } else say(c.no);
     });
   const letGo = () =>
     run(async () => {
@@ -371,7 +420,7 @@ function LiveSlots({ id, name }: { id: string; name?: string }) {
       void answerPush(true);
     });
   // What "Hear if it frees up" asks about: the hold that ran out, or the full time picked.
-  const what: (() => NewHold) | null = lapsed ? () => ({ stationId: held.stationId, start: held.start, hours: was!.hours, count: held.count }) : full ? asNew : null;
+  const what: (() => NewHold) | null = lapsed && held ? () => ({ stationId: held.stationId, start: held.start, hours: was!.hours, count: held.count }) : full ? asNew : null;
   const hear = what && (
     <SheetSays
       text={held ? 'Your hold ended, so someone else can book this time now.' : 'That time’s full. Try holding it anyway, or hear if it frees up.'}
@@ -464,12 +513,18 @@ function LiveSlots({ id, name }: { id: string; name?: string }) {
         ) : (
           <>
             <FactCard flush>
-              <Fact label={`${mmss(left)} left to ${priced ? 'pay' : 'confirm'}`} value={line ?? ''} note={cost !== null ? formatPrice(cost) : undefined} />
+              <Fact
+                label={paying ? 'Confirming your payment' : `${mmss(left)} left to ${priced ? 'pay' : 'confirm'}`}
+                value={line ?? ''}
+                note={cost !== null ? formatPrice(cost) : undefined}
+              />
             </FactCard>
-            <SheetSays
-              text={priced ? 'It’s yours if you pay before the time’s up. You can cancel up to 2 hours before the start.' : 'It’s yours once you confirm, before the time’s up.'}
-              answers={[{ label: 'Let go', onPress: letGo }]}
-            />
+            {!paying && (
+              <SheetSays
+                text={priced ? 'It’s yours if you pay before the time’s up. Fees, if any, show when you pay.' : 'It’s yours once you confirm, before the time’s up.'}
+                answers={[{ label: 'Let go', onPress: letGo }]}
+              />
+            )}
           </>
         )}
         {said && <SheetSays text={said} />}
@@ -480,7 +535,7 @@ function LiveSlots({ id, name }: { id: string; name?: string }) {
         from={cost === null}
         note={line ?? 'Pick a start time'}
         action={
-          busy
+          busy || paying
             ? 'One moment'
             : booked
               ? 'Done'
@@ -495,7 +550,7 @@ function LiveSlots({ id, name }: { id: string; name?: string }) {
                     : 'Confirm'
         }
         onAction={
-          busy
+          busy || paying
             ? undefined
             : booked
               ? () => router.back()
@@ -511,7 +566,7 @@ function LiveSlots({ id, name }: { id: string; name?: string }) {
                       : () => router.push('/pay')
                     : confirm
         }
-        pay={held && !lapsed && !booked && priced ? { mark: <PayMark pay={pay} />, label: payLabel(pay), onPress: () => router.push('/pay') } : undefined}
+        pay={held && !lapsed && !booked && !paying && priced ? { mark: <PayMark pay={pay} />, label: payLabel(pay), onPress: () => router.push('/pay') } : undefined}
         onHeight={setBar}
       />
     </Sheet>

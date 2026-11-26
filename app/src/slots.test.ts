@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import type { PublicSlots, SlotHold } from '@orbit/contract';
 
 import { bookable, publicStarts } from '../../api/src/slots/rules.ts';
-import { confirmed, holdMsLeft, holdSheet, NO_HOLD, payForHold, PAYS, slotDays, slotMessage, slotsApi, startsFor, venueBar } from './slots.ts';
+import { confirmed, holdLapsed, holdMsLeft, holdSheet, NO_HOLD, type Opened, payForHold, PAYS, payWord, slotDays, slotMessage, slotsApi, startsFor, venueBar } from './slots.ts';
 
 const H = '0b9d6a3e-1c2f-4f7a-9d1e-2a3b4c5d6e7f';
 
@@ -44,11 +44,53 @@ test('confirmed: booked, the 402 total to pay, or plain words', () => {
   assert.equal(slotMessage({ error: 'tooMany', message: 'Too many holds here in the last hour. Try again later.' }), 'Too many holds here in the last hour. Try again later.');
 });
 
-test('payForHold: the seam for X2, not ready', async () => {
-  assert.equal(PAYS, false);
-  const r = await payForHold(H, 'c1');
-  assert.ok(!r.ok && r.error.error === 'paymentsOff');
-  assert.ok('no' in confirmed(r));
+test('payForHold: order, checkout, the API’s word; booked, refunded, closed, off', async () => {
+  assert.equal(PAYS, true);
+  const order = { orderId: 'order_1', amountPaise: 51500, keyId: 'rzp_test_x', already: false, breakdown: { pricePaise: 50000, feePaise: 1500, feeIncluded: false, amountPaise: 51500 } };
+  const hold = { id: 'c1', code: 'ABC123' } as unknown as SlotHold;
+  // A fake API: each path answers what `answers` says; every call is recorded.
+  const run = async (answers: Record<string, unknown>, opened: Opened) => {
+    const calls: string[] = [];
+    const authed = async (method: string, path: string) => {
+      calls.push(`${method} ${path}`);
+      const a = answers[`${method} ${path}`];
+      return (a ?? { ok: false, status: 500, error: { error: 'x', message: 'x' } }) as never;
+    };
+    const r = await payForHold({ call: authed, authed } as never, H, 'c1', async () => opened);
+    return { r, calls };
+  };
+  const ok = (data: unknown) => ({ ok: true, data });
+  const paid = { paid: { id: 'pay_1', signature: 'sig' } };
+  const base = { [`POST /venues/${H}/holds/c1/pay`]: ok(order) };
+
+  // Paid: verify, then the confirm route hands back the code.
+  const a = await run({ ...base, 'POST /payments/order_1/verify': ok({ status: 'paid', bookingId: null }), [`POST /venues/${H}/holds/c1/confirm`]: ok(hold) }, paid);
+  assert.deepEqual(a.r, { booked: hold });
+  assert.deepEqual(a.calls, [`POST /venues/${H}/holds/c1/pay`, 'POST /payments/order_1/verify', `POST /venues/${H}/holds/c1/confirm`]);
+  // Paid but the slot filled: refunded, said so.
+  const b = await run({ ...base, 'POST /payments/order_1/verify': ok({ status: 'refundPending', bookingId: null, reason: 'full' }) }, paid);
+  assert.ok('no' in b.r && /filled up/.test(b.r.no));
+  // Checkout closed: the order's status, nothing taken.
+  const c = await run({ ...base, 'GET /payments/order_1': ok({ status: 'created', bookingId: null }) }, { closed: 'dismissed' });
+  assert.deepEqual(c.r, { no: 'Payment not completed. Nothing was charged.' });
+  // Verified but not settled yet: confirming, never a reopen.
+  const d = await run({ ...base, 'POST /payments/order_1/verify': ok({ status: 'confirming', bookingId: null }) }, paid);
+  assert.ok('confirming' in d.r && d.r.orderId === 'order_1');
+  // Verify lost on the way: money may have gone, so confirming, not a reopen.
+  const v = await run({ ...base, 'POST /payments/order_1/verify': { ok: false, status: 0, error: { error: 'offline', message: 'x' } } }, paid);
+  assert.ok('confirming' in v.r);
+  // Already paid (an earlier try settled): the code, no checkout.
+  const g = await run({ [`POST /venues/${H}/holds/c1/pay`]: { ok: false, status: 409, error: { error: 'booked', message: 'x' } }, [`POST /venues/${H}/holds/c1/confirm`]: ok(hold) }, paid);
+  assert.deepEqual(g.r, { booked: hold });
+  // The poll: settled paid books; still created waits; expired says nothing was taken.
+  const api = (confirm: unknown) => ({ authed: async () => confirm }) as never;
+  assert.deepEqual(await payWord(api(ok(hold)), H, 'c1', 'o', ok({ status: 'paid', bookingId: null }) as never), { booked: hold });
+  assert.ok('confirming' in (await payWord(api(null), H, 'c1', 'o', ok({ status: 'created', bookingId: null }) as never)));
+  assert.deepEqual(await payWord(api(null), H, 'c1', 'o', ok({ status: 'expired', bookingId: null }) as never, 'dismissed'), { no: 'Payment not completed. Nothing was charged.' });
+  // Payments off: checkout never opens.
+  const e = await run({ [`POST /venues/${H}/holds/c1/pay`]: { ok: false, status: 503, error: { error: 'paymentsOff', message: 'x' } } }, paid);
+  assert.ok('no' in e.r && /isn’t taking payments/.test(e.r.no));
+  assert.equal(e.calls.length, 1);
 });
 
 test('slotDays: 14 India days from the API first, Today and Tomorrow by the phone’s India date; across a month', () => {
@@ -114,6 +156,12 @@ test('holdSheet: hold, confirm, booked; lapsed by the clock from receipt; a pick
   assert.deepEqual(holdSheet({ ...s, said: 'x', asked: true }, { t: 'pick' }), NO_HOLD); // a pick drops it all
   assert.equal(holdSheet({ ...s, said: 'x' }, { t: 'busy' }).said, null); // a new call clears the last word
   assert.equal(holdSheet(s, { t: 'asked' }).asked, true);
+  // Paying: a pick can't drop it, it never lapses on the clock, and booked clears it.
+  const p = holdSheet(s, { t: 'paying', orderId: 'o' });
+  assert.equal(holdSheet(p, { t: 'pick' }), p);
+  assert.equal(holdLapsed(p, t0 + 3_600_000), false);
+  assert.equal(holdLapsed(holdSheet(p, { t: 'unpaid' }), t0 + 3_600_000), true);
+  assert.equal(holdSheet(p, { t: 'booked', hold }).paying, null);
 });
 
 test('venueBar: cheapest hour (off-peak too) and the next start with room', () => {

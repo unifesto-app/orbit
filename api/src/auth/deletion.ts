@@ -168,10 +168,13 @@ export async function runDeletions(db: Db, notify: Notify, now: number, revokeAp
           .update(stationClaims)
           .set({ holdEndsAt: at, updatedAt: at })
           .where(and(eq(stationClaims.userId, u.id), eq(stationClaims.status, "held"), gt(stationClaims.holdEndsAt, at)));
-        await tx
+        const freed = await tx
           .update(stationClaims)
           .set({ status: "released", releasedAt: at, updatedAt: at })
-          .where(and(eq(stationClaims.userId, u.id), eq(stationClaims.kind, "booking"), eq(stationClaims.status, "paid"), gt(stationClaims.startsAt, at)));
+          .where(and(eq(stationClaims.userId, u.id), eq(stationClaims.kind, "booking"), eq(stationClaims.status, "paid"), gt(stationClaims.startsAt, at)))
+          .returning({ id: stationClaims.id });
+        // A paid slot given up this way goes back whole, as an upcoming ticket does.
+        if (freed.length) await refundPaid(tx, inArray(payments.claimId, freed.map((c) => c.id)), "The account was deleted", at);
         const seats = await tx
           .update(teamRoles)
           .set({ endedAt: at, endReason: "deleted" })

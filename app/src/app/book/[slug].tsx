@@ -23,7 +23,7 @@
 import { formatPrice, type PayOrder, type PublicEvent } from '@orbit/contract';
 import { router, useLocalSearchParams } from 'expo-router';
 import { type ComponentRef, useEffect, useRef, useState } from 'react';
-import { AccessibilityInfo, NativeModules, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TurboModuleRegistry, View } from 'react-native';
+import { AccessibilityInfo, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { Field, Pill } from '../../account/kit';
 import { BookBar } from '../../bookBar';
@@ -36,6 +36,7 @@ import { type Event, eventsApi, toEvent } from '../../events';
 import { useLoad } from '../../load';
 import { events, now as mockNow } from '../../mock';
 import { checkoutCancelled, orderNext, PAY_SAYS, type PayDone, paidNext, payLabel, paymentsApi, payReady, prefillOf, RAZORPAY_KEY } from '../../pay';
+import { razorpay } from '../../checkout';
 import { PayMark } from '../../payChoices';
 import { Chip, Stepper, Steps } from '../../pickers';
 import { Failed, NotFound, Sheet, SheetSays, Waiting } from '../../rows';
@@ -50,20 +51,6 @@ const NOT_ON = {
   register: 'Orbit isn’t taking bookings yet, so you’re not registered.',
   waitlist: 'Waitlists aren’t on yet, so nothing was joined.',
 };
-
-// Razorpay's checkout, loaded on Pay, never on import: a build from before it (no native module) throws on importing it
-// (NativeEventEmitter), which would take this whole sheet down, free Register too. Null there: paying waits for the
-// rebuild.
-type Checkout = typeof import('react-native-razorpay').default;
-function razorpay(): Checkout | null {
-  if (!TurboModuleRegistry.get('RNRazorpayCheckout') && !NativeModules.RNRazorpayCheckout) return null;
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    return (require('react-native-razorpay') as { default: Checkout }).default;
-  } catch {
-    return null;
-  }
-}
 
 // The API's event first (an old slug too); only when it says 404 and the slug is a mock event's id does the mock's
 // booking draw, as useEvent does.
