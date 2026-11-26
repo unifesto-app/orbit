@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { TeamEvent } from '@orbit/contract';
+import { mediaRatio, type TeamEvent } from '@orbit/contract';
 
-import { bodyOf, fixesOf, formOf, lastsLabel, paiseOf, placeHalf, priceLabel, saveable } from './editor.ts';
+import { bodyOf, centreCrop, fixesOf, formOf, lastsLabel, paiseOf, placeHalf, priceLabel, saveable } from './editor.ts';
 
 // A 90-minute event at a place found by search, with coordinates the form can't show.
 const e = {
@@ -57,4 +57,13 @@ test('prices in whole rupees', () => {
 test('publish refusals as fixes', () => {
   assert.deepEqual(fixesOf(['poster', 'tickets']), ['Add a 3:4 poster.', 'Add at least one ticket type.']);
   assert.deepEqual(fixesOf(['later']), ['Something else is missing.']);
+});
+
+test('centreCrop cuts the biggest centred 3:4 or 4:3 box, and leaves a right shape alone', () => {
+  assert.deepEqual(centreCrop(1200, 1200, 'poster'), { originX: 150, originY: 0, width: 900, height: 1200 });
+  assert.deepEqual(centreCrop(1200, 1200, 'wide'), { originX: 0, originY: 150, width: 1200, height: 900 });
+  assert.equal(centreCrop(900, 1200, 'poster'), null);
+  assert.equal(centreCrop(1201, 900, 'wide'), null);
+  const c = centreCrop(1080, 1920, 'wide')!;
+  assert.equal(mediaRatio(c.width, c.height), '4:3');
 });
