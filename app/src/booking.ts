@@ -84,28 +84,8 @@ export function freeAt(s: Station, start: number, hours: number): number {
   return free;
 }
 
-/** Whether the off-peak rate applies to the half hour starting at `at`. */
-function offPeakAt(s: Station, at: number): boolean {
-  if (!s.offPeak) return false;
-  const d = india(at);
-  const hour = d.getUTCHours() + d.getUTCMinutes() / 60;
-  const weekday = d.getUTCDay() !== 0 && d.getUTCDay() !== 6;
-  return hour >= s.offPeak.from && hour < s.offPeak.to && (!s.offPeak.weekdays || weekday);
-}
-
-/**
- * What a booking costs: each half hour at its own hourly rate, halved, for every station booked, so a 3:30 PM start is
- * half off-peak; co-op is the co-op rate for one station shared by two. A pitch or court is one, booked whole.
- */
-export function slotPrice(s: Station, start: number, hours: number, count = 1, coop = false): number {
-  let total = 0;
-  for (let h = 0; h < hours * 2; h++) {
-    const at = start + h * 30 * MIN;
-    const rate = coop && s.coopPaise ? s.coopPaise : offPeakAt(s, at) ? s.offPeak!.pricePaise : s.pricePaise;
-    total += (rate / 2) * (coop ? 1 : count);
-  }
-  return Math.round(total);
-}
+// What a booking costs (each half hour at its own rate, co-op shared): in the contract, so the API charges the same.
+export { slotPrice } from '@orbit/contract';
 
 /**
  * The ticket's line (Play): "3 × PC, Sat 21 Nov, 6:30 to 8:30 PM"; a whole pitch or court has no count. The start

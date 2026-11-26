@@ -2,7 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { and, eq } from "drizzle-orm";
 import { testApp } from "../testkit.ts";
-import { hosts, stationClaims } from "../db/schema.ts";
+import { auditLog, hosts, slotAlerts, staffGrants, stationClaims } from "../db/schema.ts";
+import { sweepSlotAlerts } from "./alerts.ts";
 import { hold } from "./hold.ts";
 
 // The slots API against a real database. Every test starts a fresh world and moves the clock to 6:20 PM India time.
@@ -629,7 +630,9 @@ test("anyone signed in holds a slot through the route", async () => {
     const body = { stationId: s.id, start: iso(seven), hours: 1, count: 2 };
     const ok = await as(booker)("POST", `/venues/${A}/holds`, body);
     assert.equal(ok.status, 201, JSON.stringify(ok.body));
-    assert.deepEqual(ok.body, { id: ok.body.id, stationId: s.id, start: iso(seven), end: iso(seven + HOUR), count: 2, holdEndsAt: iso(t.now() + 10 * MIN) });
+    assert.deepEqual(ok.body, {
+      id: ok.body.id, stationId: s.id, start: iso(seven), end: iso(seven + HOUR), count: 2, holdEndsAt: iso(t.now() + 10 * MIN), status: "held", qr: null, code: null,
+    });
     // Someone else finds it full.
     const full = await as(booker2)("POST", `/venues/${A}/holds`, { ...body, count: 1 });
     assert.equal(full.status, 409);
@@ -677,6 +680,204 @@ test("one person holds at most three times an hour at a venue", async () => {
     // An hour on, they can hold here again.
     t.tick(HOUR);
     assert.equal((await as(booker)("POST", `/venues/${A}/holds`, body)).status, 201);
+  } finally {
+    await t.close();
+  }
+});
+
+// ---------- X7: confirming, letting go, freed-slot alerts, the public read and Galaxy ----------
+
+// A venue open 11 AM to 2 AM with one free (₹0) station and the next 7 PM.
+async function freeVenue(w: Awaited<ReturnType<typeof world>>, count = 1) {
+  await w.setup(w.A, w.everyDay([11, 26]));
+  const s = await w.station(w.A, { name: "Free PC", unit: "PC", count, pricePaise: 0, tile: "gaming" });
+  return { s, seven: w.base + 40 * MIN };
+}
+
+test("two holds racing for the last station: exactly one wins", async () => {
+  const w = await world();
+  const { t, as, booker, booker2, A } = w;
+  try {
+    const { s, seven } = await freeVenue(w);
+    const body = { stationId: s.id, start: iso(seven), hours: 1, count: 1 };
+    const got = await Promise.all([as(booker)("POST", `/venues/${A}/holds`, body), as(booker2)("POST", `/venues/${A}/holds`, body)]);
+    assert.deepEqual(got.map((r) => r.status).sort(), [201, 409]);
+    assert.equal(got.find((r) => r.status === 409)!.body.error, "full");
+    await w.invariant(s.id, 1);
+  } finally {
+    await t.close();
+  }
+});
+
+test("a free hold confirms into a ticket and the venue's team hears; a paid one needs paying", async () => {
+  const w = await world();
+  const { t, as, booker, booker2, admin, desk, A } = w;
+  try {
+    const { s, seven } = await freeVenue(w);
+    const h = (await as(booker)("POST", `/venues/${A}/holds`, { stationId: s.id, start: iso(seven), hours: 1, count: 1 })).body;
+    assert.equal((await as(booker2)("POST", `/venues/${A}/holds/${h.id}/confirm`)).status, 404); // not theirs
+    const ok = await as(booker)("POST", `/venues/${A}/holds/${h.id}/confirm`);
+    assert.equal(ok.status, 200, JSON.stringify(ok.body));
+    assert.equal(ok.body.status, "paid");
+    assert.equal(ok.body.holdEndsAt, null);
+    assert.match(ok.body.qr, /^[A-Za-z0-9_-]{32}$/);
+    assert.match(ok.body.code, /^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{8}$/);
+    const told = t.notices.filter((n) => n.kind === "slotBooked");
+    assert.deepEqual(told.map((n) => (n.to as any).userId).sort(), [admin.me.id, desk.me.id].sort());
+    assert.equal(told[0]!.data!.station, "Free PC");
+    // A retry answers the same and tells nobody twice.
+    const again = await as(booker)("POST", `/venues/${A}/holds/${h.id}/confirm`);
+    assert.equal(again.status, 200);
+    assert.equal(again.body.qr, ok.body.qr);
+    assert.equal(t.notices.filter((n) => n.kind === "slotBooked").length, 2);
+    // It's a booking now: it counts past the 10 minutes.
+    t.tick(15 * MIN);
+    assert.equal((await as(booker2)("POST", `/venues/${A}/holds`, { stationId: s.id, start: iso(seven), hours: 1, count: 1 })).body.error, "full");
+
+    // A priced station: 402 with the total, and the hold stays as it was.
+    const pc = await w.station(A, w.pc(4));
+    const p = (await as(booker2)("POST", `/venues/${A}/holds`, { stationId: pc.id, start: iso(seven + HOUR), hours: 2, count: 2 })).body;
+    const pay = await as(booker2)("POST", `/venues/${A}/holds/${p.id}/confirm`);
+    assert.equal(pay.status, 402);
+    assert.equal(pay.body.error, "paymentNeeded");
+    assert.equal(pay.body.totalPaise, 10000 * 2 * 2);
+    const [row] = await t.db.select().from(stationClaims).where(eq(stationClaims.id, p.id));
+    assert.equal(row!.status, "held");
+    assert.equal(row!.qr, null);
+  } finally {
+    await t.close();
+  }
+});
+
+test("a lapsed hold confirms only while the slot is still free", async () => {
+  const w = await world();
+  const { t, as, booker, booker2, A } = w;
+  try {
+    const { s, seven } = await freeVenue(w);
+    const body = { stationId: s.id, start: iso(seven), hours: 1, count: 1 };
+    const first = (await as(booker)("POST", `/venues/${A}/holds`, body)).body;
+    t.tick(11 * MIN);
+    const late = await as(booker)("POST", `/venues/${A}/holds/${first.id}/confirm`);
+    assert.equal(late.status, 200);
+    assert.equal(late.body.status, "paid");
+
+    // Lapsed, and someone else holds it now: full, and nothing changes.
+    const later = { ...body, start: iso(seven + HOUR) };
+    const mine = (await as(booker)("POST", `/venues/${A}/holds`, later)).body;
+    t.tick(11 * MIN);
+    assert.equal((await as(booker2)("POST", `/venues/${A}/holds`, later)).status, 201);
+    const taken = await as(booker)("POST", `/venues/${A}/holds/${mine.id}/confirm`);
+    assert.equal(taken.status, 409);
+    assert.equal(taken.body.error, "full");
+    const [row] = await t.db.select().from(stationClaims).where(eq(stationClaims.id, mine.id));
+    assert.equal(row!.status, "held");
+    await w.invariant(s.id, 1);
+  } finally {
+    await t.close();
+  }
+});
+
+test("a player lets go of a hold and the slot is free again", async () => {
+  const w = await world();
+  const { t, as, booker, booker2, stranger, A } = w;
+  try {
+    const { s, seven } = await freeVenue(w);
+    const body = { stationId: s.id, start: iso(seven), hours: 1, count: 1 };
+    const h = (await as(booker)("POST", `/venues/${A}/holds`, body)).body;
+    assert.equal((await as(booker2)("POST", `/venues/${A}/holds`, body)).status, 409);
+    assert.equal((await as(stranger)("DELETE", `/venues/${A}/holds/${h.id}`)).status, 404);
+    assert.equal((await as(booker)("DELETE", `/venues/${A}/holds/${h.id}`)).status, 204);
+    assert.equal((await as(booker)("DELETE", `/venues/${A}/holds/${h.id}`)).status, 404);
+    assert.equal((await as(booker2)("POST", `/venues/${A}/holds`, body)).status, 201);
+    const [row] = await t.db.select().from(stationClaims).where(eq(stationClaims.id, h.id));
+    assert.equal(row!.status, "held"); // kept, just over
+  } finally {
+    await t.close();
+  }
+});
+
+test("freed-slot alerts: only on a full slot, one push when it frees, the public read follows", async () => {
+  const w = await world();
+  const { t, as, booker, booker2, A, C } = w;
+  try {
+    const { s, seven } = await freeVenue(w);
+    const body = { stationId: s.id, start: iso(seven), hours: 1, count: 1 };
+    const notFull = await as(booker2)("POST", `/venues/${A}/alerts`, body);
+    assert.equal(notFull.status, 409);
+    assert.equal(notFull.body.error, "notFull");
+
+    const pub = async () => {
+      const r = await t.call("GET", `/public/venues/${A}/slots`);
+      assert.equal(r.status, 200);
+      return r.body.stations[0].free.find((f: any) => f.at === iso(seven)).free as number;
+    };
+    assert.equal(await pub(), 1);
+    await as(booker)("POST", `/venues/${A}/holds`, body);
+    assert.equal(await pub(), 0);
+    // Their own hold doesn't make it full for them.
+    assert.equal((await as(booker)("POST", `/venues/${A}/alerts`, body)).body.error, "notFull");
+
+    const a = await as(booker2)("POST", `/venues/${A}/alerts`, body);
+    assert.equal(a.status, 201, JSON.stringify(a.body));
+    const again = await as(booker2)("POST", `/venues/${A}/alerts`, body);
+    assert.equal(again.status, 200);
+    assert.equal(again.body.id, a.body.id);
+
+    await sweepSlotAlerts(t.db, t.notify, t.now());
+    assert.equal(t.notices.filter((n) => n.kind === "slotFreedAgain").length, 0);
+    t.tick(11 * MIN); // the hold lapses
+    await sweepSlotAlerts(t.db, t.notify, t.now());
+    await sweepSlotAlerts(t.db, t.notify, t.now());
+    const sent = t.notices.filter((n) => n.kind === "slotFreedAgain");
+    assert.equal(sent.length, 1);
+    assert.equal((sent[0]!.to as any).userId, booker2.me.id);
+    assert.equal(sent[0]!.data!.venueId, A);
+    assert.equal(await pub(), 1);
+    // Sent: it can't be cancelled, and a new ask on a free slot is refused.
+    assert.equal((await as(booker2)("DELETE", `/venues/${A}/alerts/${a.body.id}`)).status, 404);
+
+    // Cancel a waiting one; the public read's day window and non-venues.
+    await as(booker)("POST", `/venues/${A}/holds`, body);
+    const b2 = await as(booker2)("POST", `/venues/${A}/alerts`, body);
+    assert.equal(b2.status, 201);
+    assert.equal((await as(booker)("DELETE", `/venues/${A}/alerts/${b2.body.id}`)).status, 404);
+    assert.equal((await as(booker2)("DELETE", `/venues/${A}/alerts/${b2.body.id}`)).status, 204);
+    const [left] = await t.db.select().from(slotAlerts).where(eq(slotAlerts.id, b2.body.id));
+    assert.equal(left, undefined);
+    const tomorrow = new Date(t.now() + DAY + IST).toISOString().slice(0, 10);
+    assert.equal((await t.call("GET", `/public/venues/${A}/slots?day=${tomorrow}`)).body.day, tomorrow);
+    assert.equal((await t.call("GET", `/public/venues/${A}/slots?day=2020-01-01`)).status, 400);
+    assert.equal((await t.call("GET", `/public/venues/${A}/slots?day=2026-02-31`)).status, 400);
+    assert.equal((await t.call("GET", `/public/venues/${C}/slots`)).status, 404);
+  } finally {
+    await t.close();
+  }
+});
+
+test("Galaxy lists live holds and alerts and releases a hold, for holders of Hosts only", async () => {
+  const w = await world();
+  const { t, as, booker, booker2, stranger, A } = w;
+  try {
+    const { s, seven } = await freeVenue(w);
+    const body = { stationId: s.id, start: iso(seven), hours: 1, count: 1 };
+    const h = (await as(booker)("POST", `/venues/${A}/holds`, body)).body;
+    await as(booker2)("POST", `/venues/${A}/alerts`, body);
+    const R = { reason: "Stuck hold" };
+    assert.equal((await as(stranger)("GET", "/galaxy/slot-holds")).status, 404);
+    assert.equal((await as(stranger)("POST", `/galaxy/slot-holds/${h.id}/release`, R)).status, 404);
+    await t.db.insert(staffGrants).values({ userId: stranger.me.id, feature: "hosts", addedBy: stranger.me.id, addedAt: new Date(t.now() - 2 * DAY), startsAt: new Date(t.now() - DAY) });
+    const list = await as(stranger)("GET", "/galaxy/slot-holds");
+    assert.equal(list.status, 200);
+    assert.deepEqual(list.body.holds.map((x: any) => [x.id, x.person, x.venue, x.station]), [[h.id, "Meera Pillai", "Pixel Lounge", "Free PC"]]);
+    assert.deepEqual(list.body.alerts.map((x: any) => [x.person, x.state]), [["Kabir Shah", "waiting"]]);
+    assert.equal((await as(stranger)("POST", `/galaxy/slot-holds/${h.id}/release`, {})).status, 400);
+    assert.equal((await as(stranger)("POST", `/galaxy/slot-holds/${h.id}/release`, R)).status, 204);
+    assert.equal((await as(stranger)("POST", `/galaxy/slot-holds/${h.id}/release`, R)).status, 404);
+    assert.deepEqual((await as(stranger)("GET", "/galaxy/slot-holds")).body.holds, []);
+    const logged = await t.db.select().from(auditLog).where(eq(auditLog.action, "slots.releaseHold"));
+    assert.equal(logged.length, 1);
+    assert.equal(logged[0]!.targetUser, booker.me.id);
+    assert.equal((await as(booker2)("POST", `/venues/${A}/holds`, body)).status, 201);
   } finally {
     await t.close();
   }

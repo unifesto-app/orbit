@@ -8,6 +8,7 @@ import { publicEventsRoutes } from "./events/public.ts";
 import { savesRoutes } from "./saves.ts";
 import { meNotificationsRoutes } from "./me-notifications.ts";
 import { bookingsRoutes } from "./bookings.ts";
+import { galaxySlotsRoutes } from "./slots/galaxy.ts";
 import { slotsRoutes } from "./slots/routes.ts";
 import { hostsRoutes } from "./hosts/routes.ts";
 import { requestsRoutes } from "./hosts/requests.ts";
@@ -54,6 +55,7 @@ export function createApp(deps?: Deps) {
     app.route("/", visitRoutes(deps));
     app.route("/", contentRoutes(deps));
     app.route("/", galaxyNotificationsRoutes(deps));
+    app.route("/", galaxySlotsRoutes(deps));
     app.route("/", careersRoutes(deps));
     app.route("/", dashboardRoutes(deps));
     app.route("/", analyticsRoutes(deps));
