@@ -23,7 +23,7 @@ export const refund = async (_: Done, f: FormData) =>
   run("POST", `/galaxy/money/payments/${id(f)}/refund`, { amountPaise: paise(f), reason: text(f, "reason") });
 export const retryRefund = async (_: Done, f: FormData) => run("POST", `/galaxy/money/refunds/${id(f)}/retry`, { reason: text(f, "reason") });
 export const newPayout = async (_: Done, f: FormData) =>
-  run("POST", "/galaxy/money/payouts", { eventId: text(f, "eventId"), amountPaise: paise(f), reason: text(f, "reason") });
+  run("POST", "/galaxy/money/payouts", { eventId: text(f, "eventId") || undefined, hostId: text(f, "hostId") || undefined, amountPaise: paise(f), reason: text(f, "reason") });
 export const payoutPaid = async (_: Done, f: FormData) =>
   run("POST", `/galaxy/money/payouts/${id(f)}/paid`, { utr: text(f, "utr"), reason: text(f, "reason") });
 export const cancelPayout = async (_: Done, f: FormData) => run("POST", `/galaxy/money/payouts/${id(f)}/cancel`, { reason: text(f, "reason") });
