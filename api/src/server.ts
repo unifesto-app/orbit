@@ -10,7 +10,8 @@ import { pruneApplications } from "./careers.ts";
 import { pruneVisits } from "./visits.ts";
 import { ways, type WaysConfig } from "./auth/ways.ts";
 import { connect, migrateDb } from "./db/index.ts";
-import { createNotifier, pruneNotifications, runDeliveries } from "./notifications.ts";
+import { checkProviders, createNotifier, pruneNotifications, runDeliveries } from "./notifications.ts";
+import { apnsSender, fcmSender, type Push } from "./push.ts";
 import { type Media, memoryFiles, s3Files } from "./media.ts";
 
 const need = (name: string) => {
@@ -69,6 +70,27 @@ console.log(
 const store = production || process.env.REDIS_URL ? redisStore(need("REDIS_URL")) : memoryStore();
 // Messages to people (notifications.ts): written to the inbox and the deliveries queue, which the worker below sends.
 const notify = createNotifier({ db, now: Date.now });
+
+// Pushes (push.ts), each platform on its own keys; a platform without them has no sender and its pushes are skipped as
+// not set up.
+// - iOS: APNS_KEY_ID and APNS_PRIVATE_KEY (an APNs .p8 key, \n for line breaks), under APNS_TEAM_ID.
+// - Android: FCM_SERVICE_ACCOUNT, the service account's JSON key (Google Cloud project heyorbit-app), on one line.
+const fcmKey = (() => {
+  if (!env.FCM_SERVICE_ACCOUNT) return null;
+  try {
+    const k = JSON.parse(env.FCM_SERVICE_ACCOUNT) as { project_id?: string; client_email?: string; private_key?: string };
+    if (k.project_id && k.client_email && k.private_key) return { projectId: k.project_id, clientEmail: k.client_email, privateKey: k.private_key };
+  } catch {}
+  throw new Error("FCM_SERVICE_ACCOUNT must be a service account's JSON key, on one line");
+})();
+const push: Push = {
+  ios:
+    env.APNS_KEY_ID && env.APNS_PRIVATE_KEY
+      ? apnsSender({ teamId: env.APNS_TEAM_ID?.trim() || "9AH3Z5C5DH", keyId: env.APNS_KEY_ID.trim(), privateKey: env.APNS_PRIVATE_KEY.replace(/\\n/g, "\n") })
+      : undefined,
+  android: fcmKey ? fcmSender(fcmKey) : undefined,
+};
+console.log(`[push] APNs ${push.ios ? "on" : "not set up"}, FCM ${fcmKey ? `on for ${fcmKey.projectId}` : "not set up"}`);
 
 // Uploads (photos, then host logos): the private S3 bucket MEDIA_BUCKET, with the server's AWS credentials, served at
 // MEDIA_URL. Off production without a bucket they're kept in memory; in production without one, uploads say they
@@ -157,10 +179,16 @@ let busy = false;
 setInterval(() => {
   if (busy) return;
   busy = true;
-  runDeliveries({ db, mail, now: Date.now })
+  runDeliveries({ db, mail, push, now: Date.now })
     .catch((e) => console.error("[deliveries]", e))
     .finally(() => (busy = false));
 }, 5_000).unref();
+
+// Push and email providers failing more than 20% over the last hour: an alert to Platform holders (notifications.ts).
+// On start, then hourly.
+const checkSenders = () => checkProviders({ db, notify, now: Date.now }).catch((e) => console.error("[providers]", e));
+void checkSenders();
+setInterval(checkSenders, 60 * 60 * 1000).unref();
 
 // Activity rows past 90 days (owner, 19 Nov 2026: "90 days"): their day's totals are kept, the people go. On start, then hourly.
 const sweep = () => sweepActivity(db, Date.now()).catch((e) => console.error("[activity]", e));

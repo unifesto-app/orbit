@@ -7,6 +7,7 @@ import { memoryStore } from "./auth/store.ts";
 import type { WaysConfig } from "./auth/ways.ts";
 import { connect, migrateDb } from "./db/index.ts";
 import type { Mail } from "./auth/senders.ts";
+import type { Push } from "./push.ts";
 import type { Notice, Notify } from "./http.ts";
 import { memoryFiles } from "./media.ts";
 import { createNotifier, runDeliveries } from "./notifications.ts";
@@ -17,7 +18,7 @@ import { createNotifier, runDeliveries } from "./notifications.ts";
 // `ways` sets passkeys, Google and Apple (auth/ways.ts), with `fetch` answering for Google and Apple. `media: false`
 // leaves uploads out, as on a server with no bucket. `proof` checks that requests come from Orbit (default: unchecked).
 // Every notice goes through the real pipeline (notifications.ts) and is also kept in `notices`; nothing is sent until a
-// test calls `deliver()`, which runs one worker pass with `mail` (default: kept in `mails`).
+// test calls `deliver()`, which runs one worker pass with `mail` (default: kept in `mails`) and an optional fake `push`.
 export async function testApp(opts: { send?: Sender; codes?: SendPolicy; ways?: WaysConfig; media?: false; proof?: ProofConfig; mail?: Mail } = {}) {
   const url = process.env.TEST_DATABASE_URL ?? "postgres://localhost:5432/orbit_test";
   if (!/_test(\?|$)/.test(url)) throw new Error("Tests empty their database, so its name must end in _test");
@@ -62,7 +63,7 @@ export async function testApp(opts: { send?: Sender; codes?: SendPolicy; ways?: 
   // The code last sent to a phone or email.
   const lastCode = (to: string) => sent.filter((s) => (s.to.kind === "phone" ? s.to.e164 : s.to.email) === to).at(-1)?.code;
 
-  const deliver = () => runDeliveries({ db, mail, now: () => clock });
+  const deliver = (push?: Push) => runDeliveries({ db, mail, push, now: () => clock });
 
   return { db, app, store, call, sent, mails, notices, notify, deliver, lastCode, media, close, tick: (ms: number) => void (clock += ms), now: () => clock };
 }
