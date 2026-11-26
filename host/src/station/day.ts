@@ -8,8 +8,8 @@
 // - The scanner (Event day doc, slots, decision 16): the same QR at the counter, from 15 minutes before the start to the
 //   booked end, counted in stations. One station, or a pitch or court booked whole, is in on the scan; several ask how
 //   many are here and let nobody in until the desk taps (Event day decision 2).
-// ponytail: the scanner screen returns with an API ticket lookup (the day has no ticket codes); its last version is
-// app/scan.tsx at git d31550c. scan, byCode, seenRecently and admitTo stay here, tested, for it.
+// ponytail: the slot scanner returns with X7's slot codes (the day has none yet); its last version is app/scan.tsx at git
+// d31550c. scan, byCode and admitTo stay here, tested, for it; seenRecently already runs Event Partner's event scanner.
 // ponytail: the time labels repeat app/src/booking.ts until shared code moves
 // to mobile/ (host apps plan, decision 14).
 

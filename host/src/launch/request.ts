@@ -10,10 +10,11 @@ import { dayLabel, istDate, momentLabel } from './money.ts';
 // ---------- Welcome ----------
 
 // null or withdrawn: Host on Orbit with Start a request. open: waiting (Checking). changes and declined show Orbit's
-// note. approved: the account is read again and the Admin redirect takes over.
+// note. approved: the account is read again and the Admin redirect takes over. `venueOnly` (Play Partner, X9): a request
+// of another kind, asked from Event Partner, is none here, whatever its state.
 export type WelcomeState = 'start' | 'waiting' | 'changes' | 'declined' | 'approved';
-export const welcomeState = (r: Pick<EventRequest, 'status'> | null): WelcomeState =>
-  !r || r.status === 'withdrawn' ? 'start' : r.status === 'open' ? 'waiting' : r.status;
+export const welcomeState = (r: (Pick<EventRequest, 'status'> & { host?: { kind: string } }) | null, venueOnly = false): WelcomeState =>
+  !r || r.status === 'withdrawn' || (venueOnly && r.host?.kind !== 'venue') ? 'start' : r.status === 'open' ? 'waiting' : r.status;
 
 // "Sent today, 11:40 AM", or "Sent Mon 23 Nov, 11:40 AM" on an earlier day.
 export function sentLabel(iso: string, now: number) {

@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import { readdirSync } from 'node:fs';
 
-import { isVpa, payKey, payLabel, payName, payReady, UPI_APPS, verifyUpiId, WALLETS } from './pay.ts';
+import { checkoutCancelled, isVpa, orderNext, PAY_SAYS, paidNext, payKey, payLabel, payName, payReady, prefillOf, refundSays, refundWord, UPI_APPS, verifyUpiId, WALLETS } from './pay.ts';
 
 test('every UPI app and wallet has its logo file in assets/pay', () => {
   const have = new Set(readdirSync(new URL('../assets/pay', import.meta.url)).map((f) => f.replace(/\.\w+$/, '')));
@@ -60,4 +60,56 @@ test('Razorpay says whose a UPI ID is, that there is none, or nothing', async ()
   } finally {
     globalThis.fetch = real;
   }
+});
+
+test('checkout: a closed sheet is not a failure; the pick opens its method; refund words', () => {
+  assert.equal(checkoutCancelled({ code: 2, description: 'x' }, 'ios'), true);
+  assert.equal(checkoutCancelled({ code: 0, description: 'x' }, 'android'), true);
+  assert.equal(checkoutCancelled({ code: 2, description: 'Network error' }, 'android'), false);
+  assert.equal(checkoutCancelled({ code: 1, reason: 'payment_cancelled' }, 'ios'), true);
+  assert.equal(checkoutCancelled({ code: 1, description: 'Payment failed' }, 'ios'), false);
+  assert.deepEqual(prefillOf({ kind: 'vpa', vpa: ' ravi@ybl ' }), { method: 'upi', vpa: 'ravi@ybl' });
+  assert.deepEqual(prefillOf({ kind: 'upiApp', id: 'gpay' }), { method: 'upi' });
+  assert.deepEqual(prefillOf({ kind: 'applePay' }), {});
+  assert.deepEqual([refundWord('processed'), refundWord('failed'), refundWord('sent')], ['Refunded', 'Refund failed, retrying', 'Requested']);
+});
+
+test('paying: what the sheet does with each answer', () => {
+  const order = { orderId: 'order_1', amountPaise: 123600, keyId: 'rzp_test_x', already: false, breakdown: { pricePaise: 120000, feePaise: 3600, feeIncluded: false, amountPaise: 123600 } };
+  const no = (status: number, error: string, message = 'No.') => ({ ok: false as const, status, error: { error, message } });
+  // The order: opened; "already" said once for one this sheet didn't make, silent for its own; off; changed; down.
+  assert.deepEqual(orderNext({ ok: true, data: order }, new Set()), { next: 'open', order });
+  const again = { ...order, already: true };
+  assert.deepEqual(orderNext({ ok: true, data: again }, new Set()), { next: 'already', order: again, say: PAY_SAYS.already });
+  assert.deepEqual(orderNext({ ok: true, data: again }, new Set(['order_1'])), { next: 'open', order: again });
+  assert.deepEqual(orderNext(no(503, 'paymentsOff'), new Set()), { next: 'again', say: PAY_SAYS.off });
+  assert.deepEqual(orderNext(no(409, 'fewLeft', 'Sold out'), new Set()), { next: 'reread', say: 'Sold out' });
+  assert.deepEqual(orderNext(no(0, 'offline', 'Can’t reach Orbit.'), new Set()), { next: 'again', say: 'Can’t reach Orbit.' });
+
+  // Verify after Razorpay took it.
+  const v = (status: string, bookingId: string | null = null, reason?: string) => ({ ok: true as const, data: { status, bookingId, reason } as never });
+  assert.deepEqual(paidNext(v('paid', 'b1')), { next: 'ticket', bookingId: 'b1' });
+  assert.deepEqual(paidNext(v('confirming')), { next: 'confirming', say: PAY_SAYS.confirming });
+  assert.deepEqual(paidNext(v('refundPending', null, 'fewLeft')), { next: 'refunded', say: PAY_SAYS.refunded });
+  assert.deepEqual(paidNext(v('refundPending', null, 'cancelled')), { next: 'refunded', say: 'This event was cancelled. We’ve refunded you in full.' });
+  assert.deepEqual(paidNext(v('refunded', null, 'booked')), { next: 'refunded', say: 'You already have this ticket. We’ve refunded this payment in full.' });
+  assert.deepEqual(paidNext(no(400, 'badSignature', 'If money left your account, we’ll confirm or refund it on our own.')), {
+    next: 'again',
+    say: 'If money left your account, we’ll confirm or refund it on our own.',
+  });
+  assert.deepEqual(paidNext(no(404, 'notFound')), { next: 'confirming', say: PAY_SAYS.confirming }); // any other 4xx
+  assert.deepEqual(paidNext(no(0, 'offline')), { next: 'confirming', say: PAY_SAYS.confirming });
+  assert.deepEqual(paidNext(no(502, 'server')), { next: 'confirming', say: PAY_SAYS.confirming });
+
+  // The order's status after checkout closed: only an untaken order lets Pay go again.
+  assert.deepEqual(paidNext(v('created'), 'dismissed'), { next: 'again', say: PAY_SAYS.dismissed });
+  assert.deepEqual(paidNext(v('failed'), 'failed'), { next: 'again', say: PAY_SAYS.failed });
+  assert.deepEqual(paidNext(v('paid', 'b2'), 'dismissed'), { next: 'ticket', bookingId: 'b2' });
+  assert.deepEqual(paidNext(v('confirming'), 'dismissed'), { next: 'confirming', say: PAY_SAYS.confirming });
+  // Still open at Razorpay: pending; no status at all (offline, 5xx, 429): unknown. Pay stays on the same order.
+  assert.deepEqual(paidNext(v('pending'), 'dismissed'), { next: 'again', say: PAY_SAYS.pending });
+  assert.deepEqual(paidNext(no(0, 'offline'), 'dismissed'), { next: 'again', say: PAY_SAYS.unknown });
+  assert.deepEqual(paidNext(no(502, 'paymentsDown'), 'failed'), { next: 'again', say: PAY_SAYS.unknown });
+  assert.deepEqual(paidNext(no(429, 'tooMany'), 'dismissed'), { next: 'again', say: PAY_SAYS.unknown });
+  assert.equal(refundSays(undefined), 'We couldn’t give you this ticket, so we’ve refunded you in full.');
 });

@@ -5,7 +5,7 @@ import { useActionState } from "react";
 import { Alert, Badge, Container, ui } from "../../../ui";
 import { time } from "../../requests/status";
 import { searchDeliveries } from "../actions";
-import { kindName } from "../tabs";
+import { kindName } from "../kind-name";
 
 // Why a send didn't go, in plain words (api/src/notifications.ts writes these reasons).
 const REASONS: Record<string, string> = {

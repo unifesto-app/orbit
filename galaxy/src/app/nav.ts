@@ -1,5 +1,5 @@
 // Galaxy's side navigation: built pages only (owner, 19 Nov 2026: "remove all the page not founds from galaxy"). The
-// rest of the v1 "Platform admins" rows in docs/context/artifacts/orbit-rebuild-plan.md (section 4) — Events, the
+// rest of the v1 "Platform admins" rows in docs/context/artifacts/orbit-rebuild-plan.md (section 4) — the
 // Queues, Money, Platform, and the old company content — come back here as each page is built. The landing page's own
 // visits are under Website (owner, 19 Nov 2026: "website and pages analytics in galaxy web").
 
@@ -21,6 +21,12 @@ export const sections: { title: string; items: NavItem[] }[] = [
       { label: "Requests", href: "/requests" },
       // Players' holds at venues and their freed-slot alerts (Track X7).
       { label: "Slot holds", href: "/slot-holds" },
+      // Every host's events: unpublish, cancel, promote (X1).
+      { label: "Events", href: "/events" },
+      // Every Venue host, Setup pending until Play Partner's setup saves it, with its stations (X9).
+      { label: "Venues", href: "/venues" },
+      // Doors open now or closed in the last week: booked against checked in, and an undo (X5).
+      { label: "Check-in", href: "/check-in" },
       // DAU, WAU, MAU, retention, platforms and versions (owner, 19 Nov 2026: "user analytics, mau, dau etc").
       { label: "Analytics", href: "/analytics" },
       // Coming Soon's waitlist until launch (owner, 17 Nov 2026: "create a page in galaxy web - prelaunch").
@@ -39,6 +45,18 @@ export const sections: { title: string; items: NavItem[] }[] = [
       // to galaxy").
       { label: "Careers", href: "/careers" },
       { label: "PM board", href: "/pm-board" },
+    ],
+  },
+  {
+    // Paying (Money flow; X2), for holders of Money: Razorpay's orders, refunds, payouts by hand, each host's fee plan.
+    title: "Money",
+    items: [
+      { label: "Payments", href: "/money/payments" },
+      { label: "Bookings and tickets", href: "/money/bookings" },
+      { label: "Refunds", href: "/money/refunds" },
+      { label: "Payouts", href: "/money/payouts" },
+      { label: "Fees", href: "/money/fees" },
+      { label: "Failed webhooks", href: "/money/failed-webhooks" },
     ],
   },
   {

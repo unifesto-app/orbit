@@ -17,7 +17,8 @@
       "bundleIdentifier": "in.heyorbit.app",
       "appleTeamId": "9AH3Z5C5DH",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "LSApplicationQueriesSchemes": ["tez", "phonepe", "paytmmp"]
       },
       "usesAppleSignIn": true,
       "associatedDomains": [

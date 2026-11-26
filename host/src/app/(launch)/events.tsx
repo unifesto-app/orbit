@@ -10,13 +10,15 @@
 //   3 days after it ends, its payout with Request.
 // The host switcher and New event head it; the host's own colour glows from the top, as on its page in the Orbit app.
 // From GET /hosts/:id/events (plan F31, L4): its drafts, and its upcoming and past events, sorted here by check-in.
-// ponytail: New event, Scan, Find someone, Continue and the rows open nothing yet; each is a later take. Refund
+// New event opens the editor (src/app/edit.tsx), as do a draft's Continue and a coming published card's Edit event.
+// - Scan and Find someone open the scanner (src/app/scan.tsx, X6) on that event.
+// ponytail: the rows open nothing yet; each is a later take. Refund
 // requests, payouts and event roles wait for their APIs. Admins'
 // view only. Past lists every past event; add See all when it's long.
 import type { EventRow, HostEvents } from '@orbit/contract';
 import { useLoad } from '@orbit/mobile/load';
 import { useTabBarScroll } from '@orbit/mobile/tabBar';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { color, font, space } from '@orbit/mobile/theme';
 import type { ReactNode } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -35,6 +37,7 @@ type Stage = 'open' | 'next' | 'past';
 type Listed = EventRow & { startsAt: string };
 const endsAt = (e: Listed) => e.endsAt ?? e.startsAt;
 const date = (at: string) => dayLabel(istDate(Date.parse(at))); // "Fri 20 Nov"
+const edit = (id: string) => router.push({ pathname: '/edit', params: { id } });
 const when = (at: string) => `${date(at)} · ${timeLabel(at)}`; // "Fri 20 Nov · 8:00 PM"
 
 export default function Events() {
@@ -42,6 +45,7 @@ export default function Events() {
   const onScroll = useTabBarScroll();
   const host = useHost();
   const load = useLoad<HostEvents>(host && `events|${host.id}`, () => api.authed<HostEvents>('GET', `/hosts/${host!.id}/events`));
+  useFocusEffect(load.reload); // back from the editor, its changes show
   if (!host) return null;
   const now = Date.now();
   const drafts = load.data?.drafts ?? [];
@@ -60,34 +64,34 @@ export default function Events() {
               void refreshMe();
             }} tintColor={color.secondary} />}
       >
-        <HostHead host={host} right={<Pill label="New event" dark />} />
+        <HostHead host={host} right={<Pill label="New event" dark onPress={() => router.push('/edit')} />} />
         <PushAsk />
         {load.error && <Note>{load.error.message}</Note>}
         {groups.map((g) => (
           <Cards key={g.word} title={g.word}>
             {g.events.map((e) => (
-              <Card key={e.id} event={e} stage="open" now={now} />
+              <Card key={e.id} event={e} stage="open" now={now} hostId={host.id} />
             ))}
           </Cards>
         ))}
         {next.length > 0 && (
           <Cards title={next.length === 1 ? 'Next' : 'Upcoming'}>
             {next.map((e) => (
-              <Card key={e.id} event={e} stage="next" now={now} />
+              <Card key={e.id} event={e} stage="next" now={now} hostId={host.id} />
             ))}
           </Cards>
         )}
         {drafts.length > 0 && (
           <Cards title="Drafts">
             {drafts.map((d) => (
-              <EventCard key={d.id} title={d.title} right={<Pill label="Continue" />} />
+              <EventCard key={d.id} title={d.title} right={<Pill label="Continue" onPress={() => edit(d.id)} />} />
             ))}
           </Cards>
         )}
         {past.length > 0 && (
           <Cards title="Past">
             {past.map((e) => (
-              <Card key={e.id} event={e} stage="past" now={now} />
+              <Card key={e.id} event={e} stage="past" now={now} hostId={host.id} />
             ))}
           </Cards>
         )}
@@ -107,7 +111,8 @@ function Cards({ title, children }: { title: string; children: ReactNode }) {
 }
 
 // One event and what's waiting on it.
-function Card({ event: e, stage, now }: { event: Listed; stage: Stage; now: number }) {
+function Card({ event: e, stage, now, hostId }: { event: Listed; stage: Stage; now: number; hostId: string }) {
+  const scan = (find: boolean) => router.push({ pathname: '/scan', params: { hostId, eventId: e.id, title: e.title, ...(find ? { find: '1' } : {}) } });
   // ponytail: `checkedIn` stays hidden while it's always 0 (nothing records check-in yet). Once the door does, past
   // cards read "35 of 38 came" and the open card's row "In 3 of 31", as take 1 draws them.
   const sold = `${e.sold} sold`;
@@ -123,8 +128,8 @@ function Card({ event: e, stage, now }: { event: Listed; stage: Stage; now: numb
           label="Check-in open"
           right={
             <>
-              <Pill label="Scan" />
-              <Pill label="Find someone" />
+              <Pill label="Scan" onPress={() => scan(false)} />
+              <Pill label="Find someone" onPress={() => scan(true)} />
             </>
           }
         />
@@ -132,6 +137,7 @@ function Card({ event: e, stage, now }: { event: Listed; stage: Stage; now: numb
       {stage !== 'past' && e.status === 'published' && (
         <Row label="Messages" onPress={() => router.push({ pathname: '/event/[id]', params: { id: e.id, title: e.title } })} />
       )}
+      {stage !== 'past' && e.status === 'published' && <Row label="Edit event" onPress={() => edit(e.id)} />}
     </EventCard>
   );
 }

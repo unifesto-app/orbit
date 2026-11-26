@@ -122,7 +122,7 @@ test('liveTiers: why a type is off, the first that holds, and the most one booki
   const later = '2026-11-28T10:00:00+05:30';
   const before = '2026-11-20T10:00:00+05:30';
   assert.equal(off({}), undefined);
-  assert.equal(off({ pricePaise: 29900, salesStartAt: later, left: 0 }), 'Coming soon'); // paid beats the rest
+  assert.equal(off({ pricePaise: 29900 }), undefined); // paid books too (X3)
   assert.equal(off({ salesStartAt: later, left: 0 }), 'Opens Sat 28 Nov'); // not open yet beats sold out
   assert.equal(off({ salesEndAt: before, left: 0 }), 'Closed');
   assert.equal(off({ left: 0 }), 'Sold out');
