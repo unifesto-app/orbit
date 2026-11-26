@@ -1,4 +1,5 @@
 import type { EventAnnouncements, TeamEvent } from "@orbit/contract";
+import { Suspense } from "react";
 import { call, read } from "../../../../api";
 import ui from "../../../ui.module.css";
 import styles from "./event.module.css";
@@ -11,7 +12,16 @@ import { Announce, AutoSwitches } from "./forms";
 const closed = (e: TeamEvent) => !!e.endsAt && Date.now() > Date.parse(e.endsAt) + 7 * 86_400_000;
 const when = (iso: string) => new Date(iso).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" });
 
-export default async function EventPage({ params }: PageProps<"/events/[id]">) {
+// Read at request time (cacheComponents), so the page renders inside Suspense, as the Inbox does.
+export default function EventPage({ params }: PageProps<"/events/[id]">) {
+  return (
+    <Suspense fallback={<div className={ui.page}><p className={ui.secondary}>Loading…</p></div>}>
+      <Event params={params} />
+    </Suspense>
+  );
+}
+
+async function Event({ params }: Pick<PageProps<"/events/[id]">, "params">) {
   const { id } = await params;
   const got = await read<EventAnnouncements>(`/events/${encodeURIComponent(id)}/announcements`);
   if (!got.ok) throw new Error(got.error.message);
