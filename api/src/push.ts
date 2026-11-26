@@ -8,7 +8,8 @@ import { NotSent } from "./auth/senders.ts";
 // logged or put in an error: the device token, a JWT, or the provider's raw body (it can echo the token).
 
 export type Device = { app: InboxApp; platform: "ios" | "android"; env: "sandbox" | "production"; token: string };
-export type PushMessage = { title: string; body: string; data: { id: string | null; opens: unknown }; badge?: number };
+// `collapseId`: the delivery's id, so a push retried after a timeout replaces the first on the phone, not a second banner.
+export type PushMessage = { title: string; body: string; data: { id: string | null; opens: unknown }; badge?: number; collapseId: string };
 type Send = (d: Device, m: PushMessage) => Promise<string | undefined>;
 export type Push = { ios?: Send; android?: Send };
 
@@ -29,43 +30,56 @@ const word = (v: unknown) => (typeof v === "string" && /^[A-Za-z_]{1,64}$/.test(
 export type H2Answer = { status: number; headers: Record<string, unknown>; body: string };
 export type H2Request = (host: string, path: string, headers: Record<string, string>, body: string) => Promise<H2Answer>;
 
-// One HTTP/2 session per host, made again after it closes, errors or is sent away; 10 s per request.
-const h2Sessions = new Map<string, ClientHttp2Session>();
-const h2Session = (host: string) => {
-  const open = h2Sessions.get(host);
-  if (open && !open.closed && !open.destroyed) return open;
-  const s = connect(`https://${host}`);
-  const drop = () => h2Sessions.get(host) === s && h2Sessions.delete(host);
-  s.on("close", drop).on("error", drop).on("goaway", drop);
-  h2Sessions.set(host, s);
-  return s;
-};
-export const h2Request: H2Request = (host, path, headers, body) =>
-  new Promise((resolve, reject) => {
-    let req;
-    try {
-      req = h2Session(host).request({ ":method": "POST", ":path": path, ...headers });
-    } catch (e) {
-      return reject(e);
-    }
-    let answer: Record<string, unknown> = {};
-    let data = "";
-    req.setTimeout(TIMEOUT_MS, () => {
-      req.close(constants.NGHTTP2_CANCEL);
-      reject(new Error("timed out"));
+// One HTTP/2 session per host, made again after it closes, errors or is sent away; `timeoutMs` per request. A request
+// that times out takes its session down with it (a stalled connection), so the next one reconnects. `origin` lets the
+// test point it at a local plain-text server.
+export function h2Requester(timeoutMs = TIMEOUT_MS, origin = (host: string) => `https://${host}`): H2Request {
+  const sessions = new Map<string, ClientHttp2Session>();
+  const drop = (host: string, s: ClientHttp2Session) => {
+    if (sessions.get(host) === s) sessions.delete(host);
+  };
+  const session = (host: string) => {
+    const open = sessions.get(host);
+    if (open && !open.closed && !open.destroyed) return open;
+    const s = connect(origin(host));
+    s.on("close", () => drop(host, s))
+      .on("error", () => drop(host, s))
+      .on("goaway", () => drop(host, s));
+    sessions.set(host, s);
+    return s;
+  };
+  return (host, path, headers, body) =>
+    new Promise((resolve, reject) => {
+      let req;
+      const s = session(host);
+      try {
+        req = s.request({ ":method": "POST", ":path": path, ...headers });
+      } catch (e) {
+        return reject(e);
+      }
+      let answer: Record<string, unknown> = {};
+      let data = "";
+      req.setTimeout(timeoutMs, () => {
+        req.close(constants.NGHTTP2_CANCEL);
+        drop(host, s);
+        s.destroy();
+        reject(new Error("timed out"));
+      });
+      req.on("response", (h) => (answer = h));
+      req.setEncoding("utf8");
+      req.on("data", (c: string) => (data += c));
+      req.on("end", () => resolve({ status: Number(answer[":status"]), headers: answer, body: data }));
+      req.on("error", reject);
+      req.end(body);
     });
-    req.on("response", (h) => (answer = h));
-    req.setEncoding("utf8");
-    req.on("data", (c: string) => (data += c));
-    req.on("end", () => resolve({ status: Number(answer[":status"]), headers: answer, body: data }));
-    req.on("error", reject);
-    req.end(body);
-  });
+}
+export const h2Request = h2Requester();
 
 // The app's bundle id, APNs's topic: the Orbit app is in.heyorbit.app, each host app in.heyorbit.<codename>
 // (auth/proof.ts DEFAULT_BUNDLES).
 const topicOf = (app: InboxApp) => (app === "orbit" ? "in.heyorbit.app" : `in.heyorbit.${app}`);
 const GONE_400 = ["BadDeviceToken", "DeviceTokenNotForTopic", "Unregistered"];
+const APNS_TOKEN = /^[0-9a-f]+$/i;
 
 export function apnsSender(c: { teamId: string; keyId: string; privateKey: string }, request: H2Request = h2Request, now = Date.now): Send {
   const key = createPrivateKey(c.privateKey);
@@ -76,14 +90,24 @@ export function apnsSender(c: { teamId: string; keyId: string; privateKey: strin
     return token.jwt;
   };
   return async (d, m) => {
+    // An APNs token is hex; anything else never goes into the request's path, and can't be a real device.
+    if (!APNS_TOKEN.test(d.token)) throw new NotSent("push", "gone", "not an APNs token");
     const host = d.env === "sandbox" ? "api.sandbox.push.apple.com" : "api.push.apple.com";
-    const payload = { aps: { alert: { title: m.title, body: m.body }, sound: "default", ...(m.badge === undefined ? {} : { badge: m.badge }) }, ...m.data };
+    // expo-notifications on iOS fills a remote push's content.data from userInfo["body"] only, so {id, opens} go there.
+    const aps = { alert: { title: m.title, body: m.body }, sound: "default", ...(m.badge === undefined ? {} : { badge: m.badge }) };
+    const payload = { aps, body: m.data };
     let res: H2Answer;
     try {
       res = await request(
         host,
         `/3/device/${d.token}`,
-        { authorization: `bearer ${bearer()}`, "apns-topic": topicOf(d.app), "apns-push-type": "alert", "apns-priority": "10" },
+        {
+          authorization: `bearer ${bearer()}`,
+          "apns-topic": topicOf(d.app),
+          "apns-push-type": "alert",
+          "apns-priority": "10",
+          "apns-collapse-id": m.collapseId,
+        },
         JSON.stringify(payload),
       );
     } catch (e) {
@@ -157,7 +181,7 @@ export function fcmSender(c: { projectId: string; clientEmail: string; privateKe
             token: d.token,
             notification: { title: m.title, body: m.body },
             data: { id: m.data.id ?? "", opens: JSON.stringify(m.data.opens) },
-            android: { priority: "HIGH" },
+            android: { priority: "HIGH", notification: { tag: m.collapseId } },
           },
         }),
         signal: AbortSignal.timeout(TIMEOUT_MS),
@@ -170,18 +194,18 @@ export function fcmSender(c: { projectId: string; clientEmail: string; privateKe
     const codes = (Array.isArray(body?.error?.details) ? body.error.details : []).map((x) => word(x?.errorCode));
     const s = res.status;
     if (s === 401) access = null;
-    const reason: NotSent["reason"] =
-      s === 404 || codes.includes("UNREGISTERED") || (s === 403 && codes.includes("SENDER_ID_MISMATCH"))
-        ? "gone"
-        : s === 401
-          ? "unknown"
-          : s === 403
-            ? "notSetUp"
-            : s === 429
-              ? "throttled"
-              : s >= 400 && s < 500
-                ? "refused"
-                : "unknown";
+    // Only UNREGISTERED strips a device: a sender-id mismatch is our project being wrong, not the phone.
+    const reason: NotSent["reason"] = codes.includes("UNREGISTERED")
+      ? "gone"
+      : s === 401
+        ? "unknown"
+        : s === 403
+          ? "notSetUp"
+          : s === 429
+            ? "throttled"
+            : s >= 400 && s < 500
+              ? "refused"
+              : "unknown";
     throw new NotSent("push", reason, `FCM ${s} ${codes.filter(Boolean).join(",") || word(body?.error?.status)}`);
   };
 }

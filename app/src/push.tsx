@@ -174,14 +174,15 @@ export function PushAsk({ moment, line, top }: { moment: string; line: string; t
 }
 
 // A push's data names its inbox message (`id`) and what it opens (`opens`, the inbox's Opens shape): PR 4's sender puts
-// `{id, opens}` in the payload's data. On Android FCM data values are strings, so `opens` comes as JSON text and is
-// parsed back (bad text: null). An `opens` this build doesn't know opens the inbox; each push opens once.
+// `{id, opens}` in the payload's data (on iOS under the APNs payload's `body` key, which expo-notifications reads as
+// data). On Android FCM data values are strings, so `opens` comes as JSON text and is parsed back (bad text: null),
+// and a push with no inbox message has id "". An `opens` this build doesn't know opens the inbox; each push opens once.
 let opened: string | null = null;
 function openPush(n: import('expo-notifications').Notification) {
   if (n.request.identifier === opened) return;
   opened = n.request.identifier;
   const { id, opens } = (n.request.content.data ?? {}) as { id?: unknown; opens?: unknown };
-  if (typeof id === 'string') markRead([id]);
+  if (typeof id === 'string' && id) markRead([id]);
   let o = opens;
   if (typeof o === 'string') {
     try {

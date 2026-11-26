@@ -95,6 +95,9 @@ const pushesOn = async (q: Tx | Db, userId: string, day: Date, hostId?: string) 
 const clean = (data: Record<string, unknown> | undefined): Record<string, unknown> =>
   JSON.parse(JSON.stringify(data ?? {}, (_, v) => (typeof v === "string" ? v.toWellFormed().replaceAll("\u0000", "") : v)));
 
+// Suspended, or waiting for deletion: the account gets Must messages only.
+const heldAt = (p: typeof users.$inferSelect, at: Date) => !!((p.suspendedAt && (!p.suspendedUntil || p.suspendedUntil > at)) || p.deletionRequestedAt);
+
 // Where a notice's email goes: a {contact} notice to that contact itself, never the matched account's other email (D7);
 // else the account's proved email.
 const addressOf = (contact: string | null, person: typeof users.$inferSelect | undefined) =>
@@ -133,6 +136,7 @@ const fallBack = async (db: Db, d: typeof deliveries.$inferSelect, at: Date) => 
   if (live) return;
   const [person] = await db.select().from(users).where(eq(users.id, d.userId));
   if (!person || person.deletedAt) return;
+  if (!isMust(kind) && heldAt(person, at)) return; // suspended or waiting for deletion since: Must only, as in write()
   const s = isMust(kind) ? null : await settingsOf(db, person.id, person.city);
   const row = { userId: d.userId, contact: d.contact, kind, dedupeKey: d.dedupeKey, payload: d.payload, runAt: at, createdAt: at, inboxItemId: d.inboxItemId };
   await writeEmail(db, row, s, addressOf(d.contact, person));
@@ -172,7 +176,7 @@ export function createNotifier({ db, now }: { db: Db; now: () => number }): Noti
     }
 
     // Suspended, or waiting for deletion: Must messages only.
-    const held = person && ((person.suspendedAt && (!person.suspendedUntil || person.suspendedUntil > at)) || person.deletionRequestedAt);
+    const held = person && heldAt(person, at);
     if (held && !isMust(n.kind)) return void (await log({ channel: "email", status: "skipped", reason: "accountState", target: "" }));
 
     // Here: staff's kill switch (notification_switches), from Galaxy's slice.
@@ -316,11 +320,14 @@ export async function runDeliveries({ db, mail, push, now, limit = 20 }: { db: D
         try {
           const words = inboxFor(kind, d.payload);
           const badge = device.platform === "ios" ? await unread(db, d.userId!, device.app) : undefined;
-          const providerId = await send(device, { title: words.fromName, body: words.text, data: { id: d.inboxItemId, opens: words.opens }, badge });
-          await done({ status: "sent", sentAt: new Date(now()), providerId: providerId ?? null });
+          const message = { title: words.fromName, body: words.text, data: { id: d.inboxItemId, opens: words.opens }, badge, collapseId: d.id };
+          const providerId = await send(device, message);
+          await done({ status: "sent", reason: null, sentAt: new Date(now()), providerId: providerId ?? null });
           ended = false;
         } catch (e) {
-          if (e instanceof NotSent && e.reason === "gone") await db.delete(pushDevices).where(eq(pushDevices.sessionId, d.target));
+          // The token that was sent, so one the phone rolled in the meantime stays.
+          if (e instanceof NotSent && e.reason === "gone")
+            await db.delete(pushDevices).where(and(eq(pushDevices.sessionId, d.target), eq(pushDevices.token, device.token)));
           ended = await settle(e);
         }
       }
@@ -333,7 +340,7 @@ export async function runDeliveries({ db, mail, push, now, limit = 20 }: { db: D
     }
     try {
       await mail(d.target, emailFor(d.kind, d.payload));
-      await done({ status: "sent", sentAt: new Date(now()) });
+      await done({ status: "sent", reason: null, sentAt: new Date(now()) });
     } catch (e) {
       await settle(e);
     }
@@ -345,21 +352,20 @@ export async function runDeliveries({ db, mail, push, now, limit = 20 }: { db: D
 const unread = async (db: Db, userId: string, app: InboxApp) =>
   (await db.select({ n: count() }).from(inboxItems).where(and(eq(inboxItems.userId, userId), eq(inboxItems.app, app), isNull(inboxItems.readAt))))[0]!.n;
 
-// The hourly provider check: per channel, over rows made in the last hour, sent or delivered against failed, not counting
-// a dead phone or a bad address (gone, refused). At least 20 finished and more than 20% failed: an error line (Sentry
+// The hourly provider check: per channel, over rows made in the last hour. Failing: failed (not counting a dead phone or
+// a bad address: gone, refused), and rows waiting on a retry after unknown or throttled, since only a 4th try fails and
+// that is 36 minutes on. OK: sent and delivered. At least 20 of those and more than 20% failing: an error line (Sentry
 // picks it up through captureConsoleIntegration) and providerFailing to every Platform holder, once per channel an hour.
 export async function checkProviders({ db, notify, now }: { db: Db; notify: Notify; now: () => number }) {
   const at = new Date(now());
+  const failing = or(
+    and(eq(deliveries.status, "failed"), or(isNull(deliveries.reason), notInArray(deliveries.reason, ["gone", "refused"]))),
+    and(inArray(deliveries.status, ["queued", "sending"]), inArray(deliveries.reason, ["unknown", "throttled"])),
+  )!;
   const counts = await db
-    .select({ channel: deliveries.channel, failed: sql<number>`count(*) filter (where ${deliveries.status} = 'failed')`.mapWith(Number), total: count() })
+    .select({ channel: deliveries.channel, failed: sql<number>`count(*) filter (where ${failing})`.mapWith(Number), total: count() })
     .from(deliveries)
-    .where(
-      and(
-        gte(deliveries.createdAt, new Date(at.getTime() - HOUR)),
-        inArray(deliveries.status, ["sent", "delivered", "failed"]),
-        or(isNull(deliveries.reason), notInArray(deliveries.reason, ["gone", "refused"])),
-      ),
-    )
+    .where(and(gte(deliveries.createdAt, new Date(at.getTime() - HOUR)), or(inArray(deliveries.status, ["sent", "delivered"]), failing)))
     .groupBy(deliveries.channel);
   const hour = new Date(Math.floor(at.getTime() / HOUR) * HOUR).toISOString();
   for (const { channel, failed, total } of counts) {

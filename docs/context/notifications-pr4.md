@@ -13,7 +13,7 @@ to one small file and say why).
 
 ```ts
 type Device = { app: InboxApp; platform: "ios" | "android"; env: "sandbox" | "production"; token: string };
-type PushMessage = { title: string; body: string; data: { id: string | null; opens: unknown }; badge?: number };
+type PushMessage = { title: string; body: string; data: { id: string | null; opens: unknown }; badge?: number; collapseId: string };
 export type Push = { ios?: (d: Device, m: PushMessage) => Promise<string | undefined>; android?: (...same) };
 ```
 Each returns the provider's message id (kept in `deliveries.provider_id`), or throws `NotSent`. Widen `NotSent`'s
@@ -29,8 +29,11 @@ app), so the device row is deleted. `refused` stays "this message was refused" a
   the network.
 - `POST /3/device/<token>`, headers `authorization: bearer <jwt>`, `apns-topic` = the app's bundle id
   (orbit `in.heyorbit.app`, launch/station/crew `in.heyorbit.<app>`; reuse what `server.ts`/`host/variants.ts` already
-  hold if there's a clean way, else a 4-line map with a comment), `apns-push-type: alert`, `apns-priority: 10`.
-  Body `{aps: {alert: {title, body}, sound: "default", badge?}, id, opens}`.
+  hold if there's a clean way, else a 4-line map with a comment), `apns-push-type: alert`, `apns-priority: 10`,
+  `apns-collapse-id` = the delivery id (a push retried after a timeout replaces the first).
+  Body `{aps: {alert: {title, body}, sound: "default", badge?}, body: {id, opens}}`: expo-notifications on iOS fills a
+  remote push's `content.data` only from `userInfo["body"]` (review, 26 Nov). A token that isn't hex → `gone` without a
+  request (never an unvalidated token in `:path`). A request that times out destroys its session, so the next reconnects.
 - Answer → reason: 200 → the `apns-id` header. 410, or 400 with `BadDeviceToken` / `DeviceTokenNotForTopic` /
   `Unregistered` → `gone`. 403 `ExpiredProviderToken` → drop the cached JWT, `unknown` (retries). 403 other
   (`InvalidProviderToken`, `MissingProviderToken`...) → `notSetUp`. 429 → `throttled`. Other 4xx → `refused`. 5xx,
@@ -43,10 +46,11 @@ app), so the device row is deleted. `refused` stays "this message was refused" a
   `expires_in`. Token endpoint failure: 400/401 → `notSetUp`, else `unknown`.
 - `POST https://fcm.googleapis.com/v1/projects/<id>/messages:send`,
   `{message: {token, notification: {title, body}, data: {id: id ?? "", opens: JSON.stringify(opens)},
-  android: {priority: "HIGH"}}}`. FCM data values must be strings, hence `opens` as JSON text.
-- Answer → reason: 200 → `name`. 404, or an error whose `details[].errorCode` is `UNREGISTERED`, or 403
-  `SENDER_ID_MISMATCH` → `gone`. 401 → drop the cached access token, `unknown`. 403 other → `notSetUp`.
-  429 → `throttled`. 400 other → `refused`. 5xx/timeout → `unknown`.
+  android: {priority: "HIGH", notification: {tag: <delivery id>}}}}`. FCM data values must be strings, hence `opens` as
+  JSON text.
+- Answer → reason: 200 → `name`. An error whose `details[].errorCode` is `UNREGISTERED` → `gone`. 401 → drop the cached
+  access token, `unknown`. 403 (including `SENDER_ID_MISMATCH`: a wrong project mustn't strip devices) → `notSetUp`.
+  429 → `throttled`. Other 4xx (a 404 without `UNREGISTERED` too) → `refused`. 5xx/timeout → `unknown`.
 
 Never log the token, the JWT or the provider's raw body (it can echo the token): reason words only, as the email path.
 
@@ -69,8 +73,8 @@ Replace the ponytail "no push sender" branch. For a claimed push row (`target` =
 - Message: `title` = `inboxFor(kind, payload).fromName`, `body` = its `text`; `data` = `{id: d.inboxItemId, opens}`
   where `opens` = `opensFor(kind, payload)` (same as the inbox row). `badge` (iOS only) = that person's unread inbox
   items on the device's app.
-- Sent → `sent`, `sentAt`, `providerId`. `gone` → `failed` reason `gone` and delete the `push_devices` row (by session
-  id). Then the same retry rules as email: `notSetUp` → skipped; `refused` or 4th try → failed; `throttled`/`unknown` →
+- Sent → `sent`, `sentAt`, `providerId`, `reason` cleared. `gone` → `failed` reason `gone` and delete the `push_devices`
+  row (by session id and the token that was sent, so a token rolled mid-send stays). Then the same retry rules as email: `notSetUp` → skipped; `refused` or 4th try → failed; `throttled`/`unknown` →
   queued again after 1, 5, 30 minutes. Keep the `ours` guard on every write.
 - Keep email exactly as it is.
 
@@ -86,14 +90,16 @@ sent. A cap (`capReached`) or a quiet-hours hold is not "can't land": no email f
 - In the worker and in `releaseHeld`: when a push row ends in `failed`, `dropped` (not `stale`), or `skipped notSetUp`,
   and no other push row with the same `dedupe_key` is `queued`, `held`, `sending` or `sent`, call the helper. Two
   workers finishing the last two devices at once may both get here: the deliveries unique key
-  `(dedupe_key, channel, target)` plus `onConflictDoNothing` makes the second a no-op. Say so in a comment.
+  `(dedupe_key, channel, target)` plus `onConflictDoNothing` makes the second a no-op. Say so in a comment. The account
+  is checked again first: suspended or waiting for deletion → no non-Must email, the same rule as `write()`.
 
 ## 5. Provider alert (`providerFailing`, already in the catalog: Must, email, staff)
 
 New `checkProviders({ db, notify, now })`, run hourly from server.ts beside the other sweeps.
-- Per channel (`push`, `email`), over rows created in the last hour: `sent`+`delivered` vs `failed`, **not counting**
-  reason `gone` or `refused` (a dead phone or a bad address is not the provider failing). At least 20 finished rows
-  and more than 20% failed → alert.
+- Per channel (`push`, `email`), over rows created in the last hour: ok = `sent`+`delivered`; failing = `failed`,
+  **not counting** reason `gone` or `refused` (a dead phone or a bad address is not the provider failing), plus rows
+  still `queued`/`sending` with reason `unknown` or `throttled` (a retry pending: only the 4th try fails, 36+ minutes
+  on). At least 20 counted rows and more than 20% failing → alert. Run once at start, then hourly (review, 26 Nov).
 - Alert: `console.error("[providers] <channel> failing: <failed>/<total> in the last hour")` — that line already reaches
   Sentry through `captureConsoleIntegration` (instrument.ts), so no direct Sentry call. And `tell(notify,
   holdersOf(db, "platform", at), "providerFailing", {channel, failed, total})` with key `<channel>:<hour start ISO>`,

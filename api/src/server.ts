@@ -185,7 +185,10 @@ setInterval(() => {
 }, 5_000).unref();
 
 // Push and email providers failing more than 20% over the last hour: an alert to Platform holders (notifications.ts).
-setInterval(() => checkProviders({ db, notify, now: Date.now }).catch((e) => console.error("[providers]", e)), 60 * 60 * 1000).unref();
+// On start, then hourly.
+const checkSenders = () => checkProviders({ db, notify, now: Date.now }).catch((e) => console.error("[providers]", e));
+void checkSenders();
+setInterval(checkSenders, 60 * 60 * 1000).unref();
 
 // Activity rows past 90 days (owner, 19 Nov 2026: "90 days"): their day's totals are kept, the people go. On start, then hourly.
 const sweep = () => sweepActivity(db, Date.now()).catch((e) => console.error("[activity]", e));

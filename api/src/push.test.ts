@@ -1,8 +1,10 @@
 import { test } from "node:test";
+import { createServer } from "node:http2";
+import type { AddressInfo } from "node:net";
 import assert from "node:assert/strict";
 import { generateKeyPairSync, type KeyObject, verify } from "node:crypto";
 import { NotSent } from "./auth/senders.ts";
-import { apnsSender, type Device, fcmSender, type H2Answer, type H2Request } from "./push.ts";
+import { apnsSender, type Device, fcmSender, type H2Answer, type H2Request, h2Requester } from "./push.ts";
 
 // The push senders without a network. Apple's and Google's docs publish no private key with a matching signed example,
 // so "against their examples" here means the documented header and claim shapes and algorithms: APNs provider tokens
@@ -10,9 +12,9 @@ import { apnsSender, type Device, fcmSender, type H2Answer, type H2Request } fro
 // {iss, scope, aud, iat, exp}.
 
 const MIN = 60_000;
-const ios: Device = { app: "orbit", platform: "ios", env: "sandbox", token: "tok-ios" };
+const ios: Device = { app: "orbit", platform: "ios", env: "sandbox", token: "a1b2c3d4e5f60718" };
 const android: Device = { app: "orbit", platform: "android", env: "production", token: "tok-android" };
-const msg = { title: "Orbit", body: "Hello", data: { id: "item-1", opens: { to: "security" } }, badge: 3 };
+const msg = { title: "Orbit", body: "Hello", data: { id: "item-1", opens: { to: "security" } }, badge: 3, collapseId: "del-1" };
 const part = (s: string) => JSON.parse(Buffer.from(s, "base64url").toString());
 const checkJwt = (token: string, pub: KeyObject, ec: boolean) => {
   const [h, c, sig] = token.split(".") as [string, string, string];
@@ -27,7 +29,7 @@ const reasonOf = async (p: Promise<unknown>) => {
   } catch (e) {
     assert.ok(e instanceof NotSent, String(e));
     assert.equal(e.channel, "push");
-    assert.ok(!e.message.includes("tok-"), e.message); // never the device token
+    assert.ok(!e.message.includes("tok-") && !e.message.includes(ios.token), e.message); // never the device token
     return { reason: e.reason };
   }
 };
@@ -46,9 +48,13 @@ test("APNs: ES256 provider token with a raw 64-byte signature, kept 50 minutes; 
   assert.equal(await send(ios, msg), "apns-1");
   const c = calls[0]!;
   assert.equal(c.host, "api.sandbox.push.apple.com");
-  assert.equal(c.path, "/3/device/tok-ios");
-  assert.deepEqual([c.headers["apns-topic"], c.headers["apns-push-type"], c.headers["apns-priority"]], ["in.heyorbit.app", "alert", "10"]);
-  assert.deepEqual(JSON.parse(c.body), { aps: { alert: { title: "Orbit", body: "Hello" }, sound: "default", badge: 3 }, id: "item-1", opens: { to: "security" } });
+  assert.equal(c.path, `/3/device/${ios.token}`);
+  assert.deepEqual(
+    [c.headers["apns-topic"], c.headers["apns-push-type"], c.headers["apns-priority"], c.headers["apns-collapse-id"]],
+    ["in.heyorbit.app", "alert", "10", "del-1"],
+  );
+  // {id, opens} under `body`: the key expo-notifications reads a remote push's data from on iOS.
+  assert.deepEqual(JSON.parse(c.body), { aps: { alert: { title: "Orbit", body: "Hello" }, sound: "default", badge: 3 }, body: { id: "item-1", opens: { to: "security" } } });
   const bearer = c.headers.authorization!.replace(/^bearer /, "");
   const { header, claims } = checkJwt(bearer, ec.publicKey, true);
   assert.deepEqual(header, { alg: "ES256", kid: "KEY1234567" });
@@ -79,7 +85,7 @@ test("APNs: every answer to its reason; an expired provider token is dropped", a
     [{ status: 400, headers: {}, body: '{"reason":"PayloadTooLarge"}' }, "refused"],
     [{ status: 413, headers: {}, body: "" }, "refused"],
     [{ status: 500, headers: {}, body: "" }, "unknown"],
-    [{ status: 503, headers: {}, body: "not json tok-ios" }, "unknown"],
+    [{ status: 503, headers: {}, body: `not json ${ios.token}` }, "unknown"],
     [new Error("timed out"), "unknown"],
     [new Error("ECONNRESET"), "unknown"],
   ];
@@ -91,6 +97,11 @@ test("APNs: every answer to its reason; an expired provider token is dropped", a
     const r = await reasonOf(send(ios, msg));
     assert.equal("id" in r ? `id:${r.id}` : r.reason, want, JSON.stringify(answer));
   }
+  // A token that isn't hex is gone, and never reaches a request.
+  let asked = 0;
+  const strict = apnsSender({ teamId: "T", keyId: "K", privateKey: ecPem }, async () => (asked++, { status: 200, headers: {}, body: "" }));
+  for (const token of ["tok-ios", "../../3/device/abc", "", "abc def"]) assert.equal((await reasonOf(strict({ ...ios, token }, msg))).reason, "gone");
+  assert.equal(asked, 0);
   // ExpiredProviderToken: the next send signs a new one even within 50 minutes.
   let clock = 1_800_000_000_000;
   const auths: string[] = [];
@@ -139,7 +150,12 @@ test("FCM: an RS256 assertion, the access token kept until 60 s before expiry; t
     exp: iat + 3600,
   });
   assert.deepEqual(sends[0]!.body, {
-    message: { token: "tok-android", notification: { title: "Orbit", body: "Hello" }, data: { id: "item-1", opens: '{"to":"security"}' }, android: { priority: "HIGH" } },
+    message: {
+      token: "tok-android",
+      notification: { title: "Orbit", body: "Hello" },
+      data: { id: "item-1", opens: '{"to":"security"}' },
+      android: { priority: "HIGH", notification: { tag: "del-1" } },
+    },
   });
   assert.equal(typeof sends[0]!.body.message.data.opens, "string");
   assert.equal(sends[0]!.auth, "Bearer at-1");
@@ -160,9 +176,9 @@ test("FCM: every answer to its reason; a 401 drops the access token; token endpo
   const answers: [() => Response | never, string][] = [
     [() => json(200, { name: "n1" }), "id:n1"],
     [() => err(404, "UNREGISTERED", "NOT_FOUND"), "gone"],
-    [() => err(404), "gone"],
+    [() => err(404, undefined, "NOT_FOUND"), "refused"], // a 404 without UNREGISTERED doesn't strip the device
     [() => err(400, "UNREGISTERED"), "gone"],
-    [() => err(403, "SENDER_ID_MISMATCH", "PERMISSION_DENIED"), "gone"],
+    [() => err(403, "SENDER_ID_MISMATCH", "PERMISSION_DENIED"), "notSetUp"], // our project is wrong, not the phone
     [() => err(401, undefined, "UNAUTHENTICATED"), "unknown"],
     [() => err(403, undefined, "PERMISSION_DENIED"), "notSetUp"],
     [() => err(429, "QUOTA_EXCEEDED", "RESOURCE_EXHAUSTED"), "throttled"],
@@ -193,5 +209,30 @@ test("FCM: every answer to its reason; a 401 drops the access token; token endpo
   for (const [status, want] of [[400, "notSetUp"], [401, "notSetUp"], [500, "unknown"], [503, "unknown"]] as const) {
     const g = (async () => json(status, { error: "invalid_grant" })) as unknown as typeof fetch;
     assert.equal((await reasonOf(fcmSender(fcmKey, g)(android, msg))).reason, want);
+  }
+});
+
+test("h2Request: one session per host, reused; a timed-out request takes its session down and the next reconnects", async () => {
+  const server = createServer();
+  let sessions = 0;
+  server.on("session", () => sessions++);
+  server.on("stream", (stream, headers) => {
+    if (headers[":path"] === "/stall") return; // never answers
+    stream.respond({ ":status": 200, "apns-id": `id-${sessions}` });
+    stream.end("{}");
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const port = (server.address() as AddressInfo).port;
+  const request = h2Requester(100, () => `http://127.0.0.1:${port}`);
+  try {
+    const a = await request("apns.test", "/3/device/aa", {}, "{}");
+    const b = await request("apns.test", "/3/device/bb", {}, "{}");
+    assert.deepEqual([a.status, b.status, sessions], [200, 200, 1]);
+    assert.equal(b.headers["apns-id"], "id-1");
+    await assert.rejects(request("apns.test", "/stall", {}, "{}"), /timed out/);
+    const c = await request("apns.test", "/3/device/cc", {}, "{}");
+    assert.deepEqual([c.status, sessions], [200, 2]);
+  } finally {
+    await new Promise((r) => server.close(r));
   }
 });
