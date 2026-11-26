@@ -13,7 +13,6 @@ import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
-import { past as history } from '../../account/data';
 import { Carousel, type CarouselSlide } from '../../home/Carousel';
 import { DARK_TINT, Glass } from '../../glass';
 import { planHome, type Viewer } from '../../home/layout';
@@ -21,7 +20,7 @@ import { Icon } from '../../icons';
 import { useAds, useFeatured, usePromoted } from '../../content';
 import { type Event, eventsApi, type Host, hostsOf, toEvent, whereOf } from '../../events';
 import { useLoad } from '../../load';
-import { events as mockEvents, hosts as mockHosts, now as mockNow } from '../../mock';
+import { hosts as mockHosts } from '../../mock';
 import { useUnread } from '../../inboxStore';
 import { OrbitAdStrip } from '../../orbitAd';
 import { OrbitSays } from '../../orbitSays';
@@ -31,6 +30,7 @@ import { promoteOne } from '../../labels';
 import { EventRow, Failed, HostRow, isPromoted, loveIt, Monogram, Poster, SEAT, SeatCard, Section, StatusLine, Waiting } from '../../rows';
 import { bookAction, eventStatus } from '../../status';
 import { api, needsAccount, setFollowing, setInterest, skipInterests, useLoved, useTickets, useTicketsOnFocus, useViewer } from '../../session';
+import { thanksOf } from '../../tickets';
 import { useTabBarScroll, useTabBarSmall } from '../../tabBar';
 import { around, color, font, radius, rim, space, stoneAt } from '../../theme';
 
@@ -85,7 +85,10 @@ export default function Home() {
   // Your tickets (GET /me/tickets): an event you booked that discover doesn't list (link-only, or far away) still
   // joins Home's ticket stack; planHome keeps booked events out of every other section.
   useTicketsOnFocus();
-  const booked = (useTickets().data?.upcoming ?? []).map((t) => t.event);
+  const mine = useTickets().data;
+  const booked = (mine?.upcoming ?? []).map((t) => t.event);
+  // Thanks for coming: the events you were let in at that ended in the last week (src/tickets.ts thanksOf).
+  const went = thanksOf(mine, now);
   const listed = page.data ? [...page.data.near, ...page.data.elsewhere] : [];
   // Offline before discover's first answer, the tickets kept on the phone still draw the stack.
   const extra = [...new Map(booked.filter((c) => !listed.some((x) => x.id === c.id)).map((c) => [c.id, c])).values()];
@@ -94,13 +97,12 @@ export default function Home() {
     ...extra.map((c) => toEvent(c, false)),
   ];
   // The hosts of those events, and the mock's places to play.
-  // ponytail: Places to play stay on the mock venue hosts (with tileFor) until slots reach the API (P17); mock hosts
-  // also stay in hostOf, for the mock's Thanks for coming below (bookings slice).
+  // ponytail: Places to play stay on the mock venue hosts (with tileFor) until slots reach the API (P17).
   const apiHosts = hostsOf(listed);
   // Their nearness the old way (Hyderabad only), since the API doesn't know them.
   const hyderabad = v.place?.area === 'Hyderabad' || v.place?.city === 'Hyderabad';
   const hosts = [...apiHosts, ...mockHosts.filter((h) => tileFor(h.id)).map((h) => ({ ...h, near: hyderabad }))];
-  const ticketHosts = hostsOf(extra);
+  const ticketHosts = hostsOf([...extra, ...went]);
   const hostOf = (id: string) => (apiHosts.find((h) => h.id === id) ?? ticketHosts.find((h) => h.id === id) ?? mockHosts.find((h) => h.id === id)) as Host;
   // Staff's picks from Galaxy's App content (src/content.ts): the events marked Promoted, the carousel's featured
   // slides, and Orbit's own strips.
@@ -187,7 +189,7 @@ export default function Home() {
         {/* Thanks for coming, for each event you were let in at in the last week, newest first (two at most). */}
         {v.signedIn &&
           // Two in a row read as one thread: the second sits a big gap under the first.
-          thanksFor(mockNow).map((e, i) => <Thanks key={e.id} event={e} host={hostOf(e.hostId)} top={i ? space.big : SECTION} />)}
+          went.map((c, i) => <Thanks key={c.id} event={toEvent(c, false)} host={hostOf(c.host.id)} top={i ? space.big : SECTION} />)}
 
         {plan.orbit.length > 0 && (
           <>
@@ -503,18 +505,9 @@ function slideAction(e: Event, now: number) {
 }
 
 // Thanks for coming (owner, 19 Nov 2026: "After-check-in bits"; Performer and inRoom docs): after an event you were let
-// in at, for a week. A meetup's card opens its room, to see who was there (inRoom 12); any other offers Loved it, and a
+// in at, for a week after it ended (X6: a ticket with anyone let in at the door, from GET /me/tickets). A meetup's card opens its room, to see who was there (inRoom 12); any other offers Loved it, and a
 // love offers to follow the acts (Performer 10). Orbit says it, as in the chat (owner, 19 Nov 2026: "Both", the Orbit
 // speaks take); a love shows as your answer and Orbit's reply, with Take it back to undo it.
-const WEEK = 3 * 3_600_000 + 7 * 86_400_000; // the event (about three hours), then a week
-function thanksFor(at: number): Event[] {
-  return history
-    .filter((h) => h.status === 'Went')
-    .map((h) => mockEvents.find((e) => e.id === h.eventId))
-    .filter((e): e is Event => !!e && at >= Date.parse(e.startsAt) && at < Date.parse(e.startsAt) + WEEK)
-    .sort((a, b) => Date.parse(b.startsAt) - Date.parse(a.startsAt))
-    .slice(0, 2);
-}
 function Thanks({ event: e, host, top }: { event: Event; host: Host; top: number }) {
   const loved = useLoved(e.id);
   const title = `Thanks for coming to ${e.title}`;

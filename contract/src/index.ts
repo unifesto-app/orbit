@@ -22,3 +22,4 @@ export * from "./notifications.ts";
 export * from "./bookings.ts";
 export * from "./requests.ts";
 export * from "./announcements.ts";
+export * from "./checkin.ts";

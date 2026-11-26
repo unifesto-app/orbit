@@ -42,7 +42,7 @@ import {
   Tag,
   Verified,
 } from '../../rows';
-import { addToList, needsAccount, setInterested, useInterested, useLoved, useSaved, useTicketsOnFocus, useViewer } from '../../session';
+import { addToList, needsAccount, setInterested, useInterested, useLetIn, useLoved, useSaved, useTicketsOnFocus, useViewer } from '../../session';
 import { bookAction, eventStatus, seatsLine } from '../../status';
 import { useEvent } from '../../useEvent';
 import { around, color, font, radius, space } from '../../theme';
@@ -83,8 +83,9 @@ function EventView({ e, host, now, live }: { e: Event; host: Host; now: number; 
   const seats = seatsLine(e, status);
   const mine = viewer.signedIn ? (viewer.tickets ?? []).filter((t) => t.eventId === e.id) : [];
   const booked = mine.length > 0;
-  const went = viewer.signedIn && history.some((h) => h.eventId === e.id && h.status === 'Went');
-  const thanks = past && went && now < Date.parse(e.startsAt) + WEEK;
+  const atDoor = useLetIn(e.id);
+  const went = viewer.signedIn && (live ? atDoor : history.some((h) => h.eventId === e.id && h.status === 'Went'));
+  const thanks = past && went && now < (e.endsAt ? Date.parse(e.endsAt) + 7 * 86_400_000 : Date.parse(e.startsAt) + WEEK); // a week after its end
   const book = bookAction(status, !e.pricePaise);
   const paidLater = live && book.can && e.pricePaise > 0; // a real event with no free ticket: paying isn't on yet
   // The ticket bar: a ticket holder keeps View ticket until the event has ended, while it's on and if it's cancelled;

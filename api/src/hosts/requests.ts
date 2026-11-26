@@ -152,7 +152,7 @@ export function requestsRoutes({ db, notify, secret, now = Date.now }: Deps) {
             });
             const decision = action === "approve" ? "approved" : action === "changes" ? "changes" : "declined";
             await notify(
-              { to: { userId: r.userId }, kind: "eventRequestAnswered", data: { requestId: r.id, decision, name: r.host.name, reason: decision === "approved" ? null : b.reason } },
+              { to: { userId: r.userId }, kind: "eventRequestAnswered", data: { requestId: r.id, decision, name: r.host.name, kind: r.host.kind, reason: decision === "approved" ? null : b.reason } },
               tx,
             );
             return out!;

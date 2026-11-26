@@ -67,7 +67,7 @@ const join = async (p = phone()) => {
 };
 type P = Awaited<ReturnType<typeof join>>;
 const as = (u: P) => (m: string, path: string, body?: unknown) => t.call(m, path, body, u.access);
-const give = (u: P, feature: "money" | "people") =>
+const give = (u: P, feature: "money" | "people" | "hosts") =>
   t.db.insert(staffGrants).values({ userId: u.me.id, feature, addedBy: u.me.id, addedAt: new Date(t.now() - 2 * DAY), startsAt: new Date(t.now() - DAY) });
 
 const place = { venue: "Hall", address: "Road 1", area: "Jubilee Hills", city: "Hyderabad", lat: 17.4, lng: 78.4 };
@@ -391,6 +391,19 @@ test("cancelling an event refunds its paid tickets in full; earnings go to 0", a
   assert.deepEqual([r!.amountPaise, r!.kind, r!.status], [o.amountPaise, "auto", "sent"]);
   const [earned] = await earningsOf(t.db, [e.id]);
   assert.deepEqual([earned!.refundedPaise, earned!.commissionPaise, earned!.earningsPaise], [120000, 0, 0]);
+
+  // Staff cancelling from Galaxy's Events refunds the same way.
+  const s = await join();
+  await give(s, "hosts");
+  const e2 = await publish(a);
+  const o2 = (await pay(b, e2)).body;
+  await verify(b, o2.orderId, capture(o2.orderId, o2.amountPaise).id);
+  assert.equal((await as(s)("POST", `/galaxy/events/${e2.id}/cancel`, { reason: "Venue flooded" })).status, 200);
+  const p2 = await paymentOf(o2.orderId);
+  assert.equal(p2.status, "refundPending");
+  for (let i = 0; i < 100 && (await t.db.select().from(refunds).where(eq(refunds.paymentId, p2.id)))[0]?.status !== "sent"; i++) await new Promise((r) => setTimeout(r, 10));
+  const [r2] = await t.db.select().from(refunds).where(eq(refunds.paymentId, p2.id));
+  assert.deepEqual([r2!.amountPaise, r2!.kind, r2!.status], [o2.amountPaise, "auto", "sent"]);
 });
 
 test("pay again for other seats: the old order expires and a new one is made", async () => {
