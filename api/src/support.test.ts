@@ -141,17 +141,29 @@ test("Galaxy: list, view, reply (answered, logged, a supportReply in the right a
   const refused = await as(s)("POST", `/galaxy/support/${threadId}/status`, { status: "open" });
   assert.equal(refused.status, 409);
   assert.equal(refused.body.error, "newerThread");
-  // A reply to it still goes, and it stays closed.
+  // A reply to it is refused too: nothing written, nothing sent.
+  const before = await as(a)("GET", "/me/support?app=launch");
+  const told = t.notices.length;
   t.tick(1000);
-  assert.equal((await as(s)("POST", `/galaxy/support/${threadId}/reply`, { body: "Fee is 5%." })).body.status, "closed");
+  const noReply = await as(s)("POST", `/galaxy/support/${threadId}/reply`, { body: "Fee is 5%." });
+  assert.equal(noReply.status, 409);
+  assert.equal(noReply.body.error, "newerThread");
+  assert.equal(t.notices.length, told);
+  assert.deepEqual(await as(a)("GET", "/me/support?app=launch"), before);
+  assert.equal((await as(s)("GET", `/galaxy/support/${threadId}`)).body.messages.length, 3);
 
-  // With the newer one closed, the old one reopens; a reply to a closed thread reopens it as answered.
+  // With the newer one closed, the old one reopens: open, as the person wrote last.
   await as(s)("POST", `/galaxy/support/${fresh.body.threadId}/status`, { status: "closed" });
   assert.equal((await as(s)("POST", `/galaxy/support/${threadId}/status`, { status: "open" })).body.status, "open");
+  // A reply to a closed thread reopens it as answered.
   await as(s)("POST", `/galaxy/support/${threadId}/status`, { status: "closed" });
+  t.tick(1000);
   await as(s)("POST", `/galaxy/support/${fresh.body.threadId}/reply`, { body: "Answered." });
   const [again] = await t.db.select().from(supportThreads).where(eq(supportThreads.id, fresh.body.threadId));
   assert.equal(again!.status, "answered");
+  // Staff wrote last: reopening makes it answered.
+  await as(s)("POST", `/galaxy/support/${fresh.body.threadId}/status`, { status: "closed" });
+  assert.equal((await as(s)("POST", `/galaxy/support/${fresh.body.threadId}/status`, { status: "open" })).body.status, "answered");
 });
 
 test("account deletion takes the person's threads and their messages", async () => {

@@ -1,7 +1,8 @@
 // Help and support in Event Partner and Play Partner (X16), from the Help row on Host (team.tsx) and Venue (venue.tsx),
 // and from a supportReply message or push (notices.ts pushHref). The conversation with Orbit's support (GET
 // /me/support?app=, the latest thread from this app) as plain text rows, oldest first, then Write to us (POST
-// /me/support). Staff answer in Galaxy's Support. Crew has no Help row, so it never sends: crew's word isn't a support app.
+// /me/support). Staff answer in Galaxy's Support. Crew has no Help: opened there anyway (a link), it says so and sends
+// nothing, never filing a crew message as another app's.
 // Laid out as the Event Request's steps (request.tsx Frame): the back circle, the title, the box, Send at the foot.
 import { type MySupport, SUPPORT_BODY_MAX, type SupportApp } from '@orbit/contract';
 import { Glass } from '@orbit/mobile/glass';
@@ -13,13 +14,26 @@ import { AccessibilityInfo, Text, TextInput, View } from 'react-native';
 
 import { Card, Note, Row, Section, Wide } from '../launch/ui';
 import { api, useSession } from '../session';
-import { isStation } from '../variant';
+import { thisApp } from '../variant';
 import { Frame, Label, s } from './request';
 
 const back = () => (router.canGoBack() ? router.back() : router.replace('/'));
 
 export default function Help() {
-  const app: SupportApp = isStation ? 'station' : 'launch';
+  if (thisApp.word === 'crew') {
+    return (
+      <Frame step={null} onBack={back}>
+        <Text style={s.title} accessibilityRole="header">
+          Help and support
+        </Text>
+        <Text style={s.line}>Ask the event’s lead, or write to Orbit from the Orbit app’s Help.</Text>
+      </Frame>
+    );
+  }
+  return <Conversation app={thisApp.word} />;
+}
+
+function Conversation({ app }: { app: SupportApp }) {
   const me = useSession()?.me.id;
   const load = useLoad<MySupport>(me ? `support|${me}|${app}` : null, () => api.authed<MySupport>('GET', `/me/support?app=${app}`));
   const [message, setMessage] = useState('');

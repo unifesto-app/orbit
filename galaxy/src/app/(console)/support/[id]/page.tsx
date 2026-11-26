@@ -61,6 +61,11 @@ async function Thread({ params }: Pick<PageProps<"/support/[id]">, "params">) {
 
       <Container title="Actions">
         <div className={ui.page}>
+          {t.status === "closed" && (
+            <p className={ui.secondary}>
+              Replying opens this thread again as answered. If they&apos;ve written since from {appLabel(t.app)}, that&apos;s a newer thread: answer them there.
+            </p>
+          )}
           <Reply id={t.id} />
           <SetStatus id={t.id} closed={t.status === "closed"} />
         </div>
