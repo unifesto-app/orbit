@@ -21,6 +21,20 @@ const readCursor = (s: string) => {
   return !isNaN(t) && new Date(t).toISOString().slice(0, 10) === at.slice(0, 10) ? { at, id } : null;
 };
 
+// The settings write, for PUT /me/notification-settings and the unsubscribe link (email-hygiene.ts).
+export const saveSettings = (db: Db, u: { id: string; city: string | null }, b: NotificationSettingsBody, at: Date) =>
+  db.transaction(async (tx) => {
+    // A defaults row first, so two first PUTs lock the same row instead of both seeing none (its defaults are the
+    // same as no row).
+    await tx.insert(notificationPrefs).values({ userId: u.id }).onConflictDoNothing();
+    const [row] = await tx.select().from(notificationPrefs).where(eq(notificationPrefs.userId, u.id)).for("update");
+    const s = settingsFor(row, u.city);
+    const next = { push: b.push ?? s.push, quiet: b.quiet ?? s.quiet, switches: { ...s.switches, ...b.switches } };
+    const set = { push: next.push, quiet: next.quiet, switches: switchDiffs(next.switches, u.city), updatedAt: at };
+    await tx.insert(notificationPrefs).values({ userId: u.id, ...set }).onConflictDoUpdate({ target: notificationPrefs.userId, set });
+    return next;
+  });
+
 export function meNotificationsRoutes({ db, secret, now = Date.now }: Deps) {
   const app = new Hono<Env>();
   const auth = signedIn(db, secret, now);
@@ -101,19 +115,7 @@ export function meNotificationsRoutes({ db, secret, now = Date.now }: Deps) {
   app.put("/me/notification-settings", auth, async (c) => {
     const b = await parse(c, NotificationSettingsBody);
     if (!b) return invalid(c);
-    const u = c.var.user;
-    const out = await db.transaction(async (tx) => {
-      // A defaults row first, so two first PUTs lock the same row instead of both seeing none (its defaults are the
-      // same as no row).
-      await tx.insert(notificationPrefs).values({ userId: u.id }).onConflictDoNothing();
-      const [row] = await tx.select().from(notificationPrefs).where(eq(notificationPrefs.userId, u.id)).for("update");
-      const s = settingsFor(row, u.city);
-      const next = { push: b.push ?? s.push, quiet: b.quiet ?? s.quiet, switches: { ...s.switches, ...b.switches } };
-      const set = { push: next.push, quiet: next.quiet, switches: switchDiffs(next.switches, u.city), updatedAt: at() };
-      await tx.insert(notificationPrefs).values({ userId: u.id, ...set }).onConflictDoUpdate({ target: notificationPrefs.userId, set });
-      return next;
-    });
-    return c.json(out);
+    return c.json(await saveSettings(db, c.var.user, b, at()));
   });
 
   // PUT /me/follows/:hostId/notify {notify}: a followed host's new events, told or not.

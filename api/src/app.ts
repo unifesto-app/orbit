@@ -21,6 +21,7 @@ import { analyticsRoutes } from "./analytics.ts";
 import { dashboardRoutes } from "./dashboard.ts";
 import { visitRoutes } from "./visits.ts";
 import { rolesRoutes } from "./roles/routes.ts";
+import { sesHookRoutes, unsubscribeRoutes } from "./email-hygiene.ts";
 
 export const VERSION = "0.0.0";
 
@@ -56,6 +57,8 @@ export function createApp(deps?: Deps) {
     app.route("/", careersRoutes(deps));
     app.route("/", dashboardRoutes(deps));
     app.route("/", analyticsRoutes(deps));
+    app.route("/", unsubscribeRoutes(deps));
+    if (deps.sesTopic) app.route("/", sesHookRoutes({ db: deps.db, topicArn: deps.sesTopic, now: deps.now }));
   }
 
   // An unknown path looks the same as a Galaxy route someone can't use.

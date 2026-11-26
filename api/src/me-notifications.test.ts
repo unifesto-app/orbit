@@ -1,6 +1,6 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import sharp from "sharp";
 import { KINDS, type NoticeKind, PUSH_SWITCHES } from "@orbit/contract";
 import { deliveries, events, follows, hosts, inboxItems, notificationPrefs, pushDevices, sessions, users } from "./db/schema.ts";
@@ -42,9 +42,10 @@ const ready = async (o: { email?: boolean; city?: string } = {}) => {
 };
 const settings = (a: A, body: object) => as(a)("PUT", "/me/notification-settings", body);
 const sent = (a: A, kind: NoticeKind, channel: "push" | "email") =>
-  t.db.select().from(deliveries).where(and(eq(deliveries.userId, a.me.id), eq(deliveries.kind, kind), eq(deliveries.channel, channel)));
+  t.db.select().from(deliveries).where(and(eq(deliveries.userId, a.me.id), eq(deliveries.kind, kind), eq(deliveries.channel, channel))).orderBy(asc(deliveries.createdAt));
 const last = async (a: A, kind: NoticeKind, channel: "push" | "email") => (await sent(a, kind, channel)).at(-1)!;
-const tell = (a: A, kind: NoticeKind, data: Record<string, unknown> = {}, key?: string) => t.notify({ to: { userId: a.me.id }, kind, data, key });
+// A millisecond on per notice, so last() can order by created time (the rows have no other order).
+const tell = (a: A, kind: NoticeKind, data: Record<string, unknown> = {}, key?: string) => (t.tick(1), t.notify({ to: { userId: a.me.id }, kind, data, key }));
 const inboxOf = (a: A) => t.db.select().from(inboxItems).where(eq(inboxItems.userId, a.me.id));
 
 // A push kind for each switch.
@@ -65,17 +66,16 @@ test("each switch off skips its channel's row; master push off skips every non-M
     await settings(a, { switches: { [`push.${sw}`]: true } });
   }
   // Email: the switches with an "always" kind behind them. Reminders and follows only govern "fallback" email (PR 4),
-  // written above when their push was switched off. Optional email is held until PR 6 either way; a switch off says why
-  // first.
+  // written above when their push was switched off. Optional email queues (PR 6) until its switch is off.
   for (const [sw, kind] of [["announcements", "hostAnnouncement"], ["orbit", "orbitNews"], ["yourHosts", "teamRoleStarted"]] as const) {
     await tell(a, kind);
-    assert.equal((await last(a, kind, "email")).reason, "optionalHeld", sw);
+    assert.equal((await last(a, kind, "email")).status, "queued", sw);
     await settings(a, { switches: { [`email.${sw}`]: false } });
     await tell(a, kind);
     assert.deepEqual([(await last(a, kind, "email")).status, (await last(a, kind, "email")).reason], ["skipped", "switchOff"], sw);
   }
   for (const kind of ["eventTomorrow", "followedHostEvent"] as const)
-    assert.deepEqual((await sent(a, kind, "email")).map((d) => d.reason), ["optionalHeld"], kind); // the push couldn't land
+    assert.deepEqual((await sent(a, kind, "email")).map((d) => d.status), ["queued"], kind); // the push couldn't land
 
   const b = await ready({ city: "Hyderabad" });
   await settings(b, { push: false });
@@ -184,9 +184,8 @@ test("caps: a sixth Low push in a day is inbox only, Normal isn't counted; one f
   await tell(b, "followedHostEvent", { hostId: h1, title: "One" });
   await tell(b, "followedHostEvent", { hostId: h1, title: "Two" });
   await tell(b, "followedHostEvent", { hostId: h2, title: "Three" });
-  assert.deepEqual((await sent(b, "followedHostEvent", "push")).map((d) => [d.payload.title, d.status, d.reason]), [
-    ["One", "queued", null], ["Two", "skipped", "capReached"], ["Three", "queued", null],
-  ]);
+  const byTitle = (await sent(b, "followedHostEvent", "push")).map((d) => [d.payload.title, d.status, d.reason]).sort((x, y) => String(x[0]).localeCompare(String(y[0])));
+  assert.deepEqual(byTitle, [["One", "queued", null], ["Three", "queued", null], ["Two", "skipped", "capReached"]]); // no row order in SQL
 });
 
 test("caps count by the day a push delivers: five held overnight fill the morning", async () => {

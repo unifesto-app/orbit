@@ -2,9 +2,9 @@ import { and, count, countDistinct, eq, gt, gte, inArray, isNull, lt, lte, notIn
 import { inboxApp, type InboxApp, isMust, KINDS, type NoticeKind, type NotificationSettings, SWITCH_KEYS, type SwitchKey } from "@orbit/contract";
 import { type Mail, NotSent } from "./auth/senders.ts";
 import type { Db } from "./db/index.ts";
-import { deliveries, events, inboxItems, notificationPrefs, notificationSwitches, pushDevices, sessions, users } from "./db/schema.ts";
+import { deliveries, emailSuppressions, events, inboxItems, notificationPrefs, notificationSwitches, pushDevices, sessions, users } from "./db/schema.ts";
 import { isUuid, type Notice, type Notify, type Tx } from "./http.ts";
-import { emailFor, inboxFor } from "./notification-emails.ts";
+import { emailFor, inboxFor, optionalSwitch, unsubscribeToken } from "./notification-emails.ts";
 import type { Push } from "./push.ts";
 import { holdersOf, tell } from "./roles/access.ts";
 
@@ -103,6 +103,21 @@ const heldAt = (p: typeof users.$inferSelect, at: Date) => !!((p.suspendedAt && 
 const addressOf = (contact: string | null, person: typeof users.$inferSelect | undefined) =>
   contact ? (contact.includes("@") ? contact : null) : person?.emailVerifiedAt ? person.email : null;
 
+// An address SES reported (email-hygiene.ts): a hard bounce stops all email to it, a complaint only optional email.
+const suppressed = async (q: Tx | Db, address: string, kind: NoticeKind) => {
+  const [row] = await q.select({ reason: emailSuppressions.reason }).from(emailSuppressions).where(eq(emailSuppressions.address, address.toLowerCase()));
+  return !!row && (row.reason === "bounce" || KINDS[kind]?.level !== "must"); // not isMust: it throws on a kind this build lacks
+};
+// A code just proved this address reaches its owner, which answers a hard bounce (not a complaint: that was the
+// person's own word). Housekeeping: a failure is logged without the address and never fails the request.
+export const unsuppress = (q: Tx | Db, address: string) =>
+  q
+    .delete(emailSuppressions)
+    .where(and(eq(emailSuppressions.address, address.toLowerCase()), eq(emailSuppressions.reason, "bounce")))
+    .then(
+      () => undefined,
+      (e: unknown) => console.error(`[suppressions] not cleared: ${e instanceof Error ? e.message : "unknown"}`),
+    );
 // Galaxy's kill switches (PR 7): the channels switched off for this kind, its own or the whole channel's (kind *). Read
 // on every notice and every worker pass, so a switch takes hold at once. The whole-email switch never stops staff kinds:
 // they are how Platform hears that email was switched off or a provider is failing, so they always try SES.
@@ -112,21 +127,22 @@ export const killedFor = async (q: Tx | Db, kind: string) =>
   new Set((await q.select().from(notificationSwitches).where(inArray(notificationSwitches.kind, [kind, "*"]))).filter((sw) => stops(sw, kind)).map((r) => r.channel));
 
 type Base = Pick<typeof deliveries.$inferInsert, "userId" | "contact" | "kind" | "dedupeKey" | "payload" | "runAt" | "createdAt" | "inboxItemId">;
-// The email row for a notice: switched off, held (optional), queued to its address, or no address. `s` is null for Must
+// The email row for a notice: switched off, held, queued to its address, suppressed, or no address. `s` is null for Must
 // kinds and notices with no account. Used by "always" kinds in write() and by "fallback" kinds when the push can't land.
-const writeEmail = (q: Tx | Db, row: Base, s: NotificationSettings | null, address: string | null, killed: boolean) => {
+// Held: optional email (not Must, not the one-off welcome) with no email switch to unsubscribe from, or no account.
+const writeEmail = async (q: Tx | Db, row: Base, s: NotificationSettings | null, address: string | null, killed: boolean) => {
   const kind = row.kind as NoticeKind;
-  const must = isMust(kind);
   const v: Pick<typeof deliveries.$inferInsert, "status" | "reason" | "target"> = killed
     ? { status: "skipped", reason: "killSwitch", target: "" }
     : s && switchedOff(s, kind, "email")
       ? { status: "skipped", reason: "switchOff", target: "" }
-      : // ponytail: optional email (not Must, not the one-off welcome) waits for unsubscribe links; lifts in PR 6.
-        !must && kind !== "welcome"
+      : !isMust(kind) && kind !== "welcome" && (!optionalSwitch(kind) || !row.userId)
         ? { status: "skipped", reason: "optionalHeld", target: "" }
-        : address
-          ? { status: "queued", target: address }
-          : { status: "skipped", reason: "noEmail", target: "" };
+        : !address
+          ? { status: "skipped", reason: "noEmail", target: "" }
+          : (await suppressed(q, address, kind))
+            ? { status: "skipped", reason: "suppressed", target: address }
+            : { status: "queued", target: address };
   return q.insert(deliveries).values({ ...row, channel: "email", ...v }).onConflictDoNothing({ target: [deliveries.dedupeKey, deliveries.channel, deliveries.target] });
 };
 
@@ -282,8 +298,22 @@ const stale = async (db: Db, eventId: unknown, at: Date) => {
 
 // One pass of the worker: releases due held pushes, then claims due rows (queued, or stuck in sending past their lock) in
 // one statement, so the claim commits before any send, then sends each. Retries after 1, 5 and 30 minutes, then failed.
-// Returns rows handled.
-export async function runDeliveries({ db, mail, push, now, limit = 20 }: { db: Db; mail: Mail | undefined; push?: Push; now: () => number; limit?: number }) {
+// Returns rows handled. `unsubscribe`: AUTH_SECRET and the API's public URL, for optional emails' links.
+export async function runDeliveries({
+  db,
+  mail,
+  push,
+  now,
+  limit = 20,
+  unsubscribe,
+}: {
+  db: Db;
+  mail: Mail | undefined;
+  push?: Push;
+  now: () => number;
+  limit?: number;
+  unsubscribe?: { secret: string; url: string };
+}) {
   await releaseHeld({ db, now });
   const at = new Date(now());
   const due = db
@@ -352,13 +382,28 @@ export async function runDeliveries({ db, mail, push, now, limit = 20 }: { db: D
       if (ended) await fallBack(db, d, at);
       continue;
     }
-    if (!mail) {
+    // An optional email carries its one-click unsubscribe link; without the means to make one it doesn't go.
+    const sw = optionalSwitch(d.kind as NoticeKind);
+    const link = sw && d.userId && unsubscribe && `${unsubscribe.url}/public/unsubscribe?t=${unsubscribeToken(unsubscribe.secret, d.userId, sw)}`;
+    if (!mail || (sw && !link)) {
       await done({ status: "skipped", reason: "notSetUp" });
       continue;
     }
+    // Rechecked just before sending: a bounce, a complaint or an unsubscribe since the row was queued.
+    if (await suppressed(db, d.target, d.kind as NoticeKind)) {
+      await done({ status: "skipped", reason: "suppressed" });
+      continue;
+    }
+    if (sw && d.userId) {
+      const [person] = await db.select({ city: users.city }).from(users).where(eq(users.id, d.userId));
+      if (!person || switchedOff(await settingsOf(db, d.userId, person.city), d.kind as NoticeKind, "email")) {
+        await done({ status: "skipped", reason: "switchOff" });
+        continue;
+      }
+    }
     try {
-      await mail(d.target, emailFor(d.kind, d.payload));
-      await done({ status: "sent", reason: null, sentAt: new Date(now()) });
+      const providerId = await mail(d.target, emailFor(d.kind, d.payload, undefined, sw && link ? { s: sw, link } : undefined));
+      await done({ status: "sent", reason: null, sentAt: new Date(now()), providerId: providerId || null });
     } catch (e) {
       await settle(e);
     }
@@ -371,13 +416,13 @@ const unread = async (db: Db, userId: string, app: InboxApp) =>
   (await db.select({ n: count() }).from(inboxItems).where(and(eq(inboxItems.userId, userId), eq(inboxItems.app, app), isNull(inboxItems.readAt))))[0]!.n;
 
 // The hourly provider check: per channel, over rows made in the last hour. Failing: failed (not counting a dead phone or
-// a bad address: gone, refused), and rows waiting on a retry after unknown or throttled, since only a 4th try fails and
+// a bad address: gone, refused, bounced, complained), and rows waiting on a retry after unknown or throttled, since only a 4th try fails and
 // that is 36 minutes on. OK: sent and delivered. At least 20 of those and more than 20% failing: an error line (Sentry
 // picks it up through captureConsoleIntegration) and providerFailing to every Platform holder, once per channel an hour.
 export async function checkProviders({ db, notify, now }: { db: Db; notify: Notify; now: () => number }) {
   const at = new Date(now());
   const failing = or(
-    and(eq(deliveries.status, "failed"), or(isNull(deliveries.reason), notInArray(deliveries.reason, ["gone", "refused"]))),
+    and(eq(deliveries.status, "failed"), or(isNull(deliveries.reason), notInArray(deliveries.reason, ["gone", "refused", "bounced", "complained"]))),
     and(inArray(deliveries.status, ["queued", "sending"]), inArray(deliveries.reason, ["unknown", "throttled"])),
   )!;
   const counts = await db

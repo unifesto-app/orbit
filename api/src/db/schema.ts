@@ -828,8 +828,17 @@ export const deliveries = pgTable(
     index("deliveries_due_idx").on(t.runAt).where(sql`${t.status} in ('queued', 'held', 'sending')`),
     index("deliveries_user_idx").on(t.userId, t.createdAt),
     index("deliveries_created_idx").on(t.createdAt),
+    index("deliveries_provider_idx").on(t.providerId).where(sql`${t.providerId} is not null`), // SES bounce lookups
   ],
 );
+
+// Addresses SES told us bounced for good or complained (ses-hook.ts), stored lower-case. Notification emails to them are
+// skipped (notifications.ts); sign-in codes still go.
+export const emailSuppressions = pgTable("email_suppressions", {
+  address: text("address").primaryKey(),
+  reason: text("reason", { enum: ["bounce", "complaint"] }).notNull(),
+  at: at("at").notNull(),
+});
 
 // The person's notification settings. No row means every default (me-notifications.ts); `switches` holds only the keys
 // that differ from theirs ("push.near", "email.follows").
