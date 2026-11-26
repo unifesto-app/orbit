@@ -4,7 +4,8 @@
 // out. An accepted Admin role starts once whoever added you confirms it's you, so it shows as waiting until then.
 // Pull down to look for new invites. An account set to be deleted says so, with the day.
 // ponytail: Start a request opens nothing until the Event Request API is built (owner, 22 Nov 2026: "Event Request API",
-// next), so it shows faded. Someone already on a host sees a line saying their events come here next, until Launch's tabs read the API.
+// next), so it shows faded. Someone on a host's team but not its Admin is told Event Partner is for Admins; an Admin goes
+// to the tabs.
 import { markOf } from '@orbit/mobile/mark';
 import { useLoad } from '@orbit/mobile/load';
 import { showPhone } from '@orbit/mobile/signin';
@@ -14,6 +15,7 @@ import { useState } from 'react';
 import { Image, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { adminHosts, mustPick } from '../launch/host';
 import { Monogram, Note, Pill, Section, styles as ui } from '../launch/ui';
 import { api, refreshMe, signOut, useSession } from '../session';
 import { seats } from '../station/seats';
@@ -32,13 +34,14 @@ const dayOf = (iso: string) => new Date(iso).toLocaleDateString('en-IN', { weekd
 export default function Welcome() {
   const insets = useSafeAreaInsets();
   const session = useSession();
-  const me = session && 'me' in session ? session.me : null;
+  const me = session?.me ?? null;
   const invites = useLoad<Invite[]>(me ? `invites|${me.id}` : null, () => api.authed<Invite[]>('GET', '/me/invites'));
   const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   if (!me) return null;
   if (isStation && seats(me).length) return <Redirect href="/today" />; // an accepted seat opens Today
+  if (!isStation && adminHosts(me).length) return <Redirect href={mustPick(me) ? '/pick' : '/events'} />; // an Admin opens Events
 
   const first = me.name?.trim().split(/\s+/)[0];
   const waiting = (invites.data ?? []).filter((i) => !hidden.has(i.id));
@@ -81,7 +84,7 @@ export default function Welcome() {
         {isStation
           ? 'You’re not on a venue’s team yet. Accept an invite from a venue’s Admin.'
           : onTeams
-          ? `You’re on ${onTeams === 1 ? 'a host' : `${onTeams} hosts`}. Your events come here next.`
+          ? `You’re on ${onTeams === 1 ? 'a host’s team' : `${onTeams} hosts’ teams`}, but not as an Admin. Event Partner is for Admins.`
           : 'You’re not on a host yet. Accept an invite, or start your own.'}
       </Text>
       {me.deletionDue && <Note>{`Your account is set to be deleted on ${dayOf(me.deletionDue)}. To keep it, open the Orbit app and tap Keep my account.`}</Note>}

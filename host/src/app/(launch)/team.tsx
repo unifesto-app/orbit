@@ -5,74 +5,147 @@
 //   Share page and View;
 // - Get verified, while it isn't: what the tick brings, and Ask Orbit to verify (Admins);
 // - Finish your page: only what's missing (logo, banner, about), each gone once done;
-// - Admins, the owner marked, and Admin roles still waiting with their 14 days; Add an Admin. Event leads and Crew are
-//   added on each event, so Event teams lists each coming event's team and opens it;
+// - Admins, the owner marked, and Admin roles still waiting; Add an Admin, by phone or email. A tap on another Admin
+//   removes them, on an invite withdraws it (or confirms it, once accepted, for whoever sent it);
 // - Status: live, paused, suspended or archived; Pause and Archive for the owner alone;
 // - You: your account (sign-in, security, Delete account), help, the web Console, and Sign out.
-// ponytail: Admins' view, from the mock. Every row and button opens nothing yet except the web Console; host pages on the
-// web aren't built, so Share page and View wait for them. Sign out leaves the dev demo for Sign in.
+// From GET /hosts/:id (HostPage) and GET /hosts/:id/team; POST /hosts/:id/team invites, DELETE …/team/:seat removes or
+// withdraws, POST …/team/:seat/confirm confirms (plan F31, L3).
+// ponytail: Event teams (Event leads and Crew per event) stay hidden until the Crew slice (H3.3). Edit host, Get
+// verified, Finish your page and the status moves open nothing yet; host pages on the web aren't built, so Share page
+// and View wait for them. An invite's age shows once the team route sends when it went.
+import { type EventRow, HOST_KINDS, type HostEvents, type HostPage } from '@orbit/contract';
+import { markOf } from '@orbit/mobile/mark';
+import { useLoad } from '@orbit/mobile/load';
+import { showPhone } from '@orbit/mobile/signin';
 import { useTabBarScroll } from '@orbit/mobile/tabBar';
 import { color, font, space } from '@orbit/mobile/theme';
-import { Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
+import { Alert, Linking, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { adminInvites, admins, drafts, endsAt, eventTeams, events, host, invites, now, page, sales } from '../../launch/data';
-import { dayWord, startsToday } from '../../launch/day';
-import { inviteLine, mustWait, spokenContact, statusMoves, statusNote, teamLine } from '../../launch/team';
-import { signOut } from '../../session';
-import { Card, Glow, HostHead, Monogram, Note, PERSON_INDENT, Person, Pill, Row, Section, Tag, Verified, styles as ui } from '../../launch/ui';
+import { useHost } from '../../launch/host';
+import { spokenContact, statusMoves, statusNote } from '../../launch/team';
+import { Card, Field, Glow, HostHead, Monogram, Note, PERSON_INDENT, Person, Pill, Row, Section, Tag, Verified, styles as ui } from '../../launch/ui';
+import { api, signOut, useSession } from '../../session';
+
+// GET /hosts/:id/team, as api/src/roles/routes.ts sends it.
+type Member = { id: string; userId: string | null; name: string | null; role: 'admin' | 'crew'; owner: boolean };
+type Invite = { id: string; contact: string; accepted: boolean; acceptedBy: string | null; addedBy: string };
+type TeamList = { members: Member[]; invites: Invite[] };
+// The events list, with the booked count PR A adds (optional until then).
+type Events = Omit<HostEvents, 'upcoming'> & { upcoming: (EventRow & { sold?: number })[] };
 
 const STATUS = { live: 'Live', paused: 'Paused', suspended: 'Suspended by Orbit', archived: 'Archived' } as const;
-const date = (when: string) => when.split(' · ')[0]; // "Fri 20 Nov"
 const followers = (n: number) => `${n.toLocaleString('en-IN')} follower${n === 1 ? '' : 's'}`;
+const kindOf = (k: string) => HOST_KINDS[k as keyof typeof HOST_KINDS] ?? k;
+const shownContact = (c: string) => (/^\+91\d{10}$/.test(c) ? showPhone(c) : c);
 
 export default function Host() {
   const insets = useSafeAreaInsets();
   const onScroll = useTabBarScroll();
-  const you = admins.find((a) => a.you);
-  const owner = !!you?.owner;
-  // Events not yet ended, soonest first, then drafts: whose teams can still change.
-  const coming = events.filter((e) => Date.parse(endsAt(e)) >= now).sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt));
-  const shown = page.status === 'live' || page.status === 'paused'; // a suspended or archived host is off Orbit
-  const publicPage = page.visibility === 'public';
-  const wait = mustWait(sales, now);
-  const moves = statusMoves(page.status, owner, wait);
-  const statusLine = statusNote(page.status, owner, wait);
-  const missing = [
-    !page.banner && { label: 'Add a banner', note: '4:3, across the top of your page' },
-    !page.logo && { label: 'Add your logo', note: 'Square; your initials show till then' },
-    !page.about && { label: 'Say what you do', note: 'A few lines about you' },
-  ].filter((m) => !!m);
+  const host = useHost();
+  const me = useSession()?.me;
+  const id = host?.id;
+  const page = useLoad<HostPage>(id ? `host|${id}` : null, () => api.authed<HostPage>('GET', `/hosts/${id}`));
+  const team = useLoad<TeamList>(id ? `team|${id}` : null, () => api.authed<TeamList>('GET', `/hosts/${id}/team`));
+  const events = useLoad<Events>(id ? `events|${id}` : null, () => api.authed<Events>('GET', `/hosts/${id}/events`));
+  const [adding, setAdding] = useState(false);
+  const [to, setTo] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  if (!host || !me) return null;
+
+  const p = page.data;
+  const admins = (team.data?.members ?? []).filter((m) => m.role === 'admin');
+  const invites = team.data?.invites ?? [];
+  const owner = !!p?.owner;
+  const shown = p?.status === 'live' || p?.status === 'paused'; // a suspended or archived host is off Orbit
+  const publicPage = p?.visibility === 'public';
+  // Pausing or archiving waits while an event coming up has bookings (open refunds join this with the money API).
+  const wait = (events.data?.upcoming ?? []).some((e) => (e.sold ?? 0) > 0);
+  const moves = p ? statusMoves(p.status, owner, wait) : [];
+  const statusLine = p ? statusNote(p.status, owner, wait) : undefined;
+  const missing = p
+    ? [
+        !p.banner && { label: 'Add a banner', note: '4:3, across the top of your page' },
+        !p.logo && { label: 'Add your logo', note: 'Square; your initials show till then' },
+        !p.about && { label: 'Say what you do', note: 'A few lines about you' },
+      ].filter((m) => !!m)
+    : [];
+  const loadError = page.error ?? team.error;
+
+  // A write to the team, then the team read again; what went wrong shows under Admins.
+  async function write(run: () => Promise<{ ok: true } | { ok: false; error: { message: string } }>) {
+    setBusy(true);
+    setError(null);
+    const r = await run();
+    setBusy(false);
+    if (!r.ok) setError(r.error.message);
+    team.reload();
+    return r.ok;
+  }
+  const end = (seat: string) => write(() => api.authed('DELETE', `/hosts/${host.id}/team/${seat}`));
+  const invite = async () => {
+    if (await write(() => api.authed('POST', `/hosts/${host.id}/team`, { to: to.trim() }))) {
+      setTo('');
+      setAdding(false);
+    }
+  };
+  const remove = (m: Member) =>
+    Alert.alert(`Remove ${m.name ?? 'this Admin'}?`, 'They stop being an Admin of this host.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Remove', style: 'destructive', onPress: () => void end(m.id) },
+    ]);
+  const answer = (i: Invite) =>
+    Alert.alert(shownContact(i.contact), i.accepted ? `Accepted by ${i.acceptedBy ?? 'someone'}. Confirm it’s them to make them an Admin.` : 'Waiting for them to accept.', [
+      { text: 'Cancel', style: 'cancel' },
+      ...(i.accepted && i.addedBy === me.id ? [{ text: 'Confirm', onPress: () => void write(() => api.authed('POST', `/hosts/${host.id}/team/${i.id}/confirm`)) }] : []),
+      { text: 'Withdraw invite', style: 'destructive' as const, onPress: () => void end(i.id) },
+    ]);
+  const reload = () => {
+    page.reload();
+    team.reload();
+    events.reload();
+  };
 
   return (
     <View style={styles.page}>
       <Glow tint={host.bg} />
-      <ScrollView contentContainerStyle={{ paddingTop: insets.top + 12, paddingBottom: insets.bottom + space.big }} onScroll={onScroll} scrollEventThrottle={16}>
+      <ScrollView
+        contentContainerStyle={{ paddingTop: insets.top + 12, paddingBottom: insets.bottom + space.big }}
+        onScroll={onScroll}
+        scrollEventThrottle={16}
+        refreshControl={<RefreshControl refreshing={(page.loading && !!page.data) || (team.loading && !!team.data)} onRefresh={reload} tintColor={color.secondary} />}
+      >
         <HostHead host={host} />
+        {loadError && <Note>{loadError.message}</Note>}
 
-        <View style={[ui.card, styles.pageCard]}>
-          <View style={styles.headRow}>
-            <Monogram host={host} size={64} />
-            <View style={styles.headLines}>
-              {/* The tick stays beside the name, which wraps to two lines before it gives way. */}
-              <View style={styles.nameRow}>
-                <Text style={styles.name} numberOfLines={2}>
-                  {host.name}
-                </Text>
-                {page.verified ? <Verified /> : <Tag text="Unverified" />}
+        {p && (
+          <View style={[ui.card, styles.pageCard]}>
+            <View style={styles.headRow}>
+              <Monogram host={host} size={64} />
+              <View style={styles.headLines}>
+                {/* The tick stays beside the name, which wraps to two lines before it gives way. */}
+                <View style={styles.nameRow}>
+                  <Text style={styles.name} numberOfLines={2}>
+                    {p.name}
+                  </Text>
+                  {p.verified ? <Verified /> : <Tag text="Unverified" />}
+                </View>
+                <Text style={styles.meta}>{`${kindOf(p.kind)} · ${p.city}`}</Text>
+                <Text style={styles.meta}>{publicPage ? followers(p.followers) : 'Private: no public page'}</Text>
               </View>
-              <Text style={styles.meta}>{`${page.kind} · ${page.city}`}</Text>
-              <Text style={styles.meta}>{publicPage ? followers(page.followers) : 'Private: no public page'}</Text>
+            </View>
+            <View style={styles.pills}>
+              <Pill label="Edit host" />
+              {publicPage && shown && <Pill label="Share page" />}
+              {publicPage && shown && <Pill label="View ↗" />}
             </View>
           </View>
-          <View style={styles.pills}>
-            <Pill label="Edit host" />
-            {publicPage && shown && <Pill label="Share page" />}
-            {publicPage && shown && <Pill label="View ↗" />}
-          </View>
-        </View>
+        )}
 
-        {!page.verified && shown && (
+        {p && !p.verified && shown && (
           <>
             <Section title="Get verified" />
             <View style={[ui.card, styles.verify]}>
@@ -97,72 +170,80 @@ export default function Host() {
           </>
         )}
 
-        <Section title="Admins" />
-        <Card indent={PERSON_INDENT}>
-          {admins.map((a) =>
-            a.you ? (
-              <Row
-                key={a.id}
-                lead={<Person initials={a.initials} you />}
-                label={`${a.name} (you)`}
-                value={a.owner ? 'Owner' : 'Admin'}
-                spoken={`${a.name}, you, ${a.owner ? 'Owner' : 'Admin'}`}
-              />
-            ) : (
-              <Row
-                key={a.id}
-                lead={<Person initials={a.initials} />}
-                label={a.name}
-                value={a.owner ? 'Owner' : 'Admin'}
-                spoken={`${a.name}, ${a.owner ? 'Owner' : 'Admin'}`}
-                onPress={() => {}}
-              />
-            ),
-          )}
-          {adminInvites.map((i) => (
-            <Row
-              key={i.id}
-              lead={<Person waiting />}
-              label={i.contact}
-              note={inviteLine(i.sentAt, now)}
-              value="Admin"
-              spoken={`${spokenContact(i.contact)}, invited as Admin. ${inviteLine(i.sentAt, now)}`}
-              onPress={() => {}}
-            />
-          ))}
-        </Card>
-        <View style={styles.add}>
-          <Pill label="Add an Admin" dark />
-        </View>
-        <Note>Admins run everything here, the bank account too. Event leads and Crew are added on each event.</Note>
-
-        {coming.length + drafts.length > 0 && (
+        {team.data && (
           <>
-            <Section title="Event teams" />
-            <Card>
-              {coming.map((e) => (
-                <Row
-                  key={e.id}
-                  label={`${e.title} · ${startsToday(e.startsAt, now) ? dayWord(e.startsAt, now).toLowerCase() : date(e.when)}`}
-                  note={teamLine(eventTeams[e.id], invites.filter((i) => i.eventId === e.id).length)}
-                  onPress={() => {}}
-                />
-              ))}
-              {drafts.map((d) => (
-                <Row key={d.id} label={d.name} note="Draft · no team yet" onPress={() => {}} />
-              ))}
+            <Section title="Admins" />
+            <Card indent={PERSON_INDENT}>
+              {admins.map((a) => {
+                const name = a.name ?? 'No name yet';
+                const initials = a.name ? markOf({ id: a.userId ?? a.id, name: a.name }).initials : undefined;
+                const role = a.owner ? 'Owner' : 'Admin';
+                return a.userId === me.id ? (
+                  <Row key={a.id} lead={<Person initials={initials} you />} label={`${name} (you)`} value={role} spoken={`${name}, you, ${role}`} />
+                ) : (
+                  <Row
+                    key={a.id}
+                    lead={<Person initials={initials} />}
+                    label={name}
+                    value={role}
+                    spoken={`${name}, ${role}`}
+                    onPress={a.owner || busy ? undefined : () => remove(a)}
+                  />
+                );
+              })}
+              {invites.map((i) => {
+                const note = i.accepted ? `Accepted by ${i.acceptedBy ?? 'someone'} · confirm it’s them` : 'Invited · not accepted yet';
+                return (
+                  <Row
+                    key={i.id}
+                    lead={<Person waiting />}
+                    label={shownContact(i.contact)}
+                    note={note}
+                    spoken={`${spokenContact(shownContact(i.contact))}. ${note}`}
+                    onPress={busy ? undefined : () => answer(i)}
+                  />
+                );
+              })}
             </Card>
+            {adding ? (
+              <View style={styles.adding}>
+                <Field
+                  label="Their phone or email"
+                  value={to}
+                  onChangeText={setTo}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="email-address"
+                  autoFocus
+                  onSubmitEditing={() => void (to.trim() && !busy && invite())}
+                />
+                <View style={styles.pills}>
+                  <Pill label={busy ? 'Sending…' : 'Send invite'} dark onPress={to.trim() && !busy ? () => void invite() : undefined} />
+                  <Pill label="Cancel" onPress={() => setAdding(false)} />
+                </View>
+              </View>
+            ) : (
+              <View style={styles.add}>
+                <Pill label="Add an Admin" dark onPress={() => setAdding(true)} />
+              </View>
+            )}
+            {error && <Note>{error}</Note>}
+            <Note>Admins run everything here, the bank account too.</Note>
           </>
         )}
 
-        <Section title="Status" />
-        <Card>
-          <Row label={STATUS[page.status]} dot={page.status === 'live'} value={page.status === 'live' ? (publicPage ? 'Public page' : 'Link only') : undefined} />
-          {moves.map((m) => (
-            <Row key={m.label} label={m.label} value={m.value} onPress={m.open ? () => {} : undefined} />
-          ))}
-        </Card>
-        {statusLine && <Note>{statusLine}</Note>}
+        {p && (
+          <>
+            <Section title="Status" />
+            <Card>
+              <Row label={STATUS[p.status]} dot={p.status === 'live'} value={p.status === 'live' ? (publicPage ? 'Public page' : 'Link only') : undefined} />
+              {moves.map((m) => (
+                <Row key={m.label} label={m.label} value={m.value} onPress={m.open ? () => {} : undefined} />
+              ))}
+            </Card>
+            {statusLine && <Note>{statusLine}</Note>}
+          </>
+        )}
 
         <Section title="You" />
         <Card>
@@ -188,4 +269,5 @@ const styles = StyleSheet.create({
   verify: { gap: 16 },
   verifyText: { fontFamily: font.text, fontSize: 14, lineHeight: 20, color: color.secondary },
   add: { marginTop: 16, marginHorizontal: 20, flexDirection: 'row' },
+  adding: { marginTop: 16, marginHorizontal: 20, gap: 12 },
 });

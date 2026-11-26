@@ -5,20 +5,21 @@
 // it's opened. A tap marks it read; Mark all read sits by the title. The back circle and Settings stay pinned on top, with
 // the app's bar glass fading in once the page scrolls under them; back goes back, or to Events when a link opened the
 // Inbox with nothing under it.
+// Messages come from GET /me/inbox (src/launch/inboxStore.ts), read again each time the Inbox opens.
 // ponytail: no screen opens from a message yet (the refund request, the event's team, the link, the payout); each comes
-// with its own take. Settings (which messages email you) waits for the account screens. A ScrollView suits the mock's
-// six rows; a SectionList when the API's 180 days arrive.
+// with its own take. Settings (which messages email you) waits for the account screens. A ScrollView suits the first
+// page of 30; a SectionList when more pages load.
 import { BarGlass, DARK_TINT, Glass } from '@orbit/mobile/glass';
 import { ORB } from '@orbit/mobile/orbitSays';
 import { color, font, space, stoneAt } from '@orbit/mobile/theme';
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Animated, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { events, now } from '../launch/data';
 import { type Message, inboxDays, timeLabel } from '../launch/inbox';
-import { markRead, useInbox } from '../launch/inboxStore';
+import { markRead, refreshInbox, useInbox } from '../launch/inboxStore';
+import { useSession } from '../session';
 import { Monogram, Note, Pill, Section, styles as ui } from '../launch/ui';
 
 const PICTURE = 44; // a logo or the orb; a poster is that wide at 3:4
@@ -31,9 +32,13 @@ const back = () => (router.canGoBack() ? router.back() : router.replace('/events
 export default function Inbox() {
   const insets = useSafeAreaInsets();
   const [scrollY] = useState(() => new Animated.Value(0));
-  const messages = useInbox();
-  const unread = messages.filter((m) => !m.read).map((m) => m.id);
-  const days = inboxDays(messages, now);
+  const { loaded, messages, error } = useInbox();
+  const me = useSession()?.me.id;
+  useEffect(() => {
+    if (me) void refreshInbox(me);
+  }, [me]);
+  const unread = messages.some((m) => !m.read);
+  const days = inboxDays(messages, Date.now());
   const top = insets.top + 4;
 
   return (
@@ -47,10 +52,11 @@ export default function Inbox() {
           <Text style={styles.title} accessibilityRole="header">
             Inbox
           </Text>
-          {unread.length > 0 && <Pill label="Mark all read" onPress={() => markRead(unread)} />}
+          {unread && <Pill label="Mark all read" onPress={() => markRead()} />}
         </View>
-        {days.length === 0 ? (
-          <Note>Nothing here yet.</Note>
+        {error && <Note>{error}</Note>}
+        {!loaded ? null : days.length === 0 ? (
+          !error && <Note>Nothing here yet.</Note>
         ) : (
           days.map((d, i) => (
             <View key={d.day} style={i > 0 && styles.dayGap}>
@@ -106,11 +112,10 @@ function MessageRow({ m }: { m: Message }) {
   );
 }
 
-// The event's 3:4 poster (a grey card while it has none), the host's 1:1 logo, or Orbit's orb for a message from Orbit
-// or about an event that's gone.
+// The event's 3:4 poster (a grey card until posters come with the message), the host's 1:1 logo, or Orbit's orb for a
+// message from Orbit.
 function Picture({ of }: { of: Message['picture'] }) {
-  const e = of && 'event' in of ? events.find((x) => x.id === of.event) : undefined;
-  if (e) return e.poster ? <Image source={e.poster} style={styles.poster} accessibilityIgnoresInvertColors /> : <View style={styles.poster} />;
+  if (of && 'event' in of) return <View style={styles.poster} />;
   if (of && 'host' in of) return <Monogram host={of.host} size={PICTURE} />;
   return <Image source={ORB} style={styles.orb} accessibilityIgnoresInvertColors />;
 }

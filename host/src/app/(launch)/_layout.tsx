@@ -2,7 +2,7 @@
 // dark glass capsule low on the screen, the open tab under a lighter pill that springs to it, Phosphor filled icons
 // beside DM Sans 600 labels (the open tab's in the Sage to Moss gradient), shrinking to the open tab while the page
 // scrolls down. Beside it, the round Inbox with its count (owner, 22 Nov 2026: "Inbox", over the chat orb and Scan,
-// which only works around check-in), with how many of its messages are unread.
+// which only works around check-in), with how many of its messages are unread (GET /me/inbox, read every minute here).
 // ponytail: the same bar as Station's (host/src/app/(station)/_layout.tsx) with other tabs and circle; pull both into one
 // host tab bar once Station lands. No drag along the bar (the Orbit app's has one).
 import { DARK_TINT as DARK, Glass } from '@orbit/mobile/glass';
@@ -15,7 +15,8 @@ import { Animated, Image, LayoutAnimation, Platform, Pressable, StyleSheet, Text
 import { SafeAreaInsetsContext, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { badge } from '../../launch/inbox';
-import { useUnread } from '../../launch/inboxStore';
+import { refreshInbox, useInbox } from '../../launch/inboxStore';
+import { useSession } from '../../session';
 
 const PAD = 4;
 const GAP = 10;
@@ -39,8 +40,15 @@ export default function LaunchTabs() {
   useEffect(() => {
     Animated.spring(x, { toValue: open * slot, useNativeDriver: true, speed: 18, bounciness: 6 }).start();
   }, [open, slot, x]);
-  const unread = useUnread();
+  const { unread } = useInbox();
   const count = badge(unread);
+  const me = useSession()?.me.id;
+  useEffect(() => {
+    if (!me) return;
+    void refreshInbox(me);
+    const every = setInterval(() => void refreshInbox(me), 60_000);
+    return () => clearInterval(every);
+  }, [me]);
   return (
     <Tabs style={styles.root}>
       <SafeAreaInsetsContext.Provider value={{ ...insets, bottom: bottom + BAR }}>

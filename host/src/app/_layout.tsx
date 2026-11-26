@@ -7,6 +7,7 @@ import { Stack } from 'expo-router';
 import { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 
+import { adminHosts } from '../launch/host';
 import { refreshMe, useSession } from '../session';
 import { seats } from '../station/seats';
 import { StationProvider } from '../station/state';
@@ -23,12 +24,11 @@ const SHEET = {
 
 export default function Layout() {
   const [loaded, error] = useFonts({ Sacramento_400Regular, DMSans_400Regular, DMSans_500Medium, DMSans_600SemiBold, PlusJakartaSans_600SemiBold, PlusJakartaSans_700Bold });
-  // Every host app signs in: signed out it shows Sign in. Signed in, Launch shows the no-host screen until its tabs read
-  // the API, Station its tabs, Crew its name (index) until its own screens come. Launch's Punchline demo opens only in
-  // development builds (session.ts); Station has no demo, so a demo session there is signed out.
+  // Every host app signs in: signed out it shows Sign in. Signed in, Event Partner shows its tabs on a host the account is
+  // an Admin of (welcome with none), Station its tabs, Crew its name (index) until its own screens come.
   const session = useSession();
-  const signedIn = !!session && 'me' in session;
-  const demo = !!session && 'demo' in session;
+  const signedIn = !!session;
+  const admin = isLaunch && !!session && adminHosts(session.me).length > 0;
   useEffect(() => {
     if (signedIn) void refreshMe(); // once a launch: the account as the API has it now
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once, at launch or sign-in
@@ -46,15 +46,17 @@ export default function Layout() {
           {/* Venue's edits, Admins only (take 4). */}
           <Stack.Screen name="setup" options={SHEET} />
         </Stack.Protected>
-        <Stack.Protected guard={!session || (isStation && !signedIn)}>
+        <Stack.Protected guard={!signedIn}>
           <Stack.Screen name="signin" />
         </Stack.Protected>
         {/* Orbit Launch's own: in Station and Crew a link to them goes nowhere. */}
         <Stack.Protected guard={(isLaunch || isStation) && signedIn}>
           <Stack.Screen name="welcome" />
         </Stack.Protected>
-        <Stack.Protected guard={isLaunch && demo}>
+        <Stack.Protected guard={admin}>
           <Stack.Screen name="(launch)" />
+          {/* Which host, with several. */}
+          <Stack.Screen name="pick" />
           {/* Pushed over the tabs, with its own back circle. */}
           <Stack.Screen name="inbox" />
         </Stack.Protected>

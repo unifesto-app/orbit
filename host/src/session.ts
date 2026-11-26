@@ -9,8 +9,7 @@
 // - The Keychain outlives deleting the app; iOS's settings (NSUserDefaults) don't. An install without this app's mark is a
 //   new one, so it starts signed out, as the Orbit app does after a reinstall: the old session ends on the API too, and
 //   the account's details go from the phone. The device id and App Attest key id stay.
-// - In development builds only, the Punchline demo (src/launch/data.ts) opens without signing in (owner, 22 Nov 2026:
-//   "Dev-only demo").
+// - No demo: Event Partner reads the API since plan F31 (L1), so the dev-only Punchline demo went with its mock.
 import { type ApiError, type Device, Me } from '@orbit/contract';
 import { API_URL, makeApi } from '@orbit/mobile/api';
 import Constants from 'expo-constants';
@@ -56,14 +55,13 @@ export const kept = {
   },
 };
 
-// Signed in (with the account), the dev demo, or signed out.
-export type Session = { me: Me } | { demo: true } | null;
+// Signed in (with the account), or signed out.
+export type Session = { me: Me } | null;
 let current: Session = null; // read once the install is checked, below
 const listeners = new Set<() => void>();
 function set(next: Session) {
   current = next;
-  if (next && 'me' in next) kept.set(ME, JSON.stringify(next.me));
-  if (!next) kept.set(ME, null);
+  kept.set(ME, next ? JSON.stringify(next.me) : null);
   for (const on of listeners) on();
 }
 function readKept(): Session {
@@ -125,17 +123,12 @@ export function signIn(done: { access: string; refresh: string; expiresIn: numbe
 
 // The account as the API has it now (a role accepted, a name changed elsewhere). At launch, and after an invite.
 export async function refreshMe() {
-  if (!current || !('me' in current)) return;
+  if (!current) return;
   const r = await api.authed<Me>('GET', '/me');
-  if (r.ok && current && 'me' in current && current.me.id === r.data.id) set({ me: r.data });
+  if (r.ok && current && current.me.id === r.data.id) set({ me: r.data });
 }
 
 export function signOut() {
-  if (current && 'me' in current) api.signOut();
+  if (current) api.signOut();
   set(null);
-}
-
-// Development builds only: the Punchline demo, with no account.
-export function openDemo() {
-  if (__DEV__) set({ demo: true });
 }

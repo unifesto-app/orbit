@@ -1,53 +1,65 @@
-// Launch's Inbox messages and which are read, shared by the Inbox and the count on its circle beside the tabs. The
-// messages are the Notifications flow's to hosts (Hosts and crew): refund requests, crew and "with" answers, the summary
-// after an event, payouts paid and the bank account's check, for Punchline Collective on Fri 20 Nov. As the Orbit app's
-// inbox (app/src/inboxStore.ts), only what the Inbox shows (the last 180 days) is listed or counted.
-// ponytail: mock messages and read state in memory, so a fresh launch shows them new again; the API's inbox, refreshed
-// on open and every minute, replaces both.
+// Event Partner's Inbox and the count on its circle beside the tabs, from the API (plan F31, L7): GET /me/inbox?app=launch,
+// read when the tabs open, when the Inbox opens, and every minute while the tabs are up; POST /me/inbox/read marks rows
+// read (all of them with no ids). A tap shows read at once; the next read of the inbox has the final word.
+// ponytail: the first page (30) only; add "Load more" with `next` once a host's inbox runs past it.
+import type { InboxPage, InboxRow } from '@orbit/contract';
 import { useSyncExternalStore } from 'react';
 
-import { now } from './data';
-import { type Message, kept, unreadCount } from './inbox';
+import { api, useSession } from '../session';
+import { type Message, type Picture, kept } from './inbox';
 
-const messages: Message[] = [
-  { id: 'l6', at: '2026-11-20T18:12:00+05:30', from: 'Open Mic Night', kind: 'Refund request', text: 'Ritika asked for ₹299 back. It’s under 24 hours to the show, so Orbit decides.', picture: { event: 'open-mic-night' } },
-  { id: 'l5', at: '2026-11-20T16:30:00+05:30', from: 'Open Mic Night', kind: 'Crew', text: 'Vikram Shetty accepted Crew for tonight and can scan from now.', picture: { event: 'open-mic-night' } },
-  {
-    id: 'l4',
-    at: '2026-11-20T11:05:00+05:30',
-    from: 'Arjun Rao',
-    kind: 'With you',
-    text: 'Arjun Rao said yes to New Year’s Eve Open Mic. It shows on their page once you publish.',
-    picture: { host: { name: 'Arjun Rao', initials: 'AR', bg: '#F25C2A', fg: '#FFFFFF' } },
-  },
-  { id: 'l3', at: '2026-11-14T10:00:00+05:30', from: 'Open Mic Night', kind: 'How it went', text: '35 of 38 came on Fri 13 Nov, with ₹11,362 in ticket sales. Its payout opens Mon 16 Nov.', picture: { event: 'open-mic-night-13-nov' }, read: true },
-  { id: 'l2', at: '2026-11-10T15:20:00+05:30', from: 'Orbit', kind: 'Payout paid', text: '₹10,764 for Open Mic Night, Fri 6 Nov, is in your bank. UTR ending 4471.', picture: null, read: true },
-  { id: 'l1', at: '2026-11-09T11:45:00+05:30', from: 'Orbit', kind: 'Bank account', text: 'HDFC Bank •••• 4821 is verified. Your payouts go here.', picture: null, read: true },
-];
-
-let read: ReadonlySet<string> = new Set(messages.filter((m) => m.read).map((m) => m.id));
+type State = { user: string; items: Message[]; unread: number; error: string | null } | null;
+let state: State = null;
 const listeners = new Set<() => void>();
+const set = (next: State) => {
+  state = next;
+  for (const on of listeners) on();
+};
 const subscribe = (on: () => void) => {
   listeners.add(on);
   return () => listeners.delete(on);
 };
-const readNow = () => read;
+const now = () => state;
 
-/** Marks messages read; the Inbox's dots and the circle's count follow. */
-export function markRead(ids: readonly string[]) {
-  if (ids.every((id) => read.has(id))) return;
-  read = new Set([...read, ...ids]);
-  for (const on of listeners) on();
+// "teamInvite" → "Team invite": the catalog's kind as the row's small grey label.
+const kindLabel = (k: string) => {
+  const words = k.replace(/([A-Z])/g, ' $1').toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+};
+// The API's picture is free-form; only the shapes the row draws pass, else Orbit's orb.
+const pictureOf = (p: unknown): Picture => {
+  if (!p || typeof p !== 'object') return null;
+  if ('event' in p && typeof p.event === 'string') return { event: p.event };
+  if ('host' in p && p.host && typeof p.host === 'object') return p as Picture;
+  return null;
+};
+const toMessage = (r: InboxRow): Message => ({ id: r.id, at: r.at, from: r.from, kind: kindLabel(r.kind), text: r.text, picture: pictureOf(r.picture), read: r.read });
+
+/** Reads the inbox again for this account. */
+export async function refreshInbox(user: string) {
+  const r = await api.authed<InboxPage>('GET', '/me/inbox?app=launch');
+  if (r.ok) set({ user, items: r.data.items.map(toMessage), unread: r.data.unread, error: null });
+  else if (state?.user === user) set({ ...state, error: r.error.message });
+  else set({ user, items: [], unread: 0, error: r.error.message });
 }
 
-/** The messages the Inbox shows, each with whether it's read. */
+/** Marks messages read, or every one with none given; the Inbox's dots and the circle's count follow. */
+export function markRead(ids?: readonly string[]) {
+  if (!state) return;
+  const hit = (m: Message) => !m.read && (!ids || ids.includes(m.id));
+  const newly = state.items.filter(hit).length;
+  if (ids && newly === 0) return;
+  set({ ...state, items: state.items.map((m) => (hit(m) ? { ...m, read: true } : m)), unread: ids ? Math.max(0, state.unread - newly) : 0 });
+  const user = state.user;
+  void api.authed('POST', '/me/inbox/read', ids ? { app: 'launch', ids } : { app: 'launch' }).then((r) => {
+    if (!r.ok) void refreshInbox(user); // put back what the API still has unread
+  });
+}
+
+/** This account's inbox: the messages from the last 180 days, the whole inbox's unread count, and what went wrong last. */
 export function useInbox() {
-  const seen = useSyncExternalStore(subscribe, readNow);
-  return kept(messages, now).map((m) => ({ ...m, read: seen.has(m.id) }));
-}
-
-/** How many of those are new, for the count on the Inbox circle. */
-export function useUnread() {
-  const seen = useSyncExternalStore(subscribe, readNow);
-  return unreadCount(messages, seen, now);
+  const s = useSyncExternalStore(subscribe, now);
+  const me = useSession()?.me.id;
+  const mine = s && s.user === me ? s : null;
+  return { loaded: !!mine, messages: mine ? kept(mine.items, Date.now()) : [], unread: mine?.unread ?? 0, error: mine?.error ?? null };
 }

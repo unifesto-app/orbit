@@ -5,10 +5,12 @@
 // ponytail: Station has its own parts (host/src/station/ui.tsx); pull the shared ones into one host kit once both land.
 import { DARK_TINT, Glass } from '@orbit/mobile/glass';
 import { color, font, radius, space, stoneAt } from '@orbit/mobile/theme';
+import { router } from 'expo-router';
 import { Children, Fragment, type ReactNode } from 'react';
 import { Image, type ImageSourcePropType, Pressable, type StyleProp, StyleSheet, Text, TextInput, type TextInputProps, View, type ViewStyle } from 'react-native';
 
-import type { Host } from './data';
+import { useSession } from '../session';
+import { adminHosts, type Host } from './host';
 
 const PAD = 16; // a text card's padding (owner, 19 Nov 2026: "remember for cards add proper padding")
 const EDGE = 1; // its outline
@@ -90,16 +92,23 @@ export function Field({ label, code = false, ...input }: TextInputProps & { labe
   );
 }
 
-/** The top of every Launch tab: the host switcher (its logo, name and caret), and a control on the right. */
+/** The top of every Launch tab: the host switcher (its logo, name and caret, the caret only with several), and a control on the right. */
 export function HostHead({ host, right }: { host: Host; right?: ReactNode }) {
+  const session = useSession();
+  const several = !!session && adminHosts(session.me).length > 1;
   return (
     <View style={styles.hostHead}>
-      <Pressable style={styles.switcher} accessibilityRole="button" accessibilityLabel={`${host.name}. Switch host`}>
+      <Pressable
+        style={styles.switcher}
+        onPress={several ? () => router.push('/pick') : undefined}
+        accessibilityRole={several ? 'button' : 'header'}
+        accessibilityLabel={several ? `${host.name}. Switch host` : host.name}
+      >
         <Monogram host={host} size={32} />
         <Text style={styles.hostName} numberOfLines={1}>
           {host.name}
         </Text>
-        <Image source={CARET} style={styles.caret} />
+        {several && <Image source={CARET} style={styles.caret} />}
       </Pressable>
       {right}
     </View>

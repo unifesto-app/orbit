@@ -20,9 +20,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Field, Pill, Wide, styles as ui } from '../launch/ui';
 import { requestCode } from '../proof';
-import { api, openDemo, signIn, thisDevice } from '../session';
+import { api, signIn, thisDevice } from '../session';
 import { type Step, clock, initialsOf, secondsLeft, stepAfter, stepBack } from '../signinSteps';
-import { isLaunch, thisApp } from '../variant';
+import { thisApp } from '../variant';
 
 const ICON = {
   launch: require('../../assets/icons/launch.png'),
@@ -131,11 +131,6 @@ export default function SignIn() {
             error={error}
             onDone={(name, dob) => run(() => api.call<AuthStep>('POST', '/auth/signup', { signup: step.signup, name, dob, device: thisDevice() }), answer)}
           />
-        )}
-        {__DEV__ && isLaunch && step.at === 'contact' && (
-          <Text style={styles.demo} onPress={openDemo} accessibilityRole="button">
-            Open the demo (development builds only)
-          </Text>
         )}
       </ScrollView>
     </KeyboardAvoidingView>
@@ -310,5 +305,4 @@ const styles = StyleSheet.create({
   initialsText: { fontFamily: font.headline, fontSize: 16, color: color.text },
   accountLines: { flex: 1, gap: 2 },
   accountName: { fontFamily: font.title, fontSize: 17, color: color.text },
-  demo: { marginTop: space.big, fontFamily: font.medium, fontSize: 13, color: color.secondary, textDecorationLine: 'underline' },
 });
