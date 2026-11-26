@@ -11,7 +11,8 @@ export type Picture = { event: string } | { host: { initials: string; bg: string
 
 // One message: who it's from and what it is ("Open Mic Night · Refund request"), the words, when, and its picture.
 // `at` carries its offset (or Z); one without would read in the phone's own zone.
-export type Message = { id: string; at: string; from: string; kind: string; text: string; picture: Picture; read?: boolean };
+// `opens`: the API's Opens, where a tap goes (notices.ts pushHref); absent on the sample messages.
+export type Message = { id: string; at: string; from: string; kind: string; text: string; picture: Picture; read?: boolean; opens?: unknown };
 
 // The messages the Inbox shows: from the last 180 days, with a time that reads. The list, the count on the Inbox circle
 // and Mark all read all start from these, so a count never points at a row that isn't there.
