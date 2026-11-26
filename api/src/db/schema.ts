@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { type AnyPgColumn, bigint, boolean, check, date, doublePrecision, foreignKey, index, integer, jsonb, pgTable, primaryKey, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
-import type { AgendaItem, FaqItem, RequestEvent, RequestHost, Week } from "@orbit/contract";
+import type { AgendaItem, AutoMessages, FaqItem, RequestEvent, RequestHost, Week } from "@orbit/contract";
 
 // The User flow's tables (Orbit flows: User). Migrated people keep their Unifesto ids, so `id` takes any UUID.
 // Phone and email are the ways in by code; Google and Apple live in `identities`, passkeys in `passkeys`.
@@ -214,6 +214,8 @@ export const events = pgTable(
     cancelledAt: at("cancelled_at"),
     cancelledBy: uuid("cancelled_by").references(() => users.id),
     cancelReason: text("cancel_reason"), // the host's reason, which every ticket holder gets
+    // The host's switches for the automatic reminders to ticket holders (notifications PR 10).
+    autoMessages: jsonb("auto_messages").$type<AutoMessages>().notNull().default({ tomorrow: true, startingSoon: true, thanks: true }),
     createdAt: at("created_at").notNull().defaultNow(),
     updatedAt: at("updated_at").notNull().defaultNow(),
   },
@@ -922,4 +924,20 @@ export const eventRequests = pgTable(
     index("event_requests_status_idx").on(t.status, t.createdAt),
     index("event_requests_user_idx").on(t.userId, t.createdAt),
   ],
+);
+
+// A host's message to an event's ticket holders (notifications PR 10): everyone, or those not yet checked in. At most 3
+// a day per event, counted from these rows. Rows stay with their event.
+export const announcements = pgTable(
+  "announcements",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    eventId: uuid("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+    authorId: uuid("author_id").notNull().references(() => users.id),
+    text: text("text").notNull(),
+    audience: text("audience", { enum: ["everyone", "notCheckedIn"] }).notNull(),
+    reached: integer("reached").notNull().default(0), // ticket holders at send time
+    createdAt: at("created_at").notNull().defaultNow(),
+  },
+  (t) => [index().on(t.eventId, t.createdAt)],
 );

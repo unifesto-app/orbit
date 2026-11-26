@@ -22,7 +22,11 @@ const day = (v: unknown) => {
 const dayTime = (v: unknown) => {
   const d = new Date(str(v));
   if (isNaN(d.getTime())) return "";
-  return `${day(v)}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })}`;
+  return `${day(v)}, ${time(v)}`;
+};
+const time = (v: unknown) => {
+  const d = new Date(str(v));
+  return isNaN(d.getTime()) ? "" : d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" });
 };
 const METHOD: Record<string, string> = { email: "email", phone: "phone number", passkey: "passkey", google: "Google", apple: "Apple" };
 const THE_METHOD: Record<string, string> = { email: "your email", phone: "your phone number", passkey: "a passkey", google: "Google", apple: "Apple" };
@@ -80,6 +84,10 @@ const WORDS: Partial<Record<NoticeKind, (d: Data) => Words>> = {
   slotFreedAgain: (d) => ({ subject: `A slot at ${str(d.hostName)} is free again`, line: `${str(d.station)}, ${dayTime(d.start)}. Book it before someone else does.` }),
   slotBooked: (d) => ({ subject: `New booking at ${str(d.hostName)}`, line: `${str(d.count)} × ${str(d.station)}, ${dayTime(d.start)}.` }),
   slotReleased: (d) => ({ subject: `Your slot at ${str(d.hostName)} was released`, line: `You didn’t check in for ${dayTime(d.start)}, so the slot was freed.` }),
+  hostAnnouncement: (d) => ({ subject: `${str(d.hostName) || "The host"} about ${str(d.title)}`, line: str(d.text) }),
+  eventTomorrow: (d) => ({ subject: `Coming up: ${str(d.title)}`, line: `${str(d.title)} starts tomorrow at ${time(d.startsAt)}.` }),
+  eventStartingSoon: (d) => ({ subject: `${str(d.title)} starts soon`, line: `${str(d.title)} starts in an hour.` }),
+  thanksForComing: (d) => ({ subject: `Thanks for coming to ${str(d.title)}`, line: `Thanks for coming to ${str(d.title)}. Loved it? Say so on the event page.` }),
   followedHostEvent: (d) => ({ subject: `${str(d.hostName) || "A host you follow"} has a new event`, line: str(d.title) }),
   staffGrantAdded: (d) => ({
     subject: "Staff access was given",
@@ -100,6 +108,7 @@ const words = (kind: string, d: Data): Words => WORDS[kind as NoticeKind]?.(d) ?
 
 const WHY = "You’re getting this because it’s about your Orbit account. Account and security emails can’t be switched off.";
 const WHY_STAFF = "You’re getting this because you hold staff access on Orbit.";
+const WHY_EVENT = "You’re getting this because you have a ticket for this event on Orbit.";
 
 // What each email switch's emails are about, to follow "emails about" (the app's switches,
 // app/src/app/account/notifications.tsx).
@@ -144,11 +153,14 @@ export const readUnsubscribeToken = (secret: string, t: string): { u: string; s:
 // headers.
 export function emailFor(kind: string, data: Data = {}, site = SITE, unsubscribe?: { s: EmailSwitch; link: string }) {
   const { subject, line = "" } = words(kind, data);
+  const group = KINDS[kind as NoticeKind]?.group;
   const why = unsubscribe
     ? `You’re getting this because emails about ${SWITCH_ABOUT[unsubscribe.s]} are on. Stop them: ${unsubscribe.link}`
-    : KINDS[kind as NoticeKind]?.group === "staff"
+    : group === "staff"
       ? WHY_STAFF
-      : WHY;
+      : group === "events"
+        ? WHY_EVENT
+        : WHY;
   let html = frame({ subject, heading: subject, lead: esc(line), why }, site);
   if (unsubscribe) html = html.replace(esc(unsubscribe.link), `<a class="t2" href="${esc(unsubscribe.link)}" style="color:inherit">${esc(unsubscribe.link)}</a>`);
   const text = [subject, ...(line ? ["", line] : []), "", why, `Terms: ${site}/terms · Privacy: ${site}/privacy`, "© 2027 Orbit"].join("\n");
