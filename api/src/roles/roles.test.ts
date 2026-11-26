@@ -305,7 +305,11 @@ test("admins see who accepted", async () => {
   const a = await join(), b = await join();
   const h = await startHost(a);
   const inv = await as(a)("POST", `/hosts/${h.id}/team`, { to: b.p });
-  assert.equal((await as(a)("GET", `/hosts/${h.id}/team`)).body.invites[0].acceptedBy, null);
+  const waiting = (await as(a)("GET", `/hosts/${h.id}/team`)).body.invites[0];
+  assert.equal(waiting.acceptedBy, null);
+  // Its role and when it went, so the Admin sees what it's for and the days it has left.
+  assert.equal(waiting.role, "admin");
+  assert.equal(waiting.sentAt, new Date(t.now()).toISOString());
   await as(b)("POST", `/invites/${inv.body.id}/accept`);
   assert.equal((await as(a)("GET", `/hosts/${h.id}/team`)).body.invites[0].acceptedBy, "Riya Kapoor");
 });

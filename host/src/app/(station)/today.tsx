@@ -18,6 +18,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { type Claim, type Door, type StationType, type Venue, MIN, atDoor, dayLabel, door, hourWord, steps, taken, timeLabel } from '../../station/day';
 import { blank } from '../../station/live';
 import { useStation, useToday } from '../../station/state';
+import { LOST_SEAT, notSetUp } from '../../station/venue';
 import { Head, Pill, Round, Section } from '../../station/ui';
 import { first, range, units, what } from '../../station/words';
 
@@ -49,9 +50,11 @@ export default function Today() {
     ? null
     : load.status === 0
       ? 'Can’t reach Orbit. Pull to try again.'
-      : load.status === 404
+      : notSetUp(load)
         ? 'This venue isn’t set up yet. Its Admin sets it up in Venue.'
-        : load.error.message;
+        : load.status === 404
+          ? LOST_SEAT
+          : load.error.message;
   if (!today) return <Waiting venue={blank(seat!)} line={trouble ?? 'Getting today’s day…'} refresh={refresh} />;
   // Keyed by venue and opening, so a Wait, a row kept after Check in or a picked bar never carries over to another day.
   return <Day key={`${today.venue.id}:${today.hours.day}`} trouble={trouble} refresh={refresh} />;

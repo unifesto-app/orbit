@@ -78,8 +78,21 @@ export const NewBlock = z.object({
 export type NewBlock = z.infer<typeof NewBlock>;
 export const Admit = z.object({ total: z.number().int().min(0).max(200) });
 export type Admit = z.infer<typeof Admit>;
+// POST /venues/:hostId/holds: a player's hold on a slot while they pay (any signed-in person). The start is on the
+// station's grid; the API checks that and the opening.
+export const NewHold = z.object({
+  stationId: z.uuid(),
+  start: When,
+  hours: z.number().int().min(1).max(24),
+  count: z.number().int().min(1).max(100),
+});
+export type NewHold = z.infer<typeof NewHold>;
 
 // What the clients read.
+// A 404 on GET /venues/:hostId or its /day: a seat with no venue set up yet, or no seat at all (never on the team, or
+// removed). Only the first is "set it up".
+export const VENUE_GONE = { noVenue: "noVenue", notFound: "notFound" } as const;
+export type VenueGone = (typeof VENUE_GONE)[keyof typeof VENUE_GONE];
 const OffPeakRow = z.object({ from: z.number(), to: z.number(), weekdays: z.boolean(), pricePaise: z.number() });
 // Desk and Admin: no money anywhere.
 export const CounterStation = z.object({
@@ -116,3 +129,6 @@ export type VenueDay = z.infer<typeof VenueDay>;
 // A booking standing in the way of a setup change (the 409's `bookings`).
 export const InTheWay = z.object({ id: z.string(), stationId: z.string(), who: z.string().nullable(), count: z.number(), start: z.string(), end: z.string() });
 export type InTheWay = z.infer<typeof InTheWay>;
+// A hold, made: it lapses at holdEndsAt unless paid.
+export const SlotHold = z.object({ id: z.string(), stationId: z.string(), start: z.string(), end: z.string(), count: z.number(), holdEndsAt: z.string() });
+export type SlotHold = z.infer<typeof SlotHold>;

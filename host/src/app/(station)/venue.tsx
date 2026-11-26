@@ -23,7 +23,7 @@ import { Card, Row } from '../../launch/ui';
 import { signOut } from '../../session';
 import { useVenue } from '../../station/state';
 import { Pill, Section } from '../../station/ui';
-import { daysLeft, priceLine, span } from '../../station/venue';
+import { daysLeft, LOST_SEAT, priceLine, span } from '../../station/venue';
 import { units } from '../../station/words';
 
 const WEEK = [1, 2, 3, 4, 5, 6, 0]; // Monday first
@@ -54,7 +54,7 @@ export default function VenueTab() {
   };
   const toConsole = () => Linking.openURL(CONSOLE).catch(() => {});
   const refresh = <RefreshControl refreshing={false} onRefresh={load.reload} tintColor={color.secondary} />;
-  const trouble = !load.error ? null : load.status === 0 ? 'Can’t reach Orbit. Pull to try again.' : load.error.message;
+  const trouble = !load.error ? null : load.status === 0 ? 'Can’t reach Orbit. Pull to try again.' : load.status === 404 ? LOST_SEAT : load.error.message;
   // Before the venue lands, or a venue not set up yet: the name and what to do.
   if (!s)
     return (
@@ -179,7 +179,6 @@ export default function VenueTab() {
         {s.invites
           .filter((x) => x.sent === undefined || daysLeft(x.sent, now) > 0) // an invite ends by itself after 14 days (the API leaves lapsed ones out)
           .map((x) => {
-            // ponytail: signed in an invite has no role or sent time; GET /hosts/:id/team would need to send them.
             const left = x.sent === undefined ? 0 : daysLeft(x.sent, now);
             return (
               <Row

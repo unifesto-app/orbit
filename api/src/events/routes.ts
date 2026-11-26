@@ -58,10 +58,28 @@ const rowColumns = {
   startsAt: events.startsAt, endsAt: events.endsAt, timezone: events.timezone, area: events.area, city: events.city, online: events.online,
 };
 
-export const toRow = (e: Pick<Event, keyof typeof rowColumns>, host: HostVisibility): EventRow => ({
+// ponytail: checkedIn is 0 until the door scanner records admits on bookings (Crew slice); sold counts confirmed tickets.
+export const toRow = (e: Pick<Event, keyof typeof rowColumns>, host: HostVisibility, sold = 0): EventRow => ({
   id: e.id, slug: e.slug, status: e.status, visibility: effectiveVisibility(host, e.visibility), title: e.title, category: e.category,
   startsAt: iso(e.startsAt), endsAt: iso(e.endsAt), timezone: e.timezone, area: e.area, city: e.city, online: e.online,
+  sold, checkedIn: 0,
 });
+
+// A draft on the host, from its name and whatever else is known. POST /hosts/:id/events and an approved Event Request.
+export async function newDraft(
+  tx: Tx,
+  host: { id: string; visibility: HostVisibility },
+  fields: { title: string } & Partial<Pick<typeof events.$inferInsert, "category" | "startsAt">>,
+  userId: string,
+  at: Date,
+) {
+  const [e] = await tx
+    .insert(events)
+    .values({ ...fields, hostId: host.id, slug: slugFor(fields.title, "event"), status: "draft", visibility: host.visibility === "private" ? "link" : "public", createdBy: userId, createdAt: at, updatedAt: at })
+    .returning();
+  await tx.insert(eventSlugs).values({ slug: e!.slug, eventId: e!.id, createdAt: at });
+  return e!;
+}
 
 export function eventsRoutes({ db, notify, secret, media, now = Date.now }: Deps) {
   const app = new Hono<Env>();
@@ -106,15 +124,7 @@ export function eventsRoutes({ db, notify, secret, media, now = Date.now }: Deps
           if (!changeable(cur!)) return "closed" as const;
           const [drafts] = await tx.select({ n: count() }).from(events).where(and(eq(events.hostId, cur!.id), eq(events.status, "draft")));
           if (drafts!.n >= MAX_DRAFTS) return "tooMany" as const;
-          const [e] = await tx
-            .insert(events)
-            .values({
-              hostId: cur!.id, slug: slugFor(b.title, "event"), status: "draft", visibility: cur!.visibility === "private" ? "link" : "public",
-              title: b.title, createdBy: userId, createdAt: at(), updatedAt: at(),
-            })
-            .returning();
-          await tx.insert(eventSlugs).values({ slug: e!.slug, eventId: e!.id, createdAt: at() });
-          return { e: e!, host: cur!.visibility };
+          return { e: await newDraft(tx, cur!, { title: b.title }, userId, at()), host: cur!.visibility };
         });
         if (made === "gone") return nothing(c);
         if (made === "closed") return closed(c);
@@ -149,7 +159,16 @@ export function eventsRoutes({ db, notify, secret, media, now = Date.now }: Deps
       .where(and(mine, ne(events.status, "draft"), lte(events.endsAt, when)))
       .orderBy(desc(events.endsAt))
       .limit(PAST_SHOWN);
-    const out: HostEvents = { drafts: drafts.map((e) => toRow(e, v)), upcoming: upcoming.map((e) => toRow(e, v)), past: past.map((e) => toRow(e, v)) };
+    // Tickets sold per event, in one grouped count over the host's confirmed bookings.
+    const counts = await db
+      .select({ id: bookings.eventId, n: sql<number>`sum(${bookings.quantity})::int` })
+      .from(bookings)
+      .innerJoin(events, eq(events.id, bookings.eventId))
+      .where(and(mine, eq(bookings.status, "confirmed")))
+      .groupBy(bookings.eventId);
+    const sold = new Map(counts.map((r) => [r.id, r.n]));
+    const row = (e: (typeof drafts)[number]) => toRow(e, v, sold.get(e.id) ?? 0);
+    const out: HostEvents = { drafts: drafts.map(row), upcoming: upcoming.map(row), past: past.map(row) };
     return c.json(out);
   });
 

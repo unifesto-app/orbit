@@ -120,7 +120,8 @@ export const KINDS = {
   staffDecision: acct("must", "PIE"),
   supportReply: acct("must", "PIE"),
   dataExportReady: acct("must", "IE"),
-  eventRequestAnswered: acct("must", "PIE"),
+  // Asked from Orbit Event Partner, so it lands there. `name`, not hostName: the inbox row is from Orbit, not the host.
+  eventRequestAnswered: k("account", "must", "PIE", "launch", "account", ["decision", "name", "reason"], "request"),
   inRoomCardRemoved: acct("must", "PIE"),
   inRoomBarred: acct("must", "PIE"),
 
