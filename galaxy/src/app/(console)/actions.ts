@@ -102,3 +102,11 @@ export async function confirmGrant(_: Done, f: FormData) {
 export async function endGrant(_: Done, f: FormData) {
   return run("DELETE", `/galaxy/staff/grants/${path(f, "id")}`, { reason: text(f, "reason") });
 }
+
+// ─── Check-in ───
+// Lowers who's in on a booking, to 0 or to the number given (never up). Logged with the reason.
+export async function undoCheckIn(_: Done, f: FormData) {
+  const total = Number(text(f, "total") || "0");
+  if (!Number.isInteger(total) || total < 0) return { error: "Enter how many stay in, 0 or more." };
+  return run("POST", `/galaxy/check-in/${path(f, "id")}/undo`, { total, reason: text(f, "reason") });
+}

@@ -47,7 +47,7 @@ async function tickets(db: Db, rows: Row[]): Promise<Ticket[]> {
   return rows.map((r) => {
     const live = r.status === "confirmed";
     return {
-      id: r.id, status: r.status, quantity: r.quantity,
+      id: r.id, status: r.status, quantity: r.quantity, admitted: r.admitted, checkedInAt: r.checkedInAt?.toISOString() ?? null,
       qr: live ? r.qr : null, code: live ? r.code : null, link: live ? r.link : null,
       createdAt: r.createdAt.toISOString(), cancelledAt: r.cancelledAt?.toISOString() ?? null,
       ticketType: tiers.get(r.ticketTypeId)!, event: byId.get(r.eventId)!, onlineLink: live ? (links.get(r.eventId) ?? null) : null,
