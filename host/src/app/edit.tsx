@@ -12,12 +12,13 @@ import { Glass } from '@orbit/mobile/glass';
 import { useLoad } from '@orbit/mobile/load';
 import { color, radius, space } from '@orbit/mobile/theme';
 import { File } from 'expo-file-system';
+import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useRef, useState } from 'react';
 import { Alert, Image, Text, TextInput, View } from 'react-native';
 
-import { bodyOf, fixesOf, type Form, formOf, LASTS, lastsLabel, paiseOf, placeHalf, priceLabel, saveable } from '../launch/editor';
+import { bodyOf, centreCrop, fixesOf, type Form, formOf, LASTS, lastsLabel, paiseOf, placeHalf, priceLabel, saveable } from '../launch/editor';
 import { useHost } from '../launch/host';
 import { whenLabel } from '../launch/request';
 import { Card, Field, Note, Pill, Row, Section, Wide } from '../launch/ui';
@@ -294,9 +295,19 @@ function Picture({ id, shape, link, locked, onDone }: { id: string; shape: 'post
     const a = picked.canceled ? null : picked.assets[0];
     if (!a) return;
     if (a.fileSize && a.fileSize > PHOTO_MAX_BYTES) return setError('That image is over 5 MB. Choose a smaller one.');
+    let uri = a.uri;
+    const box = centreCrop(a.width, a.height, shape);
+    if (box) {
+      try {
+        const cut = await ImageManipulator.manipulate(a.uri).crop(box).renderAsync();
+        uri = (await cut.saveAsync({ compress: 0.85, format: SaveFormat.JPEG })).uri;
+      } catch {
+        return setError('Couldn’t crop that image. Try another.');
+      }
+    }
     const form = new FormData();
     // As a File: SDK 58's fetch (expo/fetch) sends a part with bytes(), not React Native's { uri, name, type }.
-    form.append('image', new File(a.uri));
+    form.append('image', new File(uri));
     await send('Uploading…', () => api.authed('PUT', `/events/${id}/${shape}`, form));
   };
   const remove = () =>

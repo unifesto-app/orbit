@@ -2,7 +2,7 @@
 // the event as loaded, so what the form can't show, an end not on the hour or a place's coordinates, is never
 // overwritten), prices typed in whole rupees, and publish's 409 `missing` list in plain words. Pure, so it's tested
 // under node; the screen is app/edit.tsx. The rules are the contract's own schemas, never copied here.
-import { EditEvent, type PublishMissing, type TeamEvent } from '@orbit/contract';
+import { EditEvent, mediaRatio, type PublishMissing, type TeamEvent } from '@orbit/contract';
 
 export type Form = {
   title: string;
@@ -75,3 +75,15 @@ const FIX: Record<PublishMissing, string> = {
   tickets: 'Add at least one ticket type.',
 };
 export const fixesOf = (missing: readonly string[]) => missing.map((m) => FIX[m as PublishMissing] ?? 'Something else is missing.');
+
+// The biggest centred box of a poster (3:4) or wide (4:3) inside a picked image, or null when the API will take it as
+// is (its 1% slack). iOS's picker crops square whatever `aspect` asks, so the phone cuts the shape before uploading.
+export function centreCrop(width: number, height: number, shape: 'poster' | 'wide') {
+  const want = shape === 'poster' ? '3:4' : '4:3';
+  if (mediaRatio(width, height) === want) return null;
+  const [rw, rh] = shape === 'poster' ? [3, 4] : [4, 3];
+  const side = Math.min(width / rw, height / rh);
+  const w = Math.floor(side * rw);
+  const h = Math.floor(side * rh);
+  return { originX: Math.floor((width - w) / 2), originY: Math.floor((height - h) / 2), width: w, height: h };
+}
