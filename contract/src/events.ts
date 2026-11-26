@@ -100,6 +100,11 @@ export const EditEvent = z
     agenda: z.array(AgendaItem).max(30),
     faq: z.array(FaqItem).max(20),
     terms: Terms,
+    // "What it's like" on the event's page, after its category (orbit-pm X13): a few short tags, trimmed, each once.
+    vibes: z
+      .array(Text(1, 24))
+      .max(6)
+      .transform((v) => v.filter((t, i) => v.findIndex((u) => u.toLowerCase() === t.toLowerCase()) === i)),
   })
   .partial()
   .refine((b) => Object.keys(b).length > 0, "Change at least one thing")
@@ -139,6 +144,7 @@ export const TeamEvent = z.object({
   agenda: z.array(z.object({ at: Iso, item: z.string() })),
   faq: z.array(z.object({ q: z.string(), a: z.string() })),
   terms: z.array(z.string()),
+  vibes: z.array(z.string()),
   poster: z.string().nullable(), // the 3:4 link
   wide: z.string().nullable(), // the optional 4:3 link
   wideEdge: z.string().nullable(), // the 4:3's top row, #rrggbb
@@ -270,7 +276,11 @@ export type EventCard = {
   pricePaise: number | null; // the lowest tier price; null with no tiers
   tiers: TierCard[]; host: HostCard; distanceKm: number | null; // only when a point was given
 };
-export type PublicEvent = EventCard & { about: string | null; agenda: { at: string; item: string }[]; faq: { q: string; a: string }[]; terms: string[] };
+// `interested`: how many people tapped I'm interested (deleted and suspended accounts left out); `vibes`: its tags.
+export type PublicEvent = EventCard & {
+  about: string | null; agenda: { at: string; item: string }[]; faq: { q: string; a: string }[]; terms: string[];
+  vibes: string[]; interested: number;
+};
 
 // ---------- Search's When chips (Discover decisions 7 and 8), shared by the app and the API ----------
 

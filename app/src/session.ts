@@ -4,9 +4,10 @@
 // The account comes from the Orbit API (src/api.ts). What the first frame needs (signed in, the account and its roles)
 // is saved on the phone and read back synchronously at launch, the way the location is (src/place.ts); the refresh
 // token is kept in the Keychain, and the access token only in memory.
-// Followed hosts come from the API (GET /me/follows), and so do saved events and lists (GET /me/saves) since 25 Nov 2026:
-// the phone shows a change at once, tells the API, and puts it back if the API says no; the server's copy wins.
-import { type ApiError, type AuthStep, type CategorySlug, type Me as Account, movedCategory, type MyTickets, type Ticket } from '@orbit/contract';
+// Followed hosts come from the API (GET /me/follows), and so do saved events and lists (GET /me/saves) since 25 Nov 2026,
+// and interests and Interested (GET /me/interests, /me/interested) since orbit-pm X13: the phone shows a change at once,
+// tells the API, and puts it back if the API says no; the server's copy wins.
+import { type ApiError, type AuthStep, type CategorySlug, type Me as Account, movedCategory, type MyInterested, type MyInterests, type MyTickets, type Ticket } from '@orbit/contract';
 import Constants from 'expo-constants';
 import { router, useFocusEffect } from 'expo-router';
 import Storage from 'expo-sqlite/kv-store';
@@ -292,10 +293,23 @@ export const setLoved = (eventId: string, on: boolean) => current && set({ ...cu
 // Interest (owner, 19 Nov 2026: "add interest cards for events", all four): the kinds of event you like, picked on
 // Account › Interests or from Home's one ask (an empty list once skipped, so it isn't asked again), and Interested on
 // an event's page, apart from Save.
-// ponytail: on this phone only, like follows, until the API keeps them and Recommendations reads them.
-export const setInterest = (slug: CategorySlug, on: boolean) =>
-  current && set({ ...current, interests: turn(current.interests ?? [], slug, on) as CategorySlug[] });
-export const skipInterests = () => current && set({ ...current, interests: current.interests ?? [] });
+// Both are the API's (orbit-pm X13), sent as tapped and put back if it says no; Interested on the old mock's events
+// stays on the phone, as their saves do.
+let interestEpoch = 0; // bumped by every interests or Interested tap, so an older read can't undo it, nor an older failure
+export function setInterests(next: readonly CategorySlug[]) {
+  if (!current) return;
+  const who = current.me.id;
+  const before = current.interests;
+  const mine = ++interestEpoch;
+  set({ ...current, interests: next });
+  void api.authed<MyInterests>('PUT', '/me/interests', { interests: next }).then((r) => {
+    if (r.ok || current?.me.id !== who || mine !== interestEpoch) return; // a later tap says what's wanted now
+    set({ ...current, interests: before });
+    Alert.alert('Couldn’t save your interests', r.error.message);
+  });
+}
+export const setInterest = (slug: CategorySlug, on: boolean) => current && setInterests(turn(current.interests ?? [], slug, on) as CategorySlug[]);
+export const skipInterests = () => current && setInterests(current.interests ?? []);
 // inRoom (inRoom flow): joining a meetup's room after you were let in, and asking someone there to connect.
 // ponytail: on this phone only; the API's room, its swaps of ways to reach and blocking come with inRoom (P16).
 export const useInRoom = (eventId: string) => useSession()?.rooms?.includes(eventId) ?? false;
@@ -306,7 +320,18 @@ export const setInRoom = (eventId: string, on: boolean) => current && set({ ...c
 export const useAsked = (eventId: string, personId: string) => useSession()?.asked?.includes(`${eventId}|${personId}`) ?? false;
 export const askToConnect = (eventId: string, personId: string) =>
   current && set({ ...current, asked: turn(current.asked ?? [], `${eventId}|${personId}`, true) });
-export const setInterested = (eventId: string, on: boolean) => current && set({ ...current, interested: turn(current.interested ?? [], eventId, on) });
+const interestedHere = (eventId: string, on: boolean) => current && set({ ...current, interested: turn(current.interested ?? [], eventId, on) });
+export function setInterested(eventId: string, on: boolean) {
+  interestedHere(eventId, on);
+  if (!current || !UUID.test(eventId)) return;
+  const who = current.me.id;
+  interestEpoch++;
+  void api.authed<unknown>(on ? 'PUT' : 'DELETE', `/me/interested/${eventId}`).then((r) => {
+    if (r.ok || current?.me.id !== who) return;
+    interestedHere(eventId, !on);
+    Alert.alert('Couldn’t change that', r.error.message);
+  });
+}
 // All or Off per followed host (Notifications decision 3; Off stops the push and the email, the inbox copy still lands):
 // read with the follows, shown at once when tapped and sent (PUT /me/follows/:id/notify), put back if the API says no.
 // The old mock's hosts stay on the phone, as their follows do.
@@ -510,8 +535,23 @@ export function signIn(done: Extract<AuthStep, { step: 'signedIn' }>, via: Way) 
   model = fresh(kept);
   set({ via, ...kept, ...mine, follows: current?.follows ?? [], me: done.me });
   void loadFollows();
+  void loadInterests();
   void loadSaves();
   void loadTickets();
+}
+
+// Interests and Interested as the API has them. Picks this phone kept from before the API had them (null there) go up
+// once; otherwise the server's win. The old mock's Interested stay on the phone.
+// ponytail: Interested on real events tapped before X13 stayed on the phone and are dropped here; carry them up too if
+// anyone misses theirs.
+async function loadInterests(): Promise<void> {
+  const at = interestEpoch;
+  const who = current?.me.id;
+  const [mine, events] = await Promise.all([api.authed<MyInterests>('GET', '/me/interests'), api.authed<MyInterested>('GET', '/me/interested')]);
+  if (!current || current.me.id !== who || at !== interestEpoch) return;
+  if (mine.ok && mine.data.interests === null && current.interests !== undefined) setInterests(current.interests);
+  else if (mine.ok) set({ ...current, interests: mine.data.interests ?? undefined });
+  if (events.ok && current) set({ ...current, interested: [...(current.interested ?? []).filter((x) => !UUID.test(x)), ...events.data.events] });
 }
 
 // The hosts the account follows, as the API has them (ids only; a host gone private is left out there).
@@ -595,7 +635,7 @@ export async function refreshAccount() {
   const r = await api.authed<Account>('GET', '/me');
   if (r.ok && current?.me.id === r.data.id) {
     set({ ...current, me: r.data });
-    await loadFollows();
+    await Promise.all([loadFollows(), loadInterests()]);
   }
   await saved;
 }

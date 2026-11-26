@@ -1,9 +1,9 @@
-import { and, asc, desc, eq, gt, inArray, lt, lte, ne, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, inArray, lt, lte, ne, or, sql, type SQL } from "drizzle-orm";
 import { Hono, type Context } from "hono";
 import { z } from "zod";
 import { categories, EventCategory, EventSlug, HostSlug, type EventCard, type HostCard, MAX_QUERY, span, type PublicEvent, type TierCard, WHEN } from "@orbit/contract";
 import type { Db } from "../db/index.ts";
-import { events, eventSlugs, hosts, hostSlugs, ticketTypes } from "../db/schema.ts";
+import { eventInterests, events, eventSlugs, hosts, hostSlugs, ticketTypes, users } from "../db/schema.ts";
 import { seatsTaken } from "../bookings.ts";
 import { fail, invalid } from "../http.ts";
 import { effectiveVisibility } from "./rules.ts";
@@ -40,7 +40,7 @@ const base = {
   city: events.city, lat: events.lat, lng: events.lng, online: events.online, poster: events.poster, wide: events.wide, wideEdge: events.wideEdge,
   posterTone: events.posterTone, wideTone: events.wideTone,
 };
-const long = { about: events.about, agenda: events.agenda, faq: events.faq, terms: events.terms };
+const long = { about: events.about, agenda: events.agenda, faq: events.faq, terms: events.terms, vibes: events.vibes };
 
 // Kilometres from the point to the event, by the haversine formula (no PostGIS); null where the event has no coordinates.
 const distance = (p: Point) =>
@@ -74,7 +74,7 @@ export async function cards(db: Db, q: { where: SQL | undefined; order: SQL[]; l
       online: r.online, poster: r.poster, wide: r.wide, wideEdge: r.wideEdge, tone: r.wideTone ?? r.posterTone,
       pricePaise: mine.length ? Math.min(...mine.map((t) => t.pricePaise)) : null, tiers: mine, host,
       distanceKm: r.dist === null || r.dist === undefined ? null : Math.round(Number(r.dist) * 10) / 10,
-      ...(q.full ? { about: r.about ?? null, agenda: r.agenda ?? [], faq: r.faq ?? [], terms: r.terms ?? [] } : {}),
+      ...(q.full ? { about: r.about ?? null, agenda: r.agenda ?? [], faq: r.faq ?? [], terms: r.terms ?? [], vibes: r.vibes ?? [] } : {}),
     };
   });
 }
@@ -111,7 +111,14 @@ export function publicEventsRoutes({ db, now = Date.now }: Deps) {
       .where(and(eq(eventSlugs.slug, c.req.param("slug")), openable));
     if (!found) return nothing(c);
     const [event] = await cards(db, { where: eq(events.id, found.id), order: [], limit: 1, full: true });
-    return c.json(event as PublicEvent);
+    // How many are interested, from the first (orbit-pm X13), counted live; deleted and suspended accounts don't count.
+    const stamp = at().toISOString();
+    const [n] = await db
+      .select({ n: count() })
+      .from(eventInterests)
+      .innerJoin(users, eq(users.id, eventInterests.userId))
+      .where(and(eq(eventInterests.eventId, found.id), sql`${users.deletedAt} is null`, sql`not (${users.suspendedAt} is not null and (${users.suspendedUntil} is null or ${users.suspendedUntil} > ${stamp}::timestamptz))`));
+    return c.json({ ...event, interested: n!.n } as PublicEvent);
   });
 
   // GET /public/discover?lat&lng&city: what's listed and upcoming, soonest first, split into near (Discover D6) and the rest.

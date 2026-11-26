@@ -49,6 +49,8 @@ export type Event = PlanEvent &
   agenda?: { time: string; item: string }[]; // the event's slots, in order, shown when When is tapped
   faq?: { q: string; a: string }[];
   terms?: string[]; // the host's own terms for this event, shown above the usual ones (defaultTerms)
+  vibes?: string[]; // "What it's like" tags after the category (the API's, orbit-pm X13; the old mock's in mock.ts)
+  interested?: number; // how many tapped I'm interested, as the page was read (a real event's only)
 };
 
 // The terms every event's Terms & Conditions ends with. They follow the Booking and Money flows: one QR per booking
@@ -130,6 +132,8 @@ export function toEvent(c: EventCard | PublicEvent, near?: boolean): Event {
     ...(full.agenda?.length && { agenda: full.agenda.map((a) => ({ time: slot(a.at, indiaDay(c.startsAt) === indiaDay(c.endsAt)), item: a.item })) }),
     ...(full.faq?.length && { faq: full.faq }),
     ...(full.terms?.length && { terms: full.terms }),
+    ...(full.vibes?.length && { vibes: full.vibes }),
+    ...(full.interested !== undefined && { interested: full.interested }),
     people: [], // performers are slice P8
     ...(near !== undefined && { near }),
   };

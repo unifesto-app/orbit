@@ -49,8 +49,15 @@ const CATEGORY_ART: Record<CategorySlug, ImageSourcePropType> = {
 // card and its seat keep their size.
 const ART_SCALE: Partial<Record<CategorySlug, number>> = { jams: 0.85, fests: 1.15 };
 // Explore's rows: three, three and four for the ten tiles (26 Nov 2026, as the owner's "Explore Three Three Four" for
-// ten, 15 Nov; it was four and four for the eight tiles from 19 Nov), in the Discover doc's order.
-const exploreRows = [categories.slice(0, 3), categories.slice(3, 6), categories.slice(6)];
+// ten, 15 Nov; it was four and four for the eight tiles from 19 Nov), in the Discover doc's order. Fewer (staff hid
+// some from Interests, orbit-pm X13) go in threes, a lone last one joining the row before.
+type Category = (typeof categories)[number];
+function rowsOf(list: readonly Category[]) {
+  const rows: Category[][] = [];
+  for (let i = 0; i < list.length; i += 3) rows.push(list.slice(i, i + 3));
+  if (rows.length > 1 && rows.at(-1)!.length === 1) rows.at(-2)!.push(rows.pop()![0]!);
+  return rows;
+}
 
 // A category as a box like Home's host cards (owner, 15 Nov 2026: "add the Types in boxes same as hosts in home"): its
 // drawing on the top rim where a host's logo sits, and its name, nothing else (owner: "from 1 event from card").
@@ -93,14 +100,15 @@ function CategoryCard({
   );
 }
 
-// Every category in Explore's rows of three, three and four, on the page's 20pt margins. `picked`, when given, marks
-// the ones chosen; a tap calls `onPress` with the category.
-export function CategoryGrid({ onPress, picked }: { onPress: (slug: CategorySlug) => void; picked?: readonly CategorySlug[] }) {
+// Every category (or `only` these, in that order) in Explore's rows, on the page's 20pt margins. `picked`, when given,
+// marks the ones chosen; a tap calls `onPress` with the category.
+export function CategoryGrid({ onPress, picked, only }: { onPress: (slug: CategorySlug) => void; picked?: readonly CategorySlug[]; only?: readonly CategorySlug[] }) {
   const { width } = useWindowDimensions();
+  const list = only ? only.flatMap((slug) => categories.filter((c) => c.slug === slug)) : categories;
   return (
     <View style={styles.grid}>
-      {exploreRows.map((row) => (
-        <View key={row[0].slug} style={styles.row}>
+      {rowsOf(list).map((row) => (
+        <View key={row[0]!.slug} style={styles.row}>
           {row.map((c) => (
             <CategoryCard
               key={c.slug}
