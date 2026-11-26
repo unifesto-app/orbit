@@ -1,12 +1,13 @@
-import { categories, type ContentAdmin, type StaffEvent } from "@orbit/contract";
+import { categories, type ContentAdmin, type StaffEvent, type StaffLineup, type StaffPerson } from "@orbit/contract";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
-import { read } from "../../../../api";
+import { galaxy, read } from "../../../../api";
 import { Alert, Container, PageHeader, Pairs, ui } from "../../../ui";
 import { Act } from "../../act";
 import { cancelEvent, unpublishEvent } from "../../actions";
 import { time } from "../../requests/status";
+import { FestItems, People } from "../lineup";
 import { Promote } from "../promote";
 import { EventBadge } from "../status";
 
@@ -14,21 +15,30 @@ import { EventBadge } from "../status";
 // draft while nobody has booked; Cancel cancels its bookings (not until it has ended). Both tell the host's Admins the
 // reason; ticket holders aren't told yet (H13.5). Promote puts it in App content's Promoted list (needs Platform too),
 // and Unpromote shows whenever it's there, whatever the status. The API refuses staff an event of a host they're on.
+// People (who's on its page, with roles, in order) and, on a fest, Inside the fest are edited here too (X14).
 export const metadata: Metadata = { title: "Event" };
 
 const rupees = (paise: number) => (paise === 0 ? "Free" : `₹${(paise / 100).toLocaleString("en-IN")}`);
 
-export default function EventPage({ params }: PageProps<"/events/[id]">) {
+export default function EventPage({ params, searchParams }: PageProps<"/events/[id]">) {
   return (
     <Suspense fallback={null}>
-      <Event params={params} />
+      <Event params={params} searchParams={searchParams} />
     </Suspense>
   );
 }
 
-async function Event({ params }: Pick<PageProps<"/events/[id]">, "params">) {
+async function Event({ params, searchParams }: Pick<PageProps<"/events/[id]">, "params" | "searchParams">) {
   const { id } = await params;
-  const [r, content] = await Promise.all([read<StaffEvent>(`/galaxy/events/${encodeURIComponent(id)}`), read<ContentAdmin>("/galaxy/app-content")]);
+  const sq = (await searchParams).q;
+  const q = (typeof sq === "string" ? sq : "").trim().slice(0, 80); // People's picker search
+  const [r, content, lineup, persons] = await Promise.all([
+    read<StaffEvent>(`/galaxy/events/${encodeURIComponent(id)}`),
+    read<ContentAdmin>("/galaxy/app-content"),
+    // `galaxy`, not `read`: if these fail, only People and Inside the fest say so; the rest of the page still shows.
+    galaxy<StaffLineup>("GET", `/galaxy/events/${encodeURIComponent(id)}/lineup`),
+    galaxy<{ persons: StaffPerson[] }>("GET", `/galaxy/persons${q ? `?q=${encodeURIComponent(q)}` : ""}`), // 50 at most, by name
+  ]);
   if (!r.ok) return <Alert>{r.error.message}</Alert>;
   const { event: e, host, tickets, bookings } = r.data;
   const promoted = content.ok ? content.data.content.promoted.some((p) => p.href === `/event/${e.slug}`) : null; // null: no Platform
@@ -87,6 +97,20 @@ async function Event({ params }: Pick<PageProps<"/events/[id]">, "params">) {
           </table>
         )}
       </Container>
+
+      <Container title="People" count={lineup.ok ? lineup.data.people.length : undefined}>
+        {lineup.ok ? (
+          <People eventId={e.id} lineup={lineup.data.people} persons={persons.ok ? persons.data.persons : []} q={q} />
+        ) : (
+          <Alert>{lineup.error.message}</Alert>
+        )}
+      </Container>
+
+      {e.category === "fests" && (
+        <Container title="Inside the fest" count={lineup.ok ? lineup.data.festItems.length : undefined}>
+          {lineup.ok ? <FestItems eventId={e.id} items={lineup.data.festItems} /> : <Alert>{lineup.error.message}</Alert>}
+        </Container>
+      )}
 
       {(published || promoted) && (
         <Container title="Actions">

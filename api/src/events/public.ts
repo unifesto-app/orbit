@@ -7,6 +7,7 @@ import { eventInterests, events, eventSlugs, hosts, hostSlugs, ticketTypes, user
 import { seatsTaken } from "../bookings.ts";
 import { fail, invalid } from "../http.ts";
 import { effectiveVisibility } from "./rules.ts";
+import { lineupOf } from "../people.ts";
 
 // What anyone may read of events (Orbit flows: Discover): one event by link, what's near, search, and a host's events.
 // No sign-in. Nothing here selects onlineLink, placeId, the team or who created or cancelled: those are never public.
@@ -118,7 +119,7 @@ export function publicEventsRoutes({ db, now = Date.now }: Deps) {
       .from(eventInterests)
       .innerJoin(users, eq(users.id, eventInterests.userId))
       .where(and(eq(eventInterests.eventId, found.id), sql`${users.deletedAt} is null`, sql`not (${users.suspendedAt} is not null and (${users.suspendedUntil} is null or ${users.suspendedUntil} > ${stamp}::timestamptz))`));
-    return c.json({ ...event, interested: n!.n } as PublicEvent);
+    return c.json({ ...event, interested: n!.n, ...(await lineupOf(db, found.id, event!.category)) } as PublicEvent);
   });
 
   // GET /public/events/:slug/calendar.ics: Add to calendar in the app. Published events whose page opens only; any slug
