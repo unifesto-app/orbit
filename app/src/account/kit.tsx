@@ -5,7 +5,7 @@
 // remove right side text and add > icon"), or a ↗ when it opens the web ("if external then top right direction arrow"). Buttons are frosted pills with
 // white labels, never squared; a chip's pick is an accent dot, never accent text.
 import { Children, Fragment, type ReactNode, isValidElement, useEffect, useState } from 'react';
-import { Animated, Platform, Pressable, StyleSheet, Switch, Text, TextInput, type TextInputProps, View, useWindowDimensions } from 'react-native';
+import { Animated, Platform, Pressable, RefreshControl, StyleSheet, Switch, Text, TextInput, type TextInputProps, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Glass } from '../glass';
@@ -47,15 +47,21 @@ export const TONE = {
   grape: '#AE3EC9',
 } as const;
 
+const END = 400; // how near the end a list reads its next page
+
 // A screen pushed over the tabs: its title, then the content; the frosted back circle pinned on top.
 export function Page({
   title,
   bar,
   children,
+  refresh,
+  onEnd,
 }: {
   title?: string;
   bar?: ReactNode; // at the back bar's right, as a saved list's ⋯ menu
   children: ReactNode;
+  refresh?: { refreshing: boolean; onRefresh: () => void }; // pull to refresh
+  onEnd?: () => void; // the page's end is near: a list reads its next page
 }) {
   const insets = useSafeAreaInsets();
   const [scrollY] = useState(() => new Animated.Value(0));
@@ -66,7 +72,14 @@ export function Page({
         keyboardShouldPersistTaps="handled"
         automaticallyAdjustKeyboardInsets // iOS: the keyboard never covers a field or the button under it
         scrollEventThrottle={16}
-        onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })}
+        onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], {
+          useNativeDriver: true,
+          listener: onEnd
+            ? ({ nativeEvent: n }: { nativeEvent: { layoutMeasurement: { height: number }; contentOffset: { y: number }; contentSize: { height: number } } }) =>
+                n.layoutMeasurement.height + n.contentOffset.y >= n.contentSize.height - END && onEnd()
+            : undefined,
+        })}
+        refreshControl={refresh && <RefreshControl {...refresh} tintColor={color.secondary} progressViewOffset={insets.top + TOP} />}
         contentContainerStyle={{ paddingTop: insets.top + TOP, paddingBottom: insets.bottom + space.big }}>
         {title && (
           <Text style={styles.title} accessibilityRole="header">

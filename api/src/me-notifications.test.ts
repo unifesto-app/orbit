@@ -231,6 +231,25 @@ test("a token moves: the second account's PUT takes it, the first has no device;
   assert.equal((await as(a)("PUT", "/me/push-device", { app: "web", platform: "ios", env: "sandbox", token: "x" })).status, 400);
 });
 
+test("signing in again on the same phone drops the old session's token row; signing out drops it too", async () => {
+  goTo(12);
+  const a = (await join()) as A & { device: string };
+  assert.equal((await addDevice(a, "again-token")).status, 204);
+  t.tick(30_000);
+  assert.equal((await t.call("POST", "/auth/code", { to: a.p })).status, 200);
+  const again = await t.call("POST", "/auth/code/verify", { to: a.p, code: t.lastCode(`+91${a.p}`), device: { ...device, id: a.device } });
+  assert.equal(again.status, 200);
+  assert.equal(again.body.step, "signedIn");
+  assert.equal(again.body.device, a.device); // the same device, so the same session row with a new id
+  assert.equal((await t.db.select().from(pushDevices).where(eq(pushDevices.userId, a.me.id))).length, 0);
+  // The new session sends the token again, then signs out: the row goes with it.
+  const b = { ...a, access: again.body.access };
+  assert.equal((await addDevice(b, "again-token")).status, 204);
+  assert.equal((await t.db.select().from(pushDevices).where(eq(pushDevices.userId, a.me.id))).length, 1);
+  assert.equal((await as(b)("POST", "/auth/signout")).status, 204);
+  assert.equal((await t.db.select().from(pushDevices).where(eq(pushDevices.userId, a.me.id))).length, 0);
+});
+
 test("settings: GET fills the defaults (near follows the city); PUT stores only what differs", async () => {
   goTo(12);
   const a = await join(), b = await join({ city: "Pune" });

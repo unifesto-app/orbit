@@ -13,7 +13,7 @@ export { markOf } from '@orbit/mobile/mark';
 
 export const kindLabel = (kind: string) => HOST_KINDS[kind as keyof typeof HOST_KINDS] ?? 'Host';
 
-export type Followed = { id: string; slug: string; name: string; city: string; verified: boolean; logo: string | null };
+export type Followed = { id: string; slug: string; name: string; city: string; verified: boolean; logo: string | null; notify: 'all' | 'off' };
 
 export function hostsApi(api: Api) {
   return {

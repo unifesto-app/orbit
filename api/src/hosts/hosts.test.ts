@@ -155,7 +155,10 @@ test("follow, unfollow and my follows", async () => {
   t.tick(1000);
   await as(f)("POST", `/hosts/${h3.id}/follow`);
   assert.deepEqual((await as(f)("GET", "/me/follows")).body.map((x: any) => x.name), ["Third", "Second", "First"]);
-  assert.deepEqual(Object.keys((await as(f)("GET", "/me/follows")).body[0]).sort(), ["city", "id", "logo", "name", "slug", "verified"]);
+  assert.deepEqual(Object.keys((await as(f)("GET", "/me/follows")).body[0]).sort(), ["city", "id", "logo", "name", "notify", "slug", "verified"]);
+  assert.equal((await as(f)("GET", "/me/follows")).body[0].notify, "all");
+  assert.equal((await as(f)("PUT", `/me/follows/${h3.id}/notify`, { notify: "off" })).status, 204);
+  assert.deepEqual((await as(f)("GET", "/me/follows")).body.map((x: any) => x.notify), ["off", "all", "all"]);
   await as(a)("PATCH", `/hosts/${h1.id}`, { visibility: "private" });
   await as(a)("POST", `/hosts/${h2.id}/pause`);
   await as(st)("POST", `/galaxy/hosts/${h3.id}/suspend`, R);

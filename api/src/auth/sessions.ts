@@ -1,8 +1,8 @@
 import { createHmac, randomUUID } from "node:crypto";
-import { and, eq, gt, isNull, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import type { Device, Way } from "@orbit/contract";
 import type { Db } from "../db/index.ts";
-import { sessions, users } from "../db/schema.ts";
+import { pushDevices, sessions, users } from "../db/schema.ts";
 import { ACCESS_SECONDS, issue, randomToken, sha256 } from "./tokens.ts";
 
 // One session per device (plan section 6). Refresh tokens rotate on every use and last 180 days, never past 365 days
@@ -77,10 +77,14 @@ export async function startSession(db: Db, secret: string, userId: string, devic
     freshVia: via,
     freshSince: since,
   };
-  await db
-    .insert(sessions)
-    .values({ userId, deviceHash: sha256(deviceId), ...fields })
-    .onConflictDoUpdate({ target: [sessions.userId, sessions.deviceHash], set: fields });
+  const deviceHash = sha256(deviceId);
+  await db.transaction(async (tx) => {
+    // The upsert gives the device's session a new id, and its push token row points at the old one: it goes, and the
+    // app sends the token again for the new session (app/src/push.tsx).
+    const earlier = tx.select({ id: sessions.id }).from(sessions).where(and(eq(sessions.userId, userId), eq(sessions.deviceHash, deviceHash)));
+    await tx.delete(pushDevices).where(inArray(pushDevices.sessionId, earlier));
+    await tx.insert(sessions).values({ userId, deviceHash, ...fields }).onConflictDoUpdate({ target: [sessions.userId, sessions.deviceHash], set: fields });
+  });
   return {
     access: await access(secret, userId, id, fields.refreshHash),
     refresh: `${id}.${refreshPart}`,
@@ -149,11 +153,18 @@ export async function refresh(db: Db, secret: string, token: string, now: number
 export const ack = (db: Db, sid: string, refreshHash: string) =>
   db.update(sessions).set({ acked: true }).where(and(eq(sessions.id, sid), eq(sessions.refreshHash, refreshHash), eq(sessions.acked, false)));
 
-export const endSession = (db: Db, sid: string, now: number) =>
-  db.update(sessions).set({ endedAt: new Date(now) }).where(and(eq(sessions.id, sid), isNull(sessions.endedAt)));
+// An ended session's push token goes with it, so a signed-out phone gets no more pushes.
+export async function endSession(db: Db, sid: string, now: number) {
+  await db.delete(pushDevices).where(eq(pushDevices.sessionId, sid));
+  await db.update(sessions).set({ endedAt: new Date(now) }).where(and(eq(sessions.id, sid), isNull(sessions.endedAt)));
+}
 
-export const endSessions = (db: Db, userId: string, now: number) =>
-  db.update(sessions).set({ endedAt: new Date(now) }).where(and(eq(sessions.userId, userId), isNull(sessions.endedAt)));
+// The other places that end sessions (security.ts, deletion.ts, a suspension) leave the token row: the notifier
+// already skips a device whose session has ended (notifications.ts), and the 270-day prune takes it.
+export async function endSessions(db: Db, userId: string, now: number) {
+  await db.delete(pushDevices).where(eq(pushDevices.userId, userId));
+  await db.update(sessions).set({ endedAt: new Date(now) }).where(and(eq(sessions.userId, userId), isNull(sessions.endedAt)));
+}
 
 // The person behind an access token, and whether its session is still live. Read on every request, so a sign-out or
 // suspension takes effect at once rather than when the 15-minute token runs out.

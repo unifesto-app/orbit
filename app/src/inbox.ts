@@ -1,7 +1,7 @@
 // The notifications inbox (Notifications doc, "The inbox and where each message opens"; the owner picked the Rows take
 // with a bell in Home's header from https://claude.ai/artifact/4H6dp7ssrQbNXCJ4kSBj2b, 19 Nov 2026). Pure, so it runs on
-// Node in inbox.test.ts: where each message opens, its day and time, and which are left after 180 days. The screen is
-// src/app/inbox.tsx; the items and read state are src/inboxStore.ts.
+// Node in inbox.test.ts: where each message opens and its day and time. The screen is src/app/inbox.tsx; the items and
+// read state come from the API (src/notices.ts, src/inboxStore.ts), which keeps 180 days.
 import { indiaDay, indiaWhen } from './status.ts';
 
 // What a message is about, and so the screen it opens. A refund outcome opens the ticket while there is one; a fully
@@ -28,7 +28,6 @@ export type InboxItem = {
 };
 
 const DAY = 86_400_000;
-export const KEEP_DAYS = 180;
 const IST = 330 * 60_000;
 const indiaDate = (t: number) => Math.floor((t + IST) / DAY);
 
@@ -77,14 +76,10 @@ export function dayLabel(at: string, now: number): string {
 // "8:40 AM", India time.
 export const timeLabel = (at: string) => indiaWhen(at).split(' · ')[1];
 
-// Whether a message is still kept: sent within the last 180 days, to the moment.
-export const isKept = (at: string, now: number) => Date.parse(at) > now - KEEP_DAYS * DAY;
-
-// The last 180 days, newest first, under a heading per day.
+// Newest first, under a heading per day.
 export function inboxDays<T extends Pick<InboxItem, 'at'>>(items: readonly T[], now: number): { day: string; items: T[] }[] {
   const days: { day: string; items: T[] }[] = [];
-  const kept = items.filter((x) => isKept(x.at, now)).sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
-  for (const item of kept) {
+  for (const item of [...items].sort((a, b) => Date.parse(b.at) - Date.parse(a.at))) {
     const day = dayLabel(item.at, now);
     const last = days.at(-1);
     if (last?.day === day) last.items.push(item);
@@ -93,8 +88,8 @@ export function inboxDays<T extends Pick<InboxItem, 'at'>>(items: readonly T[], 
   return days;
 }
 
-// A push names the screen it opens (`href`); only a path inside the app is followed, never a web address and never
-// `//host`, which the router would open as https.
+// Only a path inside the app is opened, never a web address and never `//host`, which the router would open as https:
+// the last check on a message's or a push's screen (src/notices.ts, src/push.tsx), as their ids come off the wire.
 export const inAppPath = (href: unknown): href is string => typeof href === 'string' && /^\/(?!\/)[\w\-/]*$/.test(href);
 
 // The phone's answer about push, from expo-notifications' permission read (src/push.tsx). on: allowed (iOS's quiet
