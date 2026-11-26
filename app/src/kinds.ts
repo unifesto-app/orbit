@@ -1,6 +1,7 @@
 // What each kind of event or place shows beyond the usual page (owner, 19 Nov 2026: detail screens for Standup Comedy,
-// Musical Jams, Hackathons, Meetups, Turf/Court/Ground, Gaming Café/Zone and Fests), keyed off the eight tiles'
-// categories (comedy, jams, meetups, hackathons, fests, gaming, sports, events). From the flow docs:
+// Musical Jams, Hackathons, Meetups, Turf/Court/Ground, Gaming Café/Zone and Fests), keyed off the ten tiles'
+// categories (comedy, jams, meetups, hackathons, fests, workshops, gaming, sports, run-clubs, events; Workshops and Run
+// clubs added 26 Nov 2026, with no sections of their own yet). From the flow docs:
 // - Comedy and Jams: "with [act]" under "by host", the acts being Performer hosts (Discover 23; Performer).
 // - Hackathons: tracks and briefs, prizes, rounds with times, criteria with weights and the number of teams, never their
 //   names; after results, the winners (Running hackathons 4, 5, 13).
