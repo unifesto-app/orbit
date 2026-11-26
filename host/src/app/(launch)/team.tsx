@@ -14,7 +14,7 @@
 // ponytail: Event teams (Event leads and Crew per event) stay hidden until the Crew slice (H3.3). Edit host, Get
 // verified, Finish your page and the status moves open nothing yet; host pages on the web aren't built, so Share page
 // and View wait for them. An invite's age shows once the team route sends when it went.
-import { type EventRow, HOST_KINDS, type HostEvents, type HostPage, type Me } from '@orbit/contract';
+import { HOST_KINDS, type HostEvents, type HostPage, type Me } from '@orbit/contract';
 import { markOf } from '@orbit/mobile/mark';
 import { useLoad } from '@orbit/mobile/load';
 import { showPhone } from '@orbit/mobile/signin';
@@ -34,8 +34,6 @@ import { api, refreshMe, signOut, useSession } from '../../session';
 type Member = { id: string; userId: string | null; name: string | null; role: 'admin' | 'crew'; owner: boolean };
 type Invite = { id: string; contact: string; accepted: boolean; acceptedBy: string | null; addedBy: string };
 type TeamList = { members: Member[]; invites: Invite[] };
-// The events list, with the booked count PR A adds (optional until then).
-type Events = Omit<HostEvents, 'upcoming'> & { upcoming: (EventRow & { sold?: number })[] };
 
 const STATUS = { live: 'Live', paused: 'Paused', suspended: 'Suspended by Orbit', archived: 'Archived' } as const;
 const followers = (n: number) => `${n.toLocaleString('en-IN')} follower${n === 1 ? '' : 's'}`;
@@ -55,7 +53,7 @@ function HostTab({ host, me }: { host: HostOf; me: Me }) {
   const id = host.id;
   const page = useLoad<HostPage>(`host|${id}`, () => api.authed<HostPage>('GET', `/hosts/${id}`));
   const team = useLoad<TeamList>(`team|${id}`, () => api.authed<TeamList>('GET', `/hosts/${id}/team`));
-  const events = useLoad<Events>(`events|${id}`, () => api.authed<Events>('GET', `/hosts/${id}/events`));
+  const events = useLoad<HostEvents>(`events|${id}`, () => api.authed<HostEvents>('GET', `/hosts/${id}/events`));
   const mine = useInvites(); // invites to this account, from any host
   const [adding, setAdding] = useState(false);
   const [to, setTo] = useState('');
@@ -70,7 +68,7 @@ function HostTab({ host, me }: { host: HostOf; me: Me }) {
   const shown = p?.status === 'live' || p?.status === 'paused'; // a suspended or archived host is off Orbit
   const publicPage = p?.visibility === 'public';
   // Pausing or archiving waits while an event coming up has bookings (open refunds join this with the money API).
-  const wait = (events.data?.upcoming ?? []).some((e) => (e.sold ?? 0) > 0);
+  const wait = (events.data?.upcoming ?? []).some((e) => e.sold > 0);
   const moves = p ? statusMoves(p.status, owner, wait) : [];
   const statusLine = p ? statusNote(p.status, owner, wait) : undefined;
   const missing = p

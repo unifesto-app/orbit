@@ -10,7 +10,7 @@
 // The host switcher and New event head it; the host's own colour glows from the top, as on its page in the Orbit app.
 // From GET /hosts/:id/events (plan F31, L4): its drafts, and its upcoming and past events, sorted here by check-in.
 // ponytail: New event, Scan, Find someone, Continue and the rows open nothing yet; each is a later take. Refund
-// requests, payouts and event roles wait for their APIs; sold and checked-in show only once the API sends them. Admins'
+// requests, payouts and event roles wait for their APIs. Admins'
 // view only. Past lists every past event; add See all when it's long.
 import type { EventRow, HostEvents } from '@orbit/contract';
 import { useLoad } from '@orbit/mobile/load';
@@ -29,7 +29,7 @@ import { api, refreshMe } from '../../session';
 
 type Stage = 'open' | 'next' | 'past';
 // A row with its counts, once the API sends them (PR A); absent, nothing shows for them.
-type Listed = EventRow & { startsAt: string; sold?: number; checkedIn?: number };
+type Listed = EventRow & { startsAt: string };
 const endsAt = (e: Listed) => e.endsAt ?? e.startsAt;
 const date = (at: string) => dayLabel(istDate(Date.parse(at))); // "Fri 20 Nov"
 const when = (at: string) => `${date(at)} · ${timeLabel(at)}`; // "Fri 20 Nov · 8:00 PM"
@@ -104,7 +104,9 @@ function Cards({ title, children }: { title: string; children: ReactNode }) {
 
 // One event and what's waiting on it.
 function Card({ event: e, stage, now }: { event: Listed; stage: Stage; now: number }) {
-  const sold = e.sold === undefined ? undefined : stage === 'past' && e.checkedIn !== undefined ? `${e.checkedIn} of ${e.sold} came` : `${e.sold} sold`;
+  // ponytail: `checkedIn` stays hidden while it's always 0 (nothing records check-in yet). Once the door does, past
+  // cards read "35 of 38 came" and the open card's row "In 3 of 31", as take 1 draws them.
+  const sold = `${e.sold} sold`;
   return (
     <EventCard
       title={e.title}
@@ -114,7 +116,7 @@ function Card({ event: e, stage, now }: { event: Listed; stage: Stage; now: numb
     >
       {stage === 'open' && e.status !== 'cancelled' && (
         <Row
-          label={e.sold !== undefined && e.checkedIn !== undefined ? `In ${e.checkedIn} of ${e.sold}` : 'Check-in open'}
+          label="Check-in open"
           right={
             <>
               <Pill label="Scan" />
