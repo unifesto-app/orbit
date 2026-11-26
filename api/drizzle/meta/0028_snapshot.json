@@ -1,6 +1,6 @@
 {
-  "id": "01ccb49c-5581-4afe-97fd-40d9aed0c04a",
-  "prevId": "8e92bca2-79af-4af1-8cab-ec8975f3bbeb",
+  "id": "2d7cd291-53b7-4f68-9c5d-f2d7926abdf5",
+  "prevId": "78a25b7a-00c8-4a0a-b046-73f49bf0eceb",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1005,6 +1005,22 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "deliveries_provider_idx": {
+          "name": "deliveries_provider_idx",
+          "columns": [
+            {
+              "expression": "provider_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"deliveries\".\"provider_id\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -1047,6 +1063,37 @@
           ]
         }
       },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.email_suppressions": {
+      "name": "email_suppressions",
+      "schema": "",
+      "columns": {
+        "address": {
+          "name": "address",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "at": {
+          "name": "at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false

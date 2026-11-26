@@ -27,6 +27,7 @@ import { useHost } from '../../launch/host';
 import { timeLabel } from '../../launch/inbox';
 import { dayLabel, istDate } from '../../launch/money';
 import { EventCard, Glow, HostHead, Note, Pill, Row, Section } from '../../launch/ui';
+import { PushAsk } from '../../push';
 import { api, refreshMe } from '../../session';
 
 type Stage = 'open' | 'next' | 'past';
@@ -60,6 +61,7 @@ export default function Events() {
             }} tintColor={color.secondary} />}
       >
         <HostHead host={host} right={<Pill label="New event" dark />} />
+        <PushAsk />
         {load.error && <Note>{load.error.message}</Note>}
         {groups.map((g) => (
           <Cards key={g.word} title={g.word}>

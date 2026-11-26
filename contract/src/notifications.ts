@@ -259,3 +259,19 @@ export const NotificationSettingsBody = z.object({
 export type NotificationSettingsBody = z.infer<typeof NotificationSettingsBody>;
 
 export const FollowNotify = z.object({ notify: z.enum(["all", "off"]) });
+
+// ---------- Galaxy's Notifications (build plan PR 7) ----------
+
+// A kill switch that is off: who, when, why. No row means on.
+export type KillSwitch = { by: string | null; at: string; reason: string };
+// One kind as Galaxy's Kinds tab shows it. `channels`: the ways it can go; `off`: those switched off.
+export type GalaxyKind = { kind: NoticeKind; group: KindDef["group"]; level: Level; app: KindDef["app"]; channels: Channel[]; off: Partial<Record<Channel, KillSwitch>> };
+// `all`: the whole-channel switches (kind *), which stop Must kinds too.
+export type GalaxyKinds = { kinds: GalaxyKind[]; all: Partial<Record<Channel, KillSwitch>> };
+export const SwitchBody = z.object({ off: z.boolean(), reason: z.string().trim().min(3).max(500) });
+
+// One send in the delivery log. `to`: the email masked (a***@x.com), a device as "ios · orbit", else null; never a token.
+export type DeliveryRow = { id: string; kind: string; channel: Channel; status: string; reason: string | null; to: string | null; tries: number; createdAt: string; sentAt: string | null };
+export const DELIVERY_LOG_MAX = 100;
+// `person`: the account found; null when only a contact matched (a notice to an address with no account).
+export type DeliveryLog = { person: { id: string; name: string | null } | null; deliveries: DeliveryRow[] };

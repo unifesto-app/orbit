@@ -6,13 +6,14 @@
 export type NavItem = { label: string; href: string; also?: string[] };
 
 export const home: NavItem = { label: "Home", href: "/" };
+export const inbox: NavItem = { label: "Inbox", href: "/inbox" };
 
 export const sections: { title: string; items: NavItem[] }[] = [];
 
 export const isActive = (item: NavItem, path: string) =>
   [item.href, ...(item.also ?? [])].some((href) => (href === "/" ? path === "/" : path === href || path.startsWith(`${href}/`)));
 
-const all = [home, ...sections.flatMap((s) => s.items)];
+const all = [home, inbox, ...sections.flatMap((s) => s.items)];
 
 /** The nav item a path belongs to, for the breadcrumb. */
 export const crumbFor = (path: string) => all.find((item) => isActive(item, path));

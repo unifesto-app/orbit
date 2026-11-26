@@ -1,11 +1,12 @@
-import { KINDS, type NoticeKind, WAITLIST_CONTACT } from "@orbit/contract";
+import { createHmac, timingSafeEqual } from "node:crypto";
+import { EMAIL_SWITCHES, type EmailSwitch, isMust, KINDS, type NoticeKind, WAITLIST_CONTACT } from "@orbit/contract";
 import { esc, frame } from "./prelaunch-email.ts";
 
 // What each notification says, by email and in the inbox (notifications build plan, PR 1): the kinds the code calls
 // today, plus welcome. One line serves as the email's lead and the inbox row; where there is none, the subject is the
 // whole message. A kind with no wording yet still sends, with a plain fallback. Plain sentences, no exclamation marks,
-// dates as "26 Nov" in India time, never an id. No links to screens yet and no unsubscribe link (every kind here is
-// must or one-off). Replies go to the contact address.
+// dates as "26 Nov" in India time, never an id. No links to screens yet. Optional emails (optionalSwitch) carry an
+// unsubscribe link (PR 6); Must and the one-off welcome don't. Replies go to the contact address.
 // ponytail: Galaxy's rewording (notification_templates) isn't read yet; its slice defines the placeholders.
 
 const SITE = "https://heyorbit.in";
@@ -107,13 +108,62 @@ const WHY = "You’re getting this because it’s about your Orbit account. Acco
 const WHY_STAFF = "You’re getting this because you hold staff access on Orbit.";
 const WHY_EVENT = "You’re getting this because you have a ticket for this event on Orbit.";
 
-export function emailFor(kind: string, data: Data = {}, site = SITE) {
+// What each email switch's emails are about, to follow "emails about" (the app's switches,
+// app/src/app/account/notifications.tsx).
+export const SWITCH_ABOUT: Record<EmailSwitch, string> = {
+  reminders: "events you’re going to",
+  follows: "hosts you follow",
+  announcements: "host announcements",
+  orbit: "news from Orbit",
+  yourHosts: "your hosts",
+};
+// An optional email's switch: not Must, not the one-off welcome, and governed by an email switch. Null for the rest,
+// and for a kind the catalog doesn't know (a row left from an older build).
+export const optionalSwitch = (kind: NoticeKind): EmailSwitch | null => {
+  const def = KINDS[kind] as (typeof KINDS)[NoticeKind] | undefined;
+  if (!def || def.level === "must" || kind === "welcome") return null;
+  return (EMAIL_SWITCHES as readonly string[]).includes(def.switch ?? "") ? (def.switch as EmailSwitch) : null;
+};
+
+// The unsubscribe token: {u, s} and its HMAC, keyed apart from every other use of AUTH_SECRET. No expiry, so an old
+// email's link still works.
+const unsubKey = (secret: string) => createHmac("sha256", secret).update("orbit-unsubscribe-v1").digest();
+const mac = (secret: string, payload: string) => createHmac("sha256", unsubKey(secret)).update(payload).digest();
+export const unsubscribeToken = (secret: string, u: string, s: EmailSwitch) => {
+  const payload = Buffer.from(JSON.stringify({ u, s })).toString("base64url");
+  return `${payload}.${mac(secret, payload).toString("base64url")}`;
+};
+export const readUnsubscribeToken = (secret: string, t: string): { u: string; s: EmailSwitch } | null => {
+  const [payload, sig, extra] = t.split(".");
+  if (!payload || !sig || extra !== undefined) return null;
+  const want = mac(secret, payload);
+  const got = Buffer.from(sig, "base64url");
+  if (got.length !== want.length || !timingSafeEqual(got, want)) return null;
+  try {
+    const v = JSON.parse(Buffer.from(payload, "base64url").toString()) as { u?: unknown; s?: unknown };
+    return typeof v.u === "string" && (EMAIL_SWITCHES as readonly unknown[]).includes(v.s) ? { u: v.u, s: v.s as EmailSwitch } : null;
+  } catch {
+    return null;
+  }
+};
+
+// `unsubscribe`: an optional email's switch and its one-click link, which go in the footer and the List-Unsubscribe
+// headers.
+export function emailFor(kind: string, data: Data = {}, site = SITE, unsubscribe?: { s: EmailSwitch; link: string }) {
   const { subject, line = "" } = words(kind, data);
   const group = KINDS[kind as NoticeKind]?.group;
-  const why = group === "staff" ? WHY_STAFF : group === "events" ? WHY_EVENT : WHY;
-  const html = frame({ subject, heading: subject, lead: esc(line), why }, site);
+  const why = unsubscribe
+    ? `You’re getting this because emails about ${SWITCH_ABOUT[unsubscribe.s]} are on. Stop them: ${unsubscribe.link}`
+    : group === "staff"
+      ? WHY_STAFF
+      : group === "events"
+        ? WHY_EVENT
+        : WHY;
+  let html = frame({ subject, heading: subject, lead: esc(line), why }, site);
+  if (unsubscribe) html = html.replace(esc(unsubscribe.link), `<a class="t2" href="${esc(unsubscribe.link)}" style="color:inherit">${esc(unsubscribe.link)}</a>`);
   const text = [subject, ...(line ? ["", line] : []), "", why, `Terms: ${site}/terms · Privacy: ${site}/privacy`, "© 2027 Orbit"].join("\n");
-  return { subject, html, text, replyTo: WAITLIST_CONTACT };
+  const headers = unsubscribe && { "List-Unsubscribe": `<${unsubscribe.link}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" };
+  return { subject, html, text, replyTo: WAITLIST_CONTACT, ...(headers ? { headers } : {}) };
 }
 
 // `opens`: the app's Opens shape (app/src/inbox.ts), the catalog's target with its id from the data; null when the id

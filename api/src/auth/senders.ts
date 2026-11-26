@@ -1,4 +1,5 @@
-import { SendEmailCommand, SESClient } from "@aws-sdk/client-ses";
+import { randomUUID } from "node:crypto";
+import { SendEmailCommand, SendRawEmailCommand, SESClient } from "@aws-sdk/client-ses";
 import type { Contact } from "@orbit/contract";
 import type { Sender } from "./codes.ts";
 
@@ -84,35 +85,84 @@ export function codeEmail(code: string) {
   };
 }
 
-// The SES call, so tests can stand in for AWS.
+// The SES calls, so tests can stand in for AWS. SendEmail can't carry custom headers; SendRawEmail (a whole MIME
+// message) can, for List-Unsubscribe.
 export type SesSend = (input: ConstructorParameters<typeof SendEmailCommand>[0]) => Promise<{ MessageId?: string }>;
+export type SesRawSend = (raw: Uint8Array, to: string) => Promise<{ MessageId?: string }>;
+const client = (region: string) => new SESClient({ region, maxAttempts: 2, requestHandler: { connectionTimeout: 5_000, requestTimeout: TIMEOUT_MS } });
 export const sesClient = (region: string): SesSend => {
-  const ses = new SESClient({ region, maxAttempts: 2, requestHandler: { connectionTimeout: 5_000, requestTimeout: TIMEOUT_MS } });
+  const ses = client(region);
   return (input) => ses.send(new SendEmailCommand(input));
+};
+export const sesRawClient = (region: string): SesRawSend => {
+  const ses = client(region);
+  return (raw, to) => ses.send(new SendRawEmailCommand({ Destinations: [to], RawMessage: { Data: raw } }));
 };
 
 // AWS errors that mean our side is misconfigured, not the address.
 const SES_SETUP = /AccessDenied|InvalidClientTokenId|SignatureDoesNotMatch|UnrecognizedClient|ExpiredToken|CredentialsProvider|NotVerified|ConfigurationSet|AccountSendingPaused/i;
 
-// One email by Amazon SES: a subject, HTML and plain text.
-export type Mail = (to: string, m: { subject: string; html: string; text: string; replyTo?: string }) => Promise<void>;
+// One email by Amazon SES: a subject, HTML and plain text; `headers` (List-Unsubscribe) send it raw. Resolves to SES's
+// message id, which the notification worker keeps to match bounces (ses-hook.ts).
+export type Mail = (
+  to: string,
+  m: { subject: string; html: string; text: string; replyTo?: string; headers?: Record<string, string> },
+) => Promise<string | void>;
 
-// Amazon SES, from Orbit's sending domain (EMAIL_FROM): sign-in codes (emailSender) and the waitlist's
-// welcome email (prelaunch.ts) alike.
+// RFC 2047: the subject as UTF-8 encoded words of at most 45 bytes each, never splitting a character, folded onto
+// continuation lines.
+const encodeWords = (s: string) => {
+  const words: string[] = [];
+  let chunk = "";
+  for (const ch of s) {
+    if (Buffer.byteLength(chunk + ch) > 45) words.push(chunk), (chunk = "");
+    chunk += ch;
+  }
+  words.push(chunk);
+  return words.map((w) => `=?UTF-8?B?${Buffer.from(w).toString("base64")}?=`).join("\r\n ");
+};
+const b64Lines = (s: string) => Buffer.from(s).toString("base64").replace(/.{76}(?=.)/g, "$&\r\n");
+
+// A whole MIME message: text and HTML as multipart/alternative, base64 bodies. A line break in any header value would
+// let it add headers of its own, so it's refused.
+export function mimeMessage(p: { from: string; to: string; subject: string; html: string; text: string; replyTo?: string; headers?: Record<string, string> }) {
+  const headers: [string, string][] = [["From", p.from], ["To", p.to], ...(p.replyTo ? [["Reply-To", p.replyTo] as [string, string]] : []), ...Object.entries(p.headers ?? {})];
+  if ([...headers, ["Subject", p.subject]].some(([k, v]) => /[\r\n]/.test(k! + v!))) throw new NotSent("email", "refused", "a line break in a header");
+  const b = `orbit-${randomUUID()}`;
+  const part = (type: string, body: string) => [`--${b}`, `Content-Type: ${type}; charset=UTF-8`, "Content-Transfer-Encoding: base64", "", b64Lines(body)];
+  return [
+    ...headers.map(([k, v]) => `${k}: ${v}`),
+    `Subject: ${encodeWords(p.subject)}`,
+    "MIME-Version: 1.0",
+    `Content-Type: multipart/alternative; boundary="${b}"`,
+    "",
+    ...part("text/plain", p.text),
+    ...part("text/html", p.html),
+    `--${b}--`,
+    "",
+  ].join("\r\n");
+}
+
+// Amazon SES, from Orbit's sending domain (EMAIL_FROM): sign-in codes (emailSender), the waitlist's welcome email
+// (prelaunch.ts) and notifications alike.
 export const sesMail =
-  (c: { from: string; send: SesSend }): Mail =>
+  (c: { from: string; send: SesSend; sendRaw?: SesRawSend }): Mail =>
   async (email, m) => {
+    const raw = m.headers ? mimeMessage({ from: c.from, to: email, ...m }) : null; // before the try, so its refusal stands
+    if (raw && !c.sendRaw) throw new NotSent("email", "notSetUp", "no raw sender");
     let out: { MessageId?: string };
     try {
-      out = await c.send({
-        Source: c.from,
-        Destination: { ToAddresses: [email] },
-        ...(m.replyTo ? { ReplyToAddresses: [m.replyTo] } : {}),
-        Message: {
-          Subject: { Data: m.subject, Charset: "UTF-8" },
-          Body: { Html: { Data: m.html, Charset: "UTF-8" }, Text: { Data: m.text, Charset: "UTF-8" } },
-        },
-      });
+      out = raw
+        ? await c.sendRaw!(Buffer.from(raw), email)
+        : await c.send({
+            Source: c.from,
+            Destination: { ToAddresses: [email] },
+            ...(m.replyTo ? { ReplyToAddresses: [m.replyTo] } : {}),
+            Message: {
+              Subject: { Data: m.subject, Charset: "UTF-8" },
+              Body: { Html: { Data: m.html, Charset: "UTF-8" }, Text: { Data: m.text, Charset: "UTF-8" } },
+            },
+          });
     } catch (e) {
       const err = e as { name?: string; message?: string; $metadata?: { httpStatusCode?: number } };
       const name = err.name ?? "Error";
@@ -127,11 +177,14 @@ export const sesMail =
       throw new NotSent("email", reason, `${name}: ${(err.message ?? "").slice(0, 300)}`);
     }
     if (!out.MessageId) throw new NotSent("email", "unknown", "no message id");
+    return out.MessageId;
   };
 
+// Sign-in codes go whatever email_suppressions says: a person asking for a code gets it, and SES's own account-level
+// suppression already stops hard bounces here.
 export const emailSender = (c: { from: string; send: SesSend }) => {
   const mail = sesMail(c);
-  return (email: string, code: string) => mail(email, codeEmail(code));
+  return async (email: string, code: string) => void (await mail(email, codeEmail(code)));
 };
 
 // One Sender for both channels. A channel without keys refuses with notSetUp rather than stopping the API.

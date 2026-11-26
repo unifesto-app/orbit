@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { Icon } from "./icons";
-import { crumbFor, home, isActive, sections, type NavItem } from "./nav";
+import { crumbFor, home, inbox, isActive, sections, type NavItem } from "./nav";
 import wordmark from "./orbit-wordmark.svg";
 import styles from "./shell.module.css";
 import ui from "./ui.module.css";
@@ -151,7 +151,10 @@ function NavLinks({ path, onNavigate }: { path: string | null; onNavigate: () =>
 
   return (
     <>
-      <ul className={styles.navList}>{link(home)}</ul>
+      <ul className={styles.navList}>
+        {link(home)}
+        {link(inbox)}
+      </ul>
       {sections.map((section) => (
         <details key={section.title} className={styles.section} open>
           <summary>

@@ -1,0 +1,74 @@
+/* The Inbox: AWS-style rows in one container, a divider between, the accent's dot before an unread one. */
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-s);
+  padding-right: var(--space-container-horizontal);
+}
+
+.list {
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  gap: var(--space-s);
+  padding: var(--space-s) 0;
+}
+
+.row + .row {
+  border-top: var(--border-divider-section-width) solid var(--color-border-divider-default);
+}
+
+/* Always there, so read and unread rows line up; only an unread one fills it. */
+.dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-top: 7px;
+  border-radius: 50%;
+}
+
+.dot[data-unread] {
+  background: var(--color-background-button-primary-default);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xxs);
+  min-width: 0;
+}
+
+.line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-xs);
+}
+
+.from {
+  color: var(--color-text-heading-default);
+  font-weight: var(--font-weight-bold);
+}
+
+.time {
+  font-size: var(--font-size-body-s);
+}
+
+.pages {
+  display: flex;
+  gap: var(--space-m);
+}
+
+/* The unread count beside Inbox in the top bar. */
+.count {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--color-background-button-primary-default);
+  color: var(--color-text-button-primary-default);
+  font-size: var(--font-size-body-s);
+  line-height: 18px;
+  text-align: center;
+}

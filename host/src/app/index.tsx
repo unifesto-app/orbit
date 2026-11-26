@@ -3,14 +3,16 @@ import * as Application from 'expo-application';
 import { Redirect } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
 
+import { InboxButton } from '../inboxButton';
 import { adminHosts, mustPick } from '../launch/host';
+import { PushAsk } from '../push';
 import { signOut, useSession } from '../session';
 import { seats } from '../station/seats';
 import { Pill } from '../station/ui';
 import { isLaunch, isStation, variant as v } from '../variant';
 
 // Every host app opens on Sign in. Then Orbit Station opens on Today, Event Partner on Events (the picker first with
-// several hosts and none picked), and Crew shows its name until its own screens come. Signed in on no venue's team, or
+// several hosts and none picked), and Crew shows its name until its own screens come, with the push ask and its Inbox. Signed in on no venue's team, or
 // as an Admin of no host, it shows the invites screen (welcome) instead.
 export default function Index() {
   const session = useSession();
@@ -28,7 +30,9 @@ export default function Index() {
       ) : (
         <Text style={s.name}>{Application.applicationId}</Text>
       )}
+      <PushAsk />
       <View style={s.out}>
+        <InboxButton />
         <Pill label="Sign out" onPress={signOut} />
       </View>
     </View>
@@ -40,5 +44,5 @@ const s = StyleSheet.create({
   word: { fontFamily: 'Sacramento_400Regular', fontSize: 88, color: role.text },
   name: { fontSize: 20, color: role.text, marginTop: 4 },
   line: { fontSize: 15, color: role.text2, marginTop: 8, textAlign: 'center' },
-  out: { marginTop: 24 },
+  out: { marginTop: 24, flexDirection: 'row', alignItems: 'center', gap: 12 },
 });

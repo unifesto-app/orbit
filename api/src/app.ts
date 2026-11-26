@@ -16,11 +16,13 @@ import { mediaRoutes } from "./media.ts";
 import { pmRoutes } from "./pm/routes.ts";
 import { prelaunchRoutes } from "./prelaunch.ts";
 import { contentRoutes } from "./content.ts";
+import { galaxyNotificationsRoutes } from "./galaxy-notifications.ts";
 import { careersRoutes } from "./careers.ts";
 import { analyticsRoutes } from "./analytics.ts";
 import { dashboardRoutes } from "./dashboard.ts";
 import { visitRoutes } from "./visits.ts";
 import { rolesRoutes } from "./roles/routes.ts";
+import { sesHookRoutes, unsubscribeRoutes } from "./email-hygiene.ts";
 
 export const VERSION = "0.0.0";
 
@@ -53,9 +55,12 @@ export function createApp(deps?: Deps) {
     app.route("/", prelaunchRoutes(deps));
     app.route("/", visitRoutes(deps));
     app.route("/", contentRoutes(deps));
+    app.route("/", galaxyNotificationsRoutes(deps));
     app.route("/", careersRoutes(deps));
     app.route("/", dashboardRoutes(deps));
     app.route("/", analyticsRoutes(deps));
+    app.route("/", unsubscribeRoutes(deps));
+    if (deps.sesTopic) app.route("/", sesHookRoutes({ db: deps.db, topicArn: deps.sesTopic, now: deps.now }));
   }
 
   // An unknown path looks the same as a Galaxy route someone can't use.

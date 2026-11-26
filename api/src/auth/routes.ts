@@ -27,6 +27,7 @@ import {
 } from "@orbit/contract";
 import type { Db } from "../db/index.ts";
 import { identities, legalAcceptances, users } from "../db/schema.ts";
+import { unsuppress } from "../notifications.ts";
 import { clientIp, contactOf, type Env, fail, invalid, type Notify, parse, signedIn, suspended, taken } from "../http.ts";
 import { drop, linkOf, type Media, newKey, squareImage } from "../media.ts";
 import { clearLapsedSuspension, rolesOf } from "../roles/access.ts";
@@ -45,7 +46,7 @@ import { defaultWays, type Identity, relay, ways, type WaysConfig } from "./ways
 // `media` is where uploads go; without it (no bucket set) photo uploads say they aren't set up. Without `proof` (tests,
 // a laptop) nothing checks that requests come from Orbit itself.
 // `mail`: other emails than codes (the waitlist's welcome); without it they're skipped.
-export type Deps = { db: Db; store: Store; send: Sender; notify: Notify; secret: string; now?: () => number; codes?: SendPolicy; ways?: WaysConfig; media?: Media; proof?: ProofConfig; mail?: Mail };
+export type Deps = { db: Db; store: Store; send: Sender; notify: Notify; secret: string; now?: () => number; codes?: SendPolicy; ways?: WaysConfig; media?: Media; proof?: ProofConfig; mail?: Mail; sesTopic?: string };
 
 // ponytail: the terms version is a constant until Galaxy's Legal documents keeps them in the database. The migration
 // must leave every copied Unifesto acceptance below it, so each migrated person accepts Orbit's terms at About you.
@@ -179,6 +180,7 @@ export function authRoutes({ db, store, send, notify, secret, now = Date.now, co
       if (check.error === "expired") return fail(c, 400, "codeExpired", "That code has expired. Send a new one.");
       return fail(c, 400, "wrongCode", "That code isn't right. Check the latest message, or send a new code.");
     }
+    if (to.kind === "email") await unsuppress(db, to.email);
 
     const [found] = await db
       .select()
