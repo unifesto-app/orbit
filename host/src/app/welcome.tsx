@@ -4,9 +4,9 @@
 // out. An accepted Admin role starts once whoever added you confirms it's you, so it shows as waiting until then.
 // Pull down to look for new invites. An account set to be deleted says so, with the day.
 // ponytail: Start a request opens nothing until the Event Request API is built (owner, 22 Nov 2026: "Event Request API",
-// next), so it shows faded. Someone already on a host sees a line saying their events come here next, until Launch's tabs read the API.
+// next), so it shows faded. Someone on a host's team but not its Admin is told Event Partner is for Admins; an Admin goes
+// to the tabs.
 import { markOf } from '@orbit/mobile/mark';
-import { useLoad } from '@orbit/mobile/load';
 import { showPhone } from '@orbit/mobile/signin';
 import { color, font, space } from '@orbit/mobile/theme';
 import { Redirect } from 'expo-router';
@@ -14,8 +14,10 @@ import { useState } from 'react';
 import { Image, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { adminHosts, mustPick } from '../launch/host';
+import { useInvites } from '../launch/invites';
 import { Monogram, Note, Pill, Section, styles as ui } from '../launch/ui';
-import { api, refreshMe, signOut, useSession } from '../session';
+import { refreshMe, signOut, useSession } from '../session';
 import { seats } from '../station/seats';
 import { isStation, thisApp } from '../variant';
 
@@ -24,7 +26,6 @@ const ICON = {
   station: require('../../assets/icons/station.png'),
   crew: require('../../assets/icons/crew.png'),
 }[thisApp.word]; // static requires, for Metro
-type Invite = { id: string; hostId: string; hostName: string; role: 'admin' | 'crew'; accepted: boolean };
 const ROLE = { admin: 'Admin', crew: isStation ? 'Desk' : 'Crew' } as const;
 // "Sat 20 Dec", the day an account's deletion is due, in India time.
 const dayOf = (iso: string) => new Date(iso).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' });
@@ -32,28 +33,17 @@ const dayOf = (iso: string) => new Date(iso).toLocaleDateString('en-IN', { weekd
 export default function Welcome() {
   const insets = useSafeAreaInsets();
   const session = useSession();
-  const me = session && 'me' in session ? session.me : null;
-  const invites = useLoad<Invite[]>(me ? `invites|${me.id}` : null, () => api.authed<Invite[]>('GET', '/me/invites'));
+  const me = session?.me ?? null;
+  const { invites, busy, error, accept } = useInvites();
   const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
-  const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   if (!me) return null;
   if (isStation && seats(me).length) return <Redirect href="/today" />; // an accepted seat opens Today
+  if (!isStation && adminHosts(me).length) return <Redirect href={mustPick(me) ? '/pick' : '/events'} />; // an Admin opens Events
 
   const first = me.name?.trim().split(/\s+/)[0];
   const waiting = (invites.data ?? []).filter((i) => !hidden.has(i.id));
   const onTeams = me.teams.length;
   const contacts = [me.phone && showPhone(me.phone), me.email].filter(Boolean).join(' or ');
-
-  async function accept(i: Invite) {
-    setBusy(i.id);
-    setError(null);
-    const r = await api.authed('POST', `/invites/${i.id}/accept`);
-    setBusy(null);
-    if (!r.ok) return setError(r.error.message);
-    invites.reload();
-    void refreshMe(); // a started role shows in the account's teams
-  }
 
   return (
     <ScrollView
@@ -81,7 +71,7 @@ export default function Welcome() {
         {isStation
           ? 'You’re not on a venue’s team yet. Accept an invite from a venue’s Admin.'
           : onTeams
-          ? `You’re on ${onTeams === 1 ? 'a host' : `${onTeams} hosts`}. Your events come here next.`
+          ? `You’re on ${onTeams === 1 ? 'a host’s team' : `${onTeams} hosts’ teams`}, but not as an Admin. Event Partner is for Admins.`
           : 'You’re not on a host yet. Accept an invite, or start your own.'}
       </Text>
       {me.deletionDue && <Note>{`Your account is set to be deleted on ${dayOf(me.deletionDue)}. To keep it, open the Orbit app and tap Keep my account.`}</Note>}

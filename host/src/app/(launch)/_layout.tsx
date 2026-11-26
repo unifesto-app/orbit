@@ -2,20 +2,22 @@
 // dark glass capsule low on the screen, the open tab under a lighter pill that springs to it, Phosphor filled icons
 // beside DM Sans 600 labels (the open tab's in the Sage to Moss gradient), shrinking to the open tab while the page
 // scrolls down. Beside it, the round Inbox with its count (owner, 22 Nov 2026: "Inbox", over the chat orb and Scan,
-// which only works around check-in), with how many of its messages are unread.
+// which only works around check-in), with how many of its messages are unread (GET /me/inbox, read every minute here).
 // ponytail: the same bar as Station's (host/src/app/(station)/_layout.tsx) with other tabs and circle; pull both into one
 // host tab bar once Station lands. No drag along the bar (the Orbit app's has one).
 import { DARK_TINT as DARK, Glass } from '@orbit/mobile/glass';
 import { BAR, barAfterScroll, barBottom, SIDE, TabBarScroll, TabBarSmall } from '@orbit/mobile/tabBar';
 import { color, font, stoneAt } from '@orbit/mobile/theme';
-import { router } from 'expo-router';
+import { Redirect, router } from 'expo-router';
 import { TabList, Tabs, TabSlot, TabTrigger, type TabTriggerSlotProps } from 'expo-router/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, Image, LayoutAnimation, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Animated, AppState, Image, LayoutAnimation, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaInsetsContext, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { badge } from '../../launch/inbox';
-import { useUnread } from '../../launch/inboxStore';
+import { refreshInbox, useInbox } from '../../launch/inboxStore';
+import { useHost } from '../../launch/host';
+import { refreshMe, useSession } from '../../session';
 
 const PAD = 4;
 const GAP = 10;
@@ -39,8 +41,26 @@ export default function LaunchTabs() {
   useEffect(() => {
     Animated.spring(x, { toValue: open * slot, useNativeDriver: true, speed: 18, bounciness: 6 }).start();
   }, [open, slot, x]);
-  const unread = useUnread();
+  const { unread } = useInbox();
   const count = badge(unread);
+  const me = useSession()?.me.id;
+  useEffect(() => {
+    if (!me) return;
+    void refreshInbox(me);
+    const every = setInterval(() => void refreshInbox(me), 60_000);
+    // Back from the background: the account (Admin seats added or ended meanwhile) and the inbox read again.
+    const back = AppState.addEventListener('change', (s) => {
+      if (s !== 'active') return;
+      void refreshMe();
+      void refreshInbox(me);
+    });
+    return () => {
+      clearInterval(every);
+      back.remove();
+    };
+  }, [me]);
+  const host = useHost();
+  if (!host) return <Redirect href="/pick" />; // several hosts and none picked (the root guard keeps out no host at all)
   return (
     <Tabs style={styles.root}>
       <SafeAreaInsetsContext.Provider value={{ ...insets, bottom: bottom + BAR }}>
