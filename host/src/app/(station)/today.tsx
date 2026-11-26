@@ -10,7 +10,7 @@
 import { OrbitSays } from '@orbit/mobile/orbitSays';
 import { useTabBarScroll } from '@orbit/mobile/tabBar';
 import { color, font, space, stoneAt } from '@orbit/mobile/theme';
-import { router, useFocusEffect } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { type ReactElement, useCallback, useEffect, useState } from 'react';
 import { AppState, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -30,8 +30,15 @@ const SOON = 2 * 60 * MIN; // Next up looks this far ahead
 // a pull.
 // ponytail: the loading, empty and can't-reach states are placeholders until the owner's design take.
 export default function Today() {
-  const { today, load, seat } = useStation();
+  const { today, load, seat, seats, setSeat } = useStation();
   const { reload } = load;
+  // A booking's push opens Today on its venue (src/notices.ts pushHref): that seat, read fresh even if Today is up.
+  const { host } = useLocalSearchParams<{ host?: string }>();
+  useEffect(() => {
+    if (!host) return;
+    if (seats.some((x) => x.hostId === host)) setSeat(host);
+    reload();
+  }, [host]); // eslint-disable-line react-hooks/exhaustive-deps -- once per push, not on every seat list
   useFocusEffect(
     useCallback(() => {
       reload(); // back on Today: fresh at once (useLoad drops an answer still on its way)

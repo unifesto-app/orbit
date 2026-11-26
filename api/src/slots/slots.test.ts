@@ -745,6 +745,11 @@ test("a free hold confirms into a ticket and the venue's team hears; a paid one 
     const [row] = await t.db.select().from(stationClaims).where(eq(stationClaims.id, p.id));
     assert.equal(row!.status, "held");
     assert.equal(row!.qr, null);
+    // The counter's day: a live hold carries when it lapses, a booking doesn't; charges says which stations take money.
+    const d = await w.day(desk, A);
+    assert.equal(d.claims.find((c) => c.id === p.id).holdEndsAt, iso(t.now() + 10 * MIN));
+    assert.equal(d.claims.find((c) => c.id === h.id).holdEndsAt, null);
+    assert.deepEqual(Object.fromEntries(d.stations.map((x) => [x.id, x.charges])), { [s.id]: false, [pc.id]: true });
   } finally {
     await t.close();
   }
@@ -1024,7 +1029,7 @@ test("the alert sweep carries on past one that fails and sends it once next time
   }
 });
 
-test("the public read: a bad day is 400, only holdable starts, no people", async () => {
+test("the public read: a bad day is 400, every step still ahead, no people", async () => {
   const w = await world();
   const { t, as, booker, A } = w;
   try {
@@ -1034,8 +1039,13 @@ test("the public read: a bad day is 400, only holdable starts, no people", async
     const r = await t.call("GET", `/public/venues/${A}/slots`);
     assert.equal(r.status, 200);
     const starts = r.body.stations[0].free.map((f: any) => f.at as string);
-    // Closes at 2 AM: 1 AM is the last start a one-hour hold fits.
-    assert.equal(ist(Date.parse(starts.at(-1))), "1:00");
+    // Closes at 2 AM: every half hour is listed, 1:30 too (a booking ending at 2 covers it), from the step ahead of now.
+    assert.equal(ist(Date.parse(starts.at(-1))), "1:30");
+    assert.equal(ist(Date.parse(starts[0])), "18:30");
+    // The last 30 minutes can't be held for an hour; the hour before can.
+    const h = (at: string) => as(booker)("POST", `/venues/${A}/holds`, { stationId: s.id, start: at, hours: 1, count: 1 });
+    assert.equal((await h(starts.at(-1))).body.error, "badTime");
+    assert.equal((await h(starts.at(-2))).status, 201);
     const text = JSON.stringify(r.body);
     for (const x of [booker.me.id, booker.name, "userId", "qr", "code"]) assert.ok(!text.includes(x), x);
   } finally {

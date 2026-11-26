@@ -458,7 +458,8 @@ test("inbox rows open the app's screen with the id from the data, or nothing wit
   for (const [kind, def] of Object.entries(KINDS))
     if (def.opens)
       assert.ok(known.includes(def.opens) && (def.app === "orbit" || !def.inbox || account.includes(def.opens) || (def.app === "station" && def.opens === "today")), kind);
-  assert.deepEqual(opensFor("slotBooked", { hostId: "h" }), { to: "today" }); // Play Partner opens Today
+  assert.deepEqual(opensFor("slotBooked", { hostId: "h" }), { to: "today", host: "h" }); // Play Partner opens Today, on that venue
+  assert.deepEqual(opensFor("slotCancelled"), { to: "today" });
 });
 
 // ---- Push (PR 4): the worker with a fake sender, the email fallback and the provider check.

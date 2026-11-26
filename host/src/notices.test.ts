@@ -7,7 +7,8 @@ test('a push opens the Event Request on Event Partner, else the Inbox', () => {
   assert.equal(pushHref('launch', { to: 'request' }), '/request');
   assert.equal(pushHref('launch', '{"to":"request"}'), '/request'); // Android: JSON text
   assert.equal(pushHref('station', { to: 'request' }), '/inbox');
-  assert.equal(pushHref('station', '{"to":"today"}'), '/today'); // slotBooked
+  assert.equal(pushHref('station', '{"to":"today"}'), '/today');
+  assert.equal(pushHref('station', { to: 'today', host: 'h1' }), '/today?host=h1'); // slotBooked: on that venue
   assert.equal(pushHref('launch', { to: 'today' }), '/inbox');
   assert.equal(pushHref('crew', { to: 'request' }), '/inbox');
   assert.equal(pushHref('launch', null), '/inbox');

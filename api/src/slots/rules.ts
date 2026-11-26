@@ -70,6 +70,30 @@ export function taken(claims: readonly Claim[], s: Pick<Station, "id" | "count">
   return { ...n, free: Math.max(s.count - n.booking - n.walkin - n.block, 0) };
 }
 
+export const SLOT_DAYS = 14; // a player books today's opening, or one of the next 13
+
+/** On the station's grid, ahead of now, inside one opening of the next 14 days: a start a player may hold or ask about. */
+export function bookable(week: Week, step: number, start: number, hrs: number, now: number) {
+  const open = hours(week, start);
+  const first = hours(week, now).day;
+  const end = start + hrs * HOUR;
+  return (
+    Number.isInteger(hrs) && hrs >= 1 &&
+    (start + IST) % (step * MIN) === 0 && start >= now && open.day >= first && open.day <= first + (SLOT_DAYS - 1) * DAY && start >= open.opens && end <= open.closes
+  );
+}
+
+/**
+ * The public read's starts on one opening: every step of the station's grid from `opens` to the last before `closes`,
+ * still ahead of now. Each is one step, so the app (startsFor) offers a booking only where every step it covers is
+ * listed: a 30-minute grid lists the last half hour, which no booking starts at but a booking ending at closing covers.
+ */
+export function publicStarts(opens: number, closes: number, step: number, now: number): number[] {
+  const out: number[] = [];
+  for (let at = opens; at < closes; at += step * MIN) if (at >= now) out.push(at);
+  return out;
+}
+
 /** The step a walk-in starts at: the one `now` is in, floored in India time. */
 export const walkInStart = (step: number, now: number) => {
   const s = step * MIN;

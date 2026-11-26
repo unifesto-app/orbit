@@ -9,8 +9,8 @@ import { hosts, slotAlerts, stationClaims, stations, teamRoles, users, venues } 
 import { fail, invalid, isUuid, type Notify, parse, signedIn, taken, type Env } from "../http.ts";
 import { changeable, teamOf } from "../roles/access.ts";
 import { type AlertResult, askAlert } from "./alerts.ts";
-import { bookable, confirmHold, type Held, type HoldResult, hold, lockHold, SLOT_DAYS, toClaim } from "./hold.ts";
-import { door, hours, HOUR, MIN, admitTo, openOn, outsideWeek, scanRefusal, stranded, taken as takenAt, timeLabel, walkIn } from "./rules.ts";
+import { confirmHold, type Held, type HoldResult, hold, lockHold, SLOT_DAYS, toClaim } from "./hold.ts";
+import { door, hours, HOUR, MIN, admitTo, openOn, outsideWeek, publicStarts, scanRefusal, stranded, taken as takenAt, timeLabel, walkIn } from "./rules.ts";
 
 // A Venue's setup and its counter (Orbit flows: Play, "Setting up a venue" and "At the desk"). Admins set the venue up
 // and edit it; Admins and Desk (a crew seat on a Venue host) run the counter. Desk never sees a price.
@@ -629,7 +629,7 @@ export function slotsRoutes({ db, notify, secret, now = Date.now }: Deps) {
   });
 
   // GET /public/venues/:hostId/slots?day=YYYY-MM-DD: anyone, no sign-in. One India day's opening (today's by default, or
-  // the one still open after midnight) and, per live station, how many are free at each start still ahead. Days as
+  // the one still open after midnight) and, per live station, how many are free at each step still ahead (publicStarts). Days as
   // hold() takes them: this opening and the next 13. No names, no claims.
   app.get("/public/venues/:hostId/slots", async (c) => {
     const hostId = c.req.param("hostId");
@@ -671,8 +671,7 @@ export function slotsRoutes({ db, notify, secret, now = Date.now }: Deps) {
       day: dayText,
       opening: { opens: iso(opens), closes: iso(closes) },
       stations: list.map((s) => {
-        const free: { at: string; free: number }[] = [];
-        for (let at = opens; at < closes; at += s.step * MIN) if (bookable(week, s.step, at, 1, t)) free.push({ at: iso(at), free: takenAt(rule, s, at, t).free });
+        const free = publicStarts(opens, closes, s.step, t).map((at) => ({ at: iso(at), free: takenAt(rule, s, at, t).free }));
         return { ...stationRow(s), free };
       }),
     };

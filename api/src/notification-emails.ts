@@ -192,6 +192,11 @@ export function opensFor(kind: NoticeKind, data: Data = {}) {
       const host = id("hostId");
       return host ? { to, host } : null;
     }
+    case "today": {
+      // Play Partner's Today, on the venue it's about (the person may hold seats at several).
+      const host = id("hostId");
+      return host ? { to, host } : { to };
+    }
     default:
       return { to };
   }
