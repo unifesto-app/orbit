@@ -23,7 +23,7 @@ import { hostsApi } from './hosts';
 import type { Viewer } from './home/layout';
 import { hideNote, showNote } from './note';
 import { noticesApi } from './notices';
-import { CACHE_PREFIX, cacheKey, keptUpcoming, packTicket, ticketsApi, unpackTicket, upcomingOf } from './tickets';
+import { CACHE_PREFIX, cacheKey, keptUpcoming, letInAt, packTicket, ticketsApi, unpackTicket, upcomingOf } from './tickets';
 
 let saveEpoch = 0; // bumped by every save change made here, and by sign-in and sign-out: an older read can't undo it
 // Whether the saves have been read this launch: Account › Saved draws a wait, not "Nothing saved yet", until they have.
@@ -299,6 +299,9 @@ export const skipInterests = () => current && set({ ...current, interests: curre
 // inRoom (inRoom flow): joining a meetup's room after you were let in, and asking someone there to connect.
 // ponytail: on this phone only; the API's room, its swaps of ways to reach and blocking come with inRoom (P16).
 export const useInRoom = (eventId: string) => useSession()?.rooms?.includes(eventId) ?? false;
+// Whether you were let in at a real event's door on any of your tickets (X5 check-in): inRoom's join and Thanks for
+// coming open only then. The old mock's events answer from its history, at the callers.
+export const useLetIn = (eventId: string) => letInAt(useTickets().data, eventId);
 export const setInRoom = (eventId: string, on: boolean) => current && set({ ...current, rooms: turn(current.rooms ?? [], eventId, on) });
 export const useAsked = (eventId: string, personId: string) => useSession()?.asked?.includes(`${eventId}|${personId}`) ?? false;
 export const askToConnect = (eventId: string, personId: string) =>

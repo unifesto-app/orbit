@@ -1,5 +1,5 @@
 // Galaxy's side navigation: built pages only (owner, 19 Nov 2026: "remove all the page not founds from galaxy"). The
-// rest of the v1 "Platform admins" rows in docs/context/artifacts/orbit-rebuild-plan.md (section 4) — Events, the
+// rest of the v1 "Platform admins" rows in docs/context/artifacts/orbit-rebuild-plan.md (section 4) — the
 // Queues, Money, Platform, and the old company content — come back here as each page is built. The landing page's own
 // visits are under Website (owner, 19 Nov 2026: "website and pages analytics in galaxy web").
 
@@ -19,6 +19,10 @@ export const sections: { title: string; items: NavItem[] }[] = [
       { label: "People", href: "/users", also: ["/hosts", "/teams", "/staff"] },
       // Event Requests: people asking to host, answered here (Hosts flow, H1.5).
       { label: "Requests", href: "/requests" },
+      // Every host's events: unpublish, cancel, promote (X1).
+      { label: "Events", href: "/events" },
+      // Every Venue host, Setup pending until Play Partner's setup saves it, with its stations (X9).
+      { label: "Venues", href: "/venues" },
       // Doors open now or closed in the last week: booked against checked in, and an undo (X5).
       { label: "Check-in", href: "/check-in" },
       // DAU, WAU, MAU, retention, platforms and versions (owner, 19 Nov 2026: "user analytics, mau, dau etc").

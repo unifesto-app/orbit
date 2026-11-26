@@ -36,6 +36,11 @@ test('welcome follows the latest request', () => {
   assert.equal(welcomeState({ status: 'changes' }), 'changes');
   assert.equal(welcomeState({ status: 'declined' }), 'declined');
   assert.equal(welcomeState({ status: 'approved' }), 'approved');
+  // Play Partner: only a Venue's request counts.
+  assert.equal(welcomeState({ status: 'open', host: { kind: 'comedy-group' } }, true), 'start');
+  assert.equal(welcomeState({ status: 'approved', host: { kind: 'comedy-group' } }, true), 'start');
+  assert.equal(welcomeState({ status: 'changes', host: { kind: 'venue' } }, true), 'changes');
+  assert.equal(welcomeState({ status: 'open', host: { kind: 'comedy-group' } }), 'waiting');
   assert.equal(sentLabel('2026-11-26T06:10:00Z', NOW), 'Sent today, 11:40 AM');
   assert.equal(sentLabel('2026-11-23T17:30:00Z', NOW), 'Sent Mon 23 Nov, 11 PM');
 });

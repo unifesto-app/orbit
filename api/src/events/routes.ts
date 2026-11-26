@@ -34,7 +34,7 @@ const iso = (d: Date | null) => d?.toISOString() ?? null;
 
 // The colour of the image the page shows: the 4:3 when there is one.
 const toneOf = (e: Pick<Event, "wideTone" | "posterTone">) => e.wideTone ?? e.posterTone;
-const toTicket = (t: typeof ticketTypes.$inferSelect): TicketType => ({
+export const toTicket = (t: typeof ticketTypes.$inferSelect): TicketType => ({
   id: t.id, name: t.name, pricePaise: t.pricePaise, quantity: t.quantity, salesStartAt: iso(t.salesStartAt), salesEndAt: iso(t.salesEndAt),
   note: t.note, perPersonLimit: t.perPersonLimit, sortOrder: t.sortOrder,
 });
@@ -80,6 +80,19 @@ export async function newDraft(
   await tx.insert(eventSlugs).values({ slug: e!.slug, eventId: e!.id, createdAt: at });
   return e!;
 }
+
+// Cancelling a published event that hasn't ended, on the event as read under its lock, for its host's Admins and for
+// Galaxy: its confirmed bookings are cancelled with it in the same transaction (the event's lock keeps a booking from
+// landing in between). Answers the columns to write, or why not.
+// ponytail: refunds for paid bookings and the notices to holders come with H13.5; there are no paid bookings yet.
+export async function cancelling(tx: Tx, cur: Event, by: string, reason: string, at: Date): Promise<{ error: "notNow" | "ended" } | { set: Partial<typeof events.$inferInsert> }> {
+  if (cur.status !== "published") return { error: "notNow" } as const;
+  if (stageOf(cur, at.getTime()) === "past") return { error: "ended" } as const;
+  await tx.update(bookings).set({ status: "cancelledByHost", cancelledAt: at, link: null }).where(and(eq(bookings.eventId, cur.id), eq(bookings.status, "confirmed")));
+  return { set: { status: "cancelled", cancelledAt: at, cancelledBy: by, cancelReason: reason } };
+}
+export const cancelRefused = (c: Context, error: "notNow" | "ended", status: string) =>
+  error === "notNow" ? fail(c, 409, "notNow", `You can't cancel an event that is ${status}.`) : fail(c, 409, "ended", "This event has ended, so it can't be cancelled.");
 
 export function eventsRoutes({ db, notify, secret, media, now = Date.now }: Deps) {
   const app = new Hono<Env>();
@@ -327,22 +340,14 @@ export function eventsRoutes({ db, notify, secret, media, now = Date.now }: Deps
     }
   };
 
-  // POST /events/:id/cancel: a published event that hasn't ended, with the reason its ticket holders get. An ended one
-  // stays as it happened: cancelling would hide it from the host's page.
-  // Its confirmed free bookings are cancelled with it, in the same transaction (the event's lock keeps a booking from
-  // landing in between).
-  // ponytail: refunds for paid bookings and the notices to holders come with H13.5; there are no paid bookings yet.
+  // POST /events/:id/cancel: with the reason its ticket holders get (`cancelling` above). An ended one stays as it
+  // happened: cancelling would hide it from the host's page.
   app.post("/events/:id/cancel", auth, async (c) => {
     const b = await parse(c, CancelEvent);
     if (!b) return invalid(c);
     return move(c, async (cur, tx) => {
-      if (cur.status !== "published") return fail(c, 409, "notNow", `You can't cancel an event that is ${cur.status}.`);
-      if (stageOf(cur, now()) === "past") return fail(c, 409, "ended", "This event has ended, so it can't be cancelled.");
-      await tx
-        .update(bookings)
-        .set({ status: "cancelledByHost", cancelledAt: at(), link: null })
-        .where(and(eq(bookings.eventId, cur.id), eq(bookings.status, "confirmed")));
-      return { status: "cancelled", cancelledAt: at(), cancelledBy: c.var.user.id, cancelReason: b.reason };
+      const r = await cancelling(tx, cur, c.var.user.id, b.reason, at());
+      return "error" in r ? cancelRefused(c, r.error, cur.status) : r.set;
     });
   });
 
