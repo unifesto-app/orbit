@@ -34,6 +34,8 @@ export const users = pgTable("users", {
   // Orbit's platform owner: every staff feature, can't be removed or suspended. Set once by the migration; no route
   // sets it, and at most one account holds it.
   platformOwner: boolean("platform_owner").notNull().default(false),
+  // The kinds of event they like (category slugs, GET/PUT /me/interests): null until picked or skipped, [] once skipped.
+  interests: jsonb("interests").$type<string[]>(),
   createdAt: at("created_at").notNull().defaultNow(),
   updatedAt: at("updated_at").notNull().defaultNow(),
 }, (t) => [uniqueIndex("users_one_platform_owner").on(t.platformOwner).where(sql`${t.platformOwner}`)]);
@@ -103,6 +105,17 @@ export const saves = pgTable(
     userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     eventId: uuid("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
     savedAt: at("saved_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.eventId] }), index().on(t.eventId)],
+);
+
+// I'm interested on an event's page (orbit-pm X13), apart from Save: its count is public, who never is.
+export const eventInterests = pgTable(
+  "event_interests",
+  {
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    eventId: uuid("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+    at: at("at").notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.userId, t.eventId] }), index().on(t.eventId)],
 );
@@ -212,6 +225,7 @@ export const events = pgTable(
     agenda: jsonb("agenda").$type<AgendaItem[]>().notNull().default([]),
     faq: jsonb("faq").$type<FaqItem[]>().notNull().default([]),
     terms: jsonb("terms").$type<string[]>().notNull().default([]), // the host's own, shown above Orbit's defaults
+    vibes: jsonb("vibes").$type<string[]>().notNull().default([]), // "What it's like" tags, after the category
     createdBy: uuid("created_by")
       .notNull()
       .references(() => users.id),

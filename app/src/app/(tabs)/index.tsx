@@ -17,7 +17,7 @@ import { Carousel, type CarouselSlide } from '../../home/Carousel';
 import { DARK_TINT, Glass } from '../../glass';
 import { planHome, type Viewer } from '../../home/layout';
 import { Icon } from '../../icons';
-import { useAds, useFeatured, usePromoted } from '../../content';
+import { useAds, useFeatured, useOffered, usePromoted } from '../../content';
 import { type Event, eventsApi, type Host, hostsOf, toEvent, whereOf } from '../../events';
 import { useLoad } from '../../load';
 import { hosts as mockHosts } from '../../mock';
@@ -29,7 +29,7 @@ import { meetups, tileFor } from '../../kinds';
 import { promoteOne } from '../../labels';
 import { EventRow, Failed, HostRow, isPromoted, loveIt, Monogram, Poster, SEAT, SeatCard, Section, StatusLine, Waiting } from '../../rows';
 import { bookAction, eventStatus } from '../../status';
-import { api, needsAccount, setFollowing, setInterest, skipInterests, useLoved, useTickets, useTicketsOnFocus, useViewer } from '../../session';
+import { api, needsAccount, setFollowing, setInterests, skipInterests, useLoved, useTickets, useTicketsOnFocus, useViewer } from '../../session';
 import { thanksOf } from '../../tickets';
 import { useTabBarScroll, useTabBarSmall } from '../../tabBar';
 import { around, color, font, radius, rim, space, stoneAt } from '../../theme';
@@ -535,8 +535,9 @@ function Thanks({ event: e, host, top }: { event: Event; host: Host; top: number
 // Home asks once what you like, signed in (owner, 19 Nov 2026: "add interest cards for events", all four), answered
 // right here since the Orbit speaks take ("Both", 19 Nov): tap the kinds of event to pick them, then Done saves them
 // and the ask goes (picks are held here until then, since the first saved one ends the asking). Not now stops the
-// asking; Interests stays on Account for later.
+// asking; Interests stays on Account for later. The kinds offered are staff's (Galaxy App content, orbit-pm X13).
 function AskInterests() {
+  const offered = useOffered();
   const [picks, setPicks] = useState<CategorySlug[]>([]);
   const toggle = (slug: CategorySlug) => setPicks((all) => (all.includes(slug) ? all.filter((s) => s !== slug) : [...all, slug]));
   return (
@@ -545,8 +546,8 @@ function AskInterests() {
       title="What do you like?"
       text="Pick a few kinds of event and Home puts them first."
       answers={[
-        ...categories.map((c) => ({ label: c.label, picked: picks.includes(c.slug), onPress: () => toggle(c.slug) })),
-        picks.length > 0 ? { label: 'Done', onPress: () => picks.forEach((slug) => setInterest(slug, true)) } : { label: 'Not now', onPress: skipInterests },
+        ...offered.flatMap((slug) => categories.filter((c) => c.slug === slug)).map((c) => ({ label: c.label, picked: picks.includes(c.slug), onPress: () => toggle(c.slug) })),
+        picks.length > 0 ? { label: 'Done', onPress: () => setInterests(picks) } : { label: 'Not now', onPress: skipInterests },
       ]}
     />
   );

@@ -72,3 +72,5 @@ export function useFeatured() {
   const { content, now } = useSnap();
   return content.featured.filter((s) => liveAt(s, now));
 }
+/** The kinds of event offered on Account › Interests and Home's ask, in staff's order; all of them until it answers. */
+export const useOffered = () => useSnap().content.interests;

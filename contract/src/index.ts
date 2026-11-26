@@ -18,6 +18,7 @@ export * from "./pm.ts";
 export * from "./prelaunch.ts";
 export * from "./visit.ts";
 export * from "./saves.ts";
+export * from "./interests.ts";
 export * from "./notifications.ts";
 export * from "./bookings.ts";
 export * from "./requests.ts";

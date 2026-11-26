@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { read } from "../../../api";
 import { Alert, Container, ui } from "../../ui";
 import { AdsEditor, AsksEditor, FeaturedEditor, HelpEditor, PromotedEditor } from "./editors";
+import { InterestsEditor } from "./interests";
 
 // App content (owner, 19 Nov 2026: "build CMS for Orbit App in galaxy web"; API: /galaxy/app-content), for holders of
 // Platform: the words Orbit itself writes in the app, each list saved whole (contract/src/content.ts). Hosts' events
@@ -80,6 +81,14 @@ async function Load() {
         <p className={ui.secondary}>The chips on the chat’s welcome and on Search. A tap opens the chat with the words typed in.</p>
         <LastSaved s={saved.asks} />
         <AsksEditor initial={content.asks} at={saved.asks?.at ?? null} />
+      </Container>
+
+      <Container title="Interests" count={content.interests.length}>
+        <p className={ui.secondary}>
+          The kinds of event offered on Account › Interests and Home’s one ask, in this order. Untick one to hide it; what people already picked stays theirs.
+        </p>
+        <LastSaved s={saved.interests} />
+        <InterestsEditor initial={content.interests} at={saved.interests?.at ?? null} />
       </Container>
     </>
   );

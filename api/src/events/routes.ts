@@ -49,7 +49,7 @@ export const toTeamEvent = (e: Event, host: HostVisibility, saved: number | null
   id: e.id, hostId: e.hostId, slug: e.slug, status: e.status, visibility: effectiveVisibility(host, e.visibility), title: e.title, category: e.category,
   startsAt: iso(e.startsAt), endsAt: iso(e.endsAt), timezone: e.timezone,
   place: e.venue === null ? null : { venue: e.venue, address: e.address!, area: e.area!, city: e.city!, lat: e.lat, lng: e.lng, placeId: e.placeId },
-  online: e.online, onlineLink: e.onlineLink, about: e.about, agenda: e.agenda, faq: e.faq, terms: e.terms,
+  online: e.online, onlineLink: e.onlineLink, about: e.about, agenda: e.agenda, faq: e.faq, terms: e.terms, vibes: e.vibes,
   poster: e.poster, wide: e.wide, wideEdge: e.wideEdge, tone: toneOf(e),
   publishedAt: iso(e.publishedAt), cancelledAt: iso(e.cancelledAt), cancelReason: e.cancelReason, saved,
   createdAt: e.createdAt.toISOString(), updatedAt: e.updatedAt.toISOString(),
@@ -253,6 +253,7 @@ export function eventsRoutes({ db, notify, secret, media, razorpay: rz, now = Da
         if (b.agenda !== undefined) set.agenda = b.agenda.map((a) => ({ at: new Date(a.at).toISOString(), item: a.item }));
         if (b.faq !== undefined) set.faq = b.faq;
         if (b.terms !== undefined) set.terms = b.terms;
+        if (b.vibes !== undefined) set.vibes = b.vibes;
         const [row] = await tx.update(events).set(set).where(eq(events.id, cur!.id)).returning();
         return { row: row!, host: host!.visibility };
       });

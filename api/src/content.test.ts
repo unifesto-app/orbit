@@ -65,7 +65,7 @@ test("2 only staff with platform get in", async () => {
   assert.equal((await as(p)("GET", "/galaxy/app-content")).status, 404);
   const ok = await (await staff())("GET", "/galaxy/app-content");
   assert.equal(ok.status, 200);
-  assert.deepEqual(ok.body.saved, { ads: null, help: null, asks: null, featured: null, promoted: null });
+  assert.deepEqual(ok.body.saved, { ads: null, help: null, asks: null, featured: null, promoted: null, interests: null });
 });
 
 test("3 first save shows on both reads, names the saver, and is audited", async () => {
@@ -357,4 +357,18 @@ test("18 dropContent leaves keys that aren't App content images", async () => {
   await dropContent(t.media, `https://evil.test/media/content/${id}/${name}.webp`);
   const have = t.media.files.keys();
   for (const k of keys) assert.ok(have.includes(k), k);
+});
+
+test("19 interests: staff hide and reorder the offered categories, only known ones, each once, at least one", async () => {
+  await clear();
+  const s = await staff();
+  for (const value of [[], ["comedy", "comedy"], ["comedy", "nightlife"], "comedy"])
+    assert.equal((await s("PUT", "/galaxy/app-content/interests", { value, at: null })).status, 400, JSON.stringify(value));
+  const put = await s("PUT", "/galaxy/app-content/interests", { value: ["sports", "comedy"], at: null });
+  assert.equal(put.status, 200);
+  assert.deepEqual((await (await t.app.request("/public/app-content")).json()).interests, ["sports", "comedy"]);
+  assert.equal((await s("PUT", "/galaxy/app-content/interests", { value: ["jams"], at: null })).status, 409);
+  // A category an older stored list holds that this build doesn't know is left out, never the whole list.
+  await t.db.update(appContent).set({ value: ["sports", "nightlife"] }).where(eq(appContent.key, "interests"));
+  assert.deepEqual((await (await t.app.request("/public/app-content")).json()).interests, ["sports"]);
 });

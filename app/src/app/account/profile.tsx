@@ -6,7 +6,7 @@
 // returns to Account, as on every Account screen.
 // The account is the API's (/me, src/session.ts); the hosts you follow are the Following screen's (useFollows). Going
 // counts your upcoming tickets (GET /me/tickets); Been still counts the mock's past bookings until check-in says who
-// went; interests are kept on this phone (src/session.ts).
+// went; interests are the API's (GET /me/interests, src/session.ts).
 import { categories } from '@orbit/contract';
 import { type Href, router } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
