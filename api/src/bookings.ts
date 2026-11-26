@@ -17,9 +17,9 @@ type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 type Row = typeof bookings.$inferSelect;
 
 const nothing = (c: Context) => fail(c, 404, "notFound", "There's nothing here.");
-// 32 characters (24 random bytes, URL-safe): fits the app's QR encoder and a link.
-const token = () => randomBytes(24).toString("base64url");
-const code = () => Array.from({ length: CODE_LENGTH }, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]).join("");
+// 32 characters (24 random bytes, URL-safe): fits the app's QR encoder and a link. Slot tickets use both (slots/hold.ts).
+export const token = () => randomBytes(24).toString("base64url");
+export const code = () => Array.from({ length: CODE_LENGTH }, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]).join("");
 const india = (d: Date) =>
   d.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
 

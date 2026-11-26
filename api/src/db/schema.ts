@@ -372,7 +372,7 @@ export const stations = pgTable(
   (t) => [
     check("stations_count_range", sql`${t.count} between 1 and 200`),
     check("stations_step", sql`${t.step} in (30, 60)`),
-    check("stations_price_positive", sql`${t.pricePaise} > 0`),
+    check("stations_price_not_negative", sql`${t.pricePaise} >= 0`), // 0: a free slot, booked with no payment
     check("stations_coop_positive", sql`${t.coopPaise} is null or ${t.coopPaise} > 0`),
     check(
       "stations_off_peak_all_or_nothing",
@@ -416,6 +416,10 @@ export const stationClaims = pgTable(
     checkedInBy: uuid("checked_in_by").references(() => users.id),
     releasedAt: at("released_at"),
     releasedBy: uuid("released_by").references(() => users.id),
+    // A confirmed booking's ticket, as bookings' (32-character QR token, 8-character code): set on confirm only, null for
+    // holds, walk-ins and blocks. Never logged.
+    qr: text("qr").unique(),
+    code: text("code").unique(),
     createdBy: uuid("created_by").references(() => users.id), // who added it at the counter, or the player for a hold
     createdAt: at("created_at").notNull().defaultNow(),
     updatedAt: at("updated_at").notNull().defaultNow(),
@@ -427,6 +431,34 @@ export const stationClaims = pgTable(
     check("station_claims_admitted_in_count", sql`${t.admitted} between 0 and ${t.count}`),
     index().on(t.stationId, t.startsAt),
     index().on(t.userId),
+  ],
+);
+
+// "Hear if it frees up" (Play 18): a player asked about a slot that was full for them. The sweep (slots/alerts.ts)
+// pushes once when it fits again and sets sent_at. Waiting: sent_at null and starts_at ahead; expired: sent_at null and
+// starts_at passed (derived, no column).
+export const slotAlerts = pgTable(
+  "slot_alerts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    stationId: uuid("station_id")
+      .notNull()
+      .references(() => stations.id),
+    startsAt: at("starts_at").notNull(),
+    endsAt: at("ends_at").notNull(),
+    count: integer("count").notNull(),
+    createdAt: at("created_at").notNull().defaultNow(),
+    sentAt: at("sent_at"),
+  },
+  (t) => [
+    check("slot_alerts_count_positive", sql`${t.count} > 0`),
+    check("slot_alerts_ends_after_starts", sql`${t.endsAt} > ${t.startsAt}`),
+    uniqueIndex("slot_alerts_one_open").on(t.userId, t.stationId, t.startsAt).where(sql`${t.sentAt} is null`),
+    index("slot_alerts_waiting").on(t.startsAt).where(sql`${t.sentAt} is null`),
+    index().on(t.createdAt),
   ],
 );
 

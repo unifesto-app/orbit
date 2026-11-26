@@ -1,15 +1,16 @@
 import { and, asc, count, eq, gt, inArray, isNotNull, isNull, lt, ne, or } from "drizzle-orm";
 import { Hono, type Context } from "hono";
 import {
-  Admit, type CounterStation, EditStation, FreeOne, type InTheWay, NewBlock, NewHold, NewStation, type SlotClaim, type SlotHold, type StationRow,
-  VENUE_GONE, VenueSetup, type VenueDay, type VenueSettings, WalkIn, type Week,
+  Admit, type CounterStation, EditStation, FreeOne, type InTheWay, NewBlock, NewHold, NewSlotAlert, NewStation, type PublicSlots, type SlotAlert, type SlotClaim,
+  type SlotHold, slotPrice, type StationRow, VENUE_GONE, VenueSetup, type VenueDay, type VenueSettings, WalkIn, type Week,
 } from "@orbit/contract";
 import type { Db } from "../db/index.ts";
-import { hosts, stationClaims, stations, teamRoles, users, venues } from "../db/schema.ts";
+import { hosts, slotAlerts, stationClaims, stations, teamRoles, users, venues } from "../db/schema.ts";
 import { fail, invalid, isUuid, type Notify, parse, signedIn, taken, type Env } from "../http.ts";
 import { changeable, teamOf } from "../roles/access.ts";
-import { type HoldResult, hold, toClaim } from "./hold.ts";
-import { door, hours, HOUR, MIN, admitTo, outsideWeek, scanRefusal, stranded, taken as takenAt, timeLabel, walkIn } from "./rules.ts";
+import { type AlertResult, askAlert } from "./alerts.ts";
+import { bookable, confirmHold, type Held, type HoldResult, hold, lockHold, SLOT_DAYS, toClaim } from "./hold.ts";
+import { door, hours, HOUR, MIN, admitTo, openOn, outsideWeek, scanRefusal, stranded, taken as takenAt, timeLabel, walkIn } from "./rules.ts";
 
 // A Venue's setup and its counter (Orbit flows: Play, "Setting up a venue" and "At the desk"). Admins set the venue up
 // and edit it; Admins and Desk (a crew seat on a Venue host) run the counter. Desk never sees a price.
@@ -49,6 +50,20 @@ const HOLD_NO: Record<Exclude<HoldResult, { ok: true }>["error"], [400 | 401 | 4
   tooOften: [429, "Too many holds here in the last hour. Try again later.", "tooMany"],
   full: [409, "That slot just filled up. Pick another."],
 };
+const ALERT_NO: Record<Exclude<AlertResult, { ok: true }>["error"], [400 | 404 | 409 | 429, string, string?]> = {
+  notFound: HOLD_NO.notFound as [404, string],
+  hostClosed: HOLD_NO.hostClosed as [409, string],
+  badTime: HOLD_NO.badTime as [400, string],
+  badCount: HOLD_NO.badCount as [400, string],
+  tooMany: HOLD_NO.tooMany as [409, string],
+  tooOften: [429, "You're waiting on 5 slots already. Stop one first.", "tooMany"],
+  notFull: [409, "That slot is free. Book it now."],
+};
+const DAY = 24 * HOUR;
+const holdOut = (h: Held): SlotHold => ({
+  id: h.id, stationId: h.stationId, start: h.startsAt.toISOString(), end: h.endsAt.toISOString(), count: h.count, holdEndsAt: isoOrNull(h.holdEndsAt),
+  status: h.status, qr: h.status === "paid" || h.status === "checked_in" ? h.qr : null, code: h.status === "paid" || h.status === "checked_in" ? h.code : null,
+});
 
 // "Meera P.": a booking's name as the counter says it.
 const shortName = (name: string | null) => {
@@ -522,9 +537,144 @@ export function slotsRoutes({ db, notify, secret, now = Date.now }: Deps) {
       const [status, message, error = r.error] = HOLD_NO[r.error];
       return fail(c, status, error, message);
     }
-    const h = r.claim;
-    const out: SlotHold = { id: h.id, stationId: h.stationId, start: h.startsAt.toISOString(), end: h.endsAt.toISOString(), count: h.count, holdEndsAt: h.holdEndsAt!.toISOString() };
-    return c.json(out, 201);
+    return c.json(holdOut(r.claim), 201);
+  });
+
+  // POST /venues/:hostId/holds/:claimId/confirm: the player's own hold becomes a booking with its ticket, when the slot
+  // is free (₹0). A paid one answers 402 with the total and changes nothing: it's paid through checkout (X2), whose
+  // webhook calls the same confirmHold. A lapsed hold confirms if the slot is still free (hold.ts); one they let go (or
+  // Galaxy released) is refused here: they hold again. A retry on one already confirmed answers as the first did, and
+  // tells nobody twice. The venue's team hears in the same transaction as the booking.
+  app.post("/venues/:hostId/holds/:claimId/confirm", auth, async (c) => {
+    const hostId = c.req.param("hostId");
+    const claimId = c.req.param("claimId");
+    if (!isUuid(hostId) || !isUuid(claimId)) return nothing(c);
+    const r = await db.transaction(async (tx) => {
+      const k = await lockHold(tx, claimId, { userId: c.var.user.id, hostId });
+      if (!k || k.claim.kind !== "booking") return GONE;
+      if (k.claim.status === "paid") return { claim: k.claim };
+      if (k.claim.status !== "held") return no(409, "notHeld", "That hold can't be booked any more.");
+      if (k.claim.releasedAt) return no(409, "letGo", "That hold was let go. Hold it again.");
+      const c0 = k.claim;
+      // ponytail: a hold doesn't record co-op, so it's priced solo per station; store it on the hold when co-op booking lands.
+      const totalPaise = slotPrice(stationRow(k.station), c0.startsAt.getTime(), (c0.endsAt.getTime() - c0.startsAt.getTime()) / HOUR, c0.count);
+      if (totalPaise > 0) return { totalPaise };
+      const done = await confirmHold(tx, claimId, now());
+      if (!done.ok) return done.error === "full" ? no(409, "full", HOLD_NO.full[1]) : no(409, "notHeld", "That hold can't be booked any more.");
+      // Everyone on the venue's team (Admins and Desk) hears of it in Orbit Play Partner.
+      const team = await tx
+        .select({ id: teamRoles.userId })
+        .from(teamRoles)
+        .where(and(eq(teamRoles.hostId, hostId), isNotNull(teamRoles.startedAt), isNull(teamRoles.endedAt), isNotNull(teamRoles.userId)));
+      const data = { claimId, hostId, hostName: k.host.name, station: k.station.name, start: done.claim.startsAt.toISOString(), count: done.claim.count };
+      for (const t of team) await notify({ to: { userId: t.id! }, kind: "slotBooked", data, key: claimId }, tx);
+      return { claim: done.claim };
+    });
+    if ("no" in r) return said(c, r);
+    if ("totalPaise" in r) return c.json({ error: "paymentNeeded", message: "This slot needs paying for.", totalPaise: r.totalPaise }, 402);
+    return c.json(holdOut(r.claim));
+  });
+
+  // DELETE /venues/:hostId/holds/:claimId: the player lets go of their live hold. It ends now and stops counting, marked
+  // released (so the free confirm refuses it); the row stays for Galaxy and history.
+  app.delete("/venues/:hostId/holds/:claimId", auth, async (c) => {
+    const hostId = c.req.param("hostId");
+    const claimId = c.req.param("claimId");
+    if (!isUuid(hostId) || !isUuid(claimId)) return nothing(c);
+    const me = c.var.user.id;
+    const ended = await db.transaction(async (tx) => {
+      const k = await lockHold(tx, claimId, { userId: me, hostId });
+      if (!k || k.claim.kind !== "booking" || k.claim.status !== "held" || k.claim.holdEndsAt! <= at()) return false;
+      await tx.update(stationClaims).set({ holdEndsAt: at(), releasedAt: at(), releasedBy: me, updatedAt: at() }).where(eq(stationClaims.id, claimId));
+      return true;
+    });
+    return ended ? c.body(null, 204) : nothing(c);
+  });
+
+  // POST /venues/:hostId/alerts: "Hear if it frees up" on a slot full for them now (alerts.ts). Asking twice is one ask.
+  app.post("/venues/:hostId/alerts", auth, async (c) => {
+    const hostId = c.req.param("hostId");
+    if (!isUuid(hostId)) return nothing(c);
+    const b = await parse(c, NewSlotAlert);
+    if (!b) return invalid(c);
+    const r = await askAlert(db, { hostId, stationId: b.stationId, userId: c.var.user.id, start: Date.parse(b.start), hours: b.hours, count: b.count }, now());
+    if (!r.ok) {
+      const [status, message, error = r.error] = ALERT_NO[r.error];
+      return fail(c, status, error, message);
+    }
+    const a = r.alert;
+    const out: SlotAlert = { id: a.id, stationId: a.stationId, start: a.startsAt.toISOString(), end: a.endsAt.toISOString(), count: a.count };
+    return c.json(out, r.made ? 201 : 200);
+  });
+
+  // DELETE /venues/:hostId/alerts/:id: they stop waiting. Only their own, still waiting.
+  app.delete("/venues/:hostId/alerts/:id", auth, async (c) => {
+    const hostId = c.req.param("hostId");
+    const id = c.req.param("id");
+    if (!isUuid(hostId) || !isUuid(id)) return nothing(c);
+    const gone = await db
+      .delete(slotAlerts)
+      .where(
+        and(
+          eq(slotAlerts.id, id),
+          eq(slotAlerts.userId, c.var.user.id),
+          isNull(slotAlerts.sentAt),
+          inArray(slotAlerts.stationId, db.select({ id: stations.id }).from(stations).where(eq(stations.hostId, hostId))),
+        ),
+      )
+      .returning({ id: slotAlerts.id });
+    return gone.length ? c.body(null, 204) : nothing(c);
+  });
+
+  // GET /public/venues/:hostId/slots?day=YYYY-MM-DD: anyone, no sign-in. One India day's opening (today's by default, or
+  // the one still open after midnight) and, per live station, how many are free at each start still ahead. Days as
+  // hold() takes them: this opening and the next 13. No names, no claims.
+  app.get("/public/venues/:hostId/slots", async (c) => {
+    const hostId = c.req.param("hostId");
+    if (!isUuid(hostId)) return nothing(c);
+    const [venue] = await db
+      .select({ v: venues })
+      .from(venues)
+      .innerJoin(hosts, eq(hosts.id, venues.hostId))
+      .where(and(eq(venues.hostId, hostId), eq(hosts.kind, "venue"), eq(hosts.visibility, "public"), eq(hosts.status, "live")));
+    if (!venue) return nothing(c);
+    const week = venue.v.week;
+    const t = now();
+    const first = hours(week, t).day;
+    const q = c.req.query("day");
+    const day = q === undefined ? first : Date.parse(`${q}T00:00:00+05:30`);
+    if (!Number.isFinite(day)) return invalid(c);
+    const dayText = new Date(day + IST).toISOString().slice(0, 10);
+    if (q !== undefined && dayText !== q) return invalid(c);
+    if (day < first || day > first + (SLOT_DAYS - 1) * DAY) return fail(c, 400, "badDay", "Pick a day in the next two weeks.");
+    const list = await db.select().from(stations).where(and(eq(stations.hostId, hostId), isNull(stations.archivedAt))).orderBy(asc(stations.createdAt), asc(stations.id));
+    const o = openOn(week, day);
+    if (!o) return c.json({ day: dayText, opening: null, stations: list.map((s) => ({ ...stationRow(s), free: [] })) } satisfies PublicSlots);
+    const opens = day + o[0] * HOUR;
+    const closes = day + o[1] * HOUR;
+    const rows = await db
+      .select({ claim: stationClaims })
+      .from(stationClaims)
+      .innerJoin(stations, eq(stations.id, stationClaims.stationId))
+      .where(
+        and(
+          eq(stations.hostId, hostId),
+          lt(stationClaims.startsAt, new Date(closes)),
+          gt(stationClaims.endsAt, new Date(Math.max(opens, t))),
+          or(ne(stationClaims.status, "held"), gt(stationClaims.holdEndsAt, at())),
+        ),
+      );
+    const rule = rows.map((r) => toClaim(r.claim));
+    const out: PublicSlots = {
+      day: dayText,
+      opening: { opens: iso(opens), closes: iso(closes) },
+      stations: list.map((s) => {
+        const free: { at: string; free: number }[] = [];
+        for (let at = opens; at < closes; at += s.step * MIN) if (bookable(week, s.step, at, 1, t)) free.push({ at: iso(at), free: takenAt(rule, s, at, t).free });
+        return { ...stationRow(s), free };
+      }),
+    };
+    return c.json(out);
   });
 
   return app;

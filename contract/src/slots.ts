@@ -47,7 +47,8 @@ const StationFields = {
   name: Text(1, 60),
   unit: Text(1, 30), // what one is called: "PC", "pitch"
   count: z.number().int().min(1).max(200),
-  pricePaise: z.number().int().min(100).max(10_000_000), // an hour, for one
+  // An hour, for one. 0 is a free slot (booked with no payment); otherwise at least ₹1.
+  pricePaise: z.union([z.literal(0), z.number().int().min(100).max(10_000_000)]),
   coopPaise: z.number().int().positive().nullable().optional(), // two or three on one (gaming)
   offPeak: OffPeak.nullable().optional(),
   games: Text(0, 300).nullable().optional(),
@@ -129,10 +130,55 @@ export type VenueDay = z.infer<typeof VenueDay>;
 // A booking standing in the way of a setup change (the 409's `bookings`).
 export const InTheWay = z.object({ id: z.string(), stationId: z.string(), who: z.string().nullable(), count: z.number(), start: z.string(), end: z.string() });
 export type InTheWay = z.infer<typeof InTheWay>;
-// A hold, made: it lapses at holdEndsAt unless paid.
-export const SlotHold = z.object({ id: z.string(), stationId: z.string(), start: z.string(), end: z.string(), count: z.number(), holdEndsAt: z.string() });
+// A hold, made: it lapses at holdEndsAt unless paid. Once confirmed (status "paid") it carries its ticket: qr and code,
+// as an event booking's, and holdEndsAt is null.
+export const SlotHold = z.object({
+  id: z.string(), stationId: z.string(), start: z.string(), end: z.string(), count: z.number(), holdEndsAt: z.string().nullable(),
+  status: z.enum(CLAIM_STATUSES), qr: z.string().nullable(), code: z.string().nullable(),
+});
 export type SlotHold = z.infer<typeof SlotHold>;
 
+// POST /venues/:hostId/alerts: "Hear if it frees up" on a slot that's full for them now. One push, then it closes.
+export const NewSlotAlert = NewHold;
+export type NewSlotAlert = z.infer<typeof NewSlotAlert>;
+export const SlotAlert = z.object({ id: z.string(), stationId: z.string(), start: z.string(), end: z.string(), count: z.number() });
+export type SlotAlert = z.infer<typeof SlotAlert>;
+
+// GET /public/venues/:hostId/slots?day=YYYY-MM-DD: a venue's free slots on one India day, for anyone. Per station, how
+// many are free at each start on its grid still ahead (one step each, so a longer booking needs every step it covers).
+export const PublicSlots = z.object({
+  day: z.string(), // YYYY-MM-DD
+  opening: z.object({ opens: z.string(), closes: z.string() }).nullable(), // null: closed that day
+  stations: z.array(StationRow.extend({ free: z.array(z.object({ at: z.string(), free: z.number() })) })),
+});
+export type PublicSlots = z.infer<typeof PublicSlots>;
+
+// Galaxy's Slot holds: live holds (staff can release one) and the freed-slot alerts of the last 7 days.
+export type StaffSlotHold = { id: string; hostId: string; venue: string; station: string; person: string | null; start: string; count: number; holdEndsAt: string; minutesLeft: number };
+export type StaffSlotAlert = { id: string; venue: string; station: string; person: string | null; start: string; count: number; createdAt: string; sentAt: string | null; state: "waiting" | "sent" | "expired" };
+export type StaffSlotHolds = { holds: StaffSlotHold[]; alerts: StaffSlotAlert[] };
+
+// What a slot costs, in paise: each half hour at its own hourly rate, halved, for every station booked, so a 3:30 PM
+// start is half off-peak; co-op is the co-op rate for one station shared by two. A pitch or court is one, booked whole.
+// One function for the app's price and the API's charge. Times are epoch ms; off-peak hours are India time.
+type Priced = { pricePaise: number; coopPaise?: number | null; offPeak?: { from: number; to: number; weekdays: boolean; pricePaise: number } | null };
+const IST_MS = 330 * 60_000;
+const offPeakAt = (s: Priced, at: number) => {
+  if (!s.offPeak) return false;
+  const d = new Date(at + IST_MS);
+  const hour = d.getUTCHours() + d.getUTCMinutes() / 60;
+  const weekday = d.getUTCDay() !== 0 && d.getUTCDay() !== 6;
+  return hour >= s.offPeak.from && hour < s.offPeak.to && (!s.offPeak.weekdays || weekday);
+};
+export function slotPrice(s: Priced, start: number, hours: number, count = 1, coop = false): number {
+  let total = 0;
+  for (let h = 0; h < hours * 2; h++) {
+    const at = start + h * 30 * 60_000;
+    const rate = coop && s.coopPaise ? s.coopPaise : offPeakAt(s, at) ? s.offPeak!.pricePaise : s.pricePaise;
+    total += (rate / 2) * (coop ? 1 : count);
+  }
+  return Math.round(total);
+}
 // GET /galaxy/venues (X9), for holders of Hosts: every Venue host, its venue row (null until Play Partner's setup saves
 // one: "Setup pending") and its stations with the price an hour.
 export type StaffVenue = {

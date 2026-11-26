@@ -1,7 +1,7 @@
 import { and, eq, gt, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import type { Db } from "../db/index.ts";
-import { activity, bookings, deliveries, eventRequests, events, follows, hosts, identities, inboxItems, listEvents, lists, notificationPrefs, passkeys, payments, saves, pmActivity, sessions, staffGrants, teamRoles, users } from "../db/schema.ts";
+import { activity, bookings, deliveries, eventRequests, events, follows, hosts, identities, inboxItems, listEvents, lists, notificationPrefs, passkeys, payments, saves, pmActivity, sessions, slotAlerts, stationClaims, staffGrants, teamRoles, users } from "../db/schema.ts";
 import { refundPaid } from "../payments/routes.ts";
 import { type Env, fail, type Notify, signedIn } from "../http.ts";
 import { drop, type Media } from "../media.ts";
@@ -161,6 +161,17 @@ export async function runDeletions(db: Db, notify: Notify, now: number, revokeAp
           : new Set<string>();
         const back = gone.filter((b) => ahead.has(b.eventId)).map((b) => b.id);
         if (back.length) await refundPaid(tx, inArray(payments.bookingId, back), "The account was deleted", at);
+        // Slots the same way: their freed-slot alerts go, a hold still running lapses now, and upcoming slot bookings are
+        // released (as a desk release, by nobody), freeing the stations.
+        await tx.delete(slotAlerts).where(eq(slotAlerts.userId, u.id));
+        await tx
+          .update(stationClaims)
+          .set({ holdEndsAt: at, updatedAt: at })
+          .where(and(eq(stationClaims.userId, u.id), eq(stationClaims.status, "held"), gt(stationClaims.holdEndsAt, at)));
+        await tx
+          .update(stationClaims)
+          .set({ status: "released", releasedAt: at, updatedAt: at })
+          .where(and(eq(stationClaims.userId, u.id), eq(stationClaims.kind, "booking"), eq(stationClaims.status, "paid"), gt(stationClaims.startsAt, at)));
         const seats = await tx
           .update(teamRoles)
           .set({ endedAt: at, endReason: "deleted" })

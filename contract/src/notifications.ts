@@ -146,7 +146,7 @@ export const KINDS = {
   ticketPassed: book("must", "PIE"),
   ticketMoveConfirm: book("must", "PIE"),
   waitlistSeatsFree: book("normal", "PIe"),
-  slotFreedAgain: slot("normal", "PI"),
+  slotFreedAgain: slot("normal", "PI", ["hostName", "station", "start"]),
   slotCancelledByVenue: slot("must", "PIE"),
   slotReleased: slot("must", "PIE", ["hostName", "start"]),
 
@@ -204,7 +204,7 @@ export const KINDS = {
   linkRemoved: host("normal", "PIE"),
   loveSummary: host("normal", "PIE"),
   loveRemoved: host("normal", "PIE"),
-  slotBooked: host("normal", "PI", "station"),
+  slotBooked: host("normal", "PI", "station", ["hostName", "station", "start", "count"]),
   slotCancelled: host("normal", "PI", "station"),
   judgeReady: host("normal", "E", null),
   judgeDue: host("normal", "E", null),

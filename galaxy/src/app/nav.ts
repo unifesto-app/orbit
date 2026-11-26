@@ -19,6 +19,8 @@ export const sections: { title: string; items: NavItem[] }[] = [
       { label: "People", href: "/users", also: ["/hosts", "/teams", "/staff"] },
       // Event Requests: people asking to host, answered here (Hosts flow, H1.5).
       { label: "Requests", href: "/requests" },
+      // Players' holds at venues and their freed-slot alerts (Track X7).
+      { label: "Slot holds", href: "/slot-holds" },
       // Every host's events: unpublish, cancel, promote (X1).
       { label: "Events", href: "/events" },
       // Every Venue host, Setup pending until Play Partner's setup saves it, with its stations (X9).

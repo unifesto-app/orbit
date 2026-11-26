@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { EditStation, NewStation, Week } from "./slots.ts";
+import { EditStation, NewStation, slotPrice, Week } from "./slots.ts";
 
 type S = { safeParse: (v: unknown) => { success: boolean } };
 const ok = (s: S, v: unknown) => assert.equal(s.safeParse(v).success, true, JSON.stringify(v));
@@ -49,4 +49,17 @@ test("EditStation: any field; off-peak still checked when both come", () => {
   ok(EditStation, { archived: true });
   ok(EditStation, { offPeak: { from: 11, to: 16, weekdays: false, pricePaise: 20000 } }); // the route checks the stored price
   bad(EditStation, { pricePaise: 10000, offPeak: { from: 11, to: 16, weekdays: false, pricePaise: 10000 } });
+});
+
+test("slotPrice: each half hour at its own rate, times count; co-op shares one; free is 0", () => {
+  // Off-peak 2-4 PM on weekdays at ₹60, else ₹100. Friday 20 Nov 2026, India time.
+  const s = { pricePaise: 10000, coopPaise: 15000, offPeak: { from: 14, to: 16, weekdays: true, pricePaise: 6000 } };
+  const at = (t: string) => Date.parse(`2026-11-20T${t}+05:30`);
+  assert.equal(slotPrice(s, at("14:00:00"), 2, 1), 12000);
+  assert.equal(slotPrice(s, at("15:30:00"), 1, 1), 3000 + 5000); // half off-peak, half not
+  assert.equal(slotPrice(s, at("15:30:00"), 1, 3), (3000 + 5000) * 3);
+  assert.equal(slotPrice(s, at("18:00:00"), 2, 2), 10000 * 2 * 2);
+  assert.equal(slotPrice(s, Date.parse("2026-11-21T14:00:00+05:30"), 1, 1), 10000); // Saturday: weekdays only
+  assert.equal(slotPrice(s, at("14:00:00"), 1, 3, true), 15000); // co-op: one station's rate, not per player
+  assert.equal(slotPrice({ pricePaise: 0 }, at("14:00:00"), 3, 4), 0);
 });

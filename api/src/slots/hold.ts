@@ -1,18 +1,32 @@
 import { and, count, eq, gt, inArray, ne, or } from "drizzle-orm";
+import { code, token } from "../bookings.ts";
 import type { Db } from "../db/index.ts";
+import type { Tx } from "../http.ts";
 import { hosts, stationClaims, stations, users, venues } from "../db/schema.ts";
+import type { Week } from "@orbit/contract";
 import { type Claim, fits, hours, HOUR, MIN } from "./rules.ts";
 
 // A player's hold on a slot while they pay (Play, "Backend shape"). It counts for 10 minutes and then lapses by itself:
 // no job, the counting rule just stops reading it.
-// POST /venues/:hostId/holds (routes.ts) makes one. ponytail: nothing pays a hold yet; that waits on the booking/checkout
-// slice, so for now every hold simply lapses.
+// POST /venues/:hostId/holds (routes.ts) makes one; confirmHold below makes it a booking: the free-slot route now, and
+// X2's payment webhook once Razorpay lands.
 export const HOLD_MINUTES = 10;
 // ponytail: a guess. Without it one account could hold a station to closing and renew it every 10 minutes for good.
 export const HOLDS_PER_HOUR = 3;
 const IST = 330 * MIN;
 const DAY = 24 * HOUR;
-const SLOT_DAYS = 14; // today's opening, or one of the next 13
+export const SLOT_DAYS = 14; // today's opening, or one of the next 13
+
+/** On the station's grid, ahead of now, inside one opening of the next 14 days: a start a player may hold or ask about. */
+export function bookable(week: Week, step: number, start: number, hrs: number, now: number) {
+  const open = hours(week, start);
+  const first = hours(week, now).day;
+  const end = start + hrs * HOUR;
+  return (
+    Number.isInteger(hrs) && hrs >= 1 &&
+    (start + IST) % (step * MIN) === 0 && start >= now && open.day >= first && open.day <= first + (SLOT_DAYS - 1) * DAY && start >= open.opens && end <= open.closes
+  );
+}
 
 // The rules' view of a stored claim. Here, not in routes.ts, so routes can import hold without a cycle.
 export const toClaim = (r: Held): Claim => ({
@@ -55,13 +69,7 @@ export async function hold(db: Db, i: HoldInput, now: number): Promise<HoldResul
     if (recent!.n >= HOLDS_PER_HOUR) return { ok: false, error: "tooOften" };
     if (!Number.isInteger(i.count) || i.count < 1) return { ok: false, error: "badCount" };
     if (i.count > s.count) return { ok: false, error: "tooMany" };
-    // On the station's grid, ahead of now, inside one opening of the next 14 days.
-    const open = hours(venue.week, i.start);
-    const first = hours(venue.week, now).day;
-    const good =
-      Number.isInteger(i.hours) && i.hours >= 1 &&
-      (i.start + IST) % (s.step * MIN) === 0 && i.start >= now && open.day >= first && open.day <= first + (SLOT_DAYS - 1) * DAY && i.start >= open.opens && end <= open.closes;
-    if (!good) return { ok: false, error: "badTime" };
+    if (!bookable(venue.week, s.step, i.start, i.hours, now)) return { ok: false, error: "badTime" };
     // Their other live hold at this venue lapses (one at a time), so it's no obstacle to the new one.
     const mine = await tx
       .select({ id: stationClaims.id })
@@ -86,4 +94,75 @@ export async function hold(db: Db, i: HoldInput, now: number): Promise<HoldResul
       .returning();
     return { ok: true, claim: claim! };
   });
+}
+
+// A station's claims that can still matter from `from` on, lapsed holds left out in SQL (as /day reads).
+export const claimsFrom = (q: Db | Tx, stationId: string, from: Date, at: Date) =>
+  q
+    .select()
+    .from(stationClaims)
+    .where(and(eq(stationClaims.stationId, stationId), gt(stationClaims.endsAt, from), or(ne(stationClaims.status, "held"), gt(stationClaims.holdEndsAt, at))));
+export const stationRule = (s: typeof stations.$inferSelect) => ({ id: s.id, step: s.step as 30 | 60, count: s.count });
+
+// A claim's world, locked in hold()'s order: its person (no key update), the host and venue (share), the station (for
+// update), then the claim (for update). The claim's person and station never change, so reading them first is safe.
+// Locking twice in one transaction is a no-op, so a caller may lock, check, then call confirmHold.
+// `only`: a player's route; someone else's claim, or one at another host, is null before any lock is taken.
+// Null too when the claim is gone by the time it's locked.
+export async function lockHold(tx: Tx, claimId: string, only?: { userId: string; hostId: string }) {
+  const [peek] = await tx
+    .select({ userId: stationClaims.userId, hostId: stations.hostId, stationId: stationClaims.stationId })
+    .from(stationClaims)
+    .innerJoin(stations, eq(stations.id, stationClaims.stationId))
+    .where(eq(stationClaims.id, claimId));
+  if (!peek || (only && (peek.userId !== only.userId || peek.hostId !== only.hostId))) return null;
+  if (peek.userId) await tx.select({ id: users.id }).from(users).where(eq(users.id, peek.userId)).for("no key update");
+  const [host] = await tx.select().from(hosts).where(eq(hosts.id, peek.hostId)).for("share");
+  const [venue] = await tx.select().from(venues).where(eq(venues.hostId, peek.hostId)).for("share");
+  const [station] = await tx.select().from(stations).where(eq(stations.id, peek.stationId)).for("update");
+  const [claim] = await tx.select().from(stationClaims).where(eq(stationClaims.id, claimId)).for("update");
+  if (!host || !venue || !station || !claim) return null;
+  return { host, venue, station, claim };
+}
+
+export type ConfirmResult = { ok: true; claim: Held } | { ok: false; error: "notFound" | "notHeld" | "full" };
+
+/**
+ * A held booking becomes paid, with its ticket (qr and code, as an event booking's). Takes its own locks (lockHold), so
+ * it runs inside the caller's transaction:
+ * - POST /venues/:hostId/holds/:claimId/confirm calls it for a free slot (no money);
+ * - X2 (Razorpay) calls this same function from its payment webhook, after verifying the order.
+ * The rule, checked under the station's lock whatever `now` the caller read before locking:
+ * - the venue is live and the station not archived;
+ * - the slot still fits its window and count, with the claim itself left out of the counted claims (so a stale `now`
+ *   that still calls the hold live can't double book);
+ * - a lapsed hold (still "held", hold_ends_at <= now: money landed late, or a free confirm after the 10 minutes) also
+ *   only before its start and inside the venue's hours as they are now.
+ * Otherwise { ok: false, error: "full" } and nothing changes: X2 then refunds. A hold let go (released_at) still
+ * confirms here, as money landed for it; released_at is cleared so the ticket reads as booked.
+ * - any other status is "notHeld" (already paid: the caller answers a retry as it likes).
+ * ponytail: a QR or code that meets another's fails the unique check and the caller's transaction (30^8 codes; bookings
+ * retry, this doesn't yet).
+ */
+export async function confirmHold(tx: Tx, claimId: string, now: number): Promise<ConfirmResult> {
+  const k = await lockHold(tx, claimId);
+  if (!k) return { ok: false, error: "notFound" };
+  const { claim: c, station: s, host, venue } = k;
+  if (c.kind !== "booking" || c.status !== "held") return { ok: false, error: "notHeld" };
+  const at = new Date(now);
+  if (s.archivedAt || host.status !== "live") return { ok: false, error: "full" };
+  const start = c.startsAt.getTime();
+  const end = c.endsAt.getTime();
+  if (c.holdEndsAt! <= at) {
+    const open = hours(venue.week, start);
+    if (start < now || start < open.opens || end > open.closes) return { ok: false, error: "full" };
+  }
+  const rows = (await claimsFrom(tx, s.id, c.startsAt, at)).filter((r) => r.id !== c.id);
+  if (!fits(rows.map(toClaim), stationRule(s), start, end, c.count, now)) return { ok: false, error: "full" };
+  const [row] = await tx
+    .update(stationClaims)
+    .set({ status: "paid", holdEndsAt: null, releasedAt: null, releasedBy: null, qr: token(), code: code(), updatedAt: at })
+    .where(eq(stationClaims.id, c.id))
+    .returning();
+  return { ok: true, claim: row! };
 }

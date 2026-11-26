@@ -95,6 +95,8 @@ const WORDS: Partial<Record<NoticeKind, (d: Data) => Words>> = {
       : d.decision === "changes"
         ? { subject: "Your request to host needs a change", line: `What to change: ${str(d.reason)}. Edit your request in ${partnerApp(d)} and send it again.` }
         : { subject: "Your request to host was declined", line: `Reason: ${str(d.reason)}.` },
+  slotFreedAgain: (d) => ({ subject: `A slot at ${str(d.hostName)} is free again`, line: `${str(d.station)}, ${dayTime(d.start)}. Book it before someone else does.` }),
+  slotBooked: (d) => ({ subject: `New booking at ${str(d.hostName)}`, line: `${str(d.count)} × ${str(d.station)}, ${dayTime(d.start)}.` }),
   // Paying (payments/routes.ts): `reason` is the check that failed when the money landed.
   soldOutWhilePaying: (d) => ({
     subject: "We refunded your payment",

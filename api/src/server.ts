@@ -7,6 +7,7 @@ import { appsFrom, type ProofConfig } from "./auth/proof.ts";
 import { memoryStore, redisStore } from "./auth/store.ts";
 import { sweepActivity } from "./analytics.ts";
 import { pruneApplications } from "./careers.ts";
+import { sweepSlotAlerts } from "./slots/alerts.ts";
 import { pruneVisits } from "./visits.ts";
 import { ways, type WaysConfig } from "./auth/ways.ts";
 import { connect, migrateDb } from "./db/index.ts";
@@ -227,6 +228,10 @@ setInterval(sweep, 60 * 60 * 1000).unref();
 const pruneCareers = () => pruneApplications(db, media, Date.now()).catch((e) => console.error("[careers]", e));
 void pruneCareers();
 setInterval(pruneCareers, 60 * 60 * 1000).unref();
+
+// "Hear if it frees up" (slots/alerts.ts): every minute, a push to whoever's slot fits again. ponytail: runs on each
+// instance; the conditional update sends each alert once.
+setInterval(() => sweepSlotAlerts(db, notify, Date.now()).catch((e) => console.error("[slot-alerts]", e)), 60_000).unref();
 
 // SES bounces and complaints (email-hygiene.ts): SES notifies the SNS topic SES_SNS_TOPIC_ARN, whose HTTPS subscription
 // is <API_URL>/hooks/ses. Unset, the hook is off (404).
