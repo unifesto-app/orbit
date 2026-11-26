@@ -121,6 +121,8 @@ function RootLayout() {
               lists off); naming a list from Account › Saved or renaming one, a full modal too. */}
           <Stack.Screen name="lists/[event]" options={MODAL} dangerouslySingular />
           <Stack.Screen name="list-name" options={MODAL} />
+          {/* Report an event or a host (X15), from its page's menu. */}
+          <Stack.Screen name="report" options={MODAL} />
           {/* Your profile fades in over Account from its View profile (src/app/account/index.tsx), its top Account's
               panel grown. The swipe back still slides. */}
           <Stack.Screen name="account/profile" options={{ animation: 'fade' }} />

@@ -15,6 +15,7 @@ export function Act({
   who,
   children,
   onDone,
+  optional,
 }: {
   label: string;
   action: (prev: Done, form: FormData) => Promise<Done>;
@@ -22,6 +23,7 @@ export function Act({
   who: string; // who sees the reason, e.g. "They see this"
   children?: ReactNode;
   onDone?: () => void;
+  optional?: boolean; // the reason may be left empty, and nobody is emailed (Reports)
 }) {
   const [state, submit, pending] = useActionState(action, {});
   const box = useRef<HTMLDetailsElement>(null);
@@ -41,10 +43,10 @@ export function Act({
         ))}
         {children}
         <label className={styles.label}>
-          Reason
-          <textarea name="reason" className={styles.reason} required minLength={3} maxLength={500} placeholder={who} />
+          {optional ? "Note (optional)" : "Reason"}
+          <textarea name="reason" className={styles.reason} required={!optional} minLength={optional ? undefined : 3} maxLength={optional ? 1000 : 500} placeholder={who} />
         </label>
-        <p className={ui.secondary}>Logged, and everyone with this access is emailed.</p>
+        <p className={ui.secondary}>{optional ? "Logged." : "Logged, and everyone with this access is emailed."}</p>
         {state.error && (
           <p role="alert" className={styles.alert}>
             {state.error}

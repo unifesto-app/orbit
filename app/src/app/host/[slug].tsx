@@ -35,7 +35,7 @@ import { events, hosts, now } from '../../mock';
 import { OrbitSays } from '../../orbitSays';
 import { showNote } from '../../note';
 import { offerPush, PushAsk } from '../../push';
-import { BackBar, EventRow, Failed, Glow, MenuButton, Monogram, NotFound, SECTION, Section, shareLink, Tag, TOP, Verified, Waiting } from '../../rows';
+import { BackBar, copyLink, EventRow, Failed, Glow, MenuButton, Monogram, NotFound, reportIt, SECTION, Section, shareLink, Tag, TOP, Verified, Waiting } from '../../rows';
 import { api, followedHere, needsAccount, setFollowing, setHostOff, useFollowing, useHostOff, useMe, useSignedIn } from '../../session';
 import { around, color, font, radius, rim, space } from '../../theme';
 
@@ -150,15 +150,14 @@ function MockHost({ host }: { host: Host }) {
           onHeight={setBar}
         />
       )}
-      {/* The menu (Discover doc: Share, Copy link and Report). No Save: a host is followed. Copy link and Report aren't
-          built yet. */}
+      {/* The menu (Discover doc: Share, Copy link and Report). No Save: a host is followed. A mock host has no Report:
+          the API doesn't know it (X15). */}
       <BackBar dark>
         <MenuButton
           tint={DARK_TINT}
           actions={[
             { label: 'Share', icon: 'share', onPress: () => shareLink(`${host.name} on Orbit`, `/host/${host.slug}`) },
-            { label: 'Copy link', icon: 'link' },
-            { label: 'Report', icon: 'report' },
+            { label: 'Copy link', icon: 'link', onPress: () => void copyLink(`/host/${host.slug}`) },
           ]}
         />
       </BackBar>
@@ -340,8 +339,8 @@ function LiveHost({ slug }: { slug: string }) {
           tint={DARK_TINT}
           actions={[
             { label: 'Share', icon: 'share', onPress: () => shareLink(`${h.name} on Orbit`, `/host/${h.slug}`) },
-            { label: 'Copy link', icon: 'link' },
-            { label: 'Report', icon: 'report' },
+            { label: 'Copy link', icon: 'link', onPress: () => void copyLink(`/host/${h.slug}`) },
+            { label: 'Report', icon: 'report', onPress: () => reportIt('host', h.id, h.name) },
           ]}
         />
       </BackBar>
