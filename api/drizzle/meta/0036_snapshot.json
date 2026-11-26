@@ -1,6 +1,6 @@
 {
-  "id": "d3c92fef-58c6-4b30-bf47-572c4a9b1137",
-  "prevId": "40bbe256-d332-4a9f-a912-91ee72f5fb00",
+  "id": "6497680d-bbd3-438c-a051-7ba0138926ad",
+  "prevId": "bcad496f-e9ae-419c-86c8-fbe755ba37c9",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1402,99 +1402,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.event_people": {
-      "name": "event_people",
-      "schema": "",
-      "columns": {
-        "event_id": {
-          "name": "event_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "person_id": {
-          "name": "person_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "role": {
-          "name": "role",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "position": {
-          "name": "position",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "event_people_person_id_index": {
-          "name": "event_people_person_id_index",
-          "columns": [
-            {
-              "expression": "person_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "event_people_event_id_events_id_fk": {
-          "name": "event_people_event_id_events_id_fk",
-          "tableFrom": "event_people",
-          "tableTo": "events",
-          "columnsFrom": [
-            "event_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "event_people_person_id_persons_id_fk": {
-          "name": "event_people_person_id_persons_id_fk",
-          "tableFrom": "event_people",
-          "tableTo": "persons",
-          "columnsFrom": [
-            "person_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "event_people_event_id_person_id_pk": {
-          "name": "event_people_event_id_person_id_pk",
-          "columns": [
-            "event_id",
-            "person_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "event_people_role_length": {
-          "name": "event_people_role_length",
-          "value": "char_length(\"event_people\".\"role\") between 1 and 30"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.event_requests": {
       "name": "event_requests",
       "schema": "",
@@ -2170,149 +2077,6 @@
         }
       },
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.fest_items": {
-      "name": "fest_items",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "event_id": {
-          "name": "event_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "title": {
-          "name": "title",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "when": {
-          "name": "when",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "where": {
-          "name": "where",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "about": {
-          "name": "about",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "team": {
-          "name": "team",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "prize": {
-          "name": "prize",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "act_host_id": {
-          "name": "act_host_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "position": {
-          "name": "position",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "fest_items_event_id_position_index": {
-          "name": "fest_items_event_id_position_index",
-          "columns": [
-            {
-              "expression": "event_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "position",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "fest_items_event_id_events_id_fk": {
-          "name": "fest_items_event_id_events_id_fk",
-          "tableFrom": "fest_items",
-          "tableTo": "events",
-          "columnsFrom": [
-            "event_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "fest_items_act_host_id_hosts_id_fk": {
-          "name": "fest_items_act_host_id_hosts_id_fk",
-          "tableFrom": "fest_items",
-          "tableTo": "hosts",
-          "columnsFrom": [
-            "act_host_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -3917,6 +3681,13 @@
           "primaryKey": false,
           "notNull": false
         },
+        "slot_booked": {
+          "name": "slot_booked",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -4150,7 +3921,7 @@
           "name": "event_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "amount_paise": {
           "name": "amount_paise",
@@ -4202,6 +3973,21 @@
           "columns": [
             {
               "expression": "event_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "payouts_host_id_index": {
+          "name": "payouts_host_id_index",
+          "columns": [
+            {
+              "expression": "host_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -4279,65 +4065,6 @@
           "value": "\"payouts\".\"status\" in ('requested', 'paid', 'cancelled')"
         }
       },
-      "isRLSEnabled": false
-    },
-    "public.persons": {
-      "name": "persons",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "headline": {
-          "name": "headline",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "bio": {
-          "name": "bio",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "links": {
-          "name": "links",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.pm_activity": {

@@ -243,15 +243,22 @@
     {
       "idx": 35,
       "version": "7",
-      "when": 1795715691950,
-      "tag": "0035_interests",
+      "when": 1795715434773,
+      "tag": "0035_slot_money",
       "breakpoints": true
     },
     {
       "idx": 36,
       "version": "7",
-      "when": 1795716186704,
-      "tag": "0036_person_fest",
+      "when": 1795716733204,
+      "tag": "0036_interests",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1795717054776,
+      "tag": "0037_person_fest",
       "breakpoints": true
     }
   ]
