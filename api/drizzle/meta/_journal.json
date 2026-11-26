@@ -267,13 +267,6 @@
       "when": 1795718299172,
       "tag": "0038_payouts",
       "breakpoints": true
-    },
-    {
-      "idx": 39,
-      "version": "7",
-      "when": 1795718902712,
-      "tag": "0039_ask_log",
-      "breakpoints": true
     }
   ]
 }
