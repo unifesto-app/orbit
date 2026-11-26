@@ -172,7 +172,7 @@ export const KINDS = {
   followedHostEvent: k("following", "normal", "PIe", "orbit", "follow", ["hostId", "hostName", "eventId", "title"]), // hostId: the per-host cap
   savedEventOpens: k("following", "normal", "PIe", "orbit", "reminder"),
   nearYou: k("following", "low", "PI", "orbit", "near"),
-  orbitNews: k("following", "normal", "PIE", "orbit", "announcement"),
+  orbitNews: k("following", "low", "PIE", "orbit", "announcement"),
   orbitNotice: k("following", "must", "PIE", "orbit", "announcement"),
 
   // Host apps

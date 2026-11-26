@@ -1,5 +1,5 @@
 {
-  "id": "b3adf8d7-3224-43f5-83b1-a776b8d48695",
+  "id": "cb0b00d1-21ca-4777-a049-11de00e2253d",
   "prevId": "bfef36ec-a8ba-4275-b9b5-d441b123a6fe",
   "version": "7",
   "dialect": "postgresql",
@@ -872,6 +872,178 @@
       },
       "isRLSEnabled": false
     },
+    "public.broadcasts": {
+      "name": "broadcasts",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "type": {
+          "name": "type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "segment": {
+          "name": "segment",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "channels": {
+          "name": "channels",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content": {
+          "name": "content",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "confirmed_by": {
+          "name": "confirmed_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "send_at": {
+          "name": "send_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "audience_count": {
+          "name": "audience_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "sent": {
+          "name": "sent",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "failed": {
+          "name": "failed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "cursor": {
+          "name": "cursor",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "auto_at": {
+          "name": "auto_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "broadcasts_status_index": {
+          "name": "broadcasts_status_index",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "broadcasts_created_at_index": {
+          "name": "broadcasts_created_at_index",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "broadcasts_created_by_users_id_fk": {
+          "name": "broadcasts_created_by_users_id_fk",
+          "tableFrom": "broadcasts",
+          "tableTo": "users",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "broadcasts_confirmed_by_users_id_fk": {
+          "name": "broadcasts_confirmed_by_users_id_fk",
+          "tableFrom": "broadcasts",
+          "tableTo": "users",
+          "columnsFrom": [
+            "confirmed_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.deliveries": {
       "name": "deliveries",
       "schema": "",
@@ -1066,6 +1238,19 @@
           "tableTo": "users",
           "columnsFrom": [
             "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "deliveries_broadcast_id_broadcasts_id_fk": {
+          "name": "deliveries_broadcast_id_broadcasts_id_fk",
+          "tableFrom": "deliveries",
+          "tableTo": "broadcasts",
+          "columnsFrom": [
+            "broadcast_id"
           ],
           "columnsTo": [
             "id"
@@ -1754,60 +1939,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.failed_webhooks": {
-      "name": "failed_webhooks",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "received_at": {
-          "name": "received_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "excerpt": {
-          "name": "excerpt",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "failed_webhooks_received_at_index": {
-          "name": "failed_webhooks_received_at_index",
-          "columns": [
-            {
-              "expression": "received_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.follows": {
       "name": "follows",
       "schema": "",
@@ -2071,13 +2202,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'3+2'"
-        },
-        "fee_included": {
-          "name": "fee_included",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
         },
         "created_at": {
           "name": "created_at",
@@ -3247,529 +3371,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.payments": {
-      "name": "payments",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "host_id": {
-          "name": "host_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "event_id": {
-          "name": "event_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "ticket_type_id": {
-          "name": "ticket_type_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "claim_id": {
-          "name": "claim_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "quantity": {
-          "name": "quantity",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "unit_price_paise": {
-          "name": "unit_price_paise",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "plan": {
-          "name": "plan",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "buyer_fee_bps": {
-          "name": "buyer_fee_bps",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "buyer_fee_paise": {
-          "name": "buyer_fee_paise",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "commission_bps": {
-          "name": "commission_bps",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "commission_paise": {
-          "name": "commission_paise",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "fee_included": {
-          "name": "fee_included",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "gst_fee_paise": {
-          "name": "gst_fee_paise",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "gst_commission_paise": {
-          "name": "gst_commission_paise",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "amount_paise": {
-          "name": "amount_paise",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "merchant": {
-          "name": "merchant",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'orbit'"
-        },
-        "razorpay_order_id": {
-          "name": "razorpay_order_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "razorpay_payment_id": {
-          "name": "razorpay_payment_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "razorpay_fee_paise": {
-          "name": "razorpay_fee_paise",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "razorpay_tax_paise": {
-          "name": "razorpay_tax_paise",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'created'"
-        },
-        "booking_id": {
-          "name": "booking_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "payments_one_open_per_type": {
-          "name": "payments_one_open_per_type",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "ticket_type_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"payments\".\"status\" = 'created'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "payments_status_created_at_index": {
-          "name": "payments_status_created_at_index",
-          "columns": [
-            {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "payments_host_id_created_at_index": {
-          "name": "payments_host_id_created_at_index",
-          "columns": [
-            {
-              "expression": "host_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "payments_event_id_index": {
-          "name": "payments_event_id_index",
-          "columns": [
-            {
-              "expression": "event_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "payments_user_id_users_id_fk": {
-          "name": "payments_user_id_users_id_fk",
-          "tableFrom": "payments",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "payments_host_id_hosts_id_fk": {
-          "name": "payments_host_id_hosts_id_fk",
-          "tableFrom": "payments",
-          "tableTo": "hosts",
-          "columnsFrom": [
-            "host_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "payments_event_id_events_id_fk": {
-          "name": "payments_event_id_events_id_fk",
-          "tableFrom": "payments",
-          "tableTo": "events",
-          "columnsFrom": [
-            "event_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "payments_ticket_type_id_ticket_types_id_fk": {
-          "name": "payments_ticket_type_id_ticket_types_id_fk",
-          "tableFrom": "payments",
-          "tableTo": "ticket_types",
-          "columnsFrom": [
-            "ticket_type_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "payments_claim_id_station_claims_id_fk": {
-          "name": "payments_claim_id_station_claims_id_fk",
-          "tableFrom": "payments",
-          "tableTo": "station_claims",
-          "columnsFrom": [
-            "claim_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "payments_booking_id_bookings_id_fk": {
-          "name": "payments_booking_id_bookings_id_fk",
-          "tableFrom": "payments",
-          "tableTo": "bookings",
-          "columnsFrom": [
-            "booking_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "payments_razorpay_order_id_unique": {
-          "name": "payments_razorpay_order_id_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "razorpay_order_id"
-          ]
-        },
-        "payments_razorpay_payment_id_unique": {
-          "name": "payments_razorpay_payment_id_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "razorpay_payment_id"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "payments_amounts": {
-          "name": "payments_amounts",
-          "value": "\"payments\".\"amount_paise\" > 0 and \"payments\".\"quantity\" > 0 and \"payments\".\"unit_price_paise\" > 0"
-        },
-        "payments_status": {
-          "name": "payments_status",
-          "value": "\"payments\".\"status\" in ('created', 'paid', 'refundPending', 'refunded', 'expired', 'failed')"
-        },
-        "payments_plan": {
-          "name": "payments_plan",
-          "value": "\"payments\".\"plan\" in ('3+2', '5+0')"
-        },
-        "payments_kind": {
-          "name": "payments_kind",
-          "value": "(\"payments\".\"kind\" = 'ticket' and \"payments\".\"event_id\" is not null and \"payments\".\"ticket_type_id\" is not null) or (\"payments\".\"kind\" = 'slot' and \"payments\".\"claim_id\" is not null)"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.payouts": {
-      "name": "payouts",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "host_id": {
-          "name": "host_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "event_id": {
-          "name": "event_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "amount_paise": {
-          "name": "amount_paise",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'requested'"
-        },
-        "utr": {
-          "name": "utr",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "by": {
-          "name": "by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "at": {
-          "name": "at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "payouts_event_id_index": {
-          "name": "payouts_event_id_index",
-          "columns": [
-            {
-              "expression": "event_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "payouts_host_id_hosts_id_fk": {
-          "name": "payouts_host_id_hosts_id_fk",
-          "tableFrom": "payouts",
-          "tableTo": "hosts",
-          "columnsFrom": [
-            "host_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "payouts_event_id_events_id_fk": {
-          "name": "payouts_event_id_events_id_fk",
-          "tableFrom": "payouts",
-          "tableTo": "events",
-          "columnsFrom": [
-            "event_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "payouts_by_users_id_fk": {
-          "name": "payouts_by_users_id_fk",
-          "tableFrom": "payouts",
-          "tableTo": "users",
-          "columnsFrom": [
-            "by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "payouts_utr_unique": {
-          "name": "payouts_utr_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "utr"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "payouts_amount_positive": {
-          "name": "payouts_amount_positive",
-          "value": "\"payouts\".\"amount_paise\" > 0"
-        },
-        "payouts_utr": {
-          "name": "payouts_utr",
-          "value": "\"payouts\".\"utr\" is null or (length(\"payouts\".\"utr\") between 6 and 40 and \"payouts\".\"utr\" = upper(\"payouts\".\"utr\"))"
-        },
-        "payouts_status": {
-          "name": "payouts_status",
-          "value": "\"payouts\".\"status\" in ('requested', 'paid', 'cancelled')"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.pm_activity": {
       "name": "pm_activity",
       "schema": "",
@@ -4295,222 +3896,6 @@
       },
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.razorpay_events": {
-      "name": "razorpay_events",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "type": {
-          "name": "type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "received_at": {
-          "name": "received_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "handled_at": {
-          "name": "handled_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.refunds": {
-      "name": "refunds",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "payment_id": {
-          "name": "payment_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "razorpay_payment_id": {
-          "name": "razorpay_payment_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "amount_paise": {
-          "name": "amount_paise",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'requested'"
-        },
-        "razorpay_refund_id": {
-          "name": "razorpay_refund_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "attempts": {
-          "name": "attempts",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "next_attempt_at": {
-          "name": "next_attempt_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "by": {
-          "name": "by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "refunds_payment_id_index": {
-          "name": "refunds_payment_id_index",
-          "columns": [
-            {
-              "expression": "payment_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "refunds_status_next_attempt_at_index": {
-          "name": "refunds_status_next_attempt_at_index",
-          "columns": [
-            {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "next_attempt_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "refunds_payment_id_payments_id_fk": {
-          "name": "refunds_payment_id_payments_id_fk",
-          "tableFrom": "refunds",
-          "tableTo": "payments",
-          "columnsFrom": [
-            "payment_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "refunds_by_users_id_fk": {
-          "name": "refunds_by_users_id_fk",
-          "tableFrom": "refunds",
-          "tableTo": "users",
-          "columnsFrom": [
-            "by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "refunds_razorpay_refund_id_unique": {
-          "name": "refunds_razorpay_refund_id_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "razorpay_refund_id"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "refunds_amount_positive": {
-          "name": "refunds_amount_positive",
-          "value": "\"refunds\".\"amount_paise\" > 0"
-        },
-        "refunds_status": {
-          "name": "refunds_status",
-          "value": "\"refunds\".\"status\" in ('requested', 'sent', 'processed', 'failed')"
-        },
-        "refunds_kind": {
-          "name": "refunds_kind",
-          "value": "\"refunds\".\"kind\" in ('auto', 'staff', 'request')"
-        }
-      },
       "isRLSEnabled": false
     },
     "public.saves": {

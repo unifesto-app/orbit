@@ -54,7 +54,14 @@ const session = (userId: string, ago: number) => t.db.insert(activity).values({ 
 
 // A reader holding people, hosts and staff, used for the delta tests.
 let reader: P;
-const getReader = async () => (reader ??= await (async () => { const u = await join(); await give(u, "people", "hosts", "staff"); return u; })());
+// Active today before the first read: a signed-in request marks it without waiting (activity.ts), so on a slow
+// database the reader's own row could land between a test's two reads.
+const getReader = async () => (reader ??= await (async () => {
+  const u = await join();
+  await give(u, "people", "hosts", "staff");
+  await t.db.insert(activity).values({ userId: u.me.id, day: ist(t.now()), platform: "app" }).onConflictDoNothing();
+  return u;
+})());
 
 test("1 gates: 401, 404, and each feature opens only its blocks, each read audited", async () => {
   assert.equal((await t.call("GET", "/galaxy/dashboard")).status, 401);
