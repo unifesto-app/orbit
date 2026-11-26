@@ -58,13 +58,13 @@ export async function bookingWeeks(db: Db, at: number) {
   return { week: r!.week, prevWeek: r!.prev };
 }
 
-/** Paise that landed in the last 7 IST days and the 7 before, and Orbit's part (buyer fee plus commission) of the last 7. */
+/** Paise that landed in the last 7 IST days and the 7 before, and Orbit's part (buyer fee plus commission) of the last 7, on payments not refunded. Sums are float8: sum() is bigint and ::int would fail past 2^31 paise; postgres.js gives float8 as a number. */
 export async function revenueWeeks(db: Db, at: number) {
   const today = istDay(at);
   const week = startOf(addDays(today, -6));
   const [r] = await many<{ week: number; prev: number; orbit: number }>(
     db,
-    sql`select coalesce(sum(amount_paise) filter (where created_at >= ${week}), 0)::int as week, coalesce(sum(amount_paise) filter (where created_at < ${week}), 0)::int as prev, coalesce(sum(buyer_fee_paise + commission_paise) filter (where created_at >= ${week}), 0)::int as orbit from payments where status in ${LANDED} and created_at >= ${startOf(addDays(today, -13))}`,
+    sql`select coalesce(sum(amount_paise) filter (where created_at >= ${week}), 0)::float8 as week, coalesce(sum(amount_paise) filter (where created_at < ${week}), 0)::float8 as prev, coalesce(sum(buyer_fee_paise + commission_paise) filter (where created_at >= ${week} and status = 'paid'), 0)::float8 as orbit from payments where status in ${LANDED} and created_at >= ${startOf(addDays(today, -13))}`,
   );
   return { week: r!.week, prevWeek: r!.prev, orbitWeek: r!.orbit };
 }
@@ -242,21 +242,22 @@ export function analyticsRoutes({ db, secret, now = Date.now }: Deps) {
 
     const checkIn = await checkInCounts(db, at);
 
-    // Revenue: Money holders only; nothing about money is read for anyone else.
+    // Revenue: Money holders only. Others get bookings' paid/free counts (read through payments) but never an amount.
     let revenue: AnalyticsStats["revenue"] = null;
     if (holds(c.var.actor, "money")) {
       const [p] = await many<{ gross: number; orbit: number; payments: number; tickets: number; slots: number; p50: number | null; p90: number | null }>(
         db,
         // percentile_disc: a real payment's amount, never one between two.
-        sql`select coalesce(sum(amount_paise), 0)::int as gross, coalesce(sum(buyer_fee_paise + commission_paise), 0)::int as orbit, count(*)::int as payments, coalesce(sum(amount_paise) filter (where kind = 'ticket'), 0)::int as tickets, coalesce(sum(amount_paise) filter (where kind = 'slot'), 0)::int as slots, (percentile_disc(0.5) within group (order by amount_paise))::int as p50, (percentile_disc(0.9) within group (order by amount_paise))::int as p90 from payments where status in ${LANDED} and created_at >= ${startOf(from30)}`,
+        sql`select coalesce(sum(amount_paise), 0)::float8 as gross, coalesce(sum(buyer_fee_paise + commission_paise) filter (where status = 'paid'), 0)::float8 as orbit, count(*)::int as payments, coalesce(sum(amount_paise) filter (where kind = 'ticket'), 0)::float8 as tickets, coalesce(sum(amount_paise) filter (where kind = 'slot'), 0)::float8 as slots, (percentile_disc(0.5) within group (order by amount_paise))::int as p50, (percentile_disc(0.9) within group (order by amount_paise))::int as p90 from payments where status in ${LANDED} and created_at >= ${startOf(from30)}`,
       );
       const [rf] = await many<{ n: number }>(
         db,
-        sql`select coalesce(sum(amount_paise), 0)::int as n from refunds where status = 'processed' and created_at >= ${startOf(from30)}`,
+        // Joined on the payment's own Razorpay id, as Money does: a paid-twice refund returns money never counted in gross.
+        sql`select coalesce(sum(r.amount_paise), 0)::float8 as n from refunds r join payments p on p.id = r.payment_id and p.razorpay_payment_id = r.razorpay_payment_id where r.status = 'processed' and r.updated_at >= ${startOf(from30)}`,
       );
       const pDays = await many<{ day: string; count: number }>(
         db,
-        sql`select to_char(created_at at time zone 'Asia/Kolkata', 'YYYY-MM-DD') as day, sum(amount_paise)::int as count from payments where status in ${LANDED} and created_at >= ${startOf(from30)} group by 1`,
+        sql`select to_char(created_at at time zone 'Asia/Kolkata', 'YYYY-MM-DD') as day, sum(amount_paise)::float8 as count from payments where status in ${LANDED} and created_at >= ${startOf(from30)} group by 1`,
       );
       revenue = {
         gross: p!.gross,
@@ -272,7 +273,7 @@ export function analyticsRoutes({ db, secret, now = Date.now }: Deps) {
       };
     }
 
-    await db.insert(auditLog).values({ actorId: c.var.actor.id, action: "analytics.view", data: {}, at: new Date(at) });
+    await db.insert(auditLog).values({ actorId: c.var.actor.id, action: "analytics.view", data: { revenue: revenue !== null }, at: new Date(at) });
     const body: AnalyticsStats = {
       since: first?.day ?? null,
       active,

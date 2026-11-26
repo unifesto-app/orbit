@@ -80,7 +80,7 @@ async function Body() {
     ...(waitlist ? ([["Waitlist", n(waitlist.total), `+${n(waitlist.week)} this week`]] as [string, string, string][]) : []),
     ...(hosts ? ([["Hosts", n(hosts.total), `${n(hosts.verified)} verified`]] as [string, string, string][]) : []),
     ...(bookings ? ([["Bookings this week", n(bookings.week), change(bookings.week, bookings.prevWeek)]] as [string, string, string][]) : []),
-    ...(revenue ? ([["Revenue this week", inr(revenue.week), change(revenue.week, revenue.prevWeek)]] as [string, string, string][]) : []),
+    ...(revenue ? ([["Paid by buyers this week", inr(revenue.week), change(revenue.week, revenue.prevWeek)]] as [string, string, string][]) : []),
     ...(events ? ([["Events coming up", n(events.upcoming), `${n(events.week)} published this week`]] as [string, string, string][]) : []),
   ];
 
@@ -187,7 +187,7 @@ async function Body() {
               ]}
             />
             {/* Analytics is for People holders: no link for the rest. */}
-            {people && <More href="/analytics" label="Bookings, check-in and revenue, last 30 days ›" />}
+            {people && <More href="/analytics" label={revenue ? "Bookings, check-in and revenue, last 30 days ›" : "Bookings and check-in, last 30 days ›"} />}
           </Container>
         )}
 

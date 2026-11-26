@@ -340,11 +340,13 @@ test("11 bookings, check-in and revenue; revenue for Money holders only", async 
   const refundedPay = await pay(E2, b2, 50_000, "refunded", at(6));
   await pay(E4, b4, 10_000, "failed", at(1)); // never landed: b4 stays free
   await pay(E5, null, 70_000, "paid", at(40)); // too old
-  const refund = (amountPaise: number, status: "processed" | "requested", createdAt: Date) =>
-    t.db.insert(refunds).values({ paymentId: refundedPay, razorpayPaymentId: "pay_x", amountPaise, reason: "Test", kind: "staff", status, createdAt, updatedAt: createdAt });
+  await t.db.update(payments).set({ razorpayPaymentId: "pay_x" }).where(eq(payments.id, refundedPay));
+  const refund = (amountPaise: number, status: "processed" | "requested", createdAt: Date, razorpayPaymentId = "pay_x") =>
+    t.db.insert(refunds).values({ paymentId: refundedPay, razorpayPaymentId, amountPaise, reason: "Test", kind: "staff", status, createdAt, updatedAt: createdAt });
   await refund(50_000, "processed", at(2));
   await refund(1_000, "requested", at(2)); // not processed yet
   await refund(2_000, "processed", at(40)); // too old
+  await refund(4_000, "processed", at(2), "pay_twice"); // a second Razorpay payment on the order: never in gross
 
   const b = await money();
   const pb = await stats();
@@ -371,7 +373,7 @@ test("11 bookings, check-in and revenue; revenue for Money holders only", async 
   assert.equal(b.checkIn.rate, r2(b.checkIn.admitted / b.checkIn.tickets));
   assert.deepEqual([b.checkIn.p50, b.checkIn.p10], [r2(cont(shares, 0.5)), r2(cont(shares, 0.1))]);
 
-  assert.deepEqual(k(a.revenue, b.revenue, ["gross", "orbit", "refunded", "payments"]), [80_000, 4_000, 50_000, 2]);
+  assert.deepEqual(k(a.revenue, b.revenue, ["gross", "orbit", "refunded", "payments"]), [80_000, 1_500, 50_000, 2]);
   const rd = (d: number) => b.revenue.days.find((x: any) => x.day === dayAgo(d)).count - a.revenue.days.find((x: any) => x.day === dayAgo(d)).count;
   assert.deepEqual([rd(3), rd(6), rd(1)], [30_000, 50_000, 0]);
   const kd = delta(a.revenue.kinds, b.revenue.kinds);

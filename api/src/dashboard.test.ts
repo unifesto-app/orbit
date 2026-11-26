@@ -203,13 +203,13 @@ test("7 bookings and revenue: this week against the one before, check-in as Anal
   const pay = (bookingId: string, k: number, amountPaise: number, status: "paid" | "refunded" | "expired") =>
     t.db.insert(payments).values({ kind: "ticket", userId: owner, hostId: h!.id, eventId: e!.id, ticketTypeId: tt!.id, quantity: 1, unitPricePaise: amountPaise, plan: "5+0", buyerFeeBps: 500, buyerFeePaise: amountPaise / 20, commissionBps: 0, commissionPaise: 0, feeIncluded: false, amountPaise, razorpayOrderId: `order_${randomUUID()}`, status, bookingId, createdAt: onDay(k), updatedAt: onDay(k) });
   await pay(await book(0), 0, 20_000, "paid");
-  await pay(await book(6), 6, 40_000, "refunded"); // landed, refunded since: still came in
+  await pay(await book(6), 6, 40_000, "refunded"); // landed, refunded since: still came in, but no fee kept
   await pay(await book(8), 8, 60_000, "paid"); // the week before
   await pay(await book(2, "cancelled"), 2, 10_000, "expired"); // never landed, and cancelled
   await book(14); // older than both weeks
   const b = await dash(u), br = (await dash(banker)).revenue;
   assert.deepEqual([b.bookings.week - a.bookings.week, b.bookings.prevWeek - a.bookings.prevWeek], [2, 1]);
-  assert.deepEqual([br.week - ar.week, br.prevWeek - ar.prevWeek, br.orbitWeek - ar.orbitWeek], [60_000, 60_000, 3_000]);
+  assert.deepEqual([br.week - ar.week, br.prevWeek - ar.prevWeek, br.orbitWeek - ar.orbitWeek], [60_000, 60_000, 1_000]);
   const an = (await as(u)("GET", "/galaxy/analytics")).body;
   assert.equal(b.bookings.checkInRate, an.checkIn.rate);
   assert.notEqual(b.bookings.checkInRate, null); // this event's 4 confirmed tickets, 2 in

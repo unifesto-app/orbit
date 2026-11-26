@@ -209,7 +209,7 @@ async function Body() {
                 ["A payment, 90th percentile", t.revenue.order.p90 === null ? "–" : inr(t.revenue.order.p90)],
               ]}
             />
-            <p className={c.note}>Payments that came in, refunded ones included; refunds are those Razorpay finished in the same 30 days. Orbit’s fees are before GST and Razorpay’s cut.</p>
+            <p className={c.note}>Payments that came in, refunded ones included; refunds are those Razorpay finished in the same 30 days. Orbit’s fees count only payments not refunded, before GST and Razorpay’s cut.</p>
           </Container>
         )}
 
