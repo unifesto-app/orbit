@@ -165,6 +165,8 @@ export const EventRow = z.object({
   area: z.string().nullable(),
   city: z.string().nullable(),
   online: z.boolean(),
+  sold: z.number(), // confirmed tickets (each booking's quantity)
+  checkedIn: z.number(), // of those, admitted at the door
 });
 export type EventRow = z.infer<typeof EventRow>;
 

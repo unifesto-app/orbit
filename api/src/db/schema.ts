@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { type AnyPgColumn, bigint, boolean, check, date, doublePrecision, foreignKey, index, integer, jsonb, pgTable, primaryKey, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
-import type { AgendaItem, FaqItem, Week } from "@orbit/contract";
+import type { AgendaItem, FaqItem, RequestEvent, RequestHost, Week } from "@orbit/contract";
 
 // The User flow's tables (Orbit flows: User). Migrated people keep their Unifesto ids, so `id` takes any UUID.
 // Phone and email are the ways in by code; Google and Apple live in `identities`, passkeys in `passkeys`.
@@ -855,4 +855,30 @@ export const pushDevices = pgTable(
     seenAt: at("seen_at").notNull(),
   },
   (t) => [index().on(t.userId)],
+);
+
+// Event Requests (contract/src/requests.ts; Hosts flow H1.1–H1.7): asking to host, answered by staff. Approving makes
+// the host and its draft event and keeps their ids here. Rows stay, so a person's past requests stay known.
+export const eventRequests = pgTable(
+  "event_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").notNull().references(() => users.id),
+    status: text("status", { enum: ["open", "changes", "approved", "declined", "withdrawn"] }).notNull().default("open"),
+    note: text("note"), // staff's, to the requester, on changes or decline
+    host: jsonb("host").$type<RequestHost>().notNull(),
+    event: jsonb("event").$type<RequestEvent>(),
+    hostId: uuid("host_id").references(() => hosts.id),
+    eventId: uuid("event_id").references(() => events.id, { onDelete: "set null" }), // a draft may be deleted later
+    decidedBy: uuid("decided_by").references(() => users.id),
+    decidedAt: at("decided_at"),
+    createdAt: at("created_at").notNull().defaultNow(),
+    updatedAt: at("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    // One open request per person: open, or sent back for changes.
+    uniqueIndex("event_requests_one_open_per_user").on(t.userId).where(sql`${t.status} in ('open', 'changes')`),
+    index("event_requests_status_idx").on(t.status, t.createdAt),
+    index("event_requests_user_idx").on(t.userId, t.createdAt),
+  ],
 );
