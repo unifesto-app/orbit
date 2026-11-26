@@ -14,14 +14,16 @@ import { requireFeature, type StaffEnv } from "./roles/access.ts";
 
 export function contentRoutes({ db, secret, media, now = Date.now }: Deps) {
   const app = new Hono<StaffEnv>();
-  const cap = bodyLimit({ maxSize: 32 * 1024, onError: (c) => invalid(c) });
+  // A whole list per save: Knowledge's 50 entries of 2000 characters fit with room for JSON escapes.
+  const cap = bodyLimit({ maxSize: 256 * 1024, onError: (c) => invalid(c) });
   const rows = () => db.select().from(appContent);
   const valueOf = (all: { key: string; value: unknown }[]) => readContent(Object.fromEntries(all.map((r) => [r.key, r.value])));
 
-  // GET /public/app-content: every list, for the app. A minute old at most.
+  // GET /public/app-content: every list but knowledge (staff's words for Ask Orbit only), for the app. A minute old at most.
   app.get("/public/app-content", async (c) => {
     c.header("cache-control", "public, max-age=60");
-    return c.json(valueOf(await rows()));
+    const { knowledge: _, ...lists } = valueOf(await rows());
+    return c.json(lists);
   });
 
   // GET /galaxy/app-content: what's live, and when and by whom each list was last saved.

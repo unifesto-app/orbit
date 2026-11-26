@@ -28,7 +28,7 @@ const iso = (d: Date | null) => d?.toISOString() ?? "";
 // A host the public sees: public and live (as in hosts/routes.ts).
 const visible = and(eq(hosts.visibility, "public"), eq(hosts.status, "live"));
 // An event the lists show: published, public on a visible host, and not ended. One clock: until its end time (Discover D).
-const listed = (now: Date) => and(eq(events.status, "published"), eq(events.visibility, "public"), visible, gt(events.endsAt, now));
+export const listed = (now: Date) => and(eq(events.status, "published"), eq(events.visibility, "public"), visible, gt(events.endsAt, now));
 
 // Who can open an event (GET /public/events/:slug, and so who can save it): published or cancelled, on a live host.
 // A link-only event and a private host's events open too. Saves use the same rule.

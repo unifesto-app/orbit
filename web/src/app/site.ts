@@ -25,7 +25,7 @@ export const FIT = [
 export const CONTACT = WAITLIST_CONTACT;
 export const LEGAL_UPDATED = "22 November 2026";
 // Privacy alone changed on 23 Nov 2026 (Sentry joined who handles data for us); the terms did not.
-export const PRIVACY_UPDATED = "23 November 2026";
+export const PRIVACY_UPDATED = "26 November 2026";
 
 // Orbit's accounts, for the footers and the structured data (owner, 18 Nov 2026: "add X account to web"); the X handle
 // also marks link previews on X as Orbit's.

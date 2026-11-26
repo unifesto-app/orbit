@@ -12,6 +12,7 @@ import {
   type ContentKey,
   type ContentShape,
   type HelpAnswer,
+  type Knowledge,
   liveAt,
   PHOTO_MAX_BYTES,
   type Promotion,
@@ -22,7 +23,7 @@ import { type ReactNode, startTransition, useActionState, useMemo, useRef, useSt
 import { Badge, ui } from "../../ui";
 import act from "../act.module.css";
 import { fromBox, toBox } from "../../../ist";
-import { saveList, uploadImage } from "./actions";
+import { saveList, setAsk, uploadImage } from "./actions";
 import styles from "./content.module.css";
 
 // One list, edited in place and saved whole: rows move up and down, come out, or are added at the end, then one Save.
@@ -498,6 +499,52 @@ export function AsksEditor({ initial, at }: { initial: string[]; at: string | nu
         <Field label="Ask" note="up to 40">
           {text(c.text, (t) => set({ text: t }), 40)}
         </Field>
+      )}
+    />
+  );
+}
+
+// Ask Orbit's switch: off, the chat says it's resting, at once for everyone.
+export function AskSwitch({ on }: { on: boolean }) {
+  const [state, flip, pending] = useActionState(setAsk.bind(null, !on), {});
+  return (
+    <form action={flip}>
+      <div className={ui.row}>
+        <button className={`${ui.btn} ${on ? "" : ui.primary}`} disabled={pending}>
+          {on ? "Turn off" : "Turn on"}
+        </button>
+        <span className={ui.secondary}>{on ? "On: people can ask." : "Off: the chat says Ask Orbit is resting."}</span>
+      </div>
+      {state.error && (
+        <p role="alert" className={ui.alert}>
+          {state.error}
+        </p>
+      )}
+    </form>
+  );
+}
+
+// ─── Knowledge for Ask Orbit ───
+// What the assistant knows beyond Help answers. Not served to phones, but anyone can get it back through the assistant.
+export function KnowledgeEditor({ initial, at }: { initial: Knowledge[]; at: string | null }) {
+  return (
+    <ListEditor<Knowledge>
+      k="knowledge"
+      initial={initial}
+      at={at}
+      max={50}
+      noun="entry"
+      empty="None. Ask Orbit knows only the Help answers and what’s on Orbit."
+      blank={() => ({ title: "", body: "" })}
+      row={(e, set) => (
+        <div className={styles.fields}>
+          <Field label="Title" note="up to 80">
+            {text(e.title, (title) => set({ title }), 80)}
+          </Field>
+          <Field label="What it should know" note="up to 2000">
+            <textarea className={act.reason} value={e.body} maxLength={2000} required onChange={(ev) => set({ body: ev.target.value })} />
+          </Field>
+        </div>
       )}
     />
   );

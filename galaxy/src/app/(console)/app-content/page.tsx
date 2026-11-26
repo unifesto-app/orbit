@@ -1,9 +1,9 @@
-import type { ContentAdmin } from "@orbit/contract";
+import type { AskAdmin, ContentAdmin } from "@orbit/contract";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { read } from "../../../api";
-import { Alert, Container, ui } from "../../ui";
-import { AdsEditor, AsksEditor, FeaturedEditor, HelpEditor, PromotedEditor } from "./editors";
+import { Alert, Badge, Container, ui } from "../../ui";
+import { AdsEditor, AsksEditor, AskSwitch, FeaturedEditor, HelpEditor, KnowledgeEditor, PromotedEditor } from "./editors";
 import { InterestsEditor } from "./interests";
 
 // App content (owner, 19 Nov 2026: "build CMS for Orbit App in galaxy web"; API: /galaxy/app-content), for holders of
@@ -81,6 +81,16 @@ async function Load() {
         <p className={ui.secondary}>The chips on the chat’s welcome and on Search. A tap opens the chat with the words typed in.</p>
         <LastSaved s={saved.asks} />
         <AsksEditor initial={content.asks} at={saved.asks?.at ?? null} />
+        <AskPanel />
+      </Container>
+
+      <Container title="Knowledge for Ask Orbit" count={content.knowledge.length}>
+        <p className={ui.secondary}>
+          What Ask Orbit knows beyond the Help answers and what’s on Orbit: policies, how things work, what to say when. Anyone can get these words back by
+          asking Orbit, so put nothing internal here.
+        </p>
+        <LastSaved s={saved.knowledge} />
+        <KnowledgeEditor initial={content.knowledge} at={saved.knowledge?.at ?? null} />
       </Container>
 
       <Container title="Interests" count={content.interests.length}>
@@ -90,6 +100,83 @@ async function Load() {
         <LastSaved s={saved.interests} />
         <InterestsEditor initial={content.interests} at={saved.interests?.at ?? null} />
       </Container>
+    </>
+  );
+}
+
+const STATUS: Record<AskAdmin["log"][number]["status"], [string, "success" | "warning" | "error"]> = {
+  ok: ["Answered", "success"],
+  refused: ["Refused", "warning"],
+  error: ["Failed", "error"],
+};
+const dollars = (n: number) => `$${n.toFixed(n < 1 ? 4 : 2)}`;
+
+// The assistant itself (API: GET /galaxy/ask): its switch, whether the server has a model key, what it cost per India
+// day, and the latest 50 questions with their replies. Reading them is logged.
+async function AskPanel() {
+  const r = await read<AskAdmin>("/galaxy/ask");
+  if (!r.ok) return <Alert>{r.error.message}</Alert>;
+  const { on, keySet, days, log } = r.data;
+  return (
+    <>
+      <AskSwitch on={on} />
+      <p className={ui.secondary}>{keySet ? "Model key set." : "Model key not set: the chat says Ask Orbit is resting until it is."}</p>
+      <h3 className={ui.containerHeader}>Cost per day</h3>
+      {days.length === 0 ? (
+        <p className={ui.secondary}>No questions in the last 30 days.</p>
+      ) : (
+        <table className={ui.table}>
+          <thead>
+            <tr>
+              <th>Day</th>
+              <th>Questions</th>
+              <th>Cost</th>
+            </tr>
+          </thead>
+          <tbody>
+            {days.map((d) => (
+              <tr key={d.day}>
+                <td>{new Date(`${d.day}T12:00:00+05:30`).toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" })}</td>
+                <td>{d.asks}</td>
+                <td>{dollars(d.costUsd)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <h3 className={ui.containerHeader}>Latest questions</h3>
+      {log.length === 0 ? (
+        <p className={ui.secondary}>Nobody has asked yet.</p>
+      ) : (
+        <table className={ui.table}>
+          <thead>
+            <tr>
+              <th>When</th>
+              <th>Who</th>
+              <th>Question</th>
+              <th>Reply</th>
+              <th>State</th>
+              <th>Tokens</th>
+              <th>Cost</th>
+            </tr>
+          </thead>
+          <tbody>
+            {log.map((a, i) => (
+              <tr key={i}>
+                <td>{when(a.at)}</td>
+                <td>{a.who ?? "No name yet"}</td>
+                <td>{a.question}</td>
+                <td>{a.reply ?? "–"}</td>
+                <td>
+                  <Badge tone={STATUS[a.status][1]}>{STATUS[a.status][0]}</Badge>
+                </td>
+                <td>{a.tokens.toLocaleString("en-IN")}</td>
+                <td>{dollars(a.costUsd)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </>
   );
 }
