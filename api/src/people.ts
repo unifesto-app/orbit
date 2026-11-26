@@ -138,8 +138,8 @@ export function peopleRoutes({ db, secret, now = Date.now }: Deps) {
     const id = await personFor(c);
     if (id instanceof Response) return id;
     const gone = await db.transaction(async (tx) => {
-      const [p] = await tx.delete(persons).where(eq(persons.id, id)).returning({ name: persons.name });
-      if (p) await log(tx, c, "persons.delete", null, { personId: id, name: p.name });
+      const [p] = await tx.delete(persons).where(eq(persons.id, id)).returning({ id: persons.id });
+      if (p) await log(tx, c, "persons.delete", null, { personId: id }); // ids only: the name is gone with them
       return !!p;
     });
     return gone ? c.body(null, 204) : nothing(c);
@@ -192,8 +192,9 @@ export function peopleRoutes({ db, secret, now = Date.now }: Deps) {
     try {
       const done = await db.transaction(async (tx) => {
         await tx.select({ id: events.id }).from(events).where(eq(events.id, e.id)).for("update");
-        const have = await tx.select({ id: eventPeople.personId }).from(eventPeople).where(eq(eventPeople.eventId, e.id)).orderBy(asc(eventPeople.position));
-        if (have.map((r) => r.id).join() !== b.shown.join()) return false;
+        const have = await tx.select({ personId: eventPeople.personId, role: eventPeople.role }).from(eventPeople).where(eq(eventPeople.eventId, e.id)).orderBy(asc(eventPeople.position));
+        const pairs = (a: { personId: string; role: string }[]) => JSON.stringify(a.map((p) => [p.personId, p.role]));
+        if (pairs(have) !== pairs(b.shown)) return false;
         await tx.delete(eventPeople).where(eq(eventPeople.eventId, e.id));
         if (b.people.length) await tx.insert(eventPeople).values(b.people.map((p, position) => ({ eventId: e.id, personId: p.personId, role: p.role, position })));
         await log(tx, c, "events.people", e.hostId, { eventId: e.id, people: b.people });
@@ -237,10 +238,13 @@ export function peopleRoutes({ db, secret, now = Date.now }: Deps) {
   // The fest item in the path and its event, for a write.
   const itemFor = async (c: Context<StaffEnv>) => {
     const id = c.req.param("id") ?? "";
-    const [i] = isUuid(id) ? await db.select({ eventId: festItems.eventId }).from(festItems).where(eq(festItems.id, id)) : [];
+    const [i] = isUuid(id) ? await db.select({ eventId: festItems.eventId, actHostId: festItems.actHostId }).from(festItems).where(eq(festItems.id, id)) : [];
     if (!i) return nothing(c);
     const e = await eventFor(c, i.eventId);
-    return e instanceof Response ? e : { id, hostId: e.hostId, eventId: e.id };
+    if (e instanceof Response) return e;
+    // The act it already credits counts too, whatever the body says (as hosts/routes' actable).
+    if (i.actHostId && (await onHost(db, i.actHostId, c.var.user, now()))) return ownHost(c);
+    return { id, hostId: e.hostId, eventId: e.id, actHostId: i.actHostId };
   };
 
   app.patch("/galaxy/fest-items/:id", auth, hostsOnly, async (c) => {
@@ -248,7 +252,8 @@ export function peopleRoutes({ db, secret, now = Date.now }: Deps) {
     if (!b) return invalid(c);
     const it = await itemFor(c);
     if (it instanceof Response) return it;
-    const no = await actRefused(c, b.actHostId);
+    // Only a new act is checked: an unchanged one on a host since paused mustn't block other edits.
+    const no = b.actHostId !== undefined && b.actHostId !== it.actHostId ? await actRefused(c, b.actHostId) : null;
     if (no) return no;
     try {
       const i = await db.transaction(async (tx) => {
@@ -279,6 +284,8 @@ export function peopleRoutes({ db, secret, now = Date.now }: Deps) {
     if (!b) return invalid(c);
     const e = await eventFor(c, c.req.param("id"));
     if (e instanceof Response) return e;
+    const acts = await db.selectDistinct({ id: festItems.actHostId }).from(festItems).where(eq(festItems.eventId, e.id));
+    if (await onAny(c, acts.flatMap((a) => (a.id ? [a.id] : [])))) return ownHost(c);
     const done = await db.transaction(async (tx) => {
       await tx.select({ id: events.id }).from(events).where(eq(events.id, e.id)).for("update");
       const have = await tx.select({ id: festItems.id }).from(festItems).where(eq(festItems.eventId, e.id));

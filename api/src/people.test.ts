@@ -49,6 +49,7 @@ const publish = async (u: P, hostId: string, category = "fests") => {
   return e;
 };
 const item = { title: "Battle of Bands", kind: "Competition", when: "6:00 PM", where: "Main stage", about: "Bands play off." };
+const cr = (personId: string, role: string) => ({ personId, role });
 
 test("Galaxy's person and lineup routes are for holders of Hosts only", async () => {
   const a = await join(), nobody = await join();
@@ -79,22 +80,30 @@ test("staff set the lineup and replace it; the public reads it in order, and the
   const p1 = await mk("Asha Rao"), p2 = await mk("Vikram Sen");
   assert.equal((await as(st)("POST", "/galaxy/persons", { name: "", headline: "x" })).status, 400);
   assert.equal((await as(st)("GET", "/galaxy/persons?q=ash")).body.persons.length, 1);
+  // % and _ are letters to the search, not wildcards.
+  await mk("Rate 50%_off");
+  for (const q of ["%25", "_", "%25_"]) {
+    const found = (await as(st)("GET", `/galaxy/persons?q=${q}`)).body.persons.map((p: any) => p.name);
+    assert.deepEqual(found, ["Rate 50%_off"], q);
+  }
 
   const set = await as(st)("PUT", `/galaxy/events/${e.id}/people`, { shown: [], people: [{ personId: p2.id, role: "Host" }, { personId: p1.id, role: "Judge" }] });
   assert.equal(set.status, 200);
   assert.deepEqual(set.body.people.map((p: any) => [p.name, p.role]), [["Vikram Sen", "Host"], ["Asha Rao", "Judge"]]);
-  assert.equal((await as(st)("PUT", `/galaxy/events/${e.id}/people`, { shown: [p2.id, p1.id], people: [{ personId: ZERO, role: "Judge" }] })).status, 400);
-  assert.equal((await as(st)("PUT", `/galaxy/events/${e.id}/people`, { shown: [p2.id, p1.id], people: [{ personId: p1.id, role: "A" }, { personId: p1.id, role: "B" }] })).status, 400);
+  assert.equal((await as(st)("PUT", `/galaxy/events/${e.id}/people`, { shown: [cr(p2.id, "Host"), cr(p1.id, "Judge")], people: [{ personId: ZERO, role: "Judge" }] })).status, 400);
+  assert.equal((await as(st)("PUT", `/galaxy/events/${e.id}/people`, { shown: [cr(p2.id, "Host"), cr(p1.id, "Judge")], people: [{ personId: p1.id, role: "A" }, { personId: p1.id, role: "B" }] })).status, 400);
   // A page that showed an older list (or two saves racing from one page) is refused, not overwritten.
-  const old = await as(st)("PUT", `/galaxy/events/${e.id}/people`, { shown: [p1.id, p2.id], people: [] });
+  const old = await as(st)("PUT", `/galaxy/events/${e.id}/people`, { shown: [cr(p1.id, "Judge"), cr(p2.id, "Host")], people: [] });
   assert.equal(old.status, 409);
   assert.equal(old.body.error, "stale");
-  const race = await Promise.all([1, 2].map(() => as(st)("PUT", `/galaxy/events/${e.id}/people`, { shown: [p2.id, p1.id], people: [{ personId: p2.id, role: "Host" }] })));
+  // A role changed since counts too.
+  assert.equal((await as(st)("PUT", `/galaxy/events/${e.id}/people`, { shown: [cr(p2.id, "Host"), cr(p1.id, "Speaker")], people: [] })).body.error, "stale");
+  const race = await Promise.all([1, 2].map(() => as(st)("PUT", `/galaxy/events/${e.id}/people`, { shown: [cr(p2.id, "Host"), cr(p1.id, "Judge")], people: [{ personId: p2.id, role: "Host" }] })));
   assert.deepEqual(race.map((r) => r.status).sort(), [200, 409]);
   const [logged] = await t.db.select().from(auditLog).where(and(eq(auditLog.action, "events.people"), eq(auditLog.targetHost, h.id)));
   assert.equal(logged!.actorId, st.me.id);
   // Replace: one left, the other's gone.
-  await as(st)("PUT", `/galaxy/events/${e.id}/people`, { shown: [p2.id], people: [{ personId: p1.id, role: "Speaker" }] });
+  await as(st)("PUT", `/galaxy/events/${e.id}/people`, { shown: [cr(p2.id, "Host")], people: [{ personId: p1.id, role: "Speaker" }] });
   const pub = await t.call("GET", `/public/events/${e.slug}`);
   assert.deepEqual(pub.body.people, [{ id: p1.id, name: "Asha Rao", headline: "Speaker", role: "Speaker" }]);
   assert.deepEqual(pub.body.festItems, []);
@@ -133,6 +142,8 @@ test("fest items: fests only, ordered, act shown while its host is public and li
   assert.equal(pub.festItems[1].act, null);
   await t.db.update(hosts).set({ status: "paused" }).where(eq(hosts.id, band.id));
   assert.equal((await t.call("GET", `/public/events/${fest.slug}`)).body.festItems[0].act, null);
+  // The act unchanged on a host since paused doesn't block other edits (Galaxy's form sends it back as it was).
+  assert.equal((await as(st)("PATCH", `/galaxy/fest-items/${i1.id}`, { title: "Battle of Bands", actHostId: band.id })).status, 200);
 
   assert.equal((await as(st)("PUT", `/galaxy/events/${fest.id}/fest-items/order`, { ids: [i2.id] })).status, 409);
   const ord = await as(st)("PUT", `/galaxy/events/${fest.id}/fest-items/order`, { ids: [i2.id, i1.id] });
@@ -168,6 +179,12 @@ test("staff never act on their own host's fest, its people or an act of theirs; 
   assert.equal((await as(st)("POST", `/galaxy/events/${fest.id}/fest-items`, { ...item, actHostId: own.id })).status, 403);
   const ok = (await as(st)("POST", `/galaxy/events/${fest.id}/fest-items`, item)).body;
   assert.equal((await as(st)("PATCH", `/galaxy/fest-items/${ok.id}`, { actHostId: own.id })).status, 403);
+  // An item already crediting their host: no edit (whatever the body), delete or reorder.
+  const [theirs] = await t.db.insert(festItems).values({ ...item, kind: "Competition", eventId: fest.id, position: 1, actHostId: own.id }).returning();
+  assert.equal((await as(st)("PATCH", `/galaxy/fest-items/${theirs!.id}`, { title: "Y" })).status, 403);
+  assert.equal((await as(st)("DELETE", `/galaxy/fest-items/${theirs!.id}`)).status, 403);
+  assert.equal((await as(st)("PUT", `/galaxy/events/${fest.id}/fest-items/order`, { ids: [theirs!.id, ok.id] })).status, 403);
+  await t.db.delete(festItems).where(eq(festItems.id, theirs!.id));
   // A host the page wouldn't show.
   const quiet = await start(a);
   await t.db.update(hosts).set({ visibility: "private" }).where(eq(hosts.id, quiet.id));

@@ -133,18 +133,22 @@ export async function promoteEvent(_: Done, f: FormData) {
 // ─── An event's people and what's inside a fest (X14) ───
 // Each move sends the lineup the page showed, changed: the API replaces the whole list, and refuses it when the list it
 // has isn't the one the page showed (`shown`). No reason: these are page content, logged without telling anyone.
-const json = <T,>(f: FormData, k: string): T | null => {
+type Credit = { personId: string; role: string };
+const isCredit = (x: unknown): x is Credit => typeof x === "object" && x !== null && typeof (x as Credit).personId === "string" && typeof (x as Credit).role === "string";
+const isId = (x: unknown): x is string => typeof x === "string";
+// A hidden field's JSON list, or null when it isn't one of the right things.
+const list = <T,>(f: FormData, k: string, is: (x: unknown) => x is T): T[] | null => {
   try {
-    return JSON.parse(text(f, k)) as T;
+    const v: unknown = JSON.parse(text(f, k));
+    return Array.isArray(v) && v.every(is) ? v : null;
   } catch {
     return null;
   }
 };
-type Credit = { personId: string; role: string };
 const BROKEN = { error: "Something on this page didn't load right. Reload and try again." };
 // A person picked from the list, or a new one made first from a name and a line.
 export async function addEventPerson(_: Done, f: FormData): Promise<Done> {
-  const people = json<Credit[]>(f, "people");
+  const people = list(f, "people", isCredit);
   if (!people) return BROKEN;
   let personId = text(f, "personId");
   const made = !personId;
@@ -153,16 +157,20 @@ export async function addEventPerson(_: Done, f: FormData): Promise<Done> {
     if (!r.ok) return { error: r.error.message };
     personId = r.data.id;
   }
-  const r = await galaxy("PUT", `/galaxy/events/${path(f, "id")}/people`, { shown: people.map((p) => p.personId), people: [...people, { personId, role: text(f, "role") }] });
+  const r = await galaxy("PUT", `/galaxy/events/${path(f, "id")}/people`, { shown: people, people: [...people,{ personId, role: text(f, "role") }] });
   if (!r.ok && made) refresh(); // the new person is in the picker now
   if (!r.ok) return { error: made ? `${text(f, "name")} is saved but not on this event. ${r.error.message} Then pick them from the list.` : r.error.message };
   refresh();
   return { ok: Date.now() };
 }
 export async function setEventPeople(_: Done, f: FormData) {
-  const shown = json<string[]>(f, "shown"), people = json<Credit[]>(f, "people");
+  const shown = list(f, "shown", isCredit), people = list(f, "people", isCredit);
   if (!shown || !people) return BROKEN;
-  return run("PUT", `/galaxy/events/${path(f, "id")}/people`, { shown, people });
+  const r = await galaxy("PUT", `/galaxy/events/${path(f, "id")}/people`, { shown, people });
+  if (!r.ok && r.error.error === "stale") refresh(); // shows the list as it is now
+  if (!r.ok) return { error: r.error.message };
+  refresh();
+  return { ok: Date.now() };
 }
 // Links: one a line, the label then the https address ("Website https://asha.in").
 export async function editPerson(_: Done, f: FormData) {
@@ -190,7 +198,7 @@ export async function deleteFestItem(_: Done, f: FormData) {
   return run("DELETE", `/galaxy/fest-items/${path(f, "itemId")}`, undefined);
 }
 export async function orderFestItems(_: Done, f: FormData) {
-  const ids = json<string[]>(f, "ids");
+  const ids = list(f, "ids", isId);
   return ids ? run("PUT", `/galaxy/events/${path(f, "id")}/fest-items/order`, { ids }) : BROKEN;
 }
 

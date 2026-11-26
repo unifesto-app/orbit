@@ -48,8 +48,8 @@ const moved = <T,>(list: T[], i: number, d: number) => {
 
 export function People({ eventId, lineup, persons, q }: { eventId: string; lineup: StaffLineup["people"]; persons: StaffPerson[]; q: string }) {
   const list = lineup.map((p) => ({ personId: p.id, role: p.role }));
-  // `shown`: what this page showed, so a change made since is refused rather than overwritten.
-  const set = (people: typeof list) => ({ id: eventId, shown: JSON.stringify(list.map((p) => p.personId)), people: JSON.stringify(people) });
+  // `shown`: the people and roles this page showed, so a change made since is refused rather than overwritten.
+  const set = (people: typeof list) => ({ id: eventId, shown: JSON.stringify(list), people: JSON.stringify(people) });
   const others = persons.filter((p) => !list.some((x) => x.personId === p.id));
   return (
     <div className={ui.page}>
