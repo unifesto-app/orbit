@@ -15,6 +15,9 @@ test('a push opens the Event Request on Event Partner, else the Inbox', () => {
   assert.equal(pushHref('launch', { to: 'ticket', event: 'e1' }), '/inbox');
   assert.equal(pushHref('launch', 'not json'), '/inbox');
   assert.equal(pushHref('launch', undefined), '/inbox');
+  assert.equal(pushHref('launch', { to: 'help' }), '/help'); // supportReply
+  assert.equal(pushHref('station', '{"to":"help"}'), '/help');
+  assert.equal(pushHref('crew', { to: 'help' }), '/inbox'); // crew has no Help
 });
 
 test('the inbox calls name the app', () => {

@@ -40,7 +40,7 @@ const pictureOf = (p: unknown): Picture => {
   if ('host' in p && p.host && typeof p.host === 'object') return p as Picture;
   return null;
 };
-const toMessage = (r: InboxRow): Message => ({ id: r.id, at: r.at, from: r.from, kind: kindLabel(r.kind), text: r.text, picture: pictureOf(r.picture), read: r.read });
+const toMessage = (r: InboxRow): Message => ({ id: r.id, at: r.at, from: r.from, kind: kindLabel(r.kind), text: r.text, picture: pictureOf(r.picture), read: r.read, opens: r.opens });
 
 /** Reads the inbox again for this account. */
 export async function refreshInbox(user: string) {
