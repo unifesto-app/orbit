@@ -39,12 +39,14 @@ const nothing = (c: Context) => fail(c, 404, VENUE_GONE.notFound, "There's nothi
 // A seat on a venue nobody has set up yet: not the same 404 as no seat, so Station can tell "set it up" from "you're off the team".
 const noVenue = (c: Context) => fail(c, 404, VENUE_GONE.noVenue, "This venue isn't set up yet.");
 // A hold's refusals, as the player hears them.
-const HOLD_NO: Record<Exclude<HoldResult, { ok: true }>["error"], [400 | 404 | 409, string]> = {
+const HOLD_NO: Record<Exclude<HoldResult, { ok: true }>["error"], [400 | 401 | 404 | 409 | 429, string, string?]> = {
+  signedOut: [401, "You're signed out. Sign in again."],
   notFound: [404, "There's nothing here."],
   hostClosed: [409, "This venue isn't taking bookings right now."],
   badTime: [400, "That time can't be booked. Pick another."],
   badCount: [400, "Pick how many."],
   tooMany: [409, "The venue doesn't have that many."],
+  tooOften: [429, "Too many holds here in the last hour. Try again later.", "tooMany"],
   full: [409, "That slot just filled up. Pick another."],
 };
 
@@ -135,7 +137,10 @@ export function slotsRoutes({ db, notify, secret, now = Date.now }: Deps) {
   };
   // The station's claims that can still matter at `from`: a step back covers a walk-in freed earlier in the same step.
   const claimsOf = async (tx: Tx, stationId: string, from: number) =>
-    tx.select().from(stationClaims).where(and(eq(stationClaims.stationId, stationId), gt(stationClaims.endsAt, new Date(from - HOUR))));
+    tx
+      .select()
+      .from(stationClaims)
+      .where(and(eq(stationClaims.stationId, stationId), gt(stationClaims.endsAt, new Date(from - HOUR)), or(ne(stationClaims.status, "held"), gt(stationClaims.holdEndsAt, at()))));
   // The venue's live bookings: what a setup change can strand.
   const liveBookings = async (tx: Tx, hostId: string, only?: string) => {
     const rows = await tx
@@ -513,7 +518,10 @@ export function slotsRoutes({ db, notify, secret, now = Date.now }: Deps) {
     const b = await parse(c, NewHold);
     if (!b) return invalid(c);
     const r = await hold(db, { hostId, stationId: b.stationId, userId: c.var.user.id, start: Date.parse(b.start), hours: b.hours, count: b.count }, now());
-    if (!r.ok) return fail(c, HOLD_NO[r.error][0], r.error, HOLD_NO[r.error][1]);
+    if (!r.ok) {
+      const [status, message, error = r.error] = HOLD_NO[r.error];
+      return fail(c, status, error, message);
+    }
     const h = r.claim;
     const out: SlotHold = { id: h.id, stationId: h.stationId, start: h.startsAt.toISOString(), end: h.endsAt.toISOString(), count: h.count, holdEndsAt: h.holdEndsAt!.toISOString() };
     return c.json(out, 201);

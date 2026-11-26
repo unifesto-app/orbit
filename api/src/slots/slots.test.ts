@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { and, eq } from "drizzle-orm";
 import { testApp } from "../testkit.ts";
-import { stationClaims } from "../db/schema.ts";
+import { hosts, stationClaims } from "../db/schema.ts";
 import { hold } from "./hold.ts";
 
 // The slots API against a real database. Every test starts a fresh world and moves the clock to 6:20 PM India time.
@@ -601,6 +601,8 @@ test("a seat on a venue not set up yet hears noVenue; no seat, or a removed one,
       assert.equal(r.status, 404);
       assert.equal(r.body.error, "noVenue", `${u.name} ${path}`);
     }
+    // The settings are an Admin's: Desk and a stranger hear notFound, so nothing says whether a venue exists.
+    for (const u of [desk, stranger]) assert.equal((await as(u)("GET", `/venues/${A}`)).body.error, "notFound");
     await w.setup(A, w.everyDay([11, 26]));
     assert.equal((await as(desk)("GET", `/venues/${A}/day`)).status, 200);
     const out = await as(stranger)("GET", `/venues/${A}/day`);
@@ -638,6 +640,43 @@ test("anyone signed in holds a slot through the route", async () => {
     assert.equal((await as(booker2)("POST", `/venues/${C}/holds`, body)).status, 404);
     assert.equal((await as(booker2)("POST", `/venues/abc/holds`, body)).status, 404);
     assert.equal((await t.call("POST", `/venues/${A}/holds`, body)).status, 401);
+
+    // A re-hold through the route replaces the first: the slot is theirs again, once.
+    const again = await as(booker)("POST", `/venues/${A}/holds`, body);
+    assert.equal(again.status, 201);
+    const live = (await w.day(w.admin, A)).claims.filter((c) => c.kind === "booking");
+    assert.deepEqual(live.map((c) => c.id), [again.body.id]);
+    // A paused host takes no holds; an archived station is gone.
+    await t.db.update(hosts).set({ status: "paused" }).where(eq(hosts.id, A));
+    assert.equal((await as(booker2)("POST", `/venues/${A}/holds`, { ...body, start: iso(seven + DAY), count: 1 })).status, 409);
+    await t.db.update(hosts).set({ status: "live" }).where(eq(hosts.id, A));
+    const old = await w.station(A, w.pc(2, "Old PC"));
+    assert.equal((await as(w.admin)("PATCH", `/venues/${A}/stations/${old.id}`, { archived: true })).status, 200);
+    assert.equal((await as(booker2)("POST", `/venues/${A}/holds`, { ...body, stationId: old.id, count: 1 })).status, 404);
+  } finally {
+    await t.close();
+  }
+});
+
+test("one person holds at most three times an hour at a venue", async () => {
+  const w = await world();
+  const { t, as, booker, A, B } = w;
+  try {
+    await w.setup(A, w.everyDay([11, 26]));
+    await w.setup(B, w.everyDay([11, 26]));
+    const s = await w.station(A, w.pc(2));
+    const sb = await w.station(B, w.pc(2));
+    const tomorrow = w.base + 40 * MIN + DAY;
+    const body = { stationId: s.id, start: iso(tomorrow), hours: 1, count: 1 };
+    for (let k = 0; k < 3; k++) assert.equal((await as(booker)("POST", `/venues/${A}/holds`, body)).status, 201);
+    const fourth = await as(booker)("POST", `/venues/${A}/holds`, body);
+    assert.equal(fourth.status, 429);
+    assert.equal(fourth.body.error, "tooMany");
+    // Another venue is its own count.
+    assert.equal((await as(booker)("POST", `/venues/${B}/holds`, { ...body, stationId: sb.id })).status, 201);
+    // An hour on, they can hold here again.
+    t.tick(HOUR);
+    assert.equal((await as(booker)("POST", `/venues/${A}/holds`, body)).status, 201);
   } finally {
     await t.close();
   }
