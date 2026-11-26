@@ -121,6 +121,24 @@ export function publicEventsRoutes({ db, now = Date.now }: Deps) {
     return c.json({ ...event, interested: n!.n } as PublicEvent);
   });
 
+  // GET /public/events/:slug/calendar.ics: Add to calendar in the app. Published events whose page opens only; any slug
+  // the event has had.
+  app.get("/public/events/:slug/calendar.ics", async (c) => {
+    const slug = c.req.param("slug");
+    if (!EventSlug.safeParse(slug).success) return nothing(c);
+    const [e] = await db
+      .select({ id: events.id, slug: events.slug, title: events.title, startsAt: events.startsAt, endsAt: events.endsAt, venue: events.venue, address: events.address, area: events.area, city: events.city, online: events.online, host: hosts.name })
+      .from(eventSlugs)
+      .innerJoin(events, eq(events.id, eventSlugs.eventId))
+      .innerJoin(hosts, eq(hosts.id, events.hostId))
+      .where(and(eq(eventSlugs.slug, slug), openable, eq(events.status, "published")));
+    if (!e?.startsAt) return nothing(c);
+    c.header("content-type", "text/calendar; charset=utf-8");
+    c.header("content-disposition", `inline; filename="${e.slug}.ics"`);
+    c.header("cache-control", "public, max-age=300");
+    return c.body(icsOf({ ...e, startsAt: e.startsAt }, now()));
+  });
+
   // GET /public/discover?lat&lng&city: what's listed and upcoming, soonest first, split into near (Discover D6) and the rest.
   // Near is within 25 km, plus events with no coordinates in the city, plus online-only events anywhere.
   app.get("/public/discover", async (c) => {
@@ -198,4 +216,43 @@ export function publicEventsRoutes({ db, now = Date.now }: Deps) {
   });
 
   return app;
+}
+
+// One event as an iCalendar file (RFC 5545): UTC times, text escaped, CRLF line ends. A missing end is start + 2 hours.
+// ponytail: long lines aren't folded at 75 octets; Apple, Google and Outlook all read them unfolded.
+export function icsOf(
+  e: { id: string; slug: string; title: string; startsAt: Date; endsAt: Date | null; venue: string | null; address: string | null; area: string | null; city: string | null; online: boolean; host: string },
+  now: number,
+) {
+  const utc = (d: Date) => d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+  // Any line break (CRLF, CR or LF) is a literal \n; other control characters and the Unicode line and paragraph
+  // separators are dropped, so no text can end a line or start a property of its own.
+  const esc = (s: string) =>
+    s
+      .replace(/\\/g, "\\\\")
+      .replace(/;/g, "\\;")
+      .replace(/,/g, "\\,")
+      .replace(/\r\n|\r|\n/g, "\\n")
+      .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, "");
+  const url = `https://heyorbit.in/event/${e.slug}`;
+  const place = e.venue ? [e.venue, e.address, e.area, e.city].filter(Boolean).join(", ") : e.online ? "Online" : null;
+  return [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//Orbit//EN",
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+    "BEGIN:VEVENT",
+    `UID:${e.id}@heyorbit.in`,
+    `DTSTAMP:${utc(new Date(now))}`,
+    `DTSTART:${utc(e.startsAt)}`,
+    `DTEND:${utc(e.endsAt ?? new Date(e.startsAt.getTime() + 2 * 3600_000))}`,
+    `SUMMARY:${esc(e.title)}`,
+    ...(place ? [`LOCATION:${esc(place)}`] : []),
+    `URL:${url}`,
+    `DESCRIPTION:${esc(`By ${e.host} on Orbit. ${url}`)}`,
+    "END:VEVENT",
+    "END:VCALENDAR",
+    "",
+  ].join("\r\n");
 }

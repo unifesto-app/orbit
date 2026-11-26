@@ -12,10 +12,11 @@
 import { categories, formatPrice } from '@orbit/contract';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { past as history } from '../../account/data';
+import { API_URL } from '../../api';
 import { BookBar } from '../../bookBar';
 import { barPrice, cast, followersLine } from '../../detail';
 import { Fact, FactCard } from '../../fact';
@@ -28,12 +29,14 @@ import { interestedBase, people, vibes } from '../../mock';
 import { OrbitSays } from '../../orbitSays';
 import {
   BackBar,
+  copyLink,
   FaceWash,
   FollowRow,
   LoveButton,
   loveIt,
   MenuButton,
   Monogram,
+  reportIt,
   SaveButton,
   SECTION,
   Section,
@@ -218,8 +221,9 @@ function EventView({ e, host, now, live }: { e: Event; host: Host; now: number; 
       {/* Save and the menu (owner, 15 Nov 2026: "add top right, love and menu"), on the dark glass with nothing behind
           them. Once it's over, Save goes (only a saved one keeps its filled star, to manage or remove it); an event you
           went to has Loved it's heart there instead (owner, 19 Nov 2026). Signed out, Save asks to sign in first, then
-          saves; so does Add to a list, which saves first if it isn't (Saved events and lists doc). Copy link, Add to
-          calendar and Report aren't built yet. */}
+          saves; so does Add to a list, which saves first if it isn't (Saved events and lists doc). Copy link copies the
+          page's link; Add to calendar opens the API's .ics for the phone's calendar, and Report opens its sheet (X15),
+          both for a real event only (a mock one has no id the API knows). */}
       <BackBar dark>
         {past && went && <LoveButton event={e} bar dark />}
         {(!past || saved) && <SaveButton event={e} bar dark />}
@@ -232,9 +236,21 @@ function EventView({ e, host, now, live }: { e: Event; host: Host; now: number; 
               icon: 'share',
               onPress: () => shareLink(`${e.title} · ${e.when} · ${e.area} · ${formatPrice(e.pricePaise)}`, `/event/${e.slug}`),
             },
-            { label: 'Copy link', icon: 'link' },
-            { label: 'Add to calendar', icon: 'calendar' },
-            { label: 'Report', icon: 'report' },
+            { label: 'Copy link', icon: 'link', onPress: () => void copyLink(`/event/${e.slug}`) },
+            // The API has no calendar file for a cancelled event; a phone that can't open one says so.
+            ...(live && status.kind !== 'cancelled'
+              ? [
+                  {
+                    label: 'Add to calendar',
+                    icon: 'calendar' as const,
+                    onPress: () =>
+                      void Linking.openURL(`${API_URL}/public/events/${e.slug}/calendar.ics`).catch(() =>
+                        Alert.alert('Couldn’t open your calendar', 'Try again, or add it from the event’s link.'),
+                      ),
+                  },
+                ]
+              : []),
+            ...(live ? [{ label: 'Report', icon: 'report' as const, onPress: () => reportIt('event', e.id, e.title) }] : []),
           ]}
         />
       </BackBar>
