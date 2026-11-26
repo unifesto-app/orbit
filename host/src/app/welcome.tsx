@@ -3,21 +3,26 @@
 // Host on Orbit, the Event Request (Hosts flow, Becoming a host); then which number and email to give a host; and Sign
 // out. An accepted Admin role starts once whoever added you confirms it's you, so it shows as waiting until then.
 // Pull down to look for new invites. An account set to be deleted says so, with the day.
-// ponytail: Start a request opens nothing until the Event Request API is built (owner, 22 Nov 2026: "Event Request API",
-// next), so it shows faded. Someone on a host's team but not its Admin is told Event Partner is for Admins; an Admin goes
-// to the tabs.
+// Host on Orbit follows the latest Event Request (GET /me/event-request; take 1, approved 26 Nov 2026): Start a request,
+// or the request waiting (See request, Withdraw), Orbit's note on changes asked (Edit request) or a decline (Start a new
+// request). Approved, the account is read again and the Admin redirect below takes over. Someone on a host's team but
+// not its Admin is told Event Partner is for Admins; an Admin goes to the tabs.
 import { markOf } from '@orbit/mobile/mark';
 import { showPhone } from '@orbit/mobile/signin';
 import { color, font, space } from '@orbit/mobile/theme';
-import { Redirect } from 'expo-router';
-import { useState } from 'react';
-import { Image, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import type { EventRequest } from '@orbit/contract';
+import { useLoad } from '@orbit/mobile/load';
+import { Redirect, router, useFocusEffect } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Alert, Image, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { adminHosts, mustPick } from '../launch/host';
 import { useInvites } from '../launch/invites';
-import { Monogram, Note, Pill, Section, styles as ui } from '../launch/ui';
-import { refreshMe, signOut, useSession } from '../session';
+import { dayLabel, istDate } from '../launch/money';
+import { errorText, sentLabel, welcomeState } from '../launch/request';
+import { Monogram, Note, Pill, Section, Tag, styles as ui } from '../launch/ui';
+import { api, refreshMe, signOut, useSession } from '../session';
 import { seats } from '../station/seats';
 import { isStation, thisApp } from '../variant';
 
@@ -36,6 +41,21 @@ export default function Welcome() {
   const me = session?.me ?? null;
   const { invites, busy, error, accept } = useInvites();
   const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
+  const request = useLoad<EventRequest | null>(me && !isStation ? `request|${me.id}` : null, () => api.authed('GET', '/me/event-request'));
+  const [said, setSaid] = useState<string | null>(null); // a refused withdraw
+  const r = request.data;
+  const state = welcomeState(r);
+  // Back from the form (sent, or left mid-way): read the request again. Not on the first focus, which the load covers.
+  const seen = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (seen.current) request.reload();
+      seen.current = true;
+    }, [request.reload]),
+  );
+  useEffect(() => {
+    if (state === 'approved') void refreshMe(); // the new Admin seat, so the redirect to Events takes over
+  }, [state, r?.id]);
   if (!me) return null;
   if (isStation && seats(me).length) return <Redirect href="/today" />; // an accepted seat opens Today
   if (!isStation && adminHosts(me).length) return <Redirect href={mustPick(me) ? '/pick' : '/events'} />; // an Admin opens Events
@@ -54,6 +74,7 @@ export default function Welcome() {
           refreshing={invites.loading && !!invites.data}
           onRefresh={() => {
             invites.reload();
+            request.reload();
             void refreshMe();
           }}
           tintColor={color.secondary}
@@ -70,6 +91,10 @@ export default function Welcome() {
       <Text style={styles.line}>
         {isStation
           ? 'You’re not on a venue’s team yet. Accept an invite from a venue’s Admin.'
+          : state === 'waiting'
+          ? 'Your request is with Orbit. We’ll tell you as soon as it’s checked.'
+          : state === 'changes'
+          ? 'Orbit asked for a change before your host goes live.'
           : onTeams
           ? `You’re on ${onTeams === 1 ? 'a host’s team' : `${onTeams} hosts’ teams`}, but not as an Admin. Event Partner is for Admins.`
           : 'You’re not on a host yet. Accept an invite, or start your own.'}
@@ -103,17 +128,61 @@ export default function Welcome() {
       {invites.error && <Note>{invites.error.message}</Note>}
       {error && <Note>{error}</Note>}
 
-      {!isStation && (
+      {!isStation && !request.loading && (r && (state === 'waiting' || state === 'changes' || state === 'declined') ? (
+        <>
+          <Section title={state === 'declined' ? 'Your last request' : 'Your request'} />
+          <View style={[ui.card, styles.invite]}>
+            <View style={styles.cardHead}>
+              <Text style={[styles.inviteName, styles.shrink]} numberOfLines={1}>
+                {r.host.name}
+              </Text>
+              <Tag text={state === 'waiting' ? 'Checking' : state === 'changes' ? 'Changes asked' : 'Not approved'} live={state === 'waiting'} />
+            </View>
+            {state === 'waiting' ? (
+              <Text style={styles.cardLine}>{`${r.event ? `${r.event.title} · ${dayLabel(istDate(Date.parse(r.event.startsAt)))}\n` : ''}${sentLabel(r.updatedAt, Date.now())}`}</Text>
+            ) : (
+              r.note ? <Text style={styles.quote}>{r.note}</Text> : null
+            )}
+            <View style={styles.pills}>
+              {state === 'waiting' && <Pill label="See request" onPress={() => router.push('/request?mode=see')} />}
+              {state === 'changes' && <Pill label="Edit request" onPress={() => router.push('/request?mode=edit')} />}
+              {state === 'declined' && <Pill label="Start a new request" onPress={() => router.push('/request')} />}
+              {state !== 'declined' && (
+                <Pill
+                  label="Withdraw"
+                  onPress={() =>
+                    Alert.alert('Withdraw your request?', 'Orbit stops checking it. You can send a new one later.', [
+                      { text: 'Keep it', style: 'cancel' },
+                      {
+                        text: 'Withdraw',
+                        style: 'destructive',
+                        onPress: async () => {
+                          setSaid(null);
+                          const out = await api.authed('DELETE', '/me/event-request');
+                          if (!out.ok) setSaid(errorText(out.error));
+                          request.reload();
+                        },
+                      },
+                    ])
+                  }
+                />
+              )}
+            </View>
+          </View>
+        </>
+      ) : (
         <>
           <Section title="Host on Orbit" />
           <View style={[ui.card, styles.invite]}>
             <Text style={styles.cardLine}>Tell us about you and your first event. Orbit checks it, usually within a day, and you’re live.</Text>
-            <View style={[styles.pills, styles.soon]} accessibilityState={{ disabled: true }}>
-              <Pill label="Start a request" />
+            <View style={styles.pills}>
+              <Pill label="Start a request" onPress={() => router.push('/request')} />
             </View>
           </View>
         </>
-      )}
+      ))}
+      {request.error && <Note>{request.error.message}</Note>}
+      {said && <Note>{said}</Note>}
       {contacts ? <Note>{`Expecting an invite? Ask ${isStation ? 'the venue' : 'your host'} to add ${contacts}.`}</Note> : null}
 
       <View style={styles.foot}>
@@ -139,6 +208,9 @@ const styles = StyleSheet.create({
   small: { fontFamily: font.text, fontSize: 13, lineHeight: 18, color: color.secondary },
   cardLine: { fontFamily: font.text, fontSize: 14, lineHeight: 20, color: color.secondary },
   pills: { flexDirection: 'row', flexWrap: 'wrap', gap: space.small },
+  shrink: { flexShrink: 1 },
+  cardHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  quote: { borderLeftWidth: 2, borderLeftColor: color.accent, paddingLeft: 12, fontFamily: font.text, fontSize: 14, lineHeight: 20, color: color.text }, // Orbit's own words; the Sage edge is an element
+
   foot: { marginTop: 'auto', paddingTop: space.big, marginHorizontal: 20, flexDirection: 'row' },
-  soon: { opacity: 0.4 },
 });

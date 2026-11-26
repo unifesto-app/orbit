@@ -53,6 +53,10 @@ export default function Layout() {
         <Stack.Protected guard={(isLaunch || isStation) && signedIn}>
           <Stack.Screen name="welcome" />
         </Stack.Protected>
+        {/* The Event Request's three steps, from welcome. */}
+        <Stack.Protected guard={isLaunch && signedIn}>
+          <Stack.Screen name="request" />
+        </Stack.Protected>
         <Stack.Protected guard={admin}>
           <Stack.Screen name="(launch)" />
           {/* Which host, with several. */}

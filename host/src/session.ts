@@ -31,6 +31,7 @@ const DEVICE = 'orbit.device';
 const ME = 'orbit.me';
 const INSTALLED = 'orbit.installed'; // in iOS's settings, which go with the app
 export const PICKED_HOST = 'orbit.launch.host'; // Event Partner's last picked host (src/launch/host.ts), gone on sign-out
+export const REQUEST_DRAFT = 'orbit.launch.request'; // the Event Request not yet sent (src/app/request.tsx), gone on sign-out
 
 // The Keychain, read once and then from memory; writes go one after another, in order, so a sign-out's delete never
 // lands after the next sign-in's token. A read that fails (a launch before the first unlock) is signed out this time only.
@@ -63,7 +64,10 @@ const listeners = new Set<() => void>();
 function set(next: Session) {
   current = next;
   kept.set(ME, next ? JSON.stringify(next.me) : null);
-  if (!next) kept.set(PICKED_HOST, null);
+  if (!next) {
+    kept.set(PICKED_HOST, null);
+    kept.set(REQUEST_DRAFT, null);
+  }
   for (const on of listeners) on();
 }
 function readKept(): Session {

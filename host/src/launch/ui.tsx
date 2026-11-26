@@ -44,9 +44,11 @@ export function Section({ title }: { title: string }) {
   );
 }
 
-export function Tag({ text }: { text: string }) {
+/** `live`: the accent's dot before the word, for something under way (a request Orbit is checking). */
+export function Tag({ text, live = false }: { text: string; live?: boolean }) {
   return (
-    <View style={styles.tag}>
+    <View style={[styles.tag, live && styles.tagLive]}>
+      {live && <View style={styles.tagDot} />}
       <Text style={styles.tagText}>{text}</Text>
     </View>
   );
@@ -288,6 +290,8 @@ export const styles = StyleSheet.create({
   monogramText: { fontFamily: font.headline },
   h2: { marginTop: space.big, marginBottom: 16, marginHorizontal: 20, fontFamily: font.headline, fontSize: 18, color: color.text },
   tag: { minHeight: 22, paddingHorizontal: 8, paddingVertical: 1, borderRadius: radius.sm, backgroundColor: color.raised, justifyContent: 'center' },
+  tagLive: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  tagDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: color.accent },
   tagText: { fontFamily: font.medium, fontSize: 12, color: color.text },
   pill: { height: 32, paddingHorizontal: 12, borderRadius: 16, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
   pillText: { fontFamily: font.title, fontSize: 13, color: color.text },
