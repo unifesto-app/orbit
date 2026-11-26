@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { HealthResponse } from "@orbit/contract";
+import { scrub } from "./instrument.ts";
 import { authRoutes, type Deps } from "./auth/routes.ts";
 import { deletionRoutes } from "./auth/deletion.ts";
 import { securityRoutes } from "./auth/security.ts";
@@ -16,6 +17,7 @@ import { meNotificationsRoutes } from "./me-notifications.ts";
 import { bookingsRoutes } from "./bookings.ts";
 import { paymentsRoutes } from "./payments/routes.ts";
 import { moneyRoutes } from "./payments/galaxy.ts";
+import { hostMoneyRoutes } from "./payments/host.ts";
 import { checkInRoutes } from "./checkin.ts";
 import { slotsRoutes } from "./slots/routes.ts";
 import { hostsRoutes } from "./hosts/routes.ts";
@@ -65,6 +67,7 @@ export function createApp(deps?: Deps) {
     app.route("/", bookingsRoutes(deps));
     app.route("/", paymentsRoutes(deps));
     app.route("/", moneyRoutes(deps));
+    app.route("/", hostMoneyRoutes(deps));
     app.route("/", checkInRoutes(deps));
     app.route("/", slotsRoutes(deps));
     app.route("/", galaxyVenuesRoutes(deps));
@@ -88,7 +91,11 @@ export function createApp(deps?: Deps) {
   app.notFound((c) => c.json({ error: "notFound", message: "There's nothing here." }, 404));
   // Anything unexpected still answers in the contract's error shape.
   app.onError((err, c) => {
-    console.error(err);
+    // Scrubbed as Sentry's events are: a failed query's text ends with its params, which can be a bank account or UPI ID.
+    // The stack's frames go as they are (code paths only); scrub would drop them with the params.
+    const cause = (err as { cause?: unknown }).cause;
+    const frames = (err.stack ?? "").split("\n").filter((l) => l.trimStart().startsWith("at ")).join("\n");
+    console.error(scrub(`${err.name}: ${err.message}`), cause instanceof Error ? scrub(`cause: ${cause.message}`) : "", `\n${frames}`);
     return c.json({ error: "server", message: "Something went wrong on our side. Try again in a minute." }, 500);
   });
 

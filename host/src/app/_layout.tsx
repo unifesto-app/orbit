@@ -14,7 +14,7 @@ import { seats } from '../station/seats';
 import { StationProvider } from '../station/state';
 import { isLaunch, isStation } from '../variant';
 
-// Station's short sheets (walk-in and block, you, Venue's edits) are see-through, so their own frosted glass shows, as the Orbit
+// The short sheets (Station's walk-in and block, you, Venue's edits; Money's payout and bank in both apps) are see-through, so their own frosted glass shows, as the Orbit
 // app's venue sheet: as tall as what's in them, with a grabber.
 const SHEET = {
   presentation: 'formSheet',
@@ -68,6 +68,11 @@ export default function Layout() {
           <Stack.Screen name="edit" />
           {/* The ticket scanner, full screen over Events, from an open event's Scan or Find someone (X6). */}
           <Stack.Screen name="scan" options={{ presentation: 'fullScreenModal', contentStyle: { backgroundColor: '#000' } }} />
+        </Stack.Protected>
+        {/* Money's sheets (X4), for a host's Admins in either app: ask for a payout, add or replace the bank account. */}
+        <Stack.Protected guard={onStation || admin}>
+          <Stack.Screen name="payout" options={SHEET} />
+          <Stack.Screen name="bank" options={SHEET} />
         </Stack.Protected>
         {/* Pushed over the tabs (welcome, Crew's screen), with its own back circle: anyone signed in, on every app, so a
             push about a seat just ended still opens it. */}

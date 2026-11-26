@@ -260,6 +260,13 @@
       "when": 1795717366665,
       "tag": "0037_interests",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1795718299172,
+      "tag": "0038_payouts",
+      "breakpoints": true
     }
   ]
 }

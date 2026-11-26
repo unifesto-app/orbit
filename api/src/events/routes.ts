@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, gt, isNotNull, isNull, lte, max, ne, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, inArray, isNotNull, isNull, lte, max, ne, or, sql } from "drizzle-orm";
 import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import {
@@ -224,6 +224,17 @@ export function eventsRoutes({ db, notify, secret, media, razorpay: rz, now = Da
         if (!times.ok) return times;
         const visible = visibilityRule(host!.visibility, b);
         if (!visible.ok) return visible;
+        // Payouts open 3 days after the end (X4), so once anyone has paid or is paying, the end can only move later: an
+        // earlier end would open the window early. An open order counts too: seatCheck takes this event's lock to make
+        // one and to settle it, so none lands between this read and the write.
+        if (b.endsAt !== undefined && cur!.endsAt && (!b.endsAt || Date.parse(b.endsAt) < cur!.endsAt.getTime())) {
+          const [paid] = await tx
+            .select({ id: payments.id })
+            .from(payments)
+            .where(and(eq(payments.eventId, cur!.id), inArray(payments.status, ["created", "paid", "refundPending", "refunded"])))
+            .limit(1);
+          if (paid) return { error: "endLocked" } as const;
+        }
         if (b.slug !== undefined && b.slug !== cur!.slug) {
           // At most MAX_LINKS links an event has had; its own old one coming back adds none.
           const own = (await tx.select({ slug: eventSlugs.slug }).from(eventSlugs).where(eq(eventSlugs.eventId, cur!.id))).map((s) => s.slug);
@@ -266,6 +277,7 @@ export function eventsRoutes({ db, notify, secret, media, razorpay: rz, now = Da
       if (done.error === "endInPast") return fail(c, 400, "endInPast", "A live event can't be moved into the past. To finish early, use End now.");
       if (done.error === "cancelled") return fail(c, 409, "cancelled", "A cancelled event can't be edited.");
       if (done.error === "ended") return fail(c, 409, "ended", "This event has ended, so its date and place are locked.");
+      if (done.error === "endLocked") return fail(c, 409, "endLocked", "People have bought tickets for this event, so it can't end earlier. You can move the end later.");
       if (done.error === "endsBeforeStart") return fail(c, 400, "endsBeforeStart", "The event must end after it starts.");
       return fail(c, 400, "linkOnly", "This host is private, so its events are link-only.");
     } catch (e) {
