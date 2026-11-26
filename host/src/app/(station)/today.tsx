@@ -16,6 +16,7 @@ import { AppState, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Tex
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { type Claim, type Door, type StationType, type Venue, MIN, atDoor, dayLabel, door, hourWord, steps, taken, timeLabel } from '../../station/day';
+import { PushAsk } from '../../push';
 import { blank } from '../../station/live';
 import { useStation, useToday } from '../../station/state';
 import { LOST_SEAT, notSetUp } from '../../station/venue';
@@ -83,6 +84,7 @@ function Day({ trouble, refresh }: { trouble: string | null; refresh?: ReactElem
   return (
     <ScrollView style={styles.page} contentContainerStyle={{ paddingBottom: insets.bottom + space.big }} onScroll={onScroll} scrollEventThrottle={16} refreshControl={refresh}>
       <Head venue={v} title="Today" line={`${dayLabel(h.day)} · ${when}`} />
+      <PushAsk />
       {/* The last good day stays on screen under what went wrong. */}
       {trouble && <OrbitSays text={trouble} />}
       {/* Signed in, why the API refused the last tap here (a 409's line), until the next one. */}

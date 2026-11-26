@@ -2,7 +2,8 @@
 // as orbit app pls"; app/src/app/(tabs)/_layout.tsx): a dark glass capsule low on the screen, the open tab under a
 // lighter pill that springs to it, Phosphor filled icons beside DM Sans 600 labels (the open tab's in the Sage to Moss
 // gradient), shrinking to the open tab while the page scrolls down. Desk has no money, prices or settings (Roles by use
-// case), so it gets Today alone, with no bar. 1.0 (ONE_0) has no Money tab: Today and Venue.
+// case), so it gets Today alone, with no bar. 1.0 (ONE_0) has no Money tab: Today and Venue. Beside the bar, the round
+// Inbox with its count, Event Partner's (src/inboxButton.tsx; Notifications PR 5); Desk keeps it too.
 // ponytail: the Scan button (round beside the bar, a "Scan a ticket" pill for Desk) returns with the scanner, once the
 // API looks tickets up; git d31550c has both and app/scan.tsx.
 // ponytail: no drag along the bar (the app's has one); add it if the owner misses it.
@@ -15,12 +16,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, Image, LayoutAnimation, Platform, Pressable, StyleSheet, Text, useWindowDimensions } from 'react-native';
 import { SafeAreaInsetsContext, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { InboxButton } from '../../inboxButton';
 import { useSession } from '../../session';
 import { barTabs, opens } from '../../station/seats';
 import { useStation } from '../../station/state';
 import { isStation, ONE_0 } from '../../variant';
 
 const PAD = 4;
+const GAP = 10;
 const TABS = [
   { name: 'today', href: '/today', label: 'Today', icon: require('../../../assets/tabs/today.png'), on: require('../../../assets/tabs/today-on.png') },
   { name: 'money', href: '/money', label: 'Money', icon: require('../../../assets/tabs/money.png'), on: require('../../../assets/tabs/money-on.png') },
@@ -44,7 +47,7 @@ function Bar() {
   const [open, setOpen] = useState(0);
   useEffect(() => setSmall(false), [open, setSmall]); // a tab opens with the bar wide
   const { width } = useWindowDimensions();
-  const slot = (width - 2 * SIDE - 2 * PAD) / BAR_TABS.length;
+  const slot = (width - SIDE - (SIDE + BAR + GAP) - 2 * PAD) / BAR_TABS.length;
   const [x] = useState(() => new Animated.Value(0));
   useEffect(() => {
     Animated.spring(x, { toValue: open * slot, useNativeDriver: true, speed: 18, bounciness: 6 }).start();
@@ -72,6 +75,7 @@ function Bar() {
           ))}
         </Glass>
       </TabList>
+      <InboxButton style={[styles.inbox, { bottom }]} />
     </Tabs>
   );
 }
@@ -129,7 +133,7 @@ function TabButton({ tab, index, small, onGrow, onOpen, isFocused, onPress, ...p
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: color.ground },
   capsule: { position: 'absolute', left: SIDE, height: BAR, borderRadius: BAR / 2, padding: PAD, flexDirection: 'row', overflow: 'hidden' },
-  wide: { right: SIDE },
+  wide: { right: SIDE + BAR + GAP },
   small: { width: BAR },
   hidden: { display: 'none' },
   tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: (BAR - 2 * PAD) / 2 },
@@ -138,4 +142,5 @@ const styles = StyleSheet.create({
   icon: { width: 20, height: 20 },
   plain: { width: 20, height: 20, tintColor: color.text },
   label: { fontFamily: font.price, fontSize: 14, color: color.text }, // DM Sans 600
+  inbox: { position: 'absolute', right: SIDE },
 });
