@@ -110,6 +110,14 @@ export const ipOf = (c: Context) => clientIp(c).replace(/^::ffff:(?=\d+\.)/i, ""
 // names the occurrence: the same notice with the same key is written and sent once. `tx`: written with the caller's
 // transaction, so a rollback takes the message with it.
 // `{ contact, userId }`: email to that contact only, the inbox item to that account.
-export type Notice = { to: { userId: string } | { contact: string; userId?: string }; kind: NoticeKind; data?: Record<string, unknown>; key?: string };
+// A broadcast's (broadcasts.ts): `broadcastId` on its rows, and `channels`, the kind's push and email it may use.
+export type Notice = {
+  to: { userId: string } | { contact: string; userId?: string };
+  kind: NoticeKind;
+  data?: Record<string, unknown>;
+  key?: string;
+  broadcastId?: string;
+  channels?: readonly ("push" | "email")[];
+};
 export type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 export type Notify = (n: Notice, tx?: Tx) => Promise<void>;

@@ -5,6 +5,7 @@ import { PageHeader, ui } from "../../ui";
 const TABS = [
   { key: "kinds", label: "Kinds", href: "/notifications" },
   { key: "log", label: "Delivery log", href: "/notifications/log" },
+  { key: "broadcasts", label: "Broadcasts", href: "/notifications/broadcasts" }, // Platform only
 ] as const;
 
 export function NotificationsHeader({ current, description }: { current: (typeof TABS)[number]["key"]; description: string }) {

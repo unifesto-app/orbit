@@ -126,7 +126,7 @@ export const stops = (sw: { kind: string; channel: string }, kind: string) =>
 export const killedFor = async (q: Tx | Db, kind: string) =>
   new Set((await q.select().from(notificationSwitches).where(inArray(notificationSwitches.kind, [kind, "*"]))).filter((sw) => stops(sw, kind)).map((r) => r.channel));
 
-type Base = Pick<typeof deliveries.$inferInsert, "userId" | "contact" | "kind" | "dedupeKey" | "payload" | "runAt" | "createdAt" | "inboxItemId">;
+type Base = Pick<typeof deliveries.$inferInsert, "userId" | "contact" | "kind" | "dedupeKey" | "payload" | "runAt" | "createdAt" | "inboxItemId" | "broadcastId">;
 // The email row for a notice: switched off, held, queued to its address, suppressed, or no address. `s` is null for Must
 // kinds and notices with no account. Used by "always" kinds in write() and by "fallback" kinds when the push can't land.
 // Held: optional email (not Must, not the one-off welcome) with no email switch to unsubscribe from, or no account.
@@ -163,7 +163,7 @@ const fallBack = async (db: Db, d: typeof deliveries.$inferSelect, at: Date) => 
   if (!person || person.deletedAt) return;
   if (!isMust(kind) && heldAt(person, at)) return; // suspended or waiting for deletion since: Must only, as in write()
   const s = isMust(kind) ? null : await settingsOf(db, person.id, person.city);
-  const row = { userId: d.userId, contact: d.contact, kind, dedupeKey: d.dedupeKey, payload: d.payload, runAt: at, createdAt: at, inboxItemId: d.inboxItemId };
+  const row = { userId: d.userId, contact: d.contact, kind, dedupeKey: d.dedupeKey, payload: d.payload, runAt: at, createdAt: at, inboxItemId: d.inboxItemId, broadcastId: d.broadcastId };
   await writeEmail(db, row, s, addressOf(d.contact, person), (await killedFor(db, kind)).has("email"));
 };
 
@@ -190,7 +190,7 @@ export function createNotifier({ db, now }: { db: Db; now: () => number }): Noti
     const address = addressOf(contact, person);
     const dedupeKey = n.key ? `${n.kind}:${contact ?? userId}:${n.key}` : crypto.randomUUID(); // no key: no dedupe (D3)
     const payload = clean(n.data);
-    const row = { userId, contact, kind: n.kind, dedupeKey, payload, runAt: at, createdAt: at };
+    const row = { userId, contact, kind: n.kind, dedupeKey, payload, runAt: at, createdAt: at, broadcastId: n.broadcastId ?? null };
     const log = (v: Pick<typeof deliveries.$inferInsert, "channel" | "status" | "reason" | "target" | "inboxItemId"> & { runAt?: Date }) =>
       q.insert(deliveries).values({ ...row, ...v }).onConflictDoNothing({ target: [deliveries.dedupeKey, deliveries.channel, deliveries.target] });
     // Written before: nothing again. (The caps would count the first and log a second row otherwise.)
@@ -223,8 +223,8 @@ export function createNotifier({ db, now }: { db: Db; now: () => number }): Noti
     const must = isMust(n.kind);
     const s = person && !must ? await settingsOf(q, person.id, person.city) : null;
     const email = () => writeEmail(q, { ...row, inboxItemId }, s, address, killed.has("email"));
-    if (def.email === "always") await email();
-    if (!def.push || !person) return;
+    if (def.email === "always" && (!n.channels || n.channels.includes("email"))) await email();
+    if (!def.push || !person || (n.channels && !n.channels.includes("push"))) return;
     // No push for a "fallback" kind (switched off, no device): its email goes now. A cap or quiet hours isn't that.
     const skip = async (reason: string) => {
       await log({ channel: "push", status: "skipped", reason, target: "", inboxItemId });

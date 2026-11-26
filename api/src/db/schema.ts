@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { type AnyPgColumn, bigint, boolean, check, date, doublePrecision, foreignKey, index, integer, jsonb, pgTable, primaryKey, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
-import type { AgendaItem, AutoMessages, FaqItem, RequestEvent, RequestHost, Week } from "@orbit/contract";
+import type { AgendaItem, AutoMessages, BroadcastChannel, BroadcastSegment, FaqItem, RequestEvent, RequestHost, Week } from "@orbit/contract";
 
 // The User flow's tables (Orbit flows: User). Migrated people keep their Unifesto ids, so `id` takes any UUID.
 // Phone and email are the ways in by code; Google and Apple live in `identities`, passkeys in `passkeys`.
@@ -820,7 +820,7 @@ export const deliveries = pgTable(
     runAt: at("run_at").notNull(),
     lockedUntil: at("locked_until"),
     providerId: text("provider_id"),
-    broadcastId: uuid("broadcast_id"),
+    broadcastId: uuid("broadcast_id").references((): AnyPgColumn => broadcasts.id, { onDelete: "set null" }),
     inboxItemId: uuid("inbox_item_id").references(() => inboxItems.id, { onDelete: "set null" }),
     createdAt: at("created_at").notNull().defaultNow(),
     sentAt: at("sent_at"),
@@ -908,4 +908,28 @@ export const announcements = pgTable(
     createdAt: at("created_at").notNull().defaultNow(),
   },
   (t) => [index().on(t.eventId, t.createdAt)],
+);
+
+// A staff message to a segment (notifications build plan PR 9, broadcasts.ts). `cursor`: the last user id sent to, so a
+// restart resumes after it; `sent` and `failed` count people.
+export const broadcasts = pgTable(
+  "broadcasts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    type: text("type", { enum: ["news", "notice"] }).notNull(),
+    segment: jsonb("segment").$type<BroadcastSegment>().notNull(),
+    channels: jsonb("channels").$type<BroadcastChannel[]>().notNull(), // the inbox always
+    content: jsonb("content").$type<{ title: string; text: string }>().notNull(),
+    status: text("status", { enum: ["waiting", "scheduled", "sending", "sent", "cancelled"] }).notNull(),
+    createdBy: uuid("created_by").notNull().references(() => users.id),
+    confirmedBy: uuid("confirmed_by").references(() => users.id),
+    sendAt: at("send_at"),
+    audienceCount: integer("audience_count").notNull().default(0),
+    sent: integer("sent").notNull().default(0),
+    failed: integer("failed").notNull().default(0),
+    cursor: uuid("cursor"),
+    reason: text("reason"), // why it was cancelled
+    createdAt: at("created_at").notNull().defaultNow(),
+  },
+  (t) => [index().on(t.status), index().on(t.createdAt)],
 );

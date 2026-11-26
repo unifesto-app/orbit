@@ -86,6 +86,13 @@ const WORDS: Partial<Record<NoticeKind, (d: Data) => Words>> = {
   eventTomorrow: (d) => ({ subject: `Coming up: ${str(d.title)}`, line: `${str(d.title)} starts tomorrow at ${time(d.startsAt)}.` }),
   eventStartingSoon: (d) => ({ subject: `${str(d.title)} starts soon`, line: `${str(d.title)} starts in an hour.` }),
   thanksForComing: (d) => ({ subject: `Thanks for coming to ${str(d.title)}`, line: `Thanks for coming to ${str(d.title)}. Loved it? Say so on the event page.` }),
+  // Broadcasts (broadcasts.ts): the staff's own title and text.
+  orbitNews: (d) => ({ subject: str(d.title), line: str(d.text) }),
+  orbitNotice: (d) => ({ subject: str(d.title), line: str(d.text) }),
+  broadcastWaiting: (d) => ({
+    subject: "A broadcast is waiting for a second person",
+    line: `“${str(d.title)}” to ${str(d.audienceCount)} people. Confirm or cancel it in Galaxy, Notifications, Broadcasts.`,
+  }),
   followedHostEvent: (d) => ({ subject: `${str(d.hostName) || "A host you follow"} has a new event`, line: str(d.title) }),
   staffGrantAdded: (d) => ({
     subject: "Staff access was given",

@@ -17,6 +17,7 @@ import { pmRoutes } from "./pm/routes.ts";
 import { prelaunchRoutes } from "./prelaunch.ts";
 import { contentRoutes } from "./content.ts";
 import { galaxyNotificationsRoutes } from "./galaxy-notifications.ts";
+import { broadcastsRoutes } from "./broadcasts.ts";
 import { careersRoutes } from "./careers.ts";
 import { analyticsRoutes } from "./analytics.ts";
 import { dashboardRoutes } from "./dashboard.ts";
@@ -56,6 +57,7 @@ export function createApp(deps?: Deps) {
     app.route("/", visitRoutes(deps));
     app.route("/", contentRoutes(deps));
     app.route("/", galaxyNotificationsRoutes(deps));
+    app.route("/", broadcastsRoutes(deps));
     app.route("/", careersRoutes(deps));
     app.route("/", dashboardRoutes(deps));
     app.route("/", analyticsRoutes(deps));
