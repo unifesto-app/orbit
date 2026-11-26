@@ -93,8 +93,8 @@ function stored(): Session | null {
     const s = JSON.parse(Storage.getItemSync(KEY) ?? 'null');
     const ok = typeof s?.via === 'string' && Array.isArray(s.saved) && Array.isArray(s.follows) && typeof s.me?.id === 'string';
     if (ok && refreshToken.get()) {
-      // Interests picked before the eight tiles move with their category (Music to Jams; Workshops, Film and Startups
-      // to Events), so none is left unpickable.
+      // Interests picked before the eight tiles move with their category (Music to Jams; Film and Startups to Events),
+      // so none is left unpickable. Workshops is a tile again since 26 Nov 2026, so it stays.
       const interests = Array.isArray(s.interests) ? [...new Set(s.interests.map((c: string) => movedCategory[c] ?? c))] : s.interests;
       return { ...s, interests, ...saves.normalise(s, Date.now()) }; // one stored before lists keeps its saves
     }

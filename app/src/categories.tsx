@@ -21,6 +21,8 @@ export const CATEGORY_COLOR: Record<CategorySlug, string> = {
   // its own drawing. The drawing is baked blue; the brand accent is Sage since 18 Nov 2026.
   events: '#295EFF',
   gaming: '#AE3EC9', // neon grape: a controller
+  workshops: '#7048E8', // violet: a chalkboard (owner, 26 Nov 2026: workshops and run clubs as their own kinds)
+  'run-clubs': '#0CA678', // teal: a running track
 };
 // The approved drawings, done one by one (owner, 15 Nov 2026: "lets do one by one", "get approval and changes after
 // going to next", "film approved"): Canva AI line art in the style of the owner's bulb, shaded ("add shade on it"),
@@ -37,14 +39,18 @@ const CATEGORY_ART: Record<CategorySlug, ImageSourcePropType> = {
   sports: require('../assets/explore/sports.png'),
   events: require('../assets/explore/events.png'),
   gaming: require('../assets/explore/gaming.png'),
+  // TEMPORARY stand-ins: these wait for the owner's own drawings (each made in Canva and approved one by one), then
+  // swap in workshops.png and run-clubs.png.
+  workshops: require('../assets/explore/events.png'),
+  'run-clubs': require('../assets/explore/sports.png'),
 };
 // A lone shape fills its whole square where a scene doesn't, so it's drawn smaller ("music is large, make little
 // small"), and Fests, wide and short, a little bigger ("increase its size little"); scaled about the centre, so the
 // card and its seat keep their size.
 const ART_SCALE: Partial<Record<CategorySlug, number>> = { jams: 0.85, fests: 1.15 };
-// Explore's rows: four and four for the eight tiles (19 Nov 2026; it was "Explore Three Three Four" for ten, owner, 15
-// Nov), in the Discover doc's order.
-const exploreRows = [categories.slice(0, 4), categories.slice(4)];
+// Explore's rows: three, three and four for the ten tiles (26 Nov 2026, as the owner's "Explore Three Three Four" for
+// ten, 15 Nov; it was four and four for the eight tiles from 19 Nov), in the Discover doc's order.
+const exploreRows = [categories.slice(0, 3), categories.slice(3, 6), categories.slice(6)];
 
 // A category as a box like Home's host cards (owner, 15 Nov 2026: "add the Types in boxes same as hosts in home"): its
 // drawing on the top rim where a host's logo sits, and its name, nothing else (owner: "from 1 event from card").
