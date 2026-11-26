@@ -1,7 +1,7 @@
 import { and, eq, gt, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import type { Db } from "../db/index.ts";
-import { activity, askLog, bookings, deliveries, eventRequests, events, follows, hosts, identities, inboxItems, listEvents, lists, notificationPrefs, passkeys, payments, reports, saves, supportThreads, pmActivity, sessions, slotAlerts, stationClaims, staffGrants, teamRoles, users } from "../db/schema.ts";
+import { activity, askLog, bookings, deliveries, eventInterests, eventRequests, events, follows, hosts, identities, inboxItems, listEvents, lists, notificationPrefs, passkeys, payments, reports, saves, supportThreads, pmActivity, sessions, slotAlerts, stationClaims, staffGrants, teamRoles, users } from "../db/schema.ts";
 import { refundPaid } from "../payments/routes.ts";
 import { type Env, fail, type Notify, signedIn } from "../http.ts";
 import { drop, type Media } from "../media.ts";
@@ -139,6 +139,7 @@ export async function runDeletions(db: Db, notify: Notify, now: number, revokeAp
         await tx.delete(listEvents).where(eq(listEvents.userId, u.id));
         await tx.delete(lists).where(eq(lists.userId, u.id));
         await tx.delete(saves).where(eq(saves.userId, u.id));
+        await tx.delete(eventInterests).where(eq(eventInterests.userId, u.id)); // I'm interested, as private as saves
         // Requests to host that never became one go, free text and all; approved ones stay, pointing at a real host.
         await tx.delete(eventRequests).where(and(eq(eventRequests.userId, u.id), ne(eventRequests.status, "approved")));
         await tx.update(eventRequests).set({ note: null }).where(eq(eventRequests.userId, u.id));
@@ -216,6 +217,7 @@ export async function runDeletions(db: Db, notify: Notify, now: number, revokeAp
             gender: null,
             photo: null,
             city: null,
+            interests: null,
             suspensionReason: null,
             newDevicePhoneAt: null,
             platformOwner: false,

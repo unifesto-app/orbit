@@ -318,8 +318,10 @@ test('interests: the kinds you picked lead the near-you list, each part soonest 
   assert.deepEqual(ids(plan.list.events), ['c1', 'm1', 'c2', 's1']);
   assert.equal(plan.askInterests, false);
   // Signed in with none picked yet: asked once, the list soonest first. Signed out: picks are ignored, and no ask.
-  const unasked = planHome({ signedIn: true, follows: [], place }, events, [], NOW);
+  const unasked = planHome({ signedIn: true, follows: [], place, interestsRead: true }, events, [], NOW);
   assert.equal(unasked.askInterests, true);
+  // Not before the API's picks have been read for this sign-in.
+  assert.equal(planHome({ signedIn: true, follows: [], place }, events, [], NOW).askInterests, false);
   assert.deepEqual(ids(unasked.list.events), ['s1', 'c1', 'm1', 'c2']);
   assert.deepEqual(ids(planHome({ ...signedOut, interests: ['comedy'] }, events, [], NOW).list.events), ['s1', 'c1', 'm1', 'c2']);
   assert.equal(planHome(signedOut, events, [], NOW).askInterests, false);

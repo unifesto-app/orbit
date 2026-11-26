@@ -123,7 +123,7 @@ export const vibes: Record<string, readonly string[]> = {
 };
 
 // How many people are interested in an event before your own tap, the same number every time.
-// ponytail: a stand-in until the API counts real Interested taps.
+// ponytail: a stand-in for the old mock's events only; a real event's count is the API's (orbit-pm X13).
 export function interestedBase(id: string): number {
   let h = 0;
   for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0;

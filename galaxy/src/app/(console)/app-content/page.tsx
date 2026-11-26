@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { read } from "../../../api";
 import { Alert, Badge, Container, ui } from "../../ui";
 import { AdsEditor, AsksEditor, AskSwitch, FeaturedEditor, HelpEditor, KnowledgeEditor, PromotedEditor } from "./editors";
+import { InterestsEditor } from "./interests";
 
 // App content (owner, 19 Nov 2026: "build CMS for Orbit App in galaxy web"; API: /galaxy/app-content), for holders of
 // Platform: the words Orbit itself writes in the app, each list saved whole (contract/src/content.ts). Hosts' events
@@ -90,6 +91,14 @@ async function Load() {
         </p>
         <LastSaved s={saved.knowledge} />
         <KnowledgeEditor initial={content.knowledge} at={saved.knowledge?.at ?? null} />
+      </Container>
+
+      <Container title="Interests" count={content.interests.length}>
+        <p className={ui.secondary}>
+          The kinds of event offered on Account › Interests and Home’s one ask, in this order. Untick one to hide it; what people already picked stays theirs.
+        </p>
+        <LastSaved s={saved.interests} />
+        <InterestsEditor initial={content.interests} at={saved.interests?.at ?? null} />
       </Container>
     </>
   );
