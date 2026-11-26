@@ -70,6 +70,12 @@ const WORDS: Partial<Record<NoticeKind, (d: Data) => Words>> = {
   hostParentSet: (d) => ({
     subject: d.parentName ? `${str(d.hostName)} is now part of ${str(d.parentName)}` : `${str(d.hostName)} is no longer part of another host`,
   }),
+  eventRequestAnswered: (d) =>
+    d.decision === "approved"
+      ? { subject: "Your request to host is approved", line: `${str(d.name)} is on Orbit, unverified for now. Open Orbit Event Partner to carry on.` }
+      : d.decision === "changes"
+        ? { subject: "Your request to host needs a change", line: `What to change: ${str(d.reason)}. Edit your request in Orbit Event Partner and send it again.` }
+        : { subject: "Your request to host was declined", line: `Reason: ${str(d.reason)}.` },
   slotReleased: (d) => ({ subject: `Your slot at ${str(d.hostName)} was released`, line: `You didn’t check in for ${dayTime(d.start)}, so the slot was freed.` }),
   followedHostEvent: (d) => ({ subject: `${str(d.hostName) || "A host you follow"} has a new event`, line: str(d.title) }),
   staffGrantAdded: (d) => ({

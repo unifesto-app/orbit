@@ -1,7 +1,7 @@
 import { and, eq, gt, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import type { Db } from "../db/index.ts";
-import { activity, bookings, deliveries, events, follows, hosts, identities, inboxItems, listEvents, lists, notificationPrefs, passkeys, saves, pmActivity, sessions, staffGrants, teamRoles, users } from "../db/schema.ts";
+import { activity, bookings, deliveries, eventRequests, events, follows, hosts, identities, inboxItems, listEvents, lists, notificationPrefs, passkeys, saves, pmActivity, sessions, staffGrants, teamRoles, users } from "../db/schema.ts";
 import { type Env, fail, type Notify, signedIn } from "../http.ts";
 import { drop, type Media } from "../media.ts";
 import { holdIfUnanswered, ownerOnlySql } from "../roles/access.ts";
@@ -42,7 +42,7 @@ export async function blockersOf(db: Db | Tx, u: User, now: number): Promise<Blo
 
 // What the one screen lists (User flow): what goes, what is scrubbed, what stays.
 const WHAT = {
-  deleted: ["Sign-in methods and passkeys", "Sessions", "Roles on hosts and staff access", "Hosts you follow", "Photo"],
+  deleted: ["Sign-in methods and passkeys", "Sessions", "Roles on hosts and staff access", "Hosts you follow", "Photo", "Requests to host that weren't approved"],
   scrubbed: ["Name", "Phone", "Email", "Date of birth", "Gender", "City"],
   kept: ["Bookings, payments, refunds and payouts, with your details scrubbed, kept 8 years as books of account"],
 };
@@ -138,6 +138,9 @@ export async function runDeletions(db: Db, notify: Notify, now: number, revokeAp
         await tx.delete(listEvents).where(eq(listEvents.userId, u.id));
         await tx.delete(lists).where(eq(lists.userId, u.id));
         await tx.delete(saves).where(eq(saves.userId, u.id));
+        // Requests to host that never became one go, free text and all; approved ones stay, pointing at a real host.
+        await tx.delete(eventRequests).where(and(eq(eventRequests.userId, u.id), ne(eventRequests.status, "approved")));
+        await tx.update(eventRequests).set({ note: null }).where(eq(eventRequests.userId, u.id));
         await tx.delete(activity).where(eq(activity.userId, u.id)); // analytics rows go with the account (owner, 19 Nov 2026)
         // Their inbox goes; deliveries rows stay until the 180-day cleanup, as the log of what was sent (D6), but tied to
         // nobody and holding no data, and nothing still waiting sends. The accountDeleted email is queued after this.

@@ -10,6 +10,7 @@ import { meNotificationsRoutes } from "./me-notifications.ts";
 import { bookingsRoutes } from "./bookings.ts";
 import { slotsRoutes } from "./slots/routes.ts";
 import { hostsRoutes } from "./hosts/routes.ts";
+import { requestsRoutes } from "./hosts/requests.ts";
 import { mediaRoutes } from "./media.ts";
 import { pmRoutes } from "./pm/routes.ts";
 import { prelaunchRoutes } from "./prelaunch.ts";
@@ -38,6 +39,7 @@ export function createApp(deps?: Deps) {
     app.route("/", deletionRoutes(deps));
     app.route("/", rolesRoutes(deps));
     app.route("/", hostsRoutes(deps));
+    app.route("/", requestsRoutes(deps));
     app.route("/", eventsRoutes(deps));
     app.route("/", publicEventsRoutes(deps));
     app.route("/", savesRoutes(deps));

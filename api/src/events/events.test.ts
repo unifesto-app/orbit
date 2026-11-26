@@ -432,6 +432,6 @@ test("a team event carries exactly its documented keys", async () => {
   assert.deepEqual(Object.keys(made.body).sort(), keys);
   assert.deepEqual(Object.keys((await as(a)("GET", `/events/${made.body.id}`)).body).sort(), keys);
   assert.deepEqual(Object.keys((await as(a)("PATCH", `/events/${made.body.id}`, { title: "Keys 2" })).body).sort(), keys);
-  const rowKeys = ["id", "slug", "status", "visibility", "title", "category", "startsAt", "endsAt", "timezone", "area", "city", "online"].sort();
+  const rowKeys = ["id", "slug", "status", "visibility", "title", "category", "startsAt", "endsAt", "timezone", "area", "city", "online", "sold", "checkedIn"].sort();
   assert.deepEqual(Object.keys((await as(a)("GET", `/hosts/${h.id}/events`)).body.drafts[0]).sort(), rowKeys);
 });

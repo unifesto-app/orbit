@@ -144,7 +144,7 @@ test("NewTicketType needs only a name and a price", () => {
 
 const id = "3f2b8c1e-5a4d-4e6f-9a7b-1c2d3e4f5a6b";
 const iso = "2026-12-01T12:00:00.000Z";
-const eventRow = { id, slug: "night-k3f9ab", status: "draft", visibility: "public", title: "Night", category: null, startsAt: null, endsAt: null, timezone: "Asia/Kolkata", area: null, city: null, online: false };
+const eventRow = { id, slug: "night-k3f9ab", status: "draft", visibility: "public", title: "Night", category: null, startsAt: null, endsAt: null, timezone: "Asia/Kolkata", area: null, city: null, online: false, sold: 0, checkedIn: 0 };
 const teamEvent = {
   ...eventRow, hostId: id, place: null, onlineLink: null, about: null, agenda: [], faq: [], terms: [],
   poster: null, wide: null, wideEdge: null, tone: null, publishedAt: null, cancelledAt: null, cancelReason: null, saved: null, createdAt: iso, updatedAt: iso,
