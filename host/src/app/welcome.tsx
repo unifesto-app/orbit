@@ -7,7 +7,6 @@
 // next), so it shows faded. Someone on a host's team but not its Admin is told Event Partner is for Admins; an Admin goes
 // to the tabs.
 import { markOf } from '@orbit/mobile/mark';
-import { useLoad } from '@orbit/mobile/load';
 import { showPhone } from '@orbit/mobile/signin';
 import { color, font, space } from '@orbit/mobile/theme';
 import { Redirect } from 'expo-router';
@@ -16,8 +15,9 @@ import { Image, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { adminHosts, mustPick } from '../launch/host';
+import { useInvites } from '../launch/invites';
 import { Monogram, Note, Pill, Section, styles as ui } from '../launch/ui';
-import { api, refreshMe, signOut, useSession } from '../session';
+import { refreshMe, signOut, useSession } from '../session';
 import { seats } from '../station/seats';
 import { isStation, thisApp } from '../variant';
 
@@ -26,7 +26,6 @@ const ICON = {
   station: require('../../assets/icons/station.png'),
   crew: require('../../assets/icons/crew.png'),
 }[thisApp.word]; // static requires, for Metro
-type Invite = { id: string; hostId: string; hostName: string; role: 'admin' | 'crew'; accepted: boolean };
 const ROLE = { admin: 'Admin', crew: isStation ? 'Desk' : 'Crew' } as const;
 // "Sat 20 Dec", the day an account's deletion is due, in India time.
 const dayOf = (iso: string) => new Date(iso).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' });
@@ -35,10 +34,8 @@ export default function Welcome() {
   const insets = useSafeAreaInsets();
   const session = useSession();
   const me = session?.me ?? null;
-  const invites = useLoad<Invite[]>(me ? `invites|${me.id}` : null, () => api.authed<Invite[]>('GET', '/me/invites'));
+  const { invites, busy, error, accept } = useInvites();
   const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
-  const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   if (!me) return null;
   if (isStation && seats(me).length) return <Redirect href="/today" />; // an accepted seat opens Today
   if (!isStation && adminHosts(me).length) return <Redirect href={mustPick(me) ? '/pick' : '/events'} />; // an Admin opens Events
@@ -47,16 +44,6 @@ export default function Welcome() {
   const waiting = (invites.data ?? []).filter((i) => !hidden.has(i.id));
   const onTeams = me.teams.length;
   const contacts = [me.phone && showPhone(me.phone), me.email].filter(Boolean).join(' or ');
-
-  async function accept(i: Invite) {
-    setBusy(i.id);
-    setError(null);
-    const r = await api.authed('POST', `/invites/${i.id}/accept`);
-    setBusy(null);
-    if (!r.ok) return setError(r.error.message);
-    invites.reload();
-    void refreshMe(); // a started role shows in the account's teams
-  }
 
   return (
     <ScrollView

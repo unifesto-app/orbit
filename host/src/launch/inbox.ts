@@ -52,3 +52,11 @@ export function inboxDays<M extends Message>(messages: readonly M[], now: number
 
 // The Inbox circle's count: nothing when there's nothing new, and never wider than two characters.
 export const badge = (n: number) => (n <= 0 ? null : n > 9 ? '9+' : String(n));
+
+// Marking read on the phone before the API answers: those ids (every message with none), and the inbox's unread count
+// down by how many of them were new. The count is the whole inbox's, so all read is 0.
+export function readLocally<M extends Message>(items: readonly M[], unread: number, ids?: readonly string[]) {
+  const hit = (m: M) => !m.read && (!ids || ids.includes(m.id));
+  const newly = items.filter(hit).length;
+  return { items: items.map((m) => (hit(m) ? { ...m, read: true } : m)), unread: ids ? Math.max(0, unread - newly) : 0, newly };
+}

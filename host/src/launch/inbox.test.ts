@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { type Message, badge, dayHeading, inboxDays, kept, timeLabel, unreadCount } from './inbox.ts';
+import { type Message, badge, dayHeading, inboxDays, kept, readLocally, timeLabel, unreadCount } from './inbox.ts';
 
 const now = Date.parse('2026-11-20T18:40:00+05:30');
 const m = (id: string, at: string): Message => ({ id, at: `${at}+05:30`, from: 'Orbit', kind: 'Test', text: '', picture: null });
@@ -53,4 +53,19 @@ test('the unread count counts only what the Inbox shows', () => {
   const all = [m('a', '2026-11-20T10:00:00'), m('b', '2026-11-19T10:00:00'), m('old', '2026-01-01T10:00:00')];
   assert.equal(unreadCount(all, new Set(), now), 2);
   assert.equal(unreadCount(all, new Set(['a']), now), 1);
+});
+
+test('marking read on the phone: the ids given, or all; the count drops by what was new', () => {
+  const items = [{ ...m('a', '2026-11-20T10:00:00'), read: false }, { ...m('b', '2026-11-20T11:00:00'), read: true }, { ...m('c', '2026-11-20T12:00:00'), read: false }];
+  const some = readLocally(items, 40, ['a', 'b']); // the count is the whole inbox's, past page one
+  assert.deepEqual(
+    some.items.map((x) => x.read),
+    [true, true, false],
+  );
+  assert.equal(some.newly, 1);
+  assert.equal(some.unread, 39);
+  assert.equal(readLocally(items, 0, ['a']).unread, 0); // never below zero
+  const all = readLocally(items, 40);
+  assert.ok(all.items.every((x) => x.read));
+  assert.equal(all.unread, 0);
 });

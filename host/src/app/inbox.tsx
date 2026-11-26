@@ -32,12 +32,11 @@ const back = () => (router.canGoBack() ? router.back() : router.replace('/events
 export default function Inbox() {
   const insets = useSafeAreaInsets();
   const [scrollY] = useState(() => new Animated.Value(0));
-  const { loaded, messages, error } = useInbox();
+  const { loaded, messages, unread, error } = useInbox();
   const me = useSession()?.me.id;
   useEffect(() => {
     if (me) void refreshInbox(me);
   }, [me]);
-  const unread = messages.some((m) => !m.read);
   const days = inboxDays(messages, Date.now());
   const top = insets.top + 4;
 
@@ -52,7 +51,7 @@ export default function Inbox() {
           <Text style={styles.title} accessibilityRole="header">
             Inbox
           </Text>
-          {unread && <Pill label="Mark all read" onPress={() => markRead()} />}
+          {unread > 0 && <Pill label="Mark all read" onPress={() => markRead()} />}
         </View>
         {error && <Note>{error}</Note>}
         {!loaded ? null : days.length === 0 ? (

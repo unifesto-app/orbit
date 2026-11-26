@@ -8,15 +8,16 @@
 import { DARK_TINT as DARK, Glass } from '@orbit/mobile/glass';
 import { BAR, barAfterScroll, barBottom, SIDE, TabBarScroll, TabBarSmall } from '@orbit/mobile/tabBar';
 import { color, font, stoneAt } from '@orbit/mobile/theme';
-import { router } from 'expo-router';
+import { Redirect, router } from 'expo-router';
 import { TabList, Tabs, TabSlot, TabTrigger, type TabTriggerSlotProps } from 'expo-router/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, Image, LayoutAnimation, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Animated, AppState, Image, LayoutAnimation, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaInsetsContext, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { badge } from '../../launch/inbox';
 import { refreshInbox, useInbox } from '../../launch/inboxStore';
-import { useSession } from '../../session';
+import { useHost } from '../../launch/host';
+import { refreshMe, useSession } from '../../session';
 
 const PAD = 4;
 const GAP = 10;
@@ -47,8 +48,19 @@ export default function LaunchTabs() {
     if (!me) return;
     void refreshInbox(me);
     const every = setInterval(() => void refreshInbox(me), 60_000);
-    return () => clearInterval(every);
+    // Back from the background: the account (Admin seats added or ended meanwhile) and the inbox read again.
+    const back = AppState.addEventListener('change', (s) => {
+      if (s !== 'active') return;
+      void refreshMe();
+      void refreshInbox(me);
+    });
+    return () => {
+      clearInterval(every);
+      back.remove();
+    };
   }, [me]);
+  const host = useHost();
+  if (!host) return <Redirect href="/pick" />; // several hosts and none picked (the root guard keeps out no host at all)
   return (
     <Tabs style={styles.root}>
       <SafeAreaInsetsContext.Provider value={{ ...insets, bottom: bottom + BAR }}>

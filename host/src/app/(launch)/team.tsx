@@ -14,7 +14,7 @@
 // ponytail: Event teams (Event leads and Crew per event) stay hidden until the Crew slice (H3.3). Edit host, Get
 // verified, Finish your page and the status moves open nothing yet; host pages on the web aren't built, so Share page
 // and View wait for them. An invite's age shows once the team route sends when it went.
-import { type EventRow, HOST_KINDS, type HostEvents, type HostPage } from '@orbit/contract';
+import { type EventRow, HOST_KINDS, type HostEvents, type HostPage, type Me } from '@orbit/contract';
 import { markOf } from '@orbit/mobile/mark';
 import { useLoad } from '@orbit/mobile/load';
 import { showPhone } from '@orbit/mobile/signin';
@@ -24,10 +24,11 @@ import { useState } from 'react';
 import { Alert, Linking, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { useHost } from '../../launch/host';
+import { type Host as HostOf, useHost } from '../../launch/host';
+import { useInvites } from '../../launch/invites';
 import { spokenContact, statusMoves, statusNote } from '../../launch/team';
 import { Card, Field, Glow, HostHead, Monogram, Note, PERSON_INDENT, Person, Pill, Row, Section, Tag, Verified, styles as ui } from '../../launch/ui';
-import { api, signOut, useSession } from '../../session';
+import { api, refreshMe, signOut, useSession } from '../../session';
 
 // GET /hosts/:id/team, as api/src/roles/routes.ts sends it.
 type Member = { id: string; userId: string | null; name: string | null; role: 'admin' | 'crew'; owner: boolean };
@@ -42,19 +43,25 @@ const kindOf = (k: string) => HOST_KINDS[k as keyof typeof HOST_KINDS] ?? k;
 const shownContact = (c: string) => (/^\+91\d{10}$/.test(c) ? showPhone(c) : c);
 
 export default function Host() {
-  const insets = useSafeAreaInsets();
-  const onScroll = useTabBarScroll();
   const host = useHost();
   const me = useSession()?.me;
-  const id = host?.id;
-  const page = useLoad<HostPage>(id ? `host|${id}` : null, () => api.authed<HostPage>('GET', `/hosts/${id}`));
-  const team = useLoad<TeamList>(id ? `team|${id}` : null, () => api.authed<TeamList>('GET', `/hosts/${id}/team`));
-  const events = useLoad<Events>(id ? `events|${id}` : null, () => api.authed<Events>('GET', `/hosts/${id}/events`));
+  // Keyed by host: switching host starts the tab afresh (no half-typed invite or error from the last one).
+  return host && me ? <HostTab key={host.id} host={host} me={me} /> : null;
+}
+
+function HostTab({ host, me }: { host: HostOf; me: Me }) {
+  const insets = useSafeAreaInsets();
+  const onScroll = useTabBarScroll();
+  const id = host.id;
+  const page = useLoad<HostPage>(`host|${id}`, () => api.authed<HostPage>('GET', `/hosts/${id}`));
+  const team = useLoad<TeamList>(`team|${id}`, () => api.authed<TeamList>('GET', `/hosts/${id}/team`));
+  const events = useLoad<Events>(`events|${id}`, () => api.authed<Events>('GET', `/hosts/${id}/events`));
+  const mine = useInvites(); // invites to this account, from any host
   const [adding, setAdding] = useState(false);
   const [to, setTo] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  if (!host || !me) return null;
+  const waiting = mine.invites.data ?? [];
 
   const p = page.data;
   const admins = (team.data?.members ?? []).filter((m) => m.role === 'admin');
@@ -107,6 +114,8 @@ export default function Host() {
     page.reload();
     team.reload();
     events.reload();
+    mine.invites.reload();
+    void refreshMe(); // an Admin seat added or ended elsewhere
   };
 
   return (
@@ -229,6 +238,24 @@ export default function Host() {
             )}
             {error && <Note>{error}</Note>}
             <Note>Admins run everything here, the bank account too.</Note>
+          </>
+        )}
+
+        {waiting.length > 0 && (
+          <>
+            <Section title="Invites" />
+            <Card indent={44 + 12}>
+              {waiting.map((i) => (
+                <Row
+                  key={i.id}
+                  lead={<Monogram host={markOf({ id: i.hostId, name: i.hostName })} size={44} />}
+                  label={i.hostName}
+                  note={i.accepted ? `${i.role === 'admin' ? 'Admin' : 'Crew'} · accepted, waiting for them to confirm it’s you` : i.role === 'admin' ? 'Admin' : 'Crew'}
+                  right={i.accepted ? undefined : <Pill label={mine.busy === i.id ? 'Accepting…' : 'Accept'} onPress={mine.busy ? undefined : () => void mine.accept(i)} />}
+                />
+              ))}
+            </Card>
+            {mine.error && <Note>{mine.error}</Note>}
           </>
         )}
 

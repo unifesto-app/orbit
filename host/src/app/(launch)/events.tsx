@@ -25,7 +25,7 @@ import { useHost } from '../../launch/host';
 import { timeLabel } from '../../launch/inbox';
 import { dayLabel, istDate } from '../../launch/money';
 import { EventCard, Glow, HostHead, Note, Pill, Row, Section } from '../../launch/ui';
-import { api } from '../../session';
+import { api, refreshMe } from '../../session';
 
 type Stage = 'open' | 'next' | 'past';
 // A row with its counts, once the API sends them (PR A); absent, nothing shows for them.
@@ -52,7 +52,10 @@ export default function Events() {
         contentContainerStyle={{ paddingTop: insets.top + 12, paddingBottom: insets.bottom + space.big }}
         onScroll={onScroll}
         scrollEventThrottle={16}
-        refreshControl={<RefreshControl refreshing={load.loading && !!load.data} onRefresh={load.reload} tintColor={color.secondary} />}
+        refreshControl={<RefreshControl refreshing={load.loading && !!load.data} onRefresh={() => {
+              load.reload();
+              void refreshMe();
+            }} tintColor={color.secondary} />}
       >
         <HostHead host={host} right={<Pill label="New event" dark />} />
         {load.error && <Note>{load.error.message}</Note>}
