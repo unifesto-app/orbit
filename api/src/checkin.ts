@@ -1,13 +1,13 @@
-import { and, asc, count, desc, eq, gt, gte, ilike, inArray, like, lte, ne, or, type SQL, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, gte, ilike, inArray, lte, ne, or, type SQL, sql } from "drizzle-orm";
 import { Hono, type Context } from "hono";
 import {
-  type CheckedIn, type CheckInEvent, type CheckInEventPage, type CheckInEvents, CheckInTotal, CODE_LENGTH, type DoorGuest, type DoorGuests, Scan,
-  type ScanRefusal, type ScanResult, StaffUndo,
+  type CheckedIn, type CheckInEvent, type CheckInEventPage, type CheckInEvents, CheckInTotal, CODE_ALPHABET, CODE_LENGTH, type DoorGuest, type DoorGuests, Scan,
+  readContact, type ScanRefusal, type ScanResult, StaffUndo,
 } from "@orbit/contract";
 import type { Db } from "./db/index.ts";
 import { auditLog, bookings, events, hosts, users } from "./db/schema.ts";
 import { fail, invalid, isUuid, listPage, type Notify, parse, signedIn, type Tx } from "./http.ts";
-import { changeable, holdersOf, onHost, requireFeature, type StaffEnv, teamOf, tell } from "./roles/access.ts";
+import { changeable, holdersOf, onHost, requireFeature, type StaffEnv, teamOf } from "./roles/access.ts";
 
 // Check-in at the door (X5; Orbit flows: Event day). Any started seat on the event's host (Admin or Crew; Desk is a crew
 // seat on a Venue host, the same rule) scans a ticket, admits a group's count and undoes a mis-tap. Every write locks
@@ -44,8 +44,15 @@ export const ticketBy = (text: string): SQL | null => {
   const t = text.trim();
   if (/^[A-Za-z0-9_-]{32}$/.test(t)) return eq(bookings.qr, t);
   const code = t.replace(/[\s-]/g, "").toUpperCase();
-  return code.length === CODE_LENGTH ? eq(bookings.code, code) : null;
+  return CODE.test(code) ? eq(bookings.code, code) : null;
 };
+const CODE = new RegExp(`^[${CODE_ALPHABET}]{${CODE_LENGTH}}$`);
+// eslint-disable-next-line no-control-regex
+const CONTROL = /[\u0000-\u001f\u007f]/;
+
+// The count the door last saw is stale: someone else changed it. Same total as asked is no change at all (a retry).
+const stale = (b: Row, from: number, total: number) => b.admitted !== total && b.admitted !== from;
+const CHANGED = "Someone else changed this ticket's count. Check how many are here and try again.";
 
 const guestOf = (b: Row, name: string | null): DoorGuest => ({
   id: b.id, name, quantity: b.quantity, admitted: b.admitted, checkedInAt: b.checkedInAt?.toISOString() ?? null,
@@ -156,16 +163,19 @@ export function checkInRoutes({ db, notify, secret, now = Date.now }: Deps) {
         if (!r) return null;
         const why = refusal(r.b, r, now());
         if (why) return why;
+        if (stale(r.b, b.from, b.total)) return { changed: r.b };
         return path === "admit" ? raise(tx, r.b, b.total, c.var.user.id, at()) : lower(tx, r.b, b.total);
       });
       if (!done) return nothing(c);
       if (typeof done === "string") return fail(c, 409, done, REFUSED[done]);
+      if ("changed" in done) return fail(c, 409, "changed", CHANGED, { guest: guestOf(done.changed, await nameOf(db, done.changed.userId)) });
       return c.json(guestOf(done, await nameOf(db, done.userId)));
     });
   change("admit");
   change("undo");
 
-  // GET /hosts/:hostId/events/:eventId/guests?q=: by name, phone, email or code (2 characters at least), or everyone.
+  // GET /hosts/:hostId/events/:eventId/guests?q=: by part of a name, or by a whole phone number, email or code (2
+// characters at least), or everyone. Contacts match only in full, so the list can't be searched for them a digit at a time.
   app.get("/hosts/:hostId/events/:eventId/guests", auth, async (c) => {
     const host = await door(c, false);
     if (host instanceof Response) return host;
@@ -173,17 +183,16 @@ export function checkInRoutes({ db, notify, secret, now = Date.now }: Deps) {
     const [e] = isUuid(eventId) ? await db.select({ id: events.id }).from(events).where(and(eq(events.id, eventId), eq(events.hostId, host.id))) : [];
     if (!e) return nothing(c);
     const q = (c.req.query("q") ?? "").trim();
-    if (q.length === 1 || q.length > 100) return invalid(c);
+    if (q.length === 1 || q.length > 100 || CONTROL.test(q)) return invalid(c);
     let match: SQL | undefined;
     if (q) {
-      const has = `%${q.replace(/[\\%_]/g, "\\$&")}%`;
-      const digits = q.replace(/\D/g, "");
-      match = or(
-        ilike(users.name, has),
-        ilike(users.email, has),
-        digits.length >= 2 ? like(users.phone, `%${digits}%`) : undefined,
-        eq(bookings.code, q.replace(/[\s-]/g, "").toUpperCase()),
-      );
+      const to = readContact(q);
+      const contact =
+        to === null || to === "abroad" ? undefined
+        : to.kind === "email" ? eq(users.email, to.email)
+        : /^[\d\s+-]+$/.test(q) ? eq(users.phone, to.e164) : undefined;
+      const code = q.replace(/[\s-]/g, "").toUpperCase();
+      match = or(ilike(users.name, `%${q.replace(/[\\%_]/g, "\\$&")}%`), contact, CODE.test(code) ? eq(bookings.code, code) : undefined);
     }
     const rows = await db
       .select({ b: bookings, name: users.name })
@@ -225,17 +234,19 @@ export function checkInRoutes({ db, notify, secret, now = Date.now }: Deps) {
       .select({ b: bookings, name: users.name })
       .from(bookings)
       .innerJoin(users, eq(users.id, bookings.userId))
-      .where(and(eq(bookings.eventId, e.id), gt(bookings.admitted, 0)))
+      .where(and(eq(bookings.eventId, e.id), eq(bookings.status, "confirmed"), gt(bookings.admitted, 0)))
       .orderBy(desc(bookings.checkedInAt))
       .limit(GUESTS_CAP);
     const byIds = [...new Set(rows.map((r) => r.b.checkedInBy).filter((x): x is string => !!x))];
     const who = new Map(byIds.length ? (await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, byIds))).map((u) => [u.id, u.name]) : []);
     const guests: CheckedIn[] = rows.map((r) => ({ ...guestOf(r.b, r.name), by: r.b.checkedInBy ? (who.get(r.b.checkedInBy) ?? null) : null }));
+    await db.insert(auditLog).values({ actorId: c.var.actor.id, action: "checkin.view", targetHost: e.hostId, data: { eventId: e.id }, at: at() });
     const out: CheckInEventPage = { event: eventOut(e, (await counts(db, [e.id])).get(e.id)), guests };
     return c.json(out);
   });
 
-  // POST /galaxy/check-in/:bookingId/undo {total, reason}: any time, logged, and every holder of Hosts is told. Staff
+  // POST /galaxy/check-in/:bookingId/undo {from, total, reason}: any time, logged, and every holder of Hosts is told
+  // (in the same transaction, so a failed notice can't follow a committed undo). A stale `from` is refused as at the door. Staff
   // never act on a host they're on (Roles flow).
   app.post("/galaxy/check-in/:bookingId/undo", auth, hostsOnly, async (c) => {
     const b = await parse(c, StaffUndo);
@@ -246,18 +257,22 @@ export function checkInRoutes({ db, notify, secret, now = Date.now }: Deps) {
     if (await onHost(db, found.hostId, c.var.user, now()))
       return fail(c, 403, "ownHost", "Staff never act on a host they're on, invited to or left in the last 30 days. Ask another staff member with this access.");
     const actor = c.var.actor.id;
+    const told = await holdersOf(db, "hosts", at());
     const done = await db.transaction(async (tx) => {
       const r = (await locked(tx, eq(bookings.id, id)))!;
+      if (stale(r.b, b.from, b.total)) return { stale: r.b };
       const row = await lower(tx, r.b, b.total);
-      if (row.admitted !== r.b.admitted)
+      if (row.admitted !== r.b.admitted) {
         await tx.insert(auditLog).values({
           actorId: actor, action: "checkin.undo", targetUser: row.userId, targetHost: r.hostId, reason: b.reason,
           data: { bookingId: row.id, from: r.b.admitted, to: row.admitted }, at: at(),
         });
-      return { row, changed: row.admitted !== r.b.admitted };
+        for (const userId of told) await notify({ to: { userId }, kind: "staffRiskyAction", data: { action: "checkin.undo", hostId: r.hostId, reason: b.reason, by: actor } }, tx);
+      }
+      return { row };
     });
-    if (done.changed) await tell(notify, await holdersOf(db, "hosts", at()), "staffRiskyAction", { action: "checkin.undo", hostId: found.hostId, reason: b.reason, by: actor });
-    return c.json(guestOf(done.row, await nameOf(db, done.row.userId)));
+    if (done.stale) return fail(c, 409, "changed", CHANGED, { guest: guestOf(done.stale, await nameOf(db, done.stale.userId)) });
+    return c.json(guestOf(done.row!, await nameOf(db, done.row!.userId)));
   });
 
   return app;

@@ -108,5 +108,6 @@ export async function endGrant(_: Done, f: FormData) {
 export async function undoCheckIn(_: Done, f: FormData) {
   const total = Number(text(f, "total") || "0");
   if (!Number.isInteger(total) || total < 0) return { error: "Enter how many stay in, 0 or more." };
-  return run("POST", `/galaxy/check-in/${path(f, "id")}/undo`, { total, reason: text(f, "reason") });
+  // `from`: the count this page showed; the API refuses the undo if it has moved since.
+  return run("POST", `/galaxy/check-in/${path(f, "id")}/undo`, { from: Number(text(f, "from")), total, reason: text(f, "reason") });
 }

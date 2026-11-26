@@ -9,8 +9,11 @@ import { MAX_PER_BOOKING } from "./bookings.ts";
 export const Scan = z.object({ eventId: z.uuid(), text: z.string().trim().min(1).max(64) });
 export type Scan = z.infer<typeof Scan>;
 
-// POST /hosts/:hostId/check-in/:bookingId/admit and /undo: how many are in now. Admit never lowers, undo never raises.
-export const CheckInTotal = z.object({ total: z.number().int().min(0).max(MAX_PER_BOOKING) });
+// POST /hosts/:hostId/check-in/:bookingId/admit and /undo: how many are in now (`total`), from the count the door last
+// saw (`from`). Admit never lowers, undo never raises. If the count is already `total` it's a no-op 200 (a retry); if it
+// moved off `from` meanwhile (another door), 409 `changed` with the fresh `guest`, so the door asks again.
+const count = z.number().int().min(0).max(MAX_PER_BOOKING);
+export const CheckInTotal = z.object({ from: count, total: count });
 export type CheckInTotal = z.infer<typeof CheckInTotal>;
 
 // A booking as the door sees it: never a contact.

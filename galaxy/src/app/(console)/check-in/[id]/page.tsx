@@ -67,7 +67,7 @@ async function Body({ params }: Pick<PageProps<"/check-in/[id]">, "params">) {
                   <td>{g.checkedInAt && time(g.checkedInAt)}</td>
                   <td>{g.by ?? ""}</td>
                   <td>
-                    <Act label="Undo" action={undoCheckIn} hidden={{ id: g.id }} who="Staff see this; the host doesn't">
+                    <Act label="Undo" action={undoCheckIn} hidden={{ id: g.id, from: String(g.admitted) }} who="Staff see this; the host doesn't">
                       <label>
                         Leave in <span className={ui.secondary}>(0 checks everyone out)</span>
                         <input className={ui.input} type="number" name="total" min={0} max={g.admitted - 1} defaultValue={0} />
