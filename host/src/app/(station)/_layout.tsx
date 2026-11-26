@@ -4,8 +4,8 @@
 // gradient), shrinking to the open tab while the page scrolls down. Desk has no money, prices or settings (Roles by use
 // case), so it gets Today alone, with no bar. 1.0 (ONE_0) has no Money tab: Today and Venue. Beside the bar, the round
 // Inbox with its count, Event Partner's (src/inboxButton.tsx; Notifications PR 5); Desk keeps it too.
-// ponytail: the Scan button (round beside the bar, a "Scan a ticket" pill for Desk) returns with the scanner, once the
-// API looks tickets up; git d31550c has both and app/scan.tsx.
+// ponytail: the Scan button (round beside the bar, a "Scan a ticket" pill for Desk) returns with X7's slot codes, admitted
+// through /venues/:hostId/claims/:claimId/admit; git d31550c has both. Event Partner's event scanner is app/scan.tsx (X6).
 // ponytail: no drag along the bar (the app's has one); add it if the owner misses it.
 import { DARK_TINT as DARK, Glass } from '@orbit/mobile/glass';
 import { BAR, barAfterScroll, barBottom, SIDE, TabBarScroll, TabBarSmall } from '@orbit/mobile/tabBar';

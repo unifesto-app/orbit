@@ -18,7 +18,7 @@ import type { Person } from '../../events';
 import { events, now, people } from '../../mock';
 import { OrbitSays } from '../../orbitSays';
 import { BackBar, Monogram, NotFound, SECTION, Section, TOP } from '../../rows';
-import { askToConnect, setInRoom, useAsked, useInRoom, useViewer } from '../../session';
+import { askToConnect, real, setInRoom, useAsked, useInRoom, useLetIn, useViewer } from '../../session';
 import { color, font, space } from '../../theme';
 
 const PHOTO = 44; // as the event page's people
@@ -30,9 +30,10 @@ export default function Room() {
   const insets = useSafeAreaInsets();
   const viewer = useViewer();
   const joined = useInRoom(slug);
+  const atDoor = useLetIn(slug); // a real event: your ticket was checked in
   const e = events.find((x) => x.id === slug);
   if (!e || !meetups[e.id]?.inRoom) return <NotFound what="room" />;
-  const letIn = viewer.signedIn && history.some((h) => h.eventId === e.id && h.status === 'Went');
+  const letIn = viewer.signedIn && (real(e.id) ? atDoor : history.some((h) => h.eventId === e.id && h.status === 'Went'));
   const open = now < Date.parse(e.startsAt) + OPEN_FOR;
   // ponytail: the mock's people stand in for whoever joined.
   const here = people.slice(0, 5);
@@ -49,7 +50,7 @@ export default function Room() {
           </Text>
         </View>
         {!letIn ? (
-          <OrbitSays top={SECTION} text="The room opens to people let in at the door." />
+          <OrbitSays top={SECTION} text="The room opens at the door: once your ticket is checked in, you can join." />
         ) : !open ? (
           <OrbitSays top={SECTION} text="This room has closed. Rooms stay open a week after the meetup." />
         ) : !joined ? (
