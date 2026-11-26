@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { type AnyPgColumn, bigint, boolean, check, date, doublePrecision, foreignKey, index, integer, jsonb, pgTable, primaryKey, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
-import type { AgendaItem, AutoMessages, BroadcastChannel, BroadcastSegment, FaqItem, RequestEvent, RequestHost, Week } from "@orbit/contract";
+import type { AgendaItem, AutoMessages, BroadcastChannel, BroadcastSegment, FaqItem, PersonLink, RequestEvent, RequestHost, Week } from "@orbit/contract";
 
 // The User flow's tables (Orbit flows: User). Migrated people keep their Unifesto ids, so `id` takes any UUID.
 // Phone and email are the ways in by code; Google and Apple live in `identities`, passkeys in `passkeys`.
@@ -287,6 +287,53 @@ export const ticketTypes = pgTable(
     check("ticket_types_sales_end_after_start", sql`${t.salesEndAt} is null or ${t.salesStartAt} is null or ${t.salesEndAt} > ${t.salesStartAt}`),
     index().on(t.eventId),
   ],
+);
+
+// ---------- People on events and what's inside a fest (orbit-pm X14), set by staff in Galaxy ----------
+
+// Someone on an event's page: a speaker, a guest, a judge. A name on a page, not an account; "persons", since Galaxy's
+// People are accounts. ponytail: no photo column; the app draws a monogram until uploads come for people.
+export const persons = pgTable("persons", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  headline: text("headline").notNull(),
+  bio: text("bio"),
+  links: jsonb("links").$type<PersonLink[]>().notNull().default([]), // up to 5, https (contract)
+  createdAt: at("created_at").notNull().defaultNow(),
+  updatedAt: at("updated_at").notNull().defaultNow(),
+});
+
+// Who's on an event, with their role there, in `position` order. A role belongs to the event: a judge at one can speak at another.
+export const eventPeople = pgTable(
+  "event_people",
+  {
+    eventId: uuid("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+    personId: uuid("person_id").notNull().references(() => persons.id, { onDelete: "cascade" }),
+    role: text("role").notNull(),
+    position: integer("position").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.eventId, t.personId] }), index().on(t.personId), check("event_people_role_length", sql`char_length(${t.role}) between 1 and 30`)],
+);
+
+// One thing inside a fest: a competition, a performance, a workshop or the food. It comes with the fest's booking.
+export const festItems = pgTable(
+  "fest_items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    eventId: uuid("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    kind: text("kind", { enum: ["Competition", "Performance", "Workshop", "Food"] }).notNull(),
+    when: text("when").notNull(), // "10:30 AM", "All day"
+    where: text("where").notNull(),
+    about: text("about").notNull(),
+    team: text("team"),
+    prize: text("prize"),
+    actHostId: uuid("act_host_id").references(() => hosts.id, { onDelete: "set null" }),
+    position: integer("position").notNull(),
+    createdAt: at("created_at").notNull().defaultNow(),
+    updatedAt: at("updated_at").notNull().defaultNow(),
+  },
+  (t) => [index().on(t.eventId, t.position)],
 );
 
 // ---------- Bookings (Orbit flows: Booking and tickets): one ticket type, one QR admitting `quantity` ----------

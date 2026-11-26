@@ -11,6 +11,7 @@ import { publicEventsRoutes } from "./events/public.ts";
 import { savesRoutes } from "./saves.ts";
 import { interestsRoutes } from "./interests.ts";
 import { reportsRoutes } from "./reports.ts";
+import { peopleRoutes } from "./people.ts";
 import { meNotificationsRoutes } from "./me-notifications.ts";
 import { bookingsRoutes } from "./bookings.ts";
 import { paymentsRoutes } from "./payments/routes.ts";
@@ -58,6 +59,7 @@ export function createApp(deps?: Deps) {
     app.route("/", savesRoutes(deps));
     app.route("/", interestsRoutes(deps));
     app.route("/", reportsRoutes(deps));
+    app.route("/", peopleRoutes(deps));
     app.route("/", meNotificationsRoutes(deps));
     app.route("/", bookingsRoutes(deps));
     app.route("/", paymentsRoutes(deps));

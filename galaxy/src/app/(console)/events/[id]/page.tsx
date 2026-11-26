@@ -1,4 +1,4 @@
-import { categories, type ContentAdmin, type StaffEvent } from "@orbit/contract";
+import { categories, type ContentAdmin, type StaffEvent, type StaffLineup, type StaffPerson } from "@orbit/contract";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
@@ -7,6 +7,7 @@ import { Alert, Container, PageHeader, Pairs, ui } from "../../../ui";
 import { Act } from "../../act";
 import { cancelEvent, unpublishEvent } from "../../actions";
 import { time } from "../../requests/status";
+import { FestItems, People } from "../lineup";
 import { Promote } from "../promote";
 import { EventBadge } from "../status";
 
@@ -14,6 +15,7 @@ import { EventBadge } from "../status";
 // draft while nobody has booked; Cancel cancels its bookings (not until it has ended). Both tell the host's Admins the
 // reason; ticket holders aren't told yet (H13.5). Promote puts it in App content's Promoted list (needs Platform too),
 // and Unpromote shows whenever it's there, whatever the status. The API refuses staff an event of a host they're on.
+// People (who's on its page, with roles, in order) and, on a fest, Inside the fest are edited here too (X14).
 export const metadata: Metadata = { title: "Event" };
 
 const rupees = (paise: number) => (paise === 0 ? "Free" : `₹${(paise / 100).toLocaleString("en-IN")}`);
@@ -28,8 +30,14 @@ export default function EventPage({ params }: PageProps<"/events/[id]">) {
 
 async function Event({ params }: Pick<PageProps<"/events/[id]">, "params">) {
   const { id } = await params;
-  const [r, content] = await Promise.all([read<StaffEvent>(`/galaxy/events/${encodeURIComponent(id)}`), read<ContentAdmin>("/galaxy/app-content")]);
+  const [r, content, lineup, persons] = await Promise.all([
+    read<StaffEvent>(`/galaxy/events/${encodeURIComponent(id)}`),
+    read<ContentAdmin>("/galaxy/app-content"),
+    read<StaffLineup>(`/galaxy/events/${encodeURIComponent(id)}/lineup`),
+    read<{ persons: StaffPerson[] }>("/galaxy/persons"), // ponytail: the first 50 by name; a search box when there are more
+  ]);
   if (!r.ok) return <Alert>{r.error.message}</Alert>;
+  if (!lineup.ok) return <Alert>{lineup.error.message}</Alert>;
   const { event: e, host, tickets, bookings } = r.data;
   const promoted = content.ok ? content.data.content.promoted.some((p) => p.href === `/event/${e.slug}`) : null; // null: no Platform
   const place = e.place && `${e.place.venue}, ${e.place.address}, ${e.place.area}, ${e.place.city}`;
@@ -87,6 +95,16 @@ async function Event({ params }: Pick<PageProps<"/events/[id]">, "params">) {
           </table>
         )}
       </Container>
+
+      <Container title="People" count={lineup.data.people.length}>
+        <People eventId={e.id} lineup={lineup.data.people} persons={persons.ok ? persons.data.persons : []} />
+      </Container>
+
+      {e.category === "fests" && (
+        <Container title="Inside the fest" count={lineup.data.festItems.length}>
+          <FestItems eventId={e.id} items={lineup.data.festItems} />
+        </Container>
+      )}
 
       {(published || promoted) && (
         <Container title="Actions">

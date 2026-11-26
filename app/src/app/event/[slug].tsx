@@ -18,13 +18,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { past as history } from '../../account/data';
 import { API_URL } from '../../api';
 import { BookBar } from '../../bookBar';
-import { barPrice, cast, followersLine } from '../../detail';
+import { barPrice, cast, followersLine, liveCast } from '../../detail';
 import { Fact, FactCard } from '../../fact';
 import { DARK_TINT } from '../../glass';
 import { Carousel } from '../../home/Carousel';
 import { KindSections, WithActs } from '../../kindSections';
 import { meetups } from '../../kinds';
 import type { Event, Host, Person } from '../../events';
+import { markOf } from '../../hosts';
 import { interestedBase, people, vibes } from '../../mock';
 import { OrbitSays } from '../../orbitSays';
 import {
@@ -163,17 +164,46 @@ function EventView({ e, host, now, live }: { e: Event; host: Host; now: number; 
         {/* Its kind's own sections: the show, the jam, how a hackathon works, the room, the fest (src/kindSections.tsx). */}
         {!live && <KindSections event={e} past={past} />}
 
-        {cast(e.people).map((g) => (
-          <View key={g.title}>
-            <Section top={SECTION} title={g.title} />
-            <View style={styles.people}>
-              {g.ids.map((id) => {
-                const p = people.find((x) => x.id === id);
-                return p && <PersonRow key={id} person={p} />;
-              })}
-            </View>
-          </View>
-        ))}
+        {/* A real fest's insides (X14), as a mock fest's in KindSections, each opening its sheet by the event's slug. */}
+        {live && e.festItems && (
+          <>
+            <Section top={SECTION} title="Inside the fest" />
+            <FactCard>
+              {e.festItems.map((it) => (
+                <Fact
+                  key={it.id}
+                  label={`${it.when} · ${it.kind}`}
+                  value={it.title}
+                  note={it.where}
+                  onPress={() => router.push(`/fest/${e.slug}/${it.id}`)}
+                />
+              ))}
+            </FactCard>
+          </>
+        )}
+
+        {live
+          ? liveCast(e.lineup).map((g) => (
+              <View key={g.title}>
+                <Section top={SECTION} title={g.title} />
+                <View style={styles.people}>
+                  {g.people.map((p) => (
+                    <PersonRow key={p.id} person={{ ...p, ...markOf(p) }} />
+                  ))}
+                </View>
+              </View>
+            ))
+          : cast(e.people).map((g) => (
+              <View key={g.title}>
+                <Section top={SECTION} title={g.title} />
+                <View style={styles.people}>
+                  {g.ids.map((id) => {
+                    const p = people.find((x) => x.id === id);
+                    return p && <PersonRow key={id} person={p} />;
+                  })}
+                </View>
+              </View>
+            ))}
 
         {/* The event's FAQ, if it has one, and its terms, each in a full modal (owner, 15 Nov 2026: "add Event FAQ &
             Terms & Conditions Modals"). */}
@@ -319,7 +349,7 @@ function Thanks({ event: e, host }: { event: Event; host: Host }) {
 
 // One person on the event, a plain row like the host rows: their 1:1 photo (a circle, as your own; the monogram until
 // photos exist), name and one line. Tapping opens the person sheet.
-function PersonRow({ person: p }: { person: Person }) {
+function PersonRow({ person: p }: { person: Pick<Person, 'id' | 'name' | 'headline' | 'initials' | 'bg' | 'fg'> }) {
   return (
     <Pressable
       onPress={() => router.push(`/person/${p.id}`)}

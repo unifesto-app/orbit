@@ -12,7 +12,7 @@ export type Done = { error?: string; ok?: number };
 const text = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
 const path = (f: FormData, k: string) => encodeURIComponent(text(f, k));
 
-async function run(method: "POST" | "PUT" | "DELETE", url: string, body: unknown): Promise<Done> {
+async function run(method: "POST" | "PUT" | "PATCH" | "DELETE", url: string, body: unknown): Promise<Done> {
   const r = await galaxy(method, url, body);
   if (!r.ok) return { error: r.error.message };
   refresh(); // the page reads again, so it shows what changed
@@ -119,6 +119,39 @@ export async function promoteEvent(_: Done, f: FormData) {
   const list = r.data.content.promoted.filter((p) => p.href !== href);
   if (on && list.length >= 10) return { error: "Promoted holds 10 events. Take one out in App content first." };
   return run("PUT", "/galaxy/app-content/promoted", { value: on ? [...list, { href }] : list, at: r.data.saved.promoted?.at ?? null });
+}
+
+// ─── An event's people and what's inside a fest (X14) ───
+// Each move sends the lineup the page showed, changed: the API replaces the whole list. No reason: these are page content.
+// A person picked from the list, or a new one made first from a name and a line.
+export async function addEventPerson(_: Done, f: FormData) {
+  const people = JSON.parse(text(f, "people") || "[]") as { personId: string; role: string }[];
+  let personId = text(f, "personId");
+  if (!personId) {
+    const made = await galaxy<{ id: string }>("POST", "/galaxy/persons", { name: text(f, "name"), headline: text(f, "headline") });
+    if (!made.ok) return { error: made.error.message };
+    personId = made.data.id;
+  }
+  return run("PUT", `/galaxy/events/${path(f, "id")}/people`, { people: [...people, { personId, role: text(f, "role") }] });
+}
+export async function setEventPeople(_: Done, f: FormData) {
+  return run("PUT", `/galaxy/events/${path(f, "id")}/people`, { people: JSON.parse(text(f, "people")) });
+}
+const festItem = (f: FormData) => ({
+  title: text(f, "title"), kind: text(f, "kind"), when: text(f, "when"), where: text(f, "where"), about: text(f, "about"),
+  team: text(f, "team") || null, prize: text(f, "prize") || null, actHostId: text(f, "actHostId") || null,
+});
+export async function addFestItem(_: Done, f: FormData) {
+  return run("POST", `/galaxy/events/${path(f, "id")}/fest-items`, festItem(f));
+}
+export async function editFestItem(_: Done, f: FormData) {
+  return run("PATCH", `/galaxy/fest-items/${path(f, "itemId")}`, festItem(f));
+}
+export async function deleteFestItem(_: Done, f: FormData) {
+  return run("DELETE", `/galaxy/fest-items/${path(f, "itemId")}`, undefined);
+}
+export async function orderFestItems(_: Done, f: FormData) {
+  return run("PUT", `/galaxy/events/${path(f, "id")}/fest-items/order`, { ids: JSON.parse(text(f, "ids")) });
 }
 
 // ─── Staff ───

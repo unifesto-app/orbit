@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { appearances, barPrice, cast, followersLine, hostEvents } from './detail.ts';
+import { appearances, barPrice, cast, followersLine, hostEvents, liveCast } from './detail.ts';
 
 const NOW = Date.parse('2026-11-20T09:00:00+05:30');
 const ev = (id: string, hostId: string, startsAt: string, people: { personId: string; role: 'Speaker' | 'Judge' }[] = []) => ({
@@ -77,4 +77,16 @@ test('barPrice picks the cheapest open tier and says "from" only for several pai
   assert.deepEqual(barPrice({ pricePaise: 10000, tiers: paid }), { paise: 49900, from: true });
   assert.deepEqual(barPrice({ pricePaise: 10000, tiers: [t('Free', 0), t('Pro', 9900)] }), { paise: 0, from: false });
   assert.deepEqual(barPrice({ pricePaise: 10000, tiers: [t('A', 100, true), t('B', 200, true)] }), { paise: 10000, from: false });
+});
+
+test('liveCast groups by typed role in first-seen order, plural only for a group', () => {
+  const g = liveCast([
+    { id: 'a', role: 'Judge' },
+    { id: 'b', role: 'Chief guest' },
+    { id: 'c', role: 'Judge' },
+    { id: 'd', role: 'Mentors' },
+    { id: 'e', role: 'Mentors' },
+  ]);
+  assert.deepEqual(g.map((x) => [x.title, x.people.map((p) => p.id)]), [['Judges', ['a', 'c']], ['Chief guest', ['b']], ['Mentors', ['d', 'e']]]);
+  assert.deepEqual(liveCast(undefined), []);
 });

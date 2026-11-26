@@ -4,6 +4,7 @@
 // Redrawn 19 Nov 2026 like the host page (owner approved Take 3 of the detail pages mockup,
 // https://claude.ai/artifact/5dDmrmZ6soDjoe8kro1xAq): the photo, name, line, bio and links on the left; no role tags on
 // top, since each row under Appears at names the role there, as a Clean row of Home's ("Judge · CircuitFeed").
+// A uuid is a real person (orbit-pm X14), read from GET /public/people/:id; anything else stays on the mock.
 import { router, useLocalSearchParams } from 'expo-router';
 import { Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,25 +12,50 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { past as history } from '../../account/data';
 import { appearances } from '../../detail';
 import { Glass } from '../../glass';
-import type { Host } from '../../events';
+import { type Event, eventsApi, type Host, toEvent, toHost } from '../../events';
+import { markOf } from '../../hosts';
+import { useLoad } from '../../load';
 import { events, hosts, now, people } from '../../mock';
-import { CloseButton, EventRow, GlassFill, Monogram, NotFound, SECTION, Section } from '../../rows';
-import { useSignedIn } from '../../session';
+import { CloseButton, EventRow, Failed, GlassFill, Monogram, NotFound, SECTION, Section, Waiting } from '../../rows';
+import { api, useSignedIn } from '../../session';
 import { around, color, font, rim, space } from '../../theme';
 
 const PHOTO = 80; // the host page's logo size
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+type Shown = { event: Event; host: Host; role: string; past: boolean; went: boolean };
+type Face = { id: string; name: string; headline: string; bio: string | null; links: { label: string; url: string }[] };
+
 export default function PersonSheet() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const insets = useSafeAreaInsets();
+  return UUID.test(id) ? <LivePerson id={id} /> : <MockPerson id={id} />;
+}
+
+function LivePerson({ id }: { id: string }) {
+  const page = useLoad(`person|${id}`, () => eventsApi(api).person(id));
+  if (page.status === 404) return <NotFound what="person" />;
+  if (!page.data) return page.error ? <Failed message={page.error.message} retry={page.reload} /> : <Waiting />;
+  const at = Date.now();
+  const shows = page.data.appearances.map((a): Shown => {
+    const event = toEvent(a.event);
+    return { event, host: toHost(a.event.host), role: a.role, past: Date.parse(a.event.endsAt) <= at, went: false };
+  });
+  return <PersonView p={page.data} mark={markOf(page.data)} shows={shows} now={at} />;
+}
+
+function MockPerson({ id }: { id: string }) {
   const signedIn = useSignedIn();
   const p = people.find((x) => x.id === id);
   if (!p) return <NotFound what="person" />;
-
-  const shows = appearances(p.id, events, now);
   const went = (eventId: string) => signedIn && history.some((h) => h.eventId === eventId && h.status === 'Went');
   const hostOf = (hostId: string) => hosts.find((h) => h.id === hostId) as Host;
+  const shows = appearances(p.id, events, now).map((a): Shown => ({ ...a, host: hostOf(a.event.hostId), went: a.past && went(a.event.id) }));
+  return <PersonView p={p} mark={p} shows={shows} />;
+}
 
+function PersonView({ p, mark, shows, now: clock }: { p: Face; mark: ReturnType<typeof markOf>; shows: Shown[]; now?: number }) {
+  const insets = useSafeAreaInsets();
   return (
     // A sheet on iOS, so a small gap at its top; full screen on Android, so clear of the status bar (as the location
     // sheet).
@@ -41,13 +67,13 @@ export default function PersonSheet() {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + space.big }}>
         <View style={styles.top}>
           <Glass style={styles.photoRim}>
-            <Monogram mark={p} size={PHOTO} round />
+            <Monogram mark={mark} size={PHOTO} round />
           </Glass>
           <Text style={styles.name} accessibilityRole="header">
             {p.name}
           </Text>
           <Text style={styles.headline}>{p.headline}</Text>
-          <Text style={styles.bio}>{p.bio}</Text>
+          {p.bio && <Text style={styles.bio}>{p.bio}</Text>}
           {/* Frosted pills with white labels, never accent text. */}
           {p.links.length > 0 && (
             <View style={styles.row}>
@@ -69,11 +95,12 @@ export default function PersonSheet() {
               <EventRow
                 key={a.event.id}
                 event={a.event}
-                host={hostOf(a.event.hostId)}
+                host={a.host}
                 found
-                kicker={`${a.role} · ${hostOf(a.event.hostId).name}`}
+                kicker={`${a.role} · ${a.host.name}`}
                 past={a.past}
-                went={a.past && went(a.event.id)}
+                went={a.went}
+                now={clock}
                 // Back to that event if it's under this sheet; otherwise the event takes the sheet's place, so the page
                 // never opens inside the sheet. Event pages match by slug (dangerouslySingular in src/app/_layout.tsx).
                 onPress={() => router.dismissTo(`/event/${a.event.slug}`)}

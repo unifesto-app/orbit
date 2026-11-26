@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { categories, type CategorySlug } from "./categories.ts";
 import { CityName } from "./roles.ts";
+import type { EventPerson, PublicFestItem } from "./people.ts";
 import { Text } from "./text.ts";
 
 // Events and their ticket types (Orbit flows: Hosts, Discover): what a draft holds and what Admins edit.
@@ -276,10 +277,11 @@ export type EventCard = {
   pricePaise: number | null; // the lowest tier price; null with no tiers
   tiers: TierCard[]; host: HostCard; distanceKm: number | null; // only when a point was given
 };
-// `interested`: how many people tapped I'm interested (deleted and suspended accounts left out); `vibes`: its tags.
+// `interested`: how many people tapped I'm interested (deleted and suspended accounts left out); `vibes`: its tags;
+// `people`: who's on it, in order; `festItems`: what's inside a fest, empty for any other category (orbit-pm X14).
 export type PublicEvent = EventCard & {
   about: string | null; agenda: { at: string; item: string }[]; faq: { q: string; a: string }[]; terms: string[];
-  vibes: string[]; interested: number;
+  vibes: string[]; interested: number; people: EventPerson[]; festItems: PublicFestItem[];
 };
 
 // ---------- Search's When chips (Discover decisions 7 and 8), shared by the app and the API ----------

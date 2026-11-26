@@ -1,7 +1,7 @@
 // Events and hosts as the screens draw them, and the public reads that fill them (Orbit API /public, Discover flow;
 // slice 1, 25 Nov 2026). The types moved here from src/mock.ts so the mock can go without touching a screen. Pure, so
 // events.test.ts runs it on Node; screens pass it `api` from session.ts.
-import type { CategorySlug, EventCard, HostCard, PublicEvent, WhenChip } from '@orbit/contract';
+import type { CategorySlug, EventCard, EventPerson, HostCard, PublicEvent, PublicFestItem, PublicPerson, WhenChip } from '@orbit/contract';
 import type { ImageSourcePropType } from 'react-native';
 
 import type { Credit, Tier } from './detail';
@@ -51,6 +51,8 @@ export type Event = PlanEvent &
   terms?: string[]; // the host's own terms for this event, shown above the usual ones (defaultTerms)
   vibes?: string[]; // "What it's like" tags after the category (the API's, orbit-pm X13; the old mock's in mock.ts)
   interested?: number; // how many tapped I'm interested, as the page was read (a real event's only)
+  lineup?: EventPerson[]; // a real event's people, in order, each with the role staff typed (orbit-pm X14)
+  festItems?: PublicFestItem[]; // a real fest's insides, in order (X14); a mock fest's are in src/kinds.ts
 };
 
 // The terms every event's Terms & Conditions ends with. They follow the Booking and Money flows: one QR per booking
@@ -134,7 +136,9 @@ export function toEvent(c: EventCard | PublicEvent, near?: boolean): Event {
     ...(full.terms?.length && { terms: full.terms }),
     ...(full.vibes?.length && { vibes: full.vibes }),
     ...(full.interested !== undefined && { interested: full.interested }),
-    people: [], // performers are slice P8
+    people: [], // the mock's credits; a real event's people are `lineup`
+    ...(full.people?.length && { lineup: full.people }),
+    ...(full.festItems?.length && { festItems: full.festItems }),
     ...(near !== undefined && { near }),
   };
 }
@@ -178,6 +182,7 @@ export function eventsApi(api: Api) {
         (d) => d.events,
       ),
     event: (slug: string) => keep(api.call<PublicEvent>('GET', `/public/events/${encodeURIComponent(slug)}`), (d) => [d]),
+    person: (id: string) => api.call<PublicPerson>('GET', `/public/people/${encodeURIComponent(id)}`),
     hostEvents: (slug: string) =>
       keep(api.call<{ upcoming: EventCard[]; past: EventCard[] }>('GET', `/public/hosts/${encodeURIComponent(slug)}/events`), (d) => [...d.upcoming, ...d.past]),
   };

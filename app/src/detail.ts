@@ -19,6 +19,14 @@ export function cast(people: readonly Credit[] = []) {
   );
 }
 
+// A real event's people (X14), one group per role in the order staff listed them; roles are free text, so a group of
+// more than one takes an "s" unless it has one ("Judges", "Chief guests").
+export function liveCast<P extends { role: string }>(people: readonly P[] = []) {
+  const groups = new Map<string, P[]>();
+  for (const p of people) groups.set(p.role, [...(groups.get(p.role) ?? []), p]);
+  return [...groups].map(([role, list]) => ({ title: list.length > 1 && !/s$/i.test(role) ? `${role}s` : role, people: list }));
+}
+
 // A host's events: every upcoming one, soonest first, then the latest past ones, latest first.
 export function hostEvents<E extends Dated>(hostId: string, events: readonly E[], now: number) {
   const own = events.filter((e) => e.hostId === hostId);
