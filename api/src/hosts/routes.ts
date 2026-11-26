@@ -45,6 +45,7 @@ export function hostsRoutes({ db, notify, secret, now = Date.now }: Deps) {
   };
   const pageOf = async (h: Host, userId: string): Promise<HostPage> => ({
     ...(await profile(h)), status: h.status, visibility: h.visibility, suspendReason: h.suspendReason, followers: await followersOf(h.id), owner: h.ownerId === userId,
+    feePlan: h.feePlan,
   });
 
   // ---------- The host's own team ----------

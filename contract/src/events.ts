@@ -54,10 +54,11 @@ export const Place = z.object({
   address: Text(1, 300),
   area: Text(1, 80), // the locality cards show: "Jubilee Hills"
   city: CityName,
-  lat: z.number().min(6).max(37.5),
-  lng: z.number().min(68).max(97.5),
+  // Null when typed by hand with no place search (Event Partner): the event still matches by city name (Discover flow).
+  lat: z.number().min(6).max(37.5).nullable().default(null),
+  lng: z.number().min(68).max(97.5).nullable().default(null),
   placeId: Text(1, 300).nullable().optional(), // the place search's id; "At [venue]" is offered when it matches a Venue host's place
-});
+}).refine((p) => (p.lat === null) === (p.lng === null), { message: "Give both coordinates or neither", path: ["lng"] });
 export type Place = z.infer<typeof Place>;
 
 // One line of the day's schedule.
@@ -229,6 +230,22 @@ export type TicketType = z.infer<typeof TicketType>;
 // POST /events/:id/cancel: the reason every ticket holder gets.
 export const CancelEvent = z.object({ reason: Text(1, 500) });
 export type CancelEvent = z.infer<typeof CancelEvent>;
+
+// ---------- Galaxy: every host's events (staff with Hosts) ----------
+
+// GET /galaxy/events?status=&host=&page=: newest first.
+export type StaffEventRow = {
+  id: string; slug: string; title: string; status: EventStatus; startsAt: string | null; city: string | null; createdAt: string;
+  host: { id: string; name: string };
+  sold: number; // confirmed tickets
+};
+export type StaffEvents = { events: StaffEventRow[]; total: number; page: number; pageSize: number };
+// GET /galaxy/events/:id: the event as its team reads it, its host, each ticket type with its confirmed seats, and how
+// many bookings it has ever had (Unpublish needs none).
+export type StaffEvent = {
+  event: TeamEvent; host: { id: string; name: string; slug: string };
+  tickets: (TicketType & { sold: number })[]; bookings: number;
+};
 
 // What a draft still lacks at publish, one row each in Console with a fix button (H5.3).
 export const PUBLISH_MISSING = ["poster", "when", "where", "category", "tickets"] as const;

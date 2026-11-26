@@ -27,6 +27,11 @@ test("Place stays inside India and on the city list", () => {
   for (const p of [{ lat: 5.9 }, { lat: 37.6 }, { lng: 67.9 }, { lng: 97.6 }, { city: "Atlantis" }, { venue: "  " }]) bad(Place, { ...place, ...p });
   bad(Place, { ...place, lat: 78.4, lng: 17.4 }); // swapped
   bad(Place, { ...place, lat: 0, lng: 0 });
+  // Typed by hand: no coordinates, or both, never one.
+  ok(Place, { ...place, lat: null, lng: null });
+  const { lat: _a, lng: _b, ...typed } = place;
+  assert.deepEqual(Place.parse(typed), { ...typed, lat: null, lng: null });
+  bad(Place, { ...place, lat: null });
 });
 
 test("NewEvent is a trimmed name", () => {

@@ -339,7 +339,7 @@ function Steps({ initial, see = null }: { initial: Draft; see?: RequestStatus | 
 
 // The page: the back circle, the three-part progress and "1 of 3" (none when `step` is null), what scrolls, and the
 // buttons pinned at the foot, above the keyboard.
-function Frame({ step, onBack, foot, children }: { step: 1 | 2 | 3 | null; onBack: () => void; foot?: ReactNode; children?: ReactNode }) {
+export function Frame({ step, onBack, foot, children }: { step: 1 | 2 | 3 | null; onBack: () => void; foot?: ReactNode; children?: ReactNode }) {
   const insets = useSafeAreaInsets();
   return (
     <KeyboardAvoidingView style={ui.page} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -368,7 +368,7 @@ function Frame({ step, onBack, foot, children }: { step: 1 | 2 | 3 | null; onBac
   );
 }
 
-function Label({ text, optional = false, children }: { text: string; optional?: boolean; children: ReactNode }) {
+export function Label({ text, optional = false, children }: { text: string; optional?: boolean; children: ReactNode }) {
   return (
     <View style={ui.field}>
       <Text style={ui.fieldLabel}>{optional ? `${text} · optional` : text}</Text>
@@ -378,7 +378,7 @@ function Label({ text, optional = false, children }: { text: string; optional?: 
 }
 
 // A text-only choice: a Sage outline and dot when picked (the accent on the element, never the words).
-function Chip({ label, on, onPress }: { label: string; on: boolean; onPress: () => void }) {
+export function Chip({ label, on, onPress }: { label: string; on: boolean; onPress: () => void }) {
   return (
     <Pressable onPress={onPress} accessibilityRole="radio" accessibilityState={{ checked: on }} style={[s.chip, on && s.chipOn]}>
       {on && <View style={s.dot} />}
@@ -388,7 +388,7 @@ function Chip({ label, on, onPress }: { label: string; on: boolean; onPress: () 
 }
 
 // A field that opens a sheet (City, When): its value, or grey words, and a >.
-function Opens({ label, value, placeholder, onPress }: { label: string; value: string | null; placeholder: string; onPress: () => void }) {
+export function Opens({ label, value, placeholder, onPress }: { label: string; value: string | null; placeholder: string; onPress: () => void }) {
   return (
     <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`${label}, ${(value || placeholder).replace(' · ', ', ')}`} style={({ pressed }) => pressed && ui.pressed}>
       <Glass style={[ui.input, s.opens]}>
@@ -412,7 +412,7 @@ function KV({ k, v }: { k: string; v: string }) {
 
 // The city list sign-up's city uses in the Orbit app (app/src/citySheet.tsx), from the same list in @orbit/contract:
 // search, then Popular cities and every city A to Z.
-function CitySheet({ chosen, onPick, onClose }: { chosen: string | null; onPick: (city: string) => void; onClose: () => void }) {
+export function CitySheet({ chosen, onPick, onClose }: { chosen: string | null; onPick: (city: string) => void; onClose: () => void }) {
   const [query, setQuery] = useState('');
   const searching = query.trim() !== '';
   return (
@@ -468,7 +468,7 @@ function CitySheet({ chosen, onPick, onClose }: { chosen: string | null; onPick:
 }
 
 // When: the month, past days faded and not pickable, then start times every half hour that are still ahead, India time.
-function WhenSheet({ startsAt, onDone, onClose }: { startsAt: string | null; onDone: (iso: string) => void; onClose: () => void }) {
+export function WhenSheet({ startsAt, onDone, onClose }: { startsAt: string | null; onDone: (iso: string) => void; onClose: () => void }) {
   const insets = useSafeAreaInsets();
   const now = Date.now();
   const thisMonth = istDate(now).slice(0, 7);
@@ -543,7 +543,7 @@ function Round({ label, flip = false, disabled = false, onPress }: { label: stri
   );
 }
 
-const s = StyleSheet.create({
+export const s = StyleSheet.create({
   top: { height: 44, marginHorizontal: 20, flexDirection: 'row', alignItems: 'center', gap: 12 },
   circle: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   small: { width: 32, height: 32, borderRadius: 16 },

@@ -64,6 +64,8 @@ export default function Layout() {
           <Stack.Screen name="(launch)" />
           {/* Which host, with several. */}
           <Stack.Screen name="pick" />
+          {/* An event's editor: New event, a draft's Continue, a card's Edit event. */}
+          <Stack.Screen name="edit" />
         </Stack.Protected>
         {/* Pushed over the tabs (welcome, Crew's screen), with its own back circle: anyone signed in, on every app, so a
             push about a seat just ended still opens it. */}
