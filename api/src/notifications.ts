@@ -4,7 +4,7 @@ import { type Mail, NotSent } from "./auth/senders.ts";
 import type { Db } from "./db/index.ts";
 import { deliveries, emailSuppressions, events, inboxItems, notificationPrefs, notificationSwitches, pushDevices, sessions, users } from "./db/schema.ts";
 import { isUuid, type Notice, type Notify, type Tx } from "./http.ts";
-import { emailFor, inboxFor, optionalSwitch, unsubscribeToken } from "./notification-emails.ts";
+import { emailFor, inboxFor, optionalSwitch, pushFor, unsubscribeToken, wordingFor } from "./notification-emails.ts";
 import type { Push } from "./push.ts";
 import { holdersOf, tell } from "./roles/access.ts";
 
@@ -53,7 +53,7 @@ const switchedOff = (s: NotificationSettings, kind: NoticeKind, channel: "push" 
 
 // A person's devices on one app whose sign-in is still live.
 // A device is live while its session is (not ended, not expired). One device when sessionId is given.
-const liveDevices = (q: Tx | Db, userId: string, app: InboxApp, at: Date, sessionId?: string) =>
+export const liveDevices = (q: Tx | Db, userId: string, app: InboxApp, at: Date, sessionId?: string) =>
   q
     .select({ sessionId: pushDevices.sessionId, app: pushDevices.app, platform: pushDevices.platform, env: pushDevices.env, token: pushDevices.token })
     .from(pushDevices)
@@ -210,7 +210,7 @@ export function createNotifier({ db, now }: { db: Db; now: () => number }): Noti
     const app = inboxApp(n.kind, payload);
     if (def.inbox && person && app && killed.has("inbox")) await log({ channel: "inbox", status: "skipped", reason: "killSwitch", target: "" });
     else if (def.inbox && person && app) {
-      const words = inboxFor(n.kind, payload);
+      const words = inboxFor(n.kind, payload, await wordingFor(q, n.kind, "inbox"));
       const [made] = await q
         .insert(inboxItems)
         .values({ userId: person.id, app, kind: n.kind, type: def.type, fromName: words.fromName, text: words.text, opens: words.opens, dedupeKey, createdAt: at })
@@ -366,9 +366,9 @@ export async function runDeliveries({
       else if (!send) ended = await done({ status: "skipped", reason: "notSetUp" });
       else {
         try {
-          const words = inboxFor(kind, d.payload);
+          const words = pushFor(kind, d.payload, await wordingFor(db, kind, "push", d));
           const badge = device.platform === "ios" ? await unread(db, d.userId!, device.app) : undefined;
-          const message = { title: words.fromName, body: words.text, data: { id: d.inboxItemId, opens: words.opens }, badge, collapseId: d.id };
+          const message = { title: words.title, body: words.body, data: { id: d.inboxItemId, opens: words.opens }, badge, collapseId: d.id };
           const providerId = await send(device, message);
           await done({ status: "sent", reason: null, sentAt: new Date(now()), providerId: providerId ?? null });
           ended = false;
@@ -394,7 +394,8 @@ export async function runDeliveries({
       await done({ status: "skipped", reason: "suppressed" });
       continue;
     }
-    if (sw && d.userId) {
+    if (sw && d.userId && !d.dedupeKey.startsWith("test:")) {
+      // (A Galaxy test send goes to its sender whatever their switches.)
       const [person] = await db.select({ city: users.city }).from(users).where(eq(users.id, d.userId));
       if (!person || switchedOff(await settingsOf(db, d.userId, person.city), d.kind as NoticeKind, "email")) {
         await done({ status: "skipped", reason: "switchOff" });
@@ -402,7 +403,8 @@ export async function runDeliveries({
       }
     }
     try {
-      const providerId = await mail(d.target, emailFor(d.kind, d.payload, undefined, sw && link ? { s: sw, link } : undefined));
+      const words = await wordingFor(db, d.kind, "email", d);
+      const providerId = await mail(d.target, emailFor(d.kind, d.payload, undefined, sw && link ? { s: sw, link } : undefined, words));
       await done({ status: "sent", reason: null, sentAt: new Date(now()), providerId: providerId || null });
     } catch (e) {
       await settle(e);

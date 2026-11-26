@@ -1,5 +1,8 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { EMAIL_SWITCHES, type EmailSwitch, isMust, KINDS, type NoticeKind, WAITLIST_CONTACT } from "@orbit/contract";
+import { type Channel, EMAIL_SWITCHES, type EmailSwitch, fillVars, isMust, KINDS, type NoticeKind, WAITLIST_CONTACT, type Wording } from "@orbit/contract";
+import type { Db } from "./db/index.ts";
+import { notificationTemplates } from "./db/schema.ts";
+import type { Tx } from "./http.ts";
 import { esc, frame } from "./prelaunch-email.ts";
 
 // What each notification says, by email and in the inbox (notifications build plan, PR 1): the kinds the code calls
@@ -7,7 +10,8 @@ import { esc, frame } from "./prelaunch-email.ts";
 // whole message. A kind with no wording yet still sends, with a plain fallback. Plain sentences, no exclamation marks,
 // dates as "26 Nov" in India time, never an id. No links to screens yet. Optional emails (optionalSwitch) carry an
 // unsubscribe link (PR 6); Must and the one-off welcome don't. Replies go to the contact address.
-// ponytail: Galaxy's rewording (notification_templates) isn't read yet; its slice defines the placeholders.
+// Galaxy can reword a kind per channel (PR 8, notification_templates): its wording, with {name} placeholders from VARS,
+// replaces the subject and line here; the rest of the email (the "why", the unsubscribe link) and the inbox's sender stay.
 
 const SITE = "https://heyorbit.in";
 type Data = Record<string, unknown>;
@@ -101,8 +105,74 @@ const WORDS: Partial<Record<NoticeKind, (d: Data) => Words>> = {
   }),
 };
 
+// The data each kind's wording may use, as {name}, with a sample (Galaxy's preview and test send) and how it's shown
+// when the code shows it other than as it is. Read off WORDS: a kind with no entry has no variables.
+type Var = [sample: unknown, show?: (v: unknown) => string];
+const method = (v: unknown) => METHOD[str(v)] ?? str(v);
+const list = (v: unknown) => (Array.isArray(v) ? v.join(", ") : str(v));
+const H: Record<string, Var> = { hostName: ["Open Mic Club"] };
+const R: Record<string, Var> = { reason: ["It broke the house rules"] };
+const T: Record<string, Var> = { title: ["Open Mic Night"] };
+const SOON = "2026-12-05T13:30:00.000Z"; // 5 Dec, 7:00 pm in India
+export const VARS: Partial<Record<NoticeKind, Record<string, Var>>> = {
+  signInMethodChanged: { change: ["added"], method: ["passkey", method] },
+  signInMethodChangeHeld: { change: ["remove"], method: ["passkey", method], until: [SOON, day] },
+  phoneMovedAway: { phone: ["+919876543210", (v) => str(v).slice(-4)] },
+  deletionScheduled: { dueAt: [SOON, day] },
+  accountSuspended: { ...R, until: [SOON, day] },
+  teamInvite: H,
+  teamInviteWithdrawn: { ...H, contact: ["riya@example.com"] },
+  teamAccepted: { name: ["Riya Kapoor"] },
+  teamRoleStarted: { ...H, role: ["admin"] },
+  teamRemoved: H,
+  teamLeft: { ...H, name: ["Riya Kapoor"] },
+  hostStatus: { ...H, status: ["live"] },
+  hostVerified: H,
+  hostUnverified: { ...H, ...R },
+  hostSuspended: { ...H, ...R },
+  hostLifted: H,
+  hostParentSet: { ...H, parentName: ["City Arts Collective"] },
+  eventRequestAnswered: { decision: ["approved"], name: ["Open Mic Club"], ...R },
+  slotReleased: { ...H, start: [SOON, dayTime] },
+  hostAnnouncement: { ...H, ...T, text: ["Doors open at 6:30, half an hour early."] },
+  eventTomorrow: { ...T, startsAt: [SOON, time] },
+  eventStartingSoon: T,
+  thanksForComing: T,
+  followedHostEvent: { ...H, ...T },
+  staffGrantAdded: { features: [["people", "platform"], list], ...R },
+  staffGrantStarted: { feature: ["people"], ...R },
+  staffGrantEnded: { feature: ["people"], ...R },
+  staffRiskyAction: { action: ["notifications all email off"], ...R },
+  staffHeavyPaging: { pages: [42] },
+  providerFailing: { channel: ["push"], failed: [12], total: [40] },
+};
+export const varsOf = (kind: string) => VARS[kind as NoticeKind] ?? {};
+export const samplesOf = (kind: string): Data => Object.fromEntries(Object.entries(varsOf(kind)).map(([n, [v]]) => [n, v]));
+// `text` with each of the kind's {name} filled from the data, shown as the code shows it.
+export const fill = (text: string, vars: Record<string, Var>, data: Data) =>
+  fillVars(text, Object.fromEntries(Object.entries(vars).map(([n, [, show = str]]) => [n, show(data[n])])));
+const filled = (kind: string, text: string, data: Data) => fill(text, varsOf(kind), data);
+
+// Galaxy's saved wording for (kind, channel), or null for the code's. A test send (Galaxy's "Send test to me", dedupe
+// key test:…) carries its draft in the payload instead.
+// ponytail: all rows cached per process for 60 s, cleared on save in this process, so the worker reads the table at most
+// once a minute and another process sees a save within a minute; LISTEN/NOTIFY on save if it must be instant.
+let cache: { until: number; rows: Map<string, Wording> } | null = null;
+export const clearWording = () => void (cache = null);
+export async function wordingFor(q: Db | Tx, kind: string, channel: Channel, sent?: { dedupeKey: string; payload: Data }) {
+  if (sent?.dedupeKey.startsWith("test:")) {
+    const draft = sent.payload._draft;
+    return draft && typeof draft === "object" ? (draft as Wording) : null;
+  }
+  if (!cache || cache.until < Date.now()) {
+    const rows = await q.select().from(notificationTemplates);
+    cache = { until: Date.now() + 60_000, rows: new Map(rows.map((r) => [`${r.kind}:${r.channel}`, r])) };
+  }
+  return cache.rows.get(`${kind}:${channel}`) ?? null;
+}
+
 // The plain line for a kind with no wording yet, so a later slice can call it before its words land.
-const words = (kind: string, d: Data): Words => WORDS[kind as NoticeKind]?.(d) ?? { subject: "A message from Orbit", line: "Open Orbit to see it." };
+export const words = (kind: string, d: Data): Words => WORDS[kind as NoticeKind]?.(d) ?? { subject: "A message from Orbit", line: "Open Orbit to see it." };
 
 const WHY = "You’re getting this because it’s about your Orbit account. Account and security emails can’t be switched off.";
 const WHY_STAFF = "You’re getting this because you hold staff access on Orbit.";
@@ -149,8 +219,11 @@ export const readUnsubscribeToken = (secret: string, t: string): { u: string; s:
 
 // `unsubscribe`: an optional email's switch and its one-click link, which go in the footer and the List-Unsubscribe
 // headers.
-export function emailFor(kind: string, data: Data = {}, site = SITE, unsubscribe?: { s: EmailSwitch; link: string }) {
-  const { subject, line = "" } = words(kind, data);
+// `w`: Galaxy's email wording, if any.
+export function emailFor(kind: string, data: Data = {}, site = SITE, unsubscribe?: { s: EmailSwitch; link: string }, w?: Wording | null) {
+  const code = words(kind, data);
+  const subject = w?.subject ? filled(kind, w.subject, data) : code.subject;
+  const line = w ? filled(kind, w.body, data) : (code.line ?? "");
   const group = KINDS[kind as NoticeKind]?.group;
   const why = unsubscribe
     ? `You’re getting this because emails about ${SWITCH_ABOUT[unsubscribe.s]} are on. Stop them: ${unsubscribe.link}`
@@ -195,7 +268,14 @@ export function opensFor(kind: NoticeKind, data: Data = {}) {
   }
 }
 
-export function inboxFor(kind: NoticeKind, data: Data = {}) {
+// `w`: Galaxy's inbox wording, if any. The sender stays the code's.
+export function inboxFor(kind: NoticeKind, data: Data = {}, w?: Wording | null) {
   const { subject, line } = words(kind, data);
-  return { text: line || subject, fromName: str(data.hostName) || "Orbit", opens: opensFor(kind, data) };
+  return { text: w ? filled(kind, w.body, data) : line || subject, fromName: str(data.hostName) || "Orbit", opens: opensFor(kind, data) };
+}
+
+// A push: the sender as its title and the inbox's words, or Galaxy's push wording.
+export function pushFor(kind: NoticeKind, data: Data = {}, w?: Wording | null) {
+  const i = inboxFor(kind, data);
+  return { title: w?.title ? filled(kind, w.title, data) : i.fromName, body: w ? filled(kind, w.body, data) : i.text, opens: i.opens };
 }
