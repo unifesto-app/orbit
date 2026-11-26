@@ -1,0 +1,66 @@
+/* An event's messages: AWS form pieces, as the sign-in panel draws them. */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-m);
+}
+
+.label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xxs);
+  color: var(--color-text-form-label);
+  font-weight: var(--font-weight-form-label);
+}
+
+.text {
+  width: 100%;
+  max-width: 560px;
+  height: auto;
+  padding: var(--space-xxs) var(--space-field-horizontal);
+  resize: vertical;
+}
+
+.choice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xxs);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.legend {
+  margin-bottom: var(--space-xxs);
+  color: var(--color-text-form-label);
+  font-weight: var(--font-weight-form-label);
+}
+
+.buttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-s);
+}
+
+.alert {
+  padding: var(--space-xs) var(--space-s);
+  border: var(--border-width-field) solid var(--color-border-status-error);
+  border-radius: var(--border-radius-input);
+  background: var(--color-background-status-indicator-error);
+  color: var(--color-text-status-error);
+}
+
+.sent {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xxs);
+  padding-bottom: var(--space-s);
+  border-bottom: var(--border-divider-section-width) solid var(--color-border-divider-default);
+}
+
+.sent:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}

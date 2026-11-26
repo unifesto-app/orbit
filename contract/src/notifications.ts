@@ -97,7 +97,7 @@ const k = (
 const acct = (level: Level, ch: string, vars: readonly string[] = [], opens: KindDef["opens"] = null) => k("account", level, ch, "orbit", "account", vars, opens);
 const slot = (level: Level, ch: string, vars: readonly string[] = []) => k("booking", level, ch, "orbit", "ticket", vars, "slot");
 const book = (level: Level, ch: string, type: InboxType = "ticket") => k("booking", level, ch, "orbit", type);
-const ev = (level: Level, ch: string, type: InboxType) => k("events", level, ch, "orbit", type);
+const ev = (level: Level, ch: string, type: InboxType, vars: readonly string[] = []) => k("events", level, ch, "orbit", type, vars);
 const host = (level: Level, ch: string, app: InboxApp | "role" | null = "launch", vars: readonly string[] = []) => k("host", level, ch, app, "account", vars);
 const staff = (vars: readonly string[] = []) => k("staff", "must", "E", null, "account", vars);
 
@@ -150,12 +150,12 @@ export const KINDS = {
   slotReleased: slot("must", "PIE", ["hostName", "start"]),
 
   // Events you hold a ticket for
-  eventTomorrow: ev("normal", "PIe", "reminder"),
-  eventStartingSoon: ev("low", "PI", "reminder"),
+  eventTomorrow: ev("normal", "PIe", "reminder", ["eventId", "title", "hostName", "startsAt"]),
+  eventStartingSoon: ev("low", "PI", "reminder", ["eventId", "title", "hostName", "startsAt"]),
   eventChanged: ev("must", "PIE", "announcement"),
   eventCancelled: ev("must", "PIE", "announcement"),
-  hostAnnouncement: ev("normal", "PIE", "announcement"),
-  thanksForComing: ev("normal", "PIe", "thanks"),
+  hostAnnouncement: ev("normal", "PIE", "announcement", ["eventId", "title", "hostName", "text"]),
+  thanksForComing: ev("normal", "PIe", "thanks", ["eventId", "title", "hostName", "startsAt"]),
   inRoomAsk: ev("normal", "PI", "inRoom"),
   inRoomConnected: ev("normal", "PI", "inRoom"),
   inRoomRemoved: ev("normal", "I", "inRoom"),

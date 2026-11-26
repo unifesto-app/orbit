@@ -5,6 +5,7 @@
 //   not starting today shows its date), with their door line: how many are in, Scan and Find someone (Event day doc:
 //   from 24 hours before the start until 3 hours after the end);
 // - then what's coming (Next, or Upcoming for several), Drafts with Continue, and Past;
+// - on a published event still to come, Messages: its announcements and automatic messages (src/app/event/[id].tsx);
 // - on each card its refund requests ("With Orbit" from 24 hours before the start), its invites not yet accepted and,
 //   3 days after it ends, its payout with Request.
 // The host switcher and New event head it; the host's own colour glows from the top, as on its page in the Orbit app.
@@ -15,6 +16,7 @@
 import type { EventRow, HostEvents } from '@orbit/contract';
 import { useLoad } from '@orbit/mobile/load';
 import { useTabBarScroll } from '@orbit/mobile/tabBar';
+import { router } from 'expo-router';
 import { color, font, space } from '@orbit/mobile/theme';
 import type { ReactNode } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -124,6 +126,9 @@ function Card({ event: e, stage, now }: { event: Listed; stage: Stage; now: numb
             </>
           }
         />
+      )}
+      {stage !== 'past' && e.status === 'published' && (
+        <Row label="Messages" onPress={() => router.push({ pathname: '/event/[id]', params: { id: e.id, title: e.title } })} />
       )}
     </EventCard>
   );

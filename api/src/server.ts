@@ -11,6 +11,7 @@ import { pruneVisits } from "./visits.ts";
 import { ways, type WaysConfig } from "./auth/ways.ts";
 import { connect, migrateDb } from "./db/index.ts";
 import { checkProviders, createNotifier, pruneNotifications, runDeliveries } from "./notifications.ts";
+import { sendReminders } from "./announcements.ts";
 import { apnsSender, fcmSender, type Push } from "./push.ts";
 import { type Media, memoryFiles, s3Files } from "./media.ts";
 
@@ -183,6 +184,9 @@ setInterval(() => {
     .catch((e) => console.error("[deliveries]", e))
     .finally(() => (busy = false));
 }, 5_000).unref();
+
+// Tomorrow, Starting soon and Thanks to ticket holders (announcements.ts), every minute; keyed, so overlap sends once.
+setInterval(() => sendReminders({ db, notify, now: Date.now }).catch((e) => console.error("[reminders]", e)), 60_000).unref();
 
 // Push and email providers failing more than 20% over the last hour: an alert to Platform holders (notifications.ts).
 // On start, then hourly.

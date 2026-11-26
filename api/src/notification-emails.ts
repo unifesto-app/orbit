@@ -77,6 +77,10 @@ const WORDS: Partial<Record<NoticeKind, (d: Data) => Words>> = {
         ? { subject: "Your request to host needs a change", line: `What to change: ${str(d.reason)}. Edit your request in Orbit Event Partner and send it again.` }
         : { subject: "Your request to host was declined", line: `Reason: ${str(d.reason)}.` },
   slotReleased: (d) => ({ subject: `Your slot at ${str(d.hostName)} was released`, line: `You didn’t check in for ${dayTime(d.start)}, so the slot was freed.` }),
+  hostAnnouncement: (d) => ({ subject: `${str(d.hostName) || "The host"} about ${str(d.title)}`, line: str(d.text) }),
+  eventTomorrow: (d) => ({ subject: `Coming up: ${str(d.title)}`, line: `Starts ${dayTime(d.startsAt)}.` }),
+  eventStartingSoon: (d) => ({ subject: `${str(d.title)} starts soon`, line: `Starts ${dayTime(d.startsAt)}.` }),
+  thanksForComing: (d) => ({ subject: `Thanks for coming to ${str(d.title)}`, line: "Loved it? Say so on the event page." }),
   followedHostEvent: (d) => ({ subject: `${str(d.hostName) || "A host you follow"} has a new event`, line: str(d.title) }),
   staffGrantAdded: (d) => ({
     subject: "Staff access was given",

@@ -63,6 +63,8 @@ export default function Layout() {
           <Stack.Screen name="pick" />
           {/* Pushed over the tabs, with its own back circle. */}
           <Stack.Screen name="inbox" />
+          {/* An event's announcements and automatic messages, from Messages on its card. */}
+          <Stack.Screen name="event/[id]" />
         </Stack.Protected>
       </Stack>
     </>
