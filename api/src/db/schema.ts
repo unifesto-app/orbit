@@ -952,6 +952,13 @@ export const payments = pgTable(
   },
   (t) => [
     check("payments_amounts", sql`${t.amountPaise} > 0 and ${t.quantity} > 0 and ${t.unitPricePaise} > 0`),
+    check("payments_status", sql`${t.status} in ('created', 'paid', 'refundPending', 'refunded', 'expired', 'failed')`),
+    check("payments_plan", sql`${t.plan} in ('3+2', '5+0')`),
+    // A ticket is for an event's ticket type; a slot for a Station claim.
+    check(
+      "payments_kind",
+      sql`(${t.kind} = 'ticket' and ${t.eventId} is not null and ${t.ticketTypeId} is not null) or (${t.kind} = 'slot' and ${t.claimId} is not null)`,
+    ),
     // One open order per person per ticket type: a second tap gets the same order ("You're already paying").
     uniqueIndex("payments_one_open_per_type").on(t.userId, t.ticketTypeId).where(sql`${t.status} = 'created'`),
     index().on(t.status, t.createdAt),
@@ -980,10 +987,16 @@ export const refunds = pgTable(
     createdAt: at("created_at").notNull(),
     updatedAt: at("updated_at").notNull(),
   },
-  (t) => [check("refunds_amount_positive", sql`${t.amountPaise} > 0`), index().on(t.paymentId), index().on(t.status, t.nextAttemptAt)],
+  (t) => [
+    check("refunds_amount_positive", sql`${t.amountPaise} > 0`),
+    check("refunds_status", sql`${t.status} in ('requested', 'sent', 'processed', 'failed')`),
+    check("refunds_kind", sql`${t.kind} in ('auto', 'staff', 'request')`),
+    index().on(t.paymentId),
+    index().on(t.status, t.nextAttemptAt),
+  ],
 );
 
-// Bank transfers to hosts, by hand, each with its UTR once paid (6 to 40 characters, never reused).
+// Bank transfers to hosts, by hand, each with its UTR once paid (6 to 40 characters, stored upper case, never reused).
 export const payouts = pgTable(
   "payouts",
   {
@@ -1000,7 +1013,8 @@ export const payouts = pgTable(
   },
   (t) => [
     check("payouts_amount_positive", sql`${t.amountPaise} > 0`),
-    check("payouts_utr_length", sql`${t.utr} is null or length(${t.utr}) between 6 and 40`),
+    check("payouts_utr", sql`${t.utr} is null or (length(${t.utr}) between 6 and 40 and ${t.utr} = upper(${t.utr}))`),
+    check("payouts_status", sql`${t.status} in ('requested', 'paid', 'cancelled')`),
     index().on(t.eventId),
   ],
 );

@@ -53,7 +53,8 @@ export type PayOrder = {
 export const VerifyPayment = z.object({ paymentId: z.string().min(1).max(64), signature: z.string().min(1).max(256) });
 export const PAYMENT_STATUSES = ["created", "paid", "refundPending", "refunded", "expired", "failed"] as const;
 export type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
-export type Verified = { status: PaymentStatus; bookingId: string | null };
+// "confirming": Razorpay hasn't captured it yet (or couldn't be asked); the webhook or the poller settles it.
+export type Verified = { status: PaymentStatus | "confirming"; bookingId: string | null };
 
 // Galaxy's Money pages (staff with Money).
 export const REFUND_STATUSES = ["requested", "sent", "processed", "failed"] as const;

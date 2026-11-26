@@ -6,10 +6,12 @@ import {
   type TeamEvent, type TicketType, type WideSaved,
 } from "@orbit/contract";
 import type { Db } from "../db/index.ts";
-import { bookings, events, eventSlugs, follows, hosts, teamRoles, ticketTypes } from "../db/schema.ts";
+import { bookings, events, eventSlugs, follows, hosts, payments, teamRoles, ticketTypes } from "../db/schema.ts";
 import { seatsTaken } from "../bookings.ts";
 import { fail, invalid, isUuid, type Notify, parse, signedIn, taken, type Env } from "../http.ts";
 import { contentImage, drop, linkOf, type Media, newKey } from "../media.ts";
+import type { Razorpay } from "../payments/razorpay.ts";
+import { refundPaid, sendRefund } from "../payments/routes.ts";
 import { changeable, teamOf } from "../roles/access.ts";
 import { savedCount } from "../saves.ts";
 import { slugFor } from "../slugs.ts";
@@ -18,7 +20,7 @@ import { editRule, effectiveVisibility, placeColumns, stageOf, timesRule, visibi
 // Events a host's team makes and edits: drafts, the host's list, and the team's read (Orbit flows: Hosts and Discover).
 // Publishing, cancelling (H5.3), ticket types (H5.4) and the poster come with Discover slice 1.
 
-type Deps = { db: Db; notify: Notify; secret: string; now?: () => number; media?: Media };
+type Deps = { db: Db; notify: Notify; secret: string; now?: () => number; media?: Media; razorpay?: Razorpay };
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 type Event = typeof events.$inferSelect;
 type HostVisibility = typeof hosts.$inferSelect["visibility"];
@@ -81,7 +83,7 @@ export async function newDraft(
   return e!;
 }
 
-export function eventsRoutes({ db, notify, secret, media, now = Date.now }: Deps) {
+export function eventsRoutes({ db, notify, secret, media, razorpay: rz, now = Date.now }: Deps) {
   const app = new Hono<Env>();
   const auth = signedIn(db, secret, now);
   const at = () => new Date(now());
@@ -329,21 +331,26 @@ export function eventsRoutes({ db, notify, secret, media, now = Date.now }: Deps
 
   // POST /events/:id/cancel: a published event that hasn't ended, with the reason its ticket holders get. An ended one
   // stays as it happened: cancelling would hide it from the host's page.
-  // Its confirmed free bookings are cancelled with it, in the same transaction (the event's lock keeps a booking from
-  // landing in between).
-  // ponytail: refunds for paid bookings and the notices to holders come with H13.5; there are no paid bookings yet.
+  // Its confirmed bookings are cancelled with it, in the same transaction (the event's lock keeps a booking from
+  // landing in between), and every paid one goes back in full, fee included: the refunds are written in the same
+  // transaction and sent once it commits (the poller sends any that didn't go).
+  // ponytail: the notices to holders come with H13.5; a refund tells its buyer once Razorpay has processed it.
   app.post("/events/:id/cancel", auth, async (c) => {
     const b = await parse(c, CancelEvent);
     if (!b) return invalid(c);
-    return move(c, async (cur, tx) => {
+    let back: string[] = [];
+    const res = await move(c, async (cur, tx) => {
       if (cur.status !== "published") return fail(c, 409, "notNow", `You can't cancel an event that is ${cur.status}.`);
       if (stageOf(cur, now()) === "past") return fail(c, 409, "ended", "This event has ended, so it can't be cancelled.");
       await tx
         .update(bookings)
         .set({ status: "cancelledByHost", cancelledAt: at(), link: null })
         .where(and(eq(bookings.eventId, cur.id), eq(bookings.status, "confirmed")));
+      back = await refundPaid(tx, eq(payments.eventId, cur.id), "The event was cancelled", at());
       return { status: "cancelled", cancelledAt: at(), cancelledBy: c.var.user.id, cancelReason: b.reason };
     });
+    if (rz && res.status === 200) for (const id of back) await sendRefund(db, rz, notify, id, now(), true);
+    return res;
   });
 
   // ---------- Poster and 4:3 (Discover slice 1) ----------
@@ -510,7 +517,8 @@ export function eventsRoutes({ db, notify, secret, media, now = Date.now }: Deps
       if (!mine.some((t) => t.id === tid)) return nothing(c);
       if (cur.status === "published" && mine.length <= 1) return fail(c, 409, "lastTicket", "A published event needs at least one ticket type. Add another before removing this one.");
       const [booked] = await tx.select({ id: bookings.id }).from(bookings).where(eq(bookings.ticketTypeId, tid)).limit(1);
-      if (booked) return fail(c, 409, "hasBookings", "This ticket has had bookings, so it can't be removed.");
+      const [paying] = await tx.select({ id: payments.id }).from(payments).where(eq(payments.ticketTypeId, tid)).limit(1); // an order made, even unpaid
+      if (booked || paying) return fail(c, 409, "hasBookings", "This ticket has had bookings, so it can't be removed.");
       await tx.delete(ticketTypes).where(eq(ticketTypes.id, tid));
       return null;
     });

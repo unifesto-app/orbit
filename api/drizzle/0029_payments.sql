@@ -35,7 +35,10 @@ CREATE TABLE "payments" (
 	"updated_at" timestamp with time zone NOT NULL,
 	CONSTRAINT "payments_razorpay_order_id_unique" UNIQUE("razorpay_order_id"),
 	CONSTRAINT "payments_razorpay_payment_id_unique" UNIQUE("razorpay_payment_id"),
-	CONSTRAINT "payments_amounts" CHECK ("payments"."amount_paise" > 0 and "payments"."quantity" > 0 and "payments"."unit_price_paise" > 0)
+	CONSTRAINT "payments_amounts" CHECK ("payments"."amount_paise" > 0 and "payments"."quantity" > 0 and "payments"."unit_price_paise" > 0),
+	CONSTRAINT "payments_status" CHECK ("payments"."status" in ('created', 'paid', 'refundPending', 'refunded', 'expired', 'failed')),
+	CONSTRAINT "payments_plan" CHECK ("payments"."plan" in ('3+2', '5+0')),
+	CONSTRAINT "payments_kind" CHECK (("payments"."kind" = 'ticket' and "payments"."event_id" is not null and "payments"."ticket_type_id" is not null) or ("payments"."kind" = 'slot' and "payments"."claim_id" is not null))
 );
 --> statement-breakpoint
 CREATE TABLE "payouts" (
@@ -51,7 +54,8 @@ CREATE TABLE "payouts" (
 	"created_at" timestamp with time zone NOT NULL,
 	CONSTRAINT "payouts_utr_unique" UNIQUE("utr"),
 	CONSTRAINT "payouts_amount_positive" CHECK ("payouts"."amount_paise" > 0),
-	CONSTRAINT "payouts_utr_length" CHECK ("payouts"."utr" is null or length("payouts"."utr") between 6 and 40)
+	CONSTRAINT "payouts_utr" CHECK ("payouts"."utr" is null or (length("payouts"."utr") between 6 and 40 and "payouts"."utr" = upper("payouts"."utr"))),
+	CONSTRAINT "payouts_status" CHECK ("payouts"."status" in ('requested', 'paid', 'cancelled'))
 );
 --> statement-breakpoint
 CREATE TABLE "razorpay_events" (
@@ -76,7 +80,9 @@ CREATE TABLE "refunds" (
 	"created_at" timestamp with time zone NOT NULL,
 	"updated_at" timestamp with time zone NOT NULL,
 	CONSTRAINT "refunds_razorpay_refund_id_unique" UNIQUE("razorpay_refund_id"),
-	CONSTRAINT "refunds_amount_positive" CHECK ("refunds"."amount_paise" > 0)
+	CONSTRAINT "refunds_amount_positive" CHECK ("refunds"."amount_paise" > 0),
+	CONSTRAINT "refunds_status" CHECK ("refunds"."status" in ('requested', 'sent', 'processed', 'failed')),
+	CONSTRAINT "refunds_kind" CHECK ("refunds"."kind" in ('auto', 'staff', 'request'))
 );
 --> statement-breakpoint
 ALTER TABLE "hosts" ADD COLUMN "fee_plan" text DEFAULT '3+2' NOT NULL;--> statement-breakpoint

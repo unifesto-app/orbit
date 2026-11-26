@@ -176,7 +176,7 @@ export function bookingsRoutes({ db, secret, now = Date.now }: Deps) {
       const [e] = await tx.select({ startsAt: events.startsAt }).from(events).where(eq(events.id, row.eventId));
       if (!e!.startsAt || e!.startsAt.getTime() <= now()) return fail(c, 409, "started", "The event has started, so this ticket can't be cancelled.");
       const [tier] = await tx.select({ pricePaise: ticketTypes.pricePaise }).from(ticketTypes).where(eq(ticketTypes.id, row.ticketTypeId));
-      // ponytail: paid bookings don't exist yet; their cancel is a refund (the paid slice).
+      // ponytail: a paid ticket isn't cancelled by its holder here; asking for a refund comes with the refund requests queue.
       if (tier!.pricePaise > 0) return fail(c, 409, "notFree", "A paid ticket is refunded, not cancelled.");
       // ponytail: qr and code stay on the row (unique, so never reused); the scan slice must check status, not just find
       // the token, so a cancelled ticket's QR is refused at the gate.

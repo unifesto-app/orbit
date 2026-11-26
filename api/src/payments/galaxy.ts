@@ -10,7 +10,7 @@ import type { Db } from "../db/index.ts";
 import { auditLog, events, failedWebhooks, hosts, payments, payouts, refunds, users } from "../db/schema.ts";
 import { fail, invalid, isUuid, listPage, PAGE_SIZE, parse, signedIn, taken, type Tx } from "../http.ts";
 import { adminsOf, holdersOf, requireFeature, type StaffEnv, tell } from "../roles/access.ts";
-import { sendRefund } from "./routes.ts";
+import { askedBack, sendRefund } from "./routes.ts";
 
 // Galaxy's Money pages (Money flow, "Galaxy"; X2), for holders of Money: payments with their frozen terms and a refund,
 // the refunds queue and the failed ones, payouts with their UTRs, each host's fee plan, and webhooks refused. Every
@@ -33,13 +33,10 @@ const refundsWhere = async (db: Db, where: SQL) =>
   (await db.select({ r: refunds, by: users.name }).from(refunds).leftJoin(users, eq(users.id, refunds.by)).where(where).orderBy(desc(refunds.createdAt)).limit(200)).map(
     (x) => refundRow(x.r, x.by),
   );
-// Everything asked back on a payment so far, open and failed refunds too: none of it may be asked twice.
-const refundedOf = async (q: Db | Tx, paymentId: string) =>
-  (await q.select({ n: sql<number>`coalesce(sum(${refunds.amountPaise}), 0)::int` }).from(refunds).where(eq(refunds.paymentId, paymentId)))[0]!.n;
 
 // Each event's numbers, worked out here once (Money flow, "Your earnings"). Per sale that gave a ticket: the price, less
-// the commission (handed back in proportion to the price refunded), less a fee the host included, less the price
-// refunded. A refund counts against the price first; any fee on top it hands back is Orbit's. Paid out and requested
+// the commission and any fee the host included (both handed back in proportion to the price refunded), less the price
+// refunded. Only refunds of the sale's own Razorpay payment count (a paid-twice refund is the buyer's own money). A refund counts against the price first; any fee on top it hands back is Orbit's. Paid out and requested
 // payouts come off what's available.
 // ponytail: reads every sale of the events asked; per-event totals kept as rows when there are tens of thousands.
 export async function earningsOf(db: Db | Tx, eventIds?: string[]): Promise<EventEarnings[]> {
@@ -52,7 +49,12 @@ export async function earningsOf(db: Db | Tx, eventIds?: string[]): Promise<Even
   const ids = sold.map((s) => s.p.id);
   const back = new Map(
     (ids.length
-      ? await db.select({ id: refunds.paymentId, n: sql<number>`sum(${refunds.amountPaise})::int` }).from(refunds).where(inArray(refunds.paymentId, ids)).groupBy(refunds.paymentId)
+      ? await db
+          .select({ id: refunds.paymentId, n: sql<number>`sum(${refunds.amountPaise})::int` })
+          .from(refunds)
+          .innerJoin(payments, and(eq(payments.id, refunds.paymentId), eq(payments.razorpayPaymentId, refunds.razorpayPaymentId)))
+          .where(inArray(refunds.paymentId, ids))
+          .groupBy(refunds.paymentId)
       : []
     ).map((r) => [r.id, r.n]),
   );
@@ -70,7 +72,7 @@ export async function earningsOf(db: Db | Tx, eventIds?: string[]): Promise<Even
     const price = p.unitPricePaise * p.quantity;
     const refunded = Math.min(back.get(p.id) ?? 0, price);
     const commission = p.commissionPaise - halfUp(p.commissionPaise * refunded, price);
-    const included = p.feeIncluded ? p.buyerFeePaise : 0;
+    const included = p.feeIncluded ? p.buyerFeePaise - halfUp(p.buyerFeePaise * refunded, price) : 0;
     e.salesPaise += price;
     e.commissionPaise += commission;
     e.includedPaise += included;
@@ -133,7 +135,7 @@ export function moneyRoutes({ db, secret, notify, razorpay: rz, now = Date.now }
     const out: PaymentDetail = {
       payment: paymentRow(r.p, r),
       refunds: rs,
-      refundablePaise: r.p.status === "paid" ? r.p.amountPaise - rs.reduce((s, x) => s + x.amountPaise, 0) : 0,
+      refundablePaise: r.p.status === "paid" ? r.p.amountPaise - (await askedBack(db, r.p)) : 0,
     };
     return c.json(out);
   });
@@ -151,17 +153,20 @@ export function moneyRoutes({ db, secret, notify, razorpay: rz, now = Date.now }
       const [p] = await tx.select().from(payments).where(eq(payments.id, id)).for("update");
       if (!p) return fail(c, 404, "notFound", "There's nothing here.");
       if (p.status !== "paid" || !p.razorpayPaymentId) return fail(c, 409, "notPaid", "Only a paid payment can be refunded here.");
-      const left = p.amountPaise - (await refundedOf(tx, p.id));
+      const left = p.amountPaise - (await askedBack(tx, p));
       if (b.amountPaise > left) return fail(c, 400, "tooMuch", `At most ₹${(left / 100).toFixed(2)} can go back on this payment.`, { leftPaise: left });
       const [r] = await tx
         .insert(refunds)
-        .values({ paymentId: p.id, razorpayPaymentId: p.razorpayPaymentId, amountPaise: b.amountPaise, reason: b.reason, kind: "staff", by: actorId, nextAttemptAt: at(), createdAt: at(), updatedAt: at() })
+        .values({
+          paymentId: p.id, razorpayPaymentId: p.razorpayPaymentId, amountPaise: b.amountPaise, reason: b.reason, kind: "staff", by: actorId,
+          nextAttemptAt: new Date(now() + 15 * 60_000), createdAt: at(), updatedAt: at(), // this request sends it; the poller after 15 minutes
+        })
         .returning({ id: refunds.id });
       await logged(tx, actorId, "money.refund", b.reason, { paymentId: p.id, refundId: r!.id, amountPaise: b.amountPaise }, p.hostId);
       return r!.id;
     });
     if (made instanceof Response) return made;
-    await sendRefund(db, rz, notify, made, now());
+    await sendRefund(db, rz, notify, made, now(), true);
     await tellMoney("money.refund", b.reason, actorId);
     const [r] = await refundsWhere(db, eq(refunds.id, made));
     return c.json(r, 201);
@@ -183,10 +188,20 @@ export function moneyRoutes({ db, secret, notify, razorpay: rz, now = Date.now }
     if (!isUuid(id)) return fail(c, 404, "notFound", "There's nothing here.");
     const b = await parse(c, MoneyReason);
     if (!b) return invalid(c);
-    const [r] = await db.select().from(refunds).where(eq(refunds.id, id));
-    if (!r) return fail(c, 404, "notFound", "There's nothing here.");
-    if (r.status !== "failed") return fail(c, 409, "notFailed", "Only a failed refund can be sent again.");
-    await db.transaction((tx) => logged(tx, c.var.actor.id, "money.refund.retry", b.reason, { refundId: id }));
+    // Taken back from failed in one statement, so two staff pressing at once send it once.
+    const r = await db.transaction(async (tx) => {
+      const [r] = await tx
+        .update(refunds)
+        .set({ status: "requested", nextAttemptAt: at(), updatedAt: at() })
+        .where(and(eq(refunds.id, id), eq(refunds.status, "failed")))
+        .returning({ id: refunds.id });
+      if (r) await logged(tx, c.var.actor.id, "money.refund.retry", b.reason, { refundId: id });
+      return r;
+    });
+    if (!r) {
+      const [had] = await db.select({ id: refunds.id }).from(refunds).where(eq(refunds.id, id));
+      return had ? fail(c, 409, "notFailed", "Only a failed refund can be sent again.") : fail(c, 404, "notFound", "There's nothing here.");
+    }
     await sendRefund(db, rz, notify, id, now());
     await tellMoney("money.refund.retry", b.reason, c.var.actor.id);
     return c.json((await refundsWhere(db, eq(refunds.id, id)))[0]);
@@ -252,14 +267,14 @@ export function moneyRoutes({ db, secret, notify, razorpay: rz, now = Date.now }
     const reason = b.reason || `UTR ${b.utr}`;
     let o;
     try {
-      o = await settlePayout(id, c.var.actor.id, "money.payout.paid", reason, { status: "paid", utr: b.utr });
+      o = await settlePayout(id, c.var.actor.id, "money.payout.paid", reason, { status: "paid", utr: b.utr.toUpperCase() }); // one UTR, however it's typed
     } catch (e) {
       if (taken(e)) return fail(c, 409, "utrUsed", "That UTR is already on another payout.");
       throw e;
     }
     if (o === "notFound") return fail(c, 404, "notFound", "There's nothing here.");
     if (o === "notOpen") return fail(c, 409, "notOpen", "Only a requested payout can be marked paid.");
-    await tell(notify, await adminsOf(db, o.hostId), "payoutPaid", { hostId: o.hostId, amountPaise: o.amountPaise, utr: b.utr });
+    await tell(notify, await adminsOf(db, o.hostId), "payoutPaid", { hostId: o.hostId, amountPaise: o.amountPaise, utr: b.utr.toUpperCase() });
     await tellMoney("money.payout.paid", reason, c.var.actor.id);
     return c.json({ ok: true });
   });

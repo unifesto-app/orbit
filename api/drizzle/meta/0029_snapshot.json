@@ -1,5 +1,5 @@
 {
-  "id": "ece726e6-6223-4705-bd16-e2b8fb49d2d5",
+  "id": "808affc4-3f0a-40ba-bc0e-d740601ca369",
   "prevId": "2d7cd291-53b7-4f68-9c5d-f2d7926abdf5",
   "version": "7",
   "dialect": "postgresql",
@@ -3566,6 +3566,18 @@
         "payments_amounts": {
           "name": "payments_amounts",
           "value": "\"payments\".\"amount_paise\" > 0 and \"payments\".\"quantity\" > 0 and \"payments\".\"unit_price_paise\" > 0"
+        },
+        "payments_status": {
+          "name": "payments_status",
+          "value": "\"payments\".\"status\" in ('created', 'paid', 'refundPending', 'refunded', 'expired', 'failed')"
+        },
+        "payments_plan": {
+          "name": "payments_plan",
+          "value": "\"payments\".\"plan\" in ('3+2', '5+0')"
+        },
+        "payments_kind": {
+          "name": "payments_kind",
+          "value": "(\"payments\".\"kind\" = 'ticket' and \"payments\".\"event_id\" is not null and \"payments\".\"ticket_type_id\" is not null) or (\"payments\".\"kind\" = 'slot' and \"payments\".\"claim_id\" is not null)"
         }
       },
       "isRLSEnabled": false
@@ -3711,9 +3723,13 @@
           "name": "payouts_amount_positive",
           "value": "\"payouts\".\"amount_paise\" > 0"
         },
-        "payouts_utr_length": {
-          "name": "payouts_utr_length",
-          "value": "\"payouts\".\"utr\" is null or length(\"payouts\".\"utr\") between 6 and 40"
+        "payouts_utr": {
+          "name": "payouts_utr",
+          "value": "\"payouts\".\"utr\" is null or (length(\"payouts\".\"utr\") between 6 and 40 and \"payouts\".\"utr\" = upper(\"payouts\".\"utr\"))"
+        },
+        "payouts_status": {
+          "name": "payouts_status",
+          "value": "\"payouts\".\"status\" in ('requested', 'paid', 'cancelled')"
         }
       },
       "isRLSEnabled": false
@@ -4449,6 +4465,14 @@
         "refunds_amount_positive": {
           "name": "refunds_amount_positive",
           "value": "\"refunds\".\"amount_paise\" > 0"
+        },
+        "refunds_status": {
+          "name": "refunds_status",
+          "value": "\"refunds\".\"status\" in ('requested', 'sent', 'processed', 'failed')"
+        },
+        "refunds_kind": {
+          "name": "refunds_kind",
+          "value": "\"refunds\".\"kind\" in ('auto', 'staff', 'request')"
         }
       },
       "isRLSEnabled": false

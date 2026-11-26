@@ -35,7 +35,9 @@ export function razorpay(cfg: RazorpayConfig) {
     keyId: cfg.keyId,
     // An order for `amount` paise; `receipt` is our payment id. Razorpay orders don't lapse on their own: ours do after
     // 30 minutes (the poller), and money landing on one after that is late money (settle).
-    createOrder: (amount: number, receipt: string) => call<{ id: string }>("POST", "/orders", { amount, currency: "INR", receipt }),
+    // Captured on its own as soon as it's authorized (payment_capture 1), so no payment sits authorized but not ours.
+    createOrder: (amount: number, receipt: string) => call<{ id: string }>("POST", "/orders", { amount, currency: "INR", receipt, payment_capture: 1 }),
+    payment: (paymentId: string) => call<RzPayment>("GET", `/payments/${encodeURIComponent(paymentId)}`),
     orderPayments: async (orderId: string) => (await call<{ items: RzPayment[] }>("GET", `/orders/${encodeURIComponent(orderId)}/payments`)).items,
     // `receipt` is our refund id: refundsOf finds it again, so a retry never sends twice.
     refund: (paymentId: string, amount: number, receipt: string) =>
