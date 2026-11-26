@@ -7,13 +7,14 @@
 // the app's bar glass fading in once the page scrolls under them; back goes back, or to the app's first screen when a
 // push opened the Inbox with nothing under it.
 // Messages come from GET /me/inbox (src/launch/inboxStore.ts), read again each time the Inbox opens.
-// ponytail: no screen opens from a message yet (the refund request, the event's team, the link, the payout); each comes
-// with its own take. Settings (which messages email you) waits for the account screens. A ScrollView suits the first
+// A tap opens what the message is about where this app has a screen for it (notices.ts pushHref: Event Partner's Event
+// Request, Play Partner's Today, Help and support for a reply from Orbit); the rest stay here.
+// ponytail: the refund request, the event's team, the link and the payout open nothing yet; each comes with its own take. Settings (which messages email you) waits for the account screens. A ScrollView suits the first
 // page of 30; a SectionList when more pages load.
 import { BarGlass, DARK_TINT, Glass } from '@orbit/mobile/glass';
 import { ORB } from '@orbit/mobile/orbitSays';
 import { color, font, space, stoneAt } from '@orbit/mobile/theme';
-import { router } from 'expo-router';
+import { type Href, router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Animated, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -21,6 +22,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { type Message, inboxDays, timeLabel } from '../launch/inbox';
 import { markRead, refreshInbox, useInbox } from '../launch/inboxStore';
 import { useSession } from '../session';
+import { pushHref } from '../notices';
+import { thisApp } from '../variant';
 import { Monogram, Note, Pill, Section, styles as ui } from '../launch/ui';
 
 const PICTURE = 44; // a logo or the orb; a poster is that wide at 3:4
@@ -89,7 +92,11 @@ function MessageRow({ m }: { m: Message }) {
   const at = timeLabel(m.at);
   return (
     <Pressable
-      onPress={() => markRead([m.id])}
+      onPress={() => {
+        markRead([m.id]);
+        const to = pushHref(thisApp.word, m.opens);
+        if (to !== '/inbox') router.push(to as Href);
+      }}
       accessibilityRole="button"
       accessibilityLabel={`${m.read ? '' : 'New. '}${m.from}, ${m.kind}. ${m.text} ${at}`}
       accessibilityHint={m.read ? undefined : 'Marks it read'}

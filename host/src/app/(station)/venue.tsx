@@ -9,8 +9,8 @@
 // Changes that would strand a booking are refused in the sheet, naming the bookings (Play). Desk never comes here.
 // It's the API's venue and team (state.tsx useLiveVenue); a venue not set up yet shows only how to start.
 // ponytail: no followers count: it waits for the follows API.
-// ponytail: Share page, View, Account, Help and Sign out open nothing yet, as on Launch's Host tab; they wait for
-// sign-in and the web host pages. Launch's Card and Row until a shared host kit holds them.
+// ponytail: Share page, View and Account open nothing yet, as on Launch's Host tab; they wait for the web host pages.
+// Help opens Help and support (help.tsx). Launch's Card and Row until a shared host kit holds them.
 import { OrbitSays } from '@orbit/mobile/orbitSays';
 import { useTabBarScroll } from '@orbit/mobile/tabBar';
 import { color, font, space } from '@orbit/mobile/theme';
@@ -207,7 +207,7 @@ export default function VenueTab() {
       <Section title="You" />
       <Card>
         <Row label="Account" value="Sign-in, security, delete" />
-        <Row label="Help and support" />
+        <Row label="Help and support" onPress={() => router.push('/help')} />
         <Row label="Open the web Console" external onPress={toConsole} />
         <Row label="Sign out" onPress={signOut} />
       </Card>

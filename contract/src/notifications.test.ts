@@ -33,6 +33,16 @@ test("the role's app: crew, desk, else Event Partner", () => {
   assert.equal(inboxApp("staffRiskyAction"), null);
 });
 
+test("a support reply lands in the app it was asked from, opening Help", () => {
+  assert.equal(inboxApp("supportReply", { app: "station" }), "station");
+  assert.equal(inboxApp("supportReply", { app: "launch" }), "launch");
+  assert.equal(inboxApp("supportReply", { app: "orbit" }), "orbit");
+  assert.equal(inboxApp("supportReply", { app: "crew" }), "crew");
+  assert.equal(inboxApp("supportReply", { app: "nope" }), "orbit");
+  assert.equal(inboxApp("supportReply"), "orbit");
+  assert.equal(KINDS.supportReply.opens, "help");
+});
+
 test("every optional kind has a switch, every Must kind none; email switches are push switches", () => {
   for (const [name, d] of kinds) {
     if (d.level === "must") assert.equal(d.switch, null, name);

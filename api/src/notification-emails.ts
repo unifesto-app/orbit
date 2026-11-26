@@ -73,6 +73,7 @@ const WORDS: Partial<Record<NoticeKind, (d: Data) => Words>> = {
     line: `Reason: ${str(d.reason)}. ${d.until ? `Until ${day(d.until)}.` : "No end date."} Reply to this email to ask about it.`,
   }),
   accountLifted: () => ({ subject: "Your Orbit account is open again", line: "You can sign in as before." }),
+  supportReply: () => ({ subject: "Orbit replied to your message", line: "Open Help and support in the app to read it." }),
   // A fixed subject: the host name is typed by whoever invites, so it stays in the body.
   teamInvite: (d) => ({
     subject: "You’re invited to a team on Orbit",
