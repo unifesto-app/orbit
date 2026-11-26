@@ -33,6 +33,10 @@ const ERRORS: Record<string, [403 | 404 | 409, string]> = {
 };
 const refuse = (c: Context, error: string) => fail(c, ERRORS[error]![0], error, ERRORS[error]![1]);
 
+// Thrown by startHost for an account with neither phone nor email: the Admin seat needs a contact.
+export class NoContact extends Error {}
+export const noContact = (c: Context) => fail(c, 409, "noContact", "They need a phone or email on their account first.");
+
 // A new host, live and unverified, with `u` as its owner and started Admin. POST /hosts and an approved Event Request.
 export async function startHost(
   tx: Tx,
@@ -40,9 +44,11 @@ export async function startHost(
   u: { id: string; phone: string | null; email: string | null },
   at: Date,
 ) {
+  const contact = u.phone ?? u.email;
+  if (!contact) throw new NoContact();
   const [h] = await tx.insert(hosts).values({ ...b, slug: slugFor(b.name), ownerId: u.id, createdBy: u.id, createdAt: at, updatedAt: at }).returning();
   await tx.insert(hostSlugs).values({ slug: h!.slug, hostId: h!.id, createdAt: at });
-  await tx.insert(teamRoles).values({ hostId: h!.id, role: "admin", contact: u.phone ?? u.email!, userId: u.id, addedBy: u.id, addedAt: at, acceptedAt: at, startedAt: at });
+  await tx.insert(teamRoles).values({ hostId: h!.id, role: "admin", contact, userId: u.id, addedBy: u.id, addedAt: at, acceptedAt: at, startedAt: at });
   return h!;
 }
 
@@ -67,13 +73,16 @@ export function rolesRoutes({ db, store, notify, secret, now = Date.now }: Deps)
     const b = await parse(c, StartHost);
     if (!b) return invalid(c);
     const u = c.var.user;
-    const host = await db.transaction(async (tx) => {
-      // Counted under a lock on the person, so hosts started at once still meet the limit.
-      await tx.select({ id: users.id }).from(users).where(eq(users.id, u.id)).for("update");
-      const [made] = await tx.select({ n: count() }).from(hosts).where(and(eq(hosts.createdBy, u.id), gt(hosts.createdAt, new Date(now() - DAY))));
-      if (made!.n >= HOSTS_PER_DAY) return null;
-      return startHost(tx, b, u, at());
-    });
+    const host = await db
+      .transaction(async (tx) => {
+        // Counted under a lock on the person, so hosts started at once still meet the limit.
+        await tx.select({ id: users.id }).from(users).where(eq(users.id, u.id)).for("update");
+        const [made] = await tx.select({ n: count() }).from(hosts).where(and(eq(hosts.createdBy, u.id), gt(hosts.createdAt, new Date(now() - DAY))));
+        if (made!.n >= HOSTS_PER_DAY) return null;
+        return startHost(tx, b, u, at());
+      })
+      .catch((e) => (e instanceof NoContact ? e : Promise.reject(e)));
+    if (host instanceof NoContact) return noContact(c);
     if (!host) return fail(c, 429, "tooMany", `You can start ${HOSTS_PER_DAY} hosts a day. Try again tomorrow.`);
     return c.json({ id: host.id, slug: host.slug, name: host.name, kind: host.kind, city: host.city, status: host.status }, 201);
   });
