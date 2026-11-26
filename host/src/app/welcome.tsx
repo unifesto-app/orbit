@@ -223,6 +223,7 @@ export default function Welcome() {
       {contacts ? <Note>{`Expecting an invite? Ask ${isStation ? 'the venue' : 'your host'} to add ${contacts}.`}</Note> : null}
 
       <View style={styles.foot}>
+        <Pill label="Account" onPress={() => router.push('/account')} />
         <Pill label="Sign out" onPress={signOut} />
       </View>
     </ScrollView>
@@ -250,5 +251,5 @@ const styles = StyleSheet.create({
   cardHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   quote: { borderLeftWidth: 2, borderLeftColor: color.accent, paddingLeft: 12, fontFamily: font.text, fontSize: 14, lineHeight: 20, color: color.text }, // Orbit's own words; the Sage edge is an element
 
-  foot: { marginTop: 'auto', paddingTop: space.big, marginHorizontal: 20, flexDirection: 'row' },
+  foot: { marginTop: 'auto', paddingTop: space.big, marginHorizontal: 20, flexDirection: 'row', gap: space.small },
 });

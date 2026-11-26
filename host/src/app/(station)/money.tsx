@@ -6,7 +6,7 @@
 // - Orbit says the venue's fee plan: the buyer fee (3% or 5%), who bears it, and the commission (2% or none).
 // - The seven numbers in the doc's order, all time. Cash walk-ins stay off.
 // - Payouts (Asked, Paid with its UTR, Cancelled with why) and the bank account, added or replaced in a sheet.
-// ONE_0 still hides the tab in 1.0 (X10 turns it on). Desk never comes here: Station's tab bar sends it to Today.
+// Shown since X10 turned ONE_0 off. Desk never comes here: Station's tab bar sends it to Today.
 // ponytail: take 3's period chips and By day wait for per-day money from the API; this shows the totals.
 import { OrbitSays } from '@orbit/mobile/orbitSays';
 import { useTabBarScroll } from '@orbit/mobile/tabBar';
@@ -54,10 +54,10 @@ export default function Money() {
   // Once a week per venue, to a verified account.
   let ask;
   if (!b || !account) ask = null;
-  else if (account.state !== 'verified') ask = <Pill wide disabled label="Ask once your account is verified" onPress={() => {}} />;
-  else if (b.nextAskAt) ask = <Pill wide disabled label={`Next ask from ${dayLabel(at(b.nextAskAt))}`} onPress={() => {}} />;
+  else if (account.state !== 'verified') ask = <Pill wide disabled label="Ask once your account is verified" />;
+  else if (b.nextAskAt) ask = <Pill wide disabled label={`Next ask from ${dayLabel(at(b.nextAskAt))}`} />;
   else if (b.availablePaise > 0) ask = <Pill wide label={`Request ${rupees(b.availablePaise)}`} onPress={() => open({ pathname: '/payout', params: { hostId, name: v.name } })} />;
-  else ask = <Pill wide disabled label="Nothing to ask for yet" onPress={() => {}} />;
+  else ask = <Pill wide disabled label="Nothing to ask for yet" />;
 
   return (
     <ScrollView

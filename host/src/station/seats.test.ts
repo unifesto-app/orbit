@@ -25,7 +25,7 @@ test('venues only, owner or Admin is admin, a counter seat is desk, by name', ()
   assert.deepEqual(seats({ teams: [] }), []);
 });
 
-test('tabs: 1.0 drops Money, Desk opens Today alone', () => {
+test('tabs: ONE_0 on drops Money, Desk opens Today alone', () => {
   assert.deepEqual(barTabs(true), ['today', 'venue']);
   assert.deepEqual(barTabs(false), ['today', 'money', 'venue']);
   assert.deepEqual(opens('admin', true), ['today', 'venue']);

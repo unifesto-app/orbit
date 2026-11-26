@@ -55,6 +55,11 @@ test('status moves: who gets which, and Not yet while they must wait', () => {
   assert.deepEqual(labels(statusMoves('archived', true, false)), ['Restore host >']);
   assert.deepEqual(statusMoves('suspended', true, false), []);
   assert.deepEqual(statusMoves('live', false, false), []);
+  // Each move posts to its own route: POST /hosts/:id/<action>.
+  const actions = (s: Parameters<typeof statusMoves>[0]) => statusMoves(s, true, false).map((m) => m.action);
+  assert.deepEqual(actions('live'), ['pause', 'archive']);
+  assert.deepEqual(actions('paused'), ['resume', 'archive']);
+  assert.deepEqual(actions('archived'), ['restore']);
   assert.match(statusNote('live', false, false)!, /Only the owner/);
   assert.match(statusNote('live', true, true)!, /waits till/);
   assert.equal(statusNote('archived', true, false), undefined);

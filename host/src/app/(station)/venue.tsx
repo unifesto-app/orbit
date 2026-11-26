@@ -1,16 +1,19 @@
 // Venue, for Admins (Station take 4, approved 22 Nov 2026: https://claude.ai/artifact/Me5XbAzWHUYi6muYwwSZrP, Take 4),
 // laid out as Launch's Host tab with the Orbit app's Account-style cards. From the Play and Hosts flow docs:
-// - the venue as people see it: logo, name with the tick, kind and area; Share page and View;
+// - the venue as people see it: logo, name with the tick, kind and area;
 // - What you rent out: a row per kind (how many, the price an hour, off-peak, co-op, games), each edited in a sheet;
 //   Orbit sets how bookings start and whether it's booked whole; Add a kind;
 // - Hours: each day of the week, open or closed; how long before the start players can cancel; We log walk-ins;
 // - Team: Admins (the owner marked) and Desk, invites waiting with their days left, Add Desk or an Admin;
-// - Venue page (place, desk phone; name, logo and banner on the web Console) and You.
+// - Venue page (place, desk phone; name, logo and banner on the web Console), Status (launch/status.tsx, as on Launch's
+//   Host tab: the owner pauses or archives here, and archiving is what lets an owner delete their account) and You.
 // Changes that would strand a booking are refused in the sheet, naming the bookings (Play). Desk never comes here.
 // It's the API's venue and team (state.tsx useLiveVenue); a venue not set up yet shows only how to start.
 // ponytail: no followers count: it waits for the follows API.
-// ponytail: Share page, View and Account open nothing yet, as on Launch's Host tab; they wait for the web host pages.
-// Help opens Help and support (help.tsx). Launch's Card and Row until a shared host kit holds them.
+// ponytail: no Share page or View, as on Launch's Host tab: they wait for the web host pages. Account opens the shared
+// Account screen (account.tsx), Help opens Help and support (help.tsx). Launch's Card and Row until a shared host kit holds them.
+import type { HostPage } from '@orbit/contract';
+import { useLoad } from '@orbit/mobile/load';
 import { OrbitSays } from '@orbit/mobile/orbitSays';
 import { useTabBarScroll } from '@orbit/mobile/tabBar';
 import { color, font, space } from '@orbit/mobile/theme';
@@ -20,7 +23,8 @@ import { Linking, RefreshControl, ScrollView, StyleSheet, Switch, Text, View } f
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Card, Row } from '../../launch/ui';
-import { signOut } from '../../session';
+import { HostStatus } from '../../launch/status';
+import { api, signOut } from '../../session';
 import { useVenue } from '../../station/state';
 import { Pill, Section } from '../../station/ui';
 import { daysLeft, LOST_SEAT, priceLine, span } from '../../station/venue';
@@ -31,7 +35,9 @@ const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Frid
 const CONSOLE = 'https://console.heyorbit.in';
 
 export default function VenueTab() {
-  const { venue: v, setup: s, load, said: told, tell, role, now, changeSetup, archiveKind } = useVenue();
+  const { venue: v, setup: s, load, said: told, tell, role, now, seat, changeSetup, archiveKind } = useVenue();
+  const hostId = role === 'admin' ? seat?.hostId : undefined;
+  const page = useLoad<HostPage>(hostId ? `host|${hostId}` : null, () => api.authed<HostPage>('GET', `/hosts/${hostId}`));
   const [said, setSaid] = useState<string | null>(null); // the walk-ins switch's or a Restore's refusal
   const [busy, setBusy] = useState(false);
   const [walkIns, setWalkIns] = useState<boolean | null>(null); // the switch's new value while it's sent
@@ -53,7 +59,23 @@ export default function VenueTab() {
     return run().then((line) => (setBusy(false), setSaid(line), line));
   };
   const toConsole = () => Linking.openURL(CONSOLE).catch(() => {});
-  const refresh = <RefreshControl refreshing={false} onRefresh={load.reload} tintColor={color.secondary} />;
+  const refresh = (
+    <RefreshControl
+      refreshing={false}
+      onRefresh={() => {
+        load.reload();
+        page.reload();
+      }}
+      tintColor={color.secondary}
+    />
+  );
+  // The host's status and the owner's moves (no "Not yet" here: the API names what's still open when it refuses).
+  const status = page.data && hostId && (
+    <>
+      <Section title="Status" />
+      <HostStatus id={hostId} status={page.data.status} owner={page.data.owner} wait={false} onDone={page.reload} />
+    </>
+  );
   const trouble = !load.error ? null : load.status === 0 ? 'Can’t reach Orbit. Pull to try again.' : load.status === 404 ? LOST_SEAT : load.error.message;
   // Before the venue lands, or a venue not set up yet: the name and what to do.
   if (!s)
@@ -74,8 +96,10 @@ export default function VenueTab() {
         ) : (
           <OrbitSays text={trouble ?? 'Getting your venue…'} />
         )}
+        {status}
         <Section title="You" />
         <Card>
+          <Row label="Account" value="Sign-in, delete" onPress={() => router.push('/account')} />
           <Row label="Open the web Console" external onPress={toConsole} />
           <Row label="Sign out" onPress={signOut} />
         </Card>
@@ -107,10 +131,6 @@ export default function VenueTab() {
               {s.kind} · {v.area}
             </Text>
           </View>
-        </View>
-        <View style={styles.pills}>
-          <Pill label="Share page" onPress={() => {}} />
-          <Pill label="View ↗" spoken="View the venue page" onPress={() => {}} />
         </View>
       </View>
       {trouble && <OrbitSays text={trouble} />}
@@ -203,10 +223,11 @@ export default function VenueTab() {
         <Row label="Desk phone" value={s.deskPhone} onPress={() => open({ pathname: '/setup', params: { what: 'field', key: 'deskPhone' } })} />
         <Row label="Name, logo and banner" value="Web Console" external onPress={toConsole} />
       </Card>
+      {status}
 
       <Section title="You" />
       <Card>
-        <Row label="Account" value="Sign-in, security, delete" />
+        <Row label="Account" value="Sign-in, delete" onPress={() => router.push('/account')} />
         <Row label="Help and support" onPress={() => router.push('/help')} />
         <Row label="Open the web Console" external onPress={toConsole} />
         <Row label="Sign out" onPress={signOut} />
@@ -227,7 +248,6 @@ const styles = StyleSheet.create({
   tick: { width: 18, height: 18, borderRadius: 9, backgroundColor: color.accent, alignItems: 'center', justifyContent: 'center' },
   tickMark: { fontFamily: font.headline, fontSize: 11, lineHeight: 13, color: color.ground },
   line: { fontFamily: font.text, fontSize: 13, lineHeight: 18, color: color.secondary },
-  pills: { flexDirection: 'row', flexWrap: 'wrap', gap: space.small },
   after: { marginTop: 12, marginHorizontal: 20, flexDirection: 'row', flexWrap: 'wrap', gap: space.small },
   gap: { marginTop: 12 },
   note: { marginTop: 10, marginHorizontal: 20, fontFamily: font.text, fontSize: 13, lineHeight: 18, color: color.secondary },

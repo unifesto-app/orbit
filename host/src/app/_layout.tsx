@@ -64,6 +64,8 @@ export default function Layout() {
           <Stack.Screen name="(launch)" />
           {/* Which host, with several. */}
           <Stack.Screen name="pick" />
+          {/* Edit host, from the Host tab. */}
+          <Stack.Screen name="host" />
           {/* An event's editor: New event, a draft's Continue, a card's Edit event. */}
           <Stack.Screen name="edit" />
           {/* The ticket scanner, full screen over Events, from an open event's Scan or Find someone (X6). */}
@@ -78,6 +80,9 @@ export default function Layout() {
             push about a seat just ended still opens it. */}
         <Stack.Protected guard={signedIn}>
           <Stack.Screen name="inbox" />
+          {/* The Inbox's Settings, and Account (ways in, Delete account, Sign out) from Host, Venue, Crew and welcome. */}
+          <Stack.Screen name="notifications" />
+          <Stack.Screen name="account" />
           {/* An event's announcements and automatic messages, from Messages on its card. */}
           <Stack.Screen name="event/[id]" />
         </Stack.Protected>

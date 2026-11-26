@@ -50,12 +50,22 @@ export default function WalkIn() {
           ))}
         </View>
       </View>
-      <View style={styles.field}>
-        <Text style={styles.label}>{block ? 'Why' : 'They pay'}</Text>
-        <View style={styles.chips}>
-          {block ? WHY.map((w) => <Chip key={w} label={w} on={why === w} onPress={() => setWhy(w)} />) : <Chip label="Cash here" on onPress={() => {}} />}
+      {block ? (
+        <View style={styles.field}>
+          <Text style={styles.label}>Why</Text>
+          <View style={styles.chips}>
+            {WHY.map((w) => (
+              <Chip key={w} label={w} on={why === w} onPress={() => setWhy(w)} />
+            ))}
+          </View>
         </View>
-      </View>
+      ) : (
+        // Cash is the only way for now: said, not a choice.
+        <View style={styles.frow}>
+          <Text style={styles.label}>They pay</Text>
+          <Text style={styles.chipText}>Cash here</Text>
+        </View>
+      )}
       {refused ? (
         <SheetSays text={refused.line} />
       ) : !tried.ok ? (

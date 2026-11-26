@@ -10,7 +10,7 @@ export const isLaunch = variant?.id === variants.launch.id;
 export const isCrew = variant?.id === variants.crew.id;
 // An unknown bundle id (none of the three) falls back to Orbit Event Partner's names.
 export const thisApp = variant ?? variants.launch;
-// Orbit Play Partner 1.0: Today and Venue only. On, there's no Money tab; off shows Money's placeholder tab (one line
-// until the Money API). The one place that toggles it. The scanner and the walk-in's Pay now QR aren't in the app at
-// all: they come back with their own APIs, not with this flag. A plain constant: flip it and ship a new build.
-export const ONE_0 = true;
+// Orbit Play Partner's Money tab: on hides it (Today and Venue only); off, as since X10, shows it to Admins, fed by
+// GET /hosts/:id/money (X4). The one place that toggles it. The scanner and the walk-in's Pay now QR aren't in the app
+// at all: they come back with their own APIs, not with this flag. A plain constant: flip it and ship a new build.
+export const ONE_0 = false;
