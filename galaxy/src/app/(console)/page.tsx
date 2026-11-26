@@ -7,6 +7,7 @@ import { read } from "../../api";
 import { Alert, Container, PageHeader, Pairs, ui } from "../ui";
 import { Days } from "./charts";
 import c from "./charts.module.css";
+import { inr } from "./money/tabs";
 
 // The Dashboard (owner, 19 Nov 2026: "remove all in dashboard page", "add Analytics, Traction and all"): Orbit's traction
 // at a glance, in place of the old list of sections (the side nav has those). API: GET /galaxy/dashboard, which sends
@@ -59,11 +60,11 @@ async function Body() {
   await connection(); // read on each visit: written to the audit log
   const r = await read<DashboardStats>("/galaxy/dashboard");
   if (!r.ok) return <Alert>{r.error.message}</Alert>;
-  const { people, waitlist, website, hosts, events, staff } = r.data;
-  if (!people && !waitlist && !website && !hosts && !events && !staff)
+  const { people, waitlist, website, hosts, events, bookings, revenue, staff } = r.data;
+  if (!people && !waitlist && !website && !hosts && !events && !bookings && !revenue && !staff)
     return (
       <Container title="Traction">
-        <p className={ui.secondary}>Nothing here for your access yet: the Dashboard shows People, Hosts and events, and Staff numbers to those who hold them.</p>
+        <p className={ui.secondary}>Nothing here for your access yet: the Dashboard shows People, Hosts and events, Money and Staff numbers to those who hold them.</p>
       </Container>
     );
 
@@ -78,6 +79,8 @@ async function Body() {
       : []),
     ...(waitlist ? ([["Waitlist", n(waitlist.total), `+${n(waitlist.week)} this week`]] as [string, string, string][]) : []),
     ...(hosts ? ([["Hosts", n(hosts.total), `${n(hosts.verified)} verified`]] as [string, string, string][]) : []),
+    ...(bookings ? ([["Bookings this week", n(bookings.week), change(bookings.week, bookings.prevWeek)]] as [string, string, string][]) : []),
+    ...(revenue ? ([["Paid by buyers this week", inr(revenue.week), change(revenue.week, revenue.prevWeek)]] as [string, string, string][]) : []),
     ...(events ? ([["Events coming up", n(events.upcoming), `${n(events.week)} published this week`]] as [string, string, string][]) : []),
   ];
 
@@ -162,6 +165,29 @@ async function Body() {
                   : []),
               ]}
             />
+          </Container>
+        )}
+
+        {(bookings || revenue) && (
+          <Container title="Bookings and revenue">
+            <Pairs
+              pairs={[
+                ...(bookings
+                  ? ([
+                      ["Confirmed bookings this week", n(bookings.week)],
+                      ["Check-in rate, last 30 days", bookings.checkInRate === null ? "–" : `${Math.round(bookings.checkInRate * 100)}%`],
+                    ] as [string, string][])
+                  : []),
+                ...(revenue
+                  ? ([
+                      ["Paid by buyers this week", inr(revenue.week)],
+                      ["Orbit’s fees this week", inr(revenue.orbitWeek)],
+                    ] as [string, string][])
+                  : []),
+              ]}
+            />
+            {/* Analytics is for People holders: no link for the rest. */}
+            {people && <More href="/analytics" label={revenue ? "Bookings, check-in and revenue, last 30 days ›" : "Bookings and check-in, last 30 days ›"} />}
           </Container>
         )}
 

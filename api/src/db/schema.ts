@@ -1136,3 +1136,32 @@ export const broadcasts = pgTable(
   },
   (t) => [index().on(t.status), index().on(t.createdAt)],
 );
+
+// A person's report of an event or a host (X15, reports.ts): exactly one of the two. Staff with Queues resolve or
+// dismiss it in Galaxy. Reports stay with their event or host, so neither can be deleted while one points at it.
+export const reports = pgTable(
+  "reports",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").notNull().references(() => users.id),
+    eventId: uuid("event_id").references(() => events.id),
+    hostId: uuid("host_id").references(() => hosts.id),
+    reason: text("reason", { enum: ["misleading", "scam", "unsafe", "offensive", "spam", "other"] }).notNull(),
+    note: text("note"),
+    status: text("status", { enum: ["open", "resolved", "dismissed"] }).notNull().default("open"),
+    staffNote: text("staff_note"),
+    decidedBy: uuid("decided_by").references(() => users.id),
+    decidedAt: at("decided_at"),
+    createdAt: at("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    check("reports_one_subject", sql`(${t.eventId} is null) <> (${t.hostId} is null)`),
+    check("reports_status", sql`${t.status} in ('open', 'resolved', 'dismissed')`),
+    index().on(t.status, t.createdAt),
+    // One open report per person per subject: a second is answered with the first.
+    uniqueIndex("reports_one_open_event").on(t.userId, t.eventId).where(sql`${t.status} = 'open' and ${t.eventId} is not null`),
+    uniqueIndex("reports_one_open_host").on(t.userId, t.hostId).where(sql`${t.status} = 'open' and ${t.hostId} is not null`),
+    index().on(t.eventId),
+    index().on(t.hostId),
+  ],
+);

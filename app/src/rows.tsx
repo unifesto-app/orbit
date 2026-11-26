@@ -488,6 +488,23 @@ export function CircleButton({
 // "Open Mic Night · Fri 21 Nov, 8 pm · Jubilee Hills · ₹299" and the link). `path` is "/event/<slug>" or "/host/<slug>".
 export const shareLink = (line: string, path: string) => Share.share({ message: `${line}\nhttps://heyorbit.in${path}` });
 
+// Copy link in a page's menu: the same link, copied, with a note saying so. expo-clipboard is native, so a build made
+// before it had it falls back to the share sheet, which has a Copy of its own (as the venue sheet's address).
+export async function copyLink(path: string) {
+  const url = `https://heyorbit.in${path}`;
+  try {
+    const Clipboard = await import('expo-clipboard');
+    await Clipboard.setStringAsync(url);
+    showNote({ text: 'Link copied', ms: 2000 });
+  } catch {
+    void Share.share({ message: url });
+  }
+}
+
+// Report in a page's menu (X15): only for a real event or host (an id the API knows). Signed out, sign in first.
+export const reportIt = (kind: 'event' | 'host', id: string, name: string) =>
+  needsAccount(() => router.push({ pathname: '/report', params: { [kind]: id, name } }));
+
 // A page's ⋯ button and its dropdown (owner, 15 Nov 2026: "instead of alert menu use dropdown menu"): a frosted panel
 // opening just under the button at the bar's right end, darkened like the bars so its white labels read over a poster.
 // Its corners nest round the items' (6 + the small gap = 14). A tap outside closes it; an item closes it, then runs, so
