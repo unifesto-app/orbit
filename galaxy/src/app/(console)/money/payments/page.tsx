@@ -77,7 +77,7 @@ async function Body({ searchParams }: Pick<PageProps<"/money/payments">, "search
                     </td>
                     <td>{inr(p.amountPaise)}</td>
                     <td>{p.userName ?? "No name yet"}</td>
-                    <td>{p.eventTitle ?? "–"}</td>
+                    <td>{p.eventTitle ?? `${p.hostName} (slot)`}</td>
                     <td>{p.hostName}</td>
                     <td>{when(p.createdAt)}</td>
                   </tr>

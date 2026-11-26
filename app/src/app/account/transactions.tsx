@@ -35,7 +35,7 @@ export default function Transactions() {
             return (
               <Row
                 key={p.id}
-                label={p.eventTitle ?? 'An event'}
+                label={p.eventTitle ?? p.hostName}
                 note={lines.join('\n')}
                 right={<Text style={styles.total}>{formatPrice(p.amountPaise)}</Text>}
               />

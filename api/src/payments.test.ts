@@ -288,7 +288,7 @@ test("a second payment on a settled order goes back whole; refund.processed befo
   const kept = await paymentOf(o.orderId);
   assert.equal(kept.status, "paid");
   assert.equal((await t.db.select().from(bookings).where(eq(bookings.id, kept.bookingId!)))[0]!.status, "confirmed");
-  const [earned] = await earningsOf(t.db, [e.id]);
+  const [earned] = await earningsOf(t.db, { eventIds: [e.id] });
   assert.deepEqual([earned!.refundedPaise, earned!.earningsPaise], [0, 120000 - 2400]);
   // payment.failed after paid moves nothing back.
   assert.equal(await hook("payment.failed", { payment: { entity: { ...p1, status: "failed" } } }), 200);
@@ -413,7 +413,7 @@ test("cancelling an event refunds its paid tickets in full; earnings go to 0", a
   for (let i = 0; i < 100 && (await t.db.select().from(refunds).where(eq(refunds.paymentId, p.id)))[0]?.status !== "sent"; i++) await new Promise((r) => setTimeout(r, 10));
   const [r] = await t.db.select().from(refunds).where(eq(refunds.paymentId, p.id));
   assert.deepEqual([r!.amountPaise, r!.kind, r!.status], [o.amountPaise, "auto", "sent"]);
-  const [earned] = await earningsOf(t.db, [e.id]);
+  const [earned] = await earningsOf(t.db, { eventIds: [e.id] });
   assert.deepEqual([earned!.refundedPaise, earned!.commissionPaise, earned!.earningsPaise], [120000, 0, 0]);
 
   // Staff cancelling from Galaxy's Events refunds the same way.
@@ -887,4 +887,87 @@ test("slot pay: deleting the account refunds an upcoming paid slot in full", asy
   assert.equal(p.status, "refundPending");
   const [r] = await t.db.select().from(refunds).where(eq(refunds.paymentId, p.id));
   assert.deepEqual([r!.amountPaise, r!.status], [o.amountPaise, "requested"]);
+});
+
+// A held slot, paid and settled: the player, the payment row.
+const paidSlot = async () => {
+  const x = await heldSlot();
+  const o = (await payHold(x.b, x.h, x.claimId)).body;
+  assert.equal((await verify(x.b, o.orderId, capture(o.orderId, o.amountPaise).id)).body.status, "paid");
+  return { ...x, o, p: await paymentOf(o.orderId) };
+};
+
+test("slot pay: settled, the player gets slotConfirmed with the code; the payment counts as booked; names on the player's lists", async () => {
+  const notices = t.notices.length;
+  const { b, h, claimId, p } = await paidSlot();
+  assert.equal(p.slotBooked, true);
+  const mine = t.notices.slice(notices).filter((n) => n.kind === "slotConfirmed");
+  assert.equal(mine.length, 1);
+  assert.ok("userId" in mine[0]!.to && mine[0]!.to.userId === b.me.id);
+  assert.equal((mine[0]!.data as { code?: string }).code, (await claimOf(claimId)).code);
+  const [host] = await t.db.select().from(hosts).where(eq(hosts.id, h));
+  const pays = (await as(b)("GET", "/me/payments")).body as { eventTitle: string | null; hostName: string }[];
+  assert.deepEqual(pays.map((x) => [x.eventTitle, x.hostName]), [[null, host!.name]]);
+});
+
+test("slot pay: staff taking it all back frees the slot; a part refund keeps it", async () => {
+  const boss = await join();
+  await give(boss, "money");
+  const { claimId, p } = await paidSlot();
+  assert.equal((await as(boss)("POST", `/galaxy/money/payments/${p.id}/refund`, { amountPaise: 100, reason: "Part" })).status, 201);
+  assert.equal((await claimOf(claimId)).status, "paid");
+  const all = await as(boss)("POST", `/galaxy/money/payments/${p.id}/refund`, { amountPaise: p.amountPaise - 100, reason: "Rest" });
+  assert.equal(all.status, 201, JSON.stringify(all.body));
+  assert.equal((await claimOf(claimId)).status, "refunded");
+  assert.equal((await paymentOf(p.razorpayOrderId)).status, "refundPending");
+});
+
+test("slot pay: the venue's earnings and a venue payout; a player's cancel undoes the sale, Orbit's fee stays", async () => {
+  const boss = await join();
+  await give(boss, "money");
+  const one = await paidSlot();
+  const [e] = await earningsOf(t.db, { venue: one.h });
+  assert.equal(e!.eventId, null);
+  assert.equal(e!.salesPaise, 50000);
+  assert.ok(e!.earningsPaise > 0 && e!.earningsPaise <= 50000);
+  // Not played yet: the player can still cancel, so none of it is available.
+  assert.equal(e!.availablePaise, 0);
+  assert.equal((await as(boss)("POST", "/galaxy/money/payouts", { hostId: one.h, amountPaise: 1, reason: "Early" })).status, 400);
+  t.tick(41 * MIN);
+  assert.equal((await earningsOf(t.db, { venue: one.h }, new Date(t.now())))[0]!.availablePaise, e!.earningsPaise);
+  const listed = (await as(boss)("GET", "/galaxy/money/payouts")).body.earnings.find((x: { hostId: string; eventId: string | null }) => x.hostId === one.h && !x.eventId);
+  assert.equal(listed.availablePaise, e!.earningsPaise);
+  assert.equal((await as(boss)("POST", "/galaxy/money/payouts", { hostId: one.h, eventId: "00000000-0000-4000-8000-000000000000", amountPaise: 1, reason: "Both" })).status, 400);
+  assert.equal((await as(boss)("POST", "/galaxy/money/payouts", { hostId: one.h, amountPaise: e!.earningsPaise + 1, reason: "Payout" })).status, 400);
+  const po = await as(boss)("POST", "/galaxy/money/payouts", { hostId: one.h, amountPaise: e!.earningsPaise, reason: "Payout" });
+  assert.equal(po.status, 201, JSON.stringify(po.body));
+  assert.equal((await earningsOf(t.db, { venue: one.h }, new Date(t.now())))[0]!.availablePaise, 0);
+
+  // Cancel: someone else can't; the player gets the price back, the fee stays; the venue earns nothing from it.
+  const two = await paidSlot();
+  const cancel = (u: P) => as(u)("POST", `/venues/${two.h}/holds/${two.claimId}/cancel`);
+  assert.equal((await cancel(two.a)).status, 404);
+  const r = await cancel(two.b);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.refundPaise, two.p.amountPaise - two.p.buyerFeePaise);
+  assert.equal((await claimOf(two.claimId)).status, "refunded");
+  assert.equal((await paymentOf(two.o.orderId)).status, "refundPending");
+  const [rf] = await t.db.select().from(refunds).where(eq(refunds.paymentId, two.p.id));
+  assert.deepEqual([rf!.kind, rf!.amountPaise], ["request", r.body.refundPaise]);
+  assert.equal((await earningsOf(t.db, { venue: two.h }))[0]!.earningsPaise, 0);
+  const again = await cancel(two.b); // a retry: the same answer, nothing more sent
+  assert.deepEqual([again.status, again.body.refundPaise], [200, r.body.refundPaise]);
+  assert.equal((await t.db.select().from(refunds).where(eq(refunds.paymentId, two.p.id))).length, 1);
+  // Processed: the payment is refunded though the fee never went back.
+  const sent = rzState.refunds.find((x) => x.payment_id === two.p.razorpayPaymentId)!;
+  assert.equal(await hook("refund.processed", { refund: { entity: { ...sent, status: "processed" } } }), 200);
+  assert.equal((await paymentOf(two.o.orderId)).status, "refunded");
+  const back = (await as(two.b)("GET", "/me/refunds")).body as { hostName: string }[];
+  assert.equal(back.length, 1);
+  assert.ok(back[0]!.hostName);
+
+  // After the start: too late.
+  const three = await paidSlot();
+  t.tick(41 * MIN);
+  assert.equal((await as(three.b)("POST", `/venues/${three.h}/holds/${three.claimId}/cancel`)).body.error, "cantCancel");
 });
