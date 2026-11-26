@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { EMAIL_SWITCHES, type EmailSwitch, isMust, KINDS, type NoticeKind, WAITLIST_CONTACT } from "@orbit/contract";
+import { EMAIL_SWITCHES, type EmailSwitch, formatPrice, isMust, KINDS, type NoticeKind, WAITLIST_CONTACT } from "@orbit/contract";
 import { esc, frame } from "./prelaunch-email.ts";
 
 // What each notification says, by email and in the inbox (notifications build plan, PR 1): the kinds the code calls
@@ -31,6 +31,14 @@ const time = (v: unknown) => {
 const METHOD: Record<string, string> = { email: "email", phone: "phone number", passkey: "passkey", google: "Google", apple: "Apple" };
 const THE_METHOD: Record<string, string> = { email: "your email", phone: "your phone number", passkey: "a passkey", google: "Google", apple: "Apple" };
 const AUDIT = "See the audit log in Galaxy.";
+
+const UNCONFIRMED: Record<string, string> = {
+  fewLeft: "It sold out",
+  closed: "Booking closed",
+  cancelled: "The event was cancelled",
+  ended: "The event ended",
+  notOpen: "Booking wasn’t open",
+};
 
 const WORDS: Partial<Record<NoticeKind, (d: Data) => Words>> = {
   welcome: () => ({ subject: "Welcome to Orbit", line: "You’re in. There’s more to life beyond the usual." }),
@@ -81,6 +89,22 @@ const WORDS: Partial<Record<NoticeKind, (d: Data) => Words>> = {
       : d.decision === "changes"
         ? { subject: "Your request to host needs a change", line: `What to change: ${str(d.reason)}. Edit your request in Orbit Event Partner and send it again.` }
         : { subject: "Your request to host was declined", line: `Reason: ${str(d.reason)}.` },
+  // Paying (payments/routes.ts): `reason` is the check that failed when the money landed.
+  soldOutWhilePaying: (d) => ({
+    subject: "We refunded your payment",
+    line: `${UNCONFIRMED[str(d.reason)] ?? "We couldn’t confirm your ticket"} while you were paying, so we refunded you in full, fee included.`,
+  }),
+  paidTwice: () => ({ subject: "We refunded your second payment", line: "You paid twice, so we refunded the second payment in full." }),
+  refundSent: (d) => ({
+    subject: "Your refund is on its way",
+    line: `${formatPrice(Number(d.amountPaise) || 0)} is on its way back to you. It takes 5 to 7 working days to reach your account.`,
+  }),
+  payoutPaid: (d) => ({ subject: "Your payout is on its way", line: `${formatPrice(Number(d.amountPaise) || 0)} was sent to your bank account. UTR ${str(d.utr)}.` }),
+  payoutCancelled: (d) => ({ subject: "A payout was cancelled", line: `${formatPrice(Number(d.amountPaise) || 0)}. Reason: ${str(d.reason)}.` }),
+  feeChange: (d) => ({
+    subject: `${str(d.hostName)}’s fee plan changed`,
+    line: `${d.plan === "5+0" ? "5% from the buyer, no commission" : "3% from the buyer and 2% commission"}, ${d.feeIncluded ? "with the fee included in your prices" : "with the fee on top of your prices"}. It applies to sales from now on.`,
+  }),
   slotReleased: (d) => ({ subject: `Your slot at ${str(d.hostName)} was released`, line: `You didn’t check in for ${dayTime(d.start)}, so the slot was freed.` }),
   hostAnnouncement: (d) => ({ subject: `${str(d.hostName) || "The host"} about ${str(d.title)}`, line: str(d.text) }),
   eventTomorrow: (d) => ({ subject: `Coming up: ${str(d.title)}`, line: `${str(d.title)} starts tomorrow at ${time(d.startsAt)}.` }),
