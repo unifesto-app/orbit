@@ -155,9 +155,9 @@ export const mmss = (ms: number) => `${Math.floor(ms / MIN)}:${String(Math.floor
 
 /**
  * A real event's ticket types as the booking sheet lists them (one type per booking, Booking doc). `off` says why one
- * can't be picked now, shown instead of a stepper, the first that holds: Coming soon (paid: paying in the app is the
- * next slice), Opens <day> (sales not started), Closed (sales over), Sold out. `max` is the most one booking takes:
- * the type's per-person limit, and the seats left when it counts them.
+ * can't be picked now, shown instead of a stepper, the first that holds: Opens <day> (sales not started), Closed (sales
+ * over), Sold out. `max` is the most one booking takes: the type's per-person limit, and the seats left when it counts
+ * them. Paid types book too, through checkout (X3).
  */
 export function liveTiers(tiers: readonly TierCard[], now: number) {
   return tiers.map((t) => ({
@@ -166,14 +166,12 @@ export function liveTiers(tiers: readonly TierCard[], now: number) {
     pricePaise: t.pricePaise,
     max: Math.max(Math.min(t.perPersonLimit, t.left ?? 10), 0),
     off:
-      t.pricePaise > 0
-        ? 'Coming soon'
-        : t.salesStartAt && Date.parse(t.salesStartAt) > now
-          ? `Opens ${dayLabel(Date.parse(t.salesStartAt))}`
-          : t.salesEndAt && Date.parse(t.salesEndAt) <= now
-            ? 'Closed'
-            : t.left !== null && t.left <= 0
-              ? 'Sold out'
-              : undefined,
+      t.salesStartAt && Date.parse(t.salesStartAt) > now
+        ? `Opens ${dayLabel(Date.parse(t.salesStartAt))}`
+        : t.salesEndAt && Date.parse(t.salesEndAt) <= now
+          ? 'Closed'
+          : t.left !== null && t.left <= 0
+            ? 'Sold out'
+            : undefined,
   }));
 }

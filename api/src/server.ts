@@ -13,8 +13,11 @@ import { ways, type WaysConfig } from "./auth/ways.ts";
 import { connect, migrateDb } from "./db/index.ts";
 import { checkProviders, createNotifier, pruneNotifications, runDeliveries } from "./notifications.ts";
 import { sendReminders } from "./announcements.ts";
+import { runBroadcasts } from "./broadcasts.ts";
 import { apnsSender, fcmSender, type Push } from "./push.ts";
 import { type Media, memoryFiles, s3Files } from "./media.ts";
+import { pollPayments } from "./payments/routes.ts";
+import { razorpay } from "./payments/razorpay.ts";
 
 const need = (name: string) => {
   const v = process.env[name];
@@ -199,6 +202,17 @@ setInterval(() => {
     .finally(() => (reminding = false));
 }, 60_000).unref();
 
+// Broadcasts (broadcasts.ts): the one-holder wait, due scheduled ones, and batches of the sending ones, every minute,
+// never two at once here.
+let broadcasting = false;
+setInterval(() => {
+  if (broadcasting) return;
+  broadcasting = true;
+  runBroadcasts({ db, notify, now: Date.now })
+    .catch((e) => console.error("[broadcasts]", e))
+    .finally(() => (broadcasting = false));
+}, 60_000).unref();
+
 // Push and email providers failing more than 20% over the last hour: an alert to Platform holders (notifications.ts).
 // On start, then hourly.
 const checkSenders = () => checkProviders({ db, notify, now: Date.now }).catch((e) => console.error("[providers]", e));
@@ -224,6 +238,27 @@ setInterval(() => sweepSlotAlerts(db, notify, Date.now()).catch((e) => console.e
 const sesTopic = env.SES_SNS_TOPIC_ARN?.trim() || undefined;
 console.log(`[ses-hook] ${sesTopic ? `on for ${sesTopic}` : "off"}`);
 
-serve({ fetch: createApp({ db, store, send, notify, secret, codes, ways: waysConfig, media, proof, mail, sesTopic }).fetch, port }, (info) => {
+// Paying (payments/routes.ts): Orbit's own Razorpay merchant, RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET (Dashboard › API
+// keys), and RAZORPAY_WEBHOOK_SECRET (the secret typed when adding the webhook <API_URL>/razorpay/webhook, with
+// payment.captured, payment.failed, order.paid, refund.processed and refund.failed). All three or paying is off (503).
+// Never logged.
+const rz =
+  env.RAZORPAY_KEY_ID && env.RAZORPAY_KEY_SECRET && env.RAZORPAY_WEBHOOK_SECRET
+    ? razorpay({ keyId: env.RAZORPAY_KEY_ID.trim(), keySecret: env.RAZORPAY_KEY_SECRET.trim(), webhookSecret: env.RAZORPAY_WEBHOOK_SECRET.trim() })
+    : undefined;
+console.log(`[payments] Razorpay ${rz ? `on (${rz.keyId.startsWith("rzp_live_") ? "live" : "test"} keys)` : "off"}`);
+
+// Orders nobody settled and refunds due a try (pollPayments), every 15 minutes, never two at once here.
+let polling = false;
+if (rz)
+  setInterval(() => {
+    if (polling) return;
+    polling = true;
+    pollPayments({ db, rz, notify, now: Date.now() })
+      .catch((e) => console.error("[payments]", e))
+      .finally(() => (polling = false));
+  }, 15 * 60_000).unref();
+
+serve({ fetch: createApp({ db, store, send, notify, secret, codes, ways: waysConfig, media, proof, mail, sesTopic, razorpay: rz }).fetch, port }, (info) => {
   console.log(`orbit-api listening on :${info.port}`);
 });

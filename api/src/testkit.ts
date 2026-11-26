@@ -11,6 +11,7 @@ import type { Push } from "./push.ts";
 import type { Notice, Notify } from "./http.ts";
 import { memoryFiles } from "./media.ts";
 import { createNotifier, runDeliveries } from "./notifications.ts";
+import type { Razorpay } from "./payments/razorpay.ts";
 
 // A real Postgres for tests: TEST_DATABASE_URL, or the local orbit_test database (createdb orbit_test). Each call
 // empties it and runs every migration, so a test file starts clean. Test files run one at a time (package.json).
@@ -19,7 +20,8 @@ import { createNotifier, runDeliveries } from "./notifications.ts";
 // leaves uploads out, as on a server with no bucket. `proof` checks that requests come from Orbit (default: unchecked).
 // Every notice goes through the real pipeline (notifications.ts) and is also kept in `notices`; nothing is sent until a
 // test calls `deliver()`, which runs one worker pass with `mail` (default: kept in `mails`) and an optional fake `push`.
-export async function testApp(opts: { send?: Sender; codes?: SendPolicy; ways?: WaysConfig; media?: false; proof?: ProofConfig; mail?: Mail } = {}) {
+// `razorpay`: paying on, with a fake fetch (payments.test.ts); without it the pay routes answer paymentsOff.
+export async function testApp(opts: { send?: Sender; codes?: SendPolicy; ways?: WaysConfig; media?: false; proof?: ProofConfig; mail?: Mail; razorpay?: Razorpay } = {}) {
   const url = process.env.TEST_DATABASE_URL ?? "postgres://localhost:5432/orbit_test";
   if (!/_test(\?|$)/.test(url)) throw new Error("Tests empty their database, so its name must end in _test");
   const { db, close } = connect(url);
@@ -51,6 +53,7 @@ export async function testApp(opts: { send?: Sender; codes?: SendPolicy; ways?: 
     proof: opts.proof,
     notify,
     media: opts.media === false ? undefined : media,
+    razorpay: opts.razorpay,
   });
 
   const call = async (method: string, path: string, body?: unknown, access?: string) => {

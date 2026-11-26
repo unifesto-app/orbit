@@ -34,7 +34,7 @@ import { events, hosts, now as mockNow } from '../../mock';
 import { qr } from '../../qr';
 import { BackBar, EventRow, Failed, HostSays, NotFound, TOP, Waiting } from '../../rows';
 import { api, keepTicket, keptTicket, real, ticketsChanged, useSession, useSignedIn } from '../../session';
-import { statusText, ticketsApi } from '../../tickets';
+import { checkInLine, statusText, ticketsApi } from '../../tickets';
 import { around, color, font, radius, space } from '../../theme';
 
 const WEB = 'https://heyorbit.in'; // the event's page on the web, for sharing
@@ -63,6 +63,7 @@ type Shown = {
   tier: string;
   booking?: string; // the mock's booking id; a real one's is internal
   status?: string; // a cancelled one's plain words
+  checkIn?: string; // once anyone on it is in: "You’re in · 7:12 PM", "3 of 4 in · 7:12 PM"
   paid?: Payment;
   refund?: Refund;
   group?: string;
@@ -120,7 +121,7 @@ function Live({ id }: { id: string }) {
     <TicketView
       t={{
         e: toEvent(t.event), host: toHost(t.event.host), now, qr: t.qr, code: t.code, count: t.quantity, tier: t.ticketType.name,
-        status: statusText(t.status), online: t.onlineLink, onCancel: live && t.ticketType.pricePaise === 0 ? cancel : undefined,
+        status: statusText(t.status), checkIn: checkInLine(t), online: t.onlineLink, onCancel: live && t.ticketType.pricePaise === 0 ? cancel : undefined,
       }}
     />
   );
@@ -173,6 +174,7 @@ function TicketView({ t }: { t: Shown }) {
             <Text style={styles.code} selectable accessibilityLabel={`Ticket code ${t.code.split('').join(' ')}`}>
               {spacedCode(t.code)}
             </Text>
+            {t.checkIn && <Text style={styles.admits}>{t.checkIn}</Text>}
           </View>
         ) : (
           <View style={styles.gate}>

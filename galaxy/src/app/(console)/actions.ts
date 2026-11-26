@@ -1,6 +1,7 @@
 "use server";
 
 import { refresh } from "next/cache";
+import type { ContentAdmin } from "@orbit/contract";
 import { galaxy } from "../../api";
 
 // Galaxy's risky actions (Roles flow): each carries a written reason the other side sees, and the API writes the change,
@@ -90,6 +91,27 @@ export async function declineRequest(_: Done, f: FormData) {
   return run("POST", `/galaxy/event-requests/${path(f, "id")}/decline`, { reason: text(f, "reason") });
 }
 
+// ─── Events ───
+// Unpublish takes a published event back to draft while nobody has booked; cancel cancels its bookings. The host's Admins get the reason;
+// ticket holders aren't told yet (H13.5).
+export async function unpublishEvent(_: Done, f: FormData) {
+  return run("POST", `/galaxy/events/${path(f, "id")}/unpublish`, { reason: text(f, "reason") });
+}
+export async function cancelEvent(_: Done, f: FormData) {
+  return run("POST", `/galaxy/events/${path(f, "id")}/cancel`, { reason: text(f, "reason") });
+}
+// Promote adds the event's link to App content's Promoted list (or takes it out), saved as that page saves it: the whole
+// list, with when it was read, so a change made since is refused. Needs Platform as well as Hosts.
+export async function promoteEvent(_: Done, f: FormData) {
+  const href = `/event/${text(f, "slug")}`;
+  const on = text(f, "on") === "1";
+  const r = await galaxy<ContentAdmin>("GET", "/galaxy/app-content");
+  if (!r.ok) return { error: r.error.message };
+  const list = r.data.content.promoted.filter((p) => p.href !== href);
+  if (on && list.length >= 10) return { error: "Promoted holds 10 events. Take one out in App content first." };
+  return run("PUT", "/galaxy/app-content/promoted", { value: on ? [...list, { href }] : list, at: r.data.saved.promoted?.at ?? null });
+}
+
 // ─── Staff ───
 export async function grantFeatures(_: Done, f: FormData) {
   const features = f.getAll("feature").map(String);
@@ -101,4 +123,13 @@ export async function confirmGrant(_: Done, f: FormData) {
 }
 export async function endGrant(_: Done, f: FormData) {
   return run("DELETE", `/galaxy/staff/grants/${path(f, "id")}`, { reason: text(f, "reason") });
+}
+
+// ─── Check-in ───
+// Lowers who's in on a booking, to 0 or to the number given (never up). Logged with the reason.
+export async function undoCheckIn(_: Done, f: FormData) {
+  const total = Number(text(f, "total") || "0");
+  if (!Number.isInteger(total) || total < 0) return { error: "Enter how many stay in, 0 or more." };
+  // `from`: the count this page showed; the API refuses the undo if it has moved since.
+  return run("POST", `/galaxy/check-in/${path(f, "id")}/undo`, { from: Number(text(f, "from")), total, reason: text(f, "reason") });
 }

@@ -179,3 +179,11 @@ export function slotPrice(s: Priced, start: number, hours: number, count = 1, co
   }
   return Math.round(total);
 }
+// GET /galaxy/venues (X9), for holders of Hosts: every Venue host, its venue row (null until Play Partner's setup saves
+// one: "Setup pending") and its stations with the price an hour.
+export type StaffVenue = {
+  host: { id: string; name: string; city: string; status: "live" | "paused" | "suspended" | "archived"; createdAt: string };
+  venue: { area: string; address: string; deskPhone: string } | null;
+  stations: { id: string; name: string; unit: string; tile: StationTile; count: number; pricePaise: number; archived: boolean }[];
+};
+export type StaffVenues = { venues: StaffVenue[] };

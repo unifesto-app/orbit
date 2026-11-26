@@ -10,6 +10,12 @@ export const HostSlug = z
   .max(100)
   .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, "Use lowercase letters, numbers and single hyphens, with no hyphen at either end");
 
+// How Orbit's 5% fee splits on a host's paid tickets (owner, 25 Nov 2026), the host's pick from day one. Charging it is the
+// payments slice's; this is only the choice.
+export const FEE_PLANS = { "3+2": "3% from buyer + 2% from you", "5+0": "5% from buyer + 0% from you" } as const;
+export const FeePlan = z.enum(Object.keys(FEE_PLANS) as [keyof typeof FEE_PLANS, ...(keyof typeof FEE_PLANS)[]]);
+export type FeePlan = z.infer<typeof FeePlan>;
+
 // PATCH /hosts/:id: Admins change any of these. Logo and banner come with uploads.
 export const EditHost = z
   .object({
@@ -20,6 +26,7 @@ export const EditHost = z
     about: z.string().max(2000).nullable(), // plain text
     website: z.url({ protocol: /^https$/ }).max(200).nullable(), // https only
     visibility: z.enum(["public", "private"]),
+    feePlan: FeePlan,
   })
   .partial()
   .refine((b) => Object.keys(b).length > 0, "Change at least one thing");
@@ -58,5 +65,6 @@ export const HostPage = PublicHost.omit({ followers: true, following: true }).ex
   suspendReason: z.string().nullable(),
   followers: z.number(),
   owner: z.boolean(), // the person reading is the owner
+  feePlan: FeePlan,
 });
 export type HostPage = z.infer<typeof HostPage>;

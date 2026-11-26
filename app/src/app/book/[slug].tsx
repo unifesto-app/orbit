@@ -15,14 +15,15 @@
 // The rules and notes are Orbit's bubbles, and what a tap can't do yet Orbit says in the sheet, not in an alert.
 // How many of a type fit is ticketMax (src/booking.ts): the booking's limit and the seats left, a team ticket taking its
 // team's seats. Free or paid is the event's prices, not what's picked.
-// A real event (the API's, P10.1) registers its free ticket types for real: one type per booking, up to its per-person
-// limit and the seats left, then its ticket opens. Its paid types say Coming soon, and the mock's steps (questions,
-// teams, Add people, waitlists) stay the mock's until their slices.
-// ponytail: payments (Razorpay) aren't on yet, so a paid last button says so and charges nothing.
-import { formatPrice, type PublicEvent } from '@orbit/contract';
+// A real event (the API's, P10.1) books for real: one type per booking, up to its per-person limit and the seats left,
+// then its ticket opens. A free type registers; a paid one (X3) gets its order from the API on Review, so the server's
+// price, fee and total show before Pay (a failed request is made again by Pay), Razorpay's checkout opens on it (the native SDK, so UPI apps open from
+// Orbit) on the way you picked, and the API confirms it; what each answer does is paidNext/orderNext (src/pay.ts). The mock's steps (questions, teams, Add people, waitlists) and the mock's
+// paid events stay the mock's until their slices.
+import { formatPrice, type PayOrder, type PublicEvent } from '@orbit/contract';
 import { router, useLocalSearchParams } from 'expo-router';
 import { type ComponentRef, useEffect, useRef, useState } from 'react';
-import { AccessibilityInfo, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { AccessibilityInfo, NativeModules, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TurboModuleRegistry, View } from 'react-native';
 
 import { Field, Pill } from '../../account/kit';
 import { BookBar } from '../../bookBar';
@@ -34,21 +35,35 @@ import { fests, hackathons, type Question, questions, shows, teamSeats } from '.
 import { type Event, eventsApi, toEvent } from '../../events';
 import { useLoad } from '../../load';
 import { events, now as mockNow } from '../../mock';
-import { payLabel, payReady } from '../../pay';
+import { checkoutCancelled, orderNext, PAY_SAYS, type PayDone, paidNext, payLabel, paymentsApi, payReady, prefillOf, RAZORPAY_KEY } from '../../pay';
 import { PayMark } from '../../payChoices';
 import { Chip, Stepper, Steps } from '../../pickers';
 import { Failed, NotFound, Sheet, SheetSays, Waiting } from '../../rows';
-import { api, needsAccount, ticketsChanged, usePayWith, useSession } from '../../session';
+import { api, loadTickets, needsAccount, ticketsChanged, usePayWith, useSession } from '../../session';
 import { eventStatus } from '../../status';
 import { ticketsApi } from '../../tickets';
 import { color, font, space, stoneAt } from '../../theme';
 
 type Step = 'pick' | 'team' | 'details' | 'review';
 const NOT_ON = {
-  pay: 'Orbit isn’t taking payments yet, so nothing was charged.',
+  pay: PAY_SAYS.off,
   register: 'Orbit isn’t taking bookings yet, so you’re not registered.',
   waitlist: 'Waitlists aren’t on yet, so nothing was joined.',
 };
+
+// Razorpay's checkout, loaded on Pay, never on import: a build from before it (no native module) throws on importing it
+// (NativeEventEmitter), which would take this whole sheet down, free Register too. Null there: paying waits for the
+// rebuild.
+type Checkout = typeof import('react-native-razorpay').default;
+function razorpay(): Checkout | null {
+  if (!TurboModuleRegistry.get('RNRazorpayCheckout') && !NativeModules.RNRazorpayCheckout) return null;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return (require('react-native-razorpay') as { default: Checkout }).default;
+  } catch {
+    return null;
+  }
+}
 
 // The API's event first (an old slug too); only when it says 404 and the slug is a mock event's id does the mock's
 // booking draw, as useEvent does.
@@ -92,6 +107,9 @@ function Booking({ slug, e, live, now, reload }: { slug: string; e: Event; live?
   const [bar, setBar] = useState(140);
   const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
   const [sending, setSending] = useState(false); // draws the bar's button as off
+  const [order, setOrder] = useState<{ key: string; o: PayOrder }>(); // a paid type's last order, for the pick it was made for
+  const ours = useRef(new Set<string>()); // orders this sheet made: reused without "You're already paying"
+  const [confirming, setConfirming] = useState(false); // paid, Razorpay still confirming: the bar goes to the tickets
   const sendingNow = useRef(false); // the guard itself: a second tap in the same frame sees it at once
   // A real event read again (after a refusal): each pick held to what its type takes now, so the stepper matches the
   // server. Same tiers by index, as liveTiers keeps the API's order.
@@ -114,10 +132,14 @@ function Booking({ slug, e, live, now, reload }: { slug: string; e: Event; live?
       : tiers.map((t, i) => ({ name: t.name, count: qty[i]!, pricePaise: t.pricePaise })).filter((l) => l.count > 0);
   const count = lines.reduce((n, l) => n + l.count, 0);
   const total = lines.reduce((n, l) => n + l.count * l.pricePaise, 0);
-  // A real event books only its free types for now, so it reads as a registration.
-  const free = !!live || tiers.every((t) => t.pricePaise === 0);
+  // A real event's booking is one type: free when that type is (or, nothing picked yet, when every type is).
+  const free = live && count > 0 ? total === 0 : tiers.every((t) => t.pricePaise === 0);
+  // A real event's paid pick on Review: its order, made once per pick (the same pick again reuses it).
+  const at = qty.findIndex((q) => q > 0);
+  const orderKey = live && !free && step === 'review' && tiers[at]?.id ? `${tiers[at]!.id}|${qty[at]}` : null;
+  const ready = order && order.key === orderKey ? order.o : undefined;
   // A paid event with nothing picked shows ₹0, not Free.
-  const price = !free && total === 0 ? '₹0' : formatPrice(total);
+  const price = ready ? formatPrice(ready.amountPaise) : !free && total === 0 ? '₹0' : formatPrice(total);
   const seats = picked.seats ?? 1;
   const note = hack ? `1 team · ${seats} ${seats === 1 ? 'seat' : 'seats'}` : `${count} ${count === 1 ? 'ticket' : 'tickets'}`;
   // Orbit answers in the sheet, at the bottom, scrolled to, and spoken to screen readers (focus stays on the bar).
@@ -131,6 +153,57 @@ function Booking({ slug, e, live, now, reload }: { slug: string; e: Event; live?
     setStep(s);
   };
   const answer = (id: string, v: string) => setAnswers((all) => ({ ...all, [id]: v }));
+  // The API's refusal, in its words; seats or the sales window changed since this sheet read the event, so it's read
+  // again and the pick shown, where the stepper now matches. Paying off on the server keeps today's line.
+  const refused = (r: { status: number; error: { error: string; message: string } }) => {
+    if (r.status === 503 && r.error.error === 'paymentsOff') return say(NOT_ON.pay);
+    if (r.status === 409) {
+      reload?.();
+      setStep('pick');
+    }
+    say(r.error.message);
+  };
+
+
+  // Paying's next step (src/pay.ts): the ticket, confirming (the bar goes to the tickets, checkout never reopens), money
+  // back with why, the event read again, or a line and Pay again.
+  const act = (n: PayDone) => {
+    if (n.next === 'ticket') {
+      void loadTickets();
+      router.dismiss();
+      router.push(`/ticket/${n.bookingId}`);
+      return;
+    }
+    if (n.next === 'confirming') {
+      void loadTickets();
+      setConfirming(true);
+    }
+    if (n.next === 'refunded') {
+      setOrder(undefined);
+      reload?.();
+    }
+    if (n.next === 'reread') {
+      reload?.();
+      setStep('pick');
+    }
+    say(n.say);
+  };
+  // The pick's order from the API, kept for Review's lines and Pay. One this sheet made never says "already paying"; one
+  // from before is said once and then used. A refusal is said and Pay asks again.
+  const getOrder = async (key: string) => {
+    const got = orderNext(await paymentsApi(api).order(live!.id, tiers[at]!.id!, qty[at]!), ours.current);
+    if (got.next !== 'open' && got.next !== 'already') return act(got);
+    setOrder({ key, o: got.order });
+    ours.current.add(got.order.orderId);
+    if (got.next === 'already') say(got.say);
+  };
+
+  // Review's order. A hook, so above the waitlist's early return.
+  useEffect(() => {
+    if (!orderKey || !live || !me || order?.key === orderKey) return;
+    void getOrder(orderKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `orderKey` says when
+  }, [orderKey]);
 
   if (eventStatus(e, now).kind === 'waitlist') {
     return (
@@ -180,21 +253,51 @@ function Booking({ slug, e, live, now, reload }: { slug: string; e: Event; live?
       const r = await ticketsApi(api).book(live.id, t.id!, n);
       sendingNow.current = false;
       setSending(false);
-      if (!r.ok) {
-        // Seats, the sales window or a booking of yours changed since this sheet read the event: read it again and go
-        // back to the pick, where the stepper now matches, with the API's words.
-        if (r.status === 409) {
-          reload?.();
-          setStep('pick');
-        }
-        return say(r.error.message);
-      }
+      if (!r.ok) return refused(r);
       ticketsChanged(r.data);
       router.dismiss();
       router.push(`/ticket/${r.data.id}`);
     });
   };
-  const finish = live ? register : () => say(free ? NOT_ON.register : NOT_ON.pay);
+  // Pay: Razorpay's checkout on the order Review shows (none yet: it's asked for again, to show before paying), then
+  // the API's word: verify when checkout says paid, the order's status when it closed without (closed, or failed).
+  const checkout = () => {
+    if (!live || !orderKey || sendingNow.current) return;
+    const key = orderKey;
+    needsAccount(async () => {
+      if (sendingNow.current) return;
+      const rp = razorpay();
+      if (!rp) return say(NOT_ON.pay);
+      sendingNow.current = true;
+      setSending(true);
+      try {
+        const o = order?.key === key ? order.o : undefined;
+        if (!o) return void (await getOrder(key));
+        let paid;
+        let closed: 'dismissed' | 'failed' | undefined;
+        try {
+          paid = await rp.open({
+            key: o.keyId || RAZORPAY_KEY,
+            order_id: o.orderId,
+            amount: o.amountPaise,
+            currency: 'INR',
+            name: 'Orbit',
+            description: e.title,
+            prefill: { name: me?.name ?? undefined, email: me?.email ?? undefined, contact: me?.phone ?? undefined, ...prefillOf(pay) },
+            theme: { color: color.accent },
+          });
+        } catch (err) {
+          closed = checkoutCancelled(err, Platform.OS) ? 'dismissed' : 'failed';
+        }
+        const r = paid ? await paymentsApi(api).verify(o.orderId, paid.razorpay_payment_id, paid.razorpay_signature ?? '') : await paymentsApi(api).status(o.orderId);
+        act(paidNext(r, closed));
+      } finally {
+        sendingNow.current = false;
+        setSending(false);
+      }
+    });
+  };
+  const finish = live ? (free ? register : checkout) : () => say(free ? NOT_ON.register : NOT_ON.pay);
   // What the middle step still needs, said by Orbit when Review is tapped too soon (the button stays a button).
   const missing = hack && !teamNameOk(teamName) ? 'Name your team first.' : !answered(asks, answers) ? 'Answer the questions marked Required first.' : hack && !rules ? 'Accept the hackathon’s rules first.' : undefined;
   const you = me?.name ? <Fact label={hack ? 'You, the lead' : 'You'} value={me.name} note={[me.phone ?? me.email, 'from your profile'].filter(Boolean).join(' · ')} /> : null;
@@ -364,7 +467,15 @@ function Booking({ slug, e, live, now, reload }: { slug: string; e: Event; live?
               .map((q) => (
                 <Fact key={q.id} label={q.q} value={answers[q.id]!.trim()} />
               ))}
-            <Fact label="Total" value={price} note={free ? undefined : 'Fees, if any, show when you pay'} />
+            {ready ? (
+              <>
+                <Fact label="Price" value={formatPrice(ready.breakdown.pricePaise)} />
+                <Fact label="Fee" value={ready.breakdown.feeIncluded ? 'Included' : formatPrice(ready.breakdown.feePaise)} />
+                <Fact label="Total" value={formatPrice(ready.breakdown.amountPaise)} />
+              </>
+            ) : (
+              <Fact label="Total" value={price} note={free ? undefined : 'Fees, if any, show when you pay'} />
+            )}
           </FactCard>
         )}
 
@@ -375,9 +486,14 @@ function Booking({ slug, e, live, now, reload }: { slug: string; e: Event; live?
         price={price}
         from={false}
         note={note}
-        action={step === 'review' ? (free ? 'Register' : 'Pay') : step === 'pick' && middle ? 'Continue' : 'Review'}
+        action={confirming ? 'Your tickets' : step === 'review' ? (free ? 'Register' : 'Pay') : step === 'pick' && middle ? 'Continue' : 'Review'}
         onAction={
-          step === 'review'
+          confirming
+            ? () => {
+                router.dismiss();
+                router.push('/account/tickets');
+              }
+            : step === 'review'
             ? sending
               ? undefined
               : free || payReady(pay)

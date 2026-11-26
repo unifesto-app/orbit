@@ -11,7 +11,7 @@ type Api = Pick<ReturnType<typeof makeApi>, 'authed'>;
 export const ticketsApi = (api: Api) => ({
   mine: () => api.authed<MyTickets>('GET', '/me/tickets'),
   one: (id: string) => api.authed<Ticket>('GET', `/me/tickets/${id}`),
-  // A free ticket type only, for now: the API answers paidLater for a paid one.
+  // A free ticket type only: a paid one is paid for (paymentsApi, src/pay.ts).
   book: (eventId: string, ticketTypeId: string, quantity: number) =>
     api.authed<Ticket>('POST', `/events/${eventId}/book`, { ticketTypeId, quantity }),
   cancel: (id: string) => api.authed<Ticket>('POST', `/me/tickets/${id}/cancel`),
@@ -62,3 +62,24 @@ export function unpackTicket(raw: string | null, owner: string): Ticket | null {
     return null;
   }
 }
+
+// Check-in (X5): `admitted` is how many on a ticket were let in at the door.
+/** The ticket's line once anyone on it is in: "You’re in · 7:12 PM", "3 of 4 in · 7:12 PM", "All 4 in · 7:12 PM". */
+export function checkInLine(t: Pick<Ticket, 'quantity' | 'admitted' | 'checkedInAt'>): string | undefined {
+  if (!t.admitted) return undefined;
+  const at = t.checkedInAt ? ` · ${timeLabel(Date.parse(t.checkedInAt))}` : '';
+  if (t.quantity === 1) return `You’re in${at}`;
+  return `${t.admitted < t.quantity ? `${t.admitted} of ${t.quantity}` : `All ${t.quantity}`} in${at}`;
+}
+
+const WEEK = 7 * DAY;
+// Live tickets anyone was let in on (a cancelled one never counts). An event with no end reads NaN, so never "ended".
+const attended = (m: MyTickets | null) => [...(m?.upcoming ?? []), ...(m?.past ?? [])].filter((t) => t.status === 'confirmed' && t.admitted > 0);
+/** Thanks for coming: the events you were let in at that ended in the last week, newest first, two at most. */
+export function thanksOf(m: MyTickets | null, now: number) {
+  const went = attended(m).filter((t) => Date.parse(t.event.endsAt) <= now && now < Date.parse(t.event.endsAt) + WEEK);
+  return [...new Map(went.map((t) => [t.event.id, t.event])).values()].sort((a, b) => Date.parse(b.startsAt) - Date.parse(a.startsAt)).slice(0, 2);
+}
+
+/** Whether you were let in at this event on any ticket: inRoom opens at the door. */
+export const letInAt = (m: MyTickets | null, eventId: string) => attended(m).some((t) => t.event.id === eventId);
