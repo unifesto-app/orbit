@@ -14,7 +14,8 @@ import { requireFeature, type StaffEnv } from "./roles/access.ts";
 
 export function contentRoutes({ db, secret, media, now = Date.now }: Deps) {
   const app = new Hono<StaffEnv>();
-  const cap = bodyLimit({ maxSize: 32 * 1024, onError: (c) => invalid(c) });
+  // A whole list per save: Knowledge's 50 entries of 2000 characters fit with room for JSON escapes.
+  const cap = bodyLimit({ maxSize: 256 * 1024, onError: (c) => invalid(c) });
   const rows = () => db.select().from(appContent);
   const valueOf = (all: { key: string; value: unknown }[]) => readContent(Object.fromEntries(all.map((r) => [r.key, r.value])));
 

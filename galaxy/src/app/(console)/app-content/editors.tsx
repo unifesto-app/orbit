@@ -525,7 +525,7 @@ export function AskSwitch({ on }: { on: boolean }) {
 }
 
 // ─── Knowledge for Ask Orbit ───
-// What the assistant knows beyond Help answers. Only the model reads it; phones never get it.
+// What the assistant knows beyond Help answers. Not served to phones, but anyone can get it back through the assistant.
 export function KnowledgeEditor({ initial, at }: { initial: Knowledge[]; at: string | null }) {
   return (
     <ListEditor<Knowledge>

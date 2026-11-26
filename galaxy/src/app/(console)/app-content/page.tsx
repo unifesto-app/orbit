@@ -85,8 +85,8 @@ async function Load() {
 
       <Container title="Knowledge for Ask Orbit" count={content.knowledge.length}>
         <p className={ui.secondary}>
-          What Ask Orbit knows beyond the Help answers and what’s on Orbit: policies, how things work, what to say when. Only the assistant reads it; phones never
-          show it.
+          What Ask Orbit knows beyond the Help answers and what’s on Orbit: policies, how things work, what to say when. Anyone can get these words back by
+          asking Orbit, so put nothing internal here.
         </p>
         <LastSaved s={saved.knowledge} />
         <KnowledgeEditor initial={content.knowledge} at={saved.knowledge?.at ?? null} />

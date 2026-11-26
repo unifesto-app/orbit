@@ -92,6 +92,7 @@ export default function Privacy() {
         <li>Cloudflare, which runs our network and the check that you’re not a bot.</li>
         <li>Meta, which delivers our WhatsApp messages.</li>
         <li>Sentry, which tells us when something on our servers breaks.</li>
+        <li>Anthropic, which runs the model behind Ask Orbit and receives your first name, your bookings and what you ask it.</li>
       </ul>
       <p>They handle it only to provide these services to us.</p>
 
