@@ -28,13 +28,16 @@ export async function compose(_: Composed, f: FormData): Promise<Composed> {
     return r.ok ? { count: r.data.audienceCount } : { error: r.error.message };
   }
   const at = text(f, "sendAt");
+  const later = text(f, "when") === "later";
+  const sendAt = later && at ? new Date(`${at}:00+05:30`) : null;
+  if (sendAt && Number.isNaN(sendAt.getTime())) return { error: "Pick a send time as a date and a time." };
   const r = await galaxy<Broadcast>("POST", "/galaxy/notifications/broadcasts", {
     type: text(f, "type"),
     segment,
     channels: f.getAll("channels").map(String),
     title: text(f, "title"),
     text: text(f, "text"),
-    ...(text(f, "when") === "later" && at ? { sendAt: new Date(`${at}:00+05:30`).toISOString() } : {}),
+    ...(sendAt ? { sendAt: sendAt.toISOString() } : {}),
   });
   if (!r.ok) return { error: r.error.message };
   redirect(`/notifications/broadcasts/${r.data.id}`);

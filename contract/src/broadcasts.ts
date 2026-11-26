@@ -26,7 +26,7 @@ export const NewBroadcast = z.object({
   type: z.enum(BROADCAST_TYPES),
   segment: BroadcastSegment,
   channels: z.array(z.enum(BROADCAST_CHANNELS)).max(2).transform((c) => [...new Set(c)]),
-  title: Text(1, 80),
+  title: Text(1, 80).refine((t) => !/[\r\n]/.test(t), "Keep the title on one line."),
   text: Text(1, 500),
   sendAt: z.iso.datetime({ offset: true }).optional(),
 });
@@ -51,5 +51,7 @@ export type Broadcast = {
   createdAt: string;
   // With no other Platform holder: when the author's own broadcast moves on by itself.
   autoAt: string | null;
+  // It went after the 24-hour wait, with no one confirming.
+  autoSent: boolean;
 };
 export type Broadcasts = { items: Broadcast[] };

@@ -1,5 +1,5 @@
 {
-  "id": "a3886098-ef6d-4368-bf39-722d7eb343fd",
+  "id": "13066e66-905f-41e1-805b-8ffc8b93c94e",
   "prevId": "2d7cd291-53b7-4f68-9c5d-f2d7926abdf5",
   "version": "7",
   "dialect": "postgresql",
@@ -925,6 +925,12 @@
         "reason": {
           "name": "reason",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "auto_at": {
+          "name": "auto_at",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },

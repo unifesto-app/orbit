@@ -13,6 +13,7 @@ CREATE TABLE "broadcasts" (
 	"failed" integer DEFAULT 0 NOT NULL,
 	"cursor" uuid,
 	"reason" text,
+	"auto_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint

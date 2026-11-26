@@ -929,6 +929,7 @@ export const broadcasts = pgTable(
     failed: integer("failed").notNull().default(0),
     cursor: uuid("cursor"),
     reason: text("reason"), // why it was cancelled
+    autoAt: at("auto_at"), // when the author is the only Platform holder: when it moves on by itself (24 h on)
     createdAt: at("created_at").notNull().defaultNow(),
   },
   (t) => [index().on(t.status), index().on(t.createdAt)],

@@ -2,7 +2,7 @@ import { and, count, countDistinct, eq, gt, gte, inArray, isNull, lt, lte, notIn
 import { inboxApp, type InboxApp, isMust, KINDS, type NoticeKind, type NotificationSettings, SWITCH_KEYS, type SwitchKey } from "@orbit/contract";
 import { type Mail, NotSent } from "./auth/senders.ts";
 import type { Db } from "./db/index.ts";
-import { deliveries, emailSuppressions, events, inboxItems, notificationPrefs, notificationSwitches, pushDevices, sessions, users } from "./db/schema.ts";
+import { broadcasts, deliveries, emailSuppressions, events, inboxItems, notificationPrefs, notificationSwitches, pushDevices, sessions, users } from "./db/schema.ts";
 import { isUuid, type Notice, type Notify, type Tx } from "./http.ts";
 import { emailFor, inboxFor, optionalSwitch, unsubscribeToken } from "./notification-emails.ts";
 import type { Push } from "./push.ts";
@@ -320,7 +320,10 @@ export async function runDeliveries({
     .select({ id: deliveries.id })
     .from(deliveries)
     .where(or(and(eq(deliveries.status, "queued"), lte(deliveries.runAt, at)), and(eq(deliveries.status, "sending"), lt(deliveries.lockedUntil, at))))
-    .orderBy(deliveries.runAt)
+    // Broadcast rows last, so a big broadcast can't hold up anyone's ticket or code.
+    // ponytail: the leading sort key means deliveries_due_idx no longer gives the order, so the due rows are sorted;
+    // fine at today's sizes, an index on (broadcast_id is not null, run_at) if a broadcast queues hundreds of thousands.
+    .orderBy(sql`${deliveries.broadcastId} is not null`, deliveries.runAt)
     .limit(limit)
     .for("update", { skipLocked: true });
   const claimed = await db
@@ -330,6 +333,13 @@ export async function runDeliveries({
     .returning();
   // Galaxy's kill switches, read once a pass: a claimed row on a channel switched off since it was queued is skipped.
   const off = await db.select().from(notificationSwitches);
+  // Broadcasts cancelled since their rows were written: those rows are dropped, not sent.
+  const fromBroadcasts = [...new Set(claimed.flatMap((d) => (d.broadcastId ? [d.broadcastId] : [])))];
+  const cancelled = new Set(
+    fromBroadcasts.length
+      ? (await db.select({ id: broadcasts.id }).from(broadcasts).where(and(inArray(broadcasts.id, fromBroadcasts), eq(broadcasts.status, "cancelled")))).map((b) => b.id)
+      : [],
+  );
 
   for (const d of claimed) {
     // Only while the row is still this pass's: a slow pass whose lock lapsed has lost it to another worker's claim.
@@ -351,6 +361,10 @@ export async function runDeliveries({
     const relet = await db.update(deliveries).set({ lockedUntil: new Date(now() + 2 * MIN) }).where(ours).returning({ id: deliveries.id });
     if (!relet.length) continue;
 
+    if (d.broadcastId && cancelled.has(d.broadcastId)) {
+      await done({ status: "dropped", reason: "cancelled" });
+      continue;
+    }
     if (off.some((sw) => sw.channel === d.channel && stops(sw, d.kind))) {
       if ((await done({ status: "skipped", reason: "killSwitch" })) && d.channel === "push") await fallBack(db, d, at);
       continue;
@@ -368,7 +382,7 @@ export async function runDeliveries({
         try {
           const words = inboxFor(kind, d.payload);
           const badge = device.platform === "ios" ? await unread(db, d.userId!, device.app) : undefined;
-          const message = { title: words.fromName, body: words.text, data: { id: d.inboxItemId, opens: words.opens }, badge, collapseId: d.id };
+          const message = { title: words.title ?? words.fromName, body: words.body ?? words.text, data: { id: d.inboxItemId, opens: words.opens }, badge, collapseId: d.id };
           const providerId = await send(device, message);
           await done({ status: "sent", reason: null, sentAt: new Date(now()), providerId: providerId ?? null });
           ended = false;

@@ -1,6 +1,5 @@
-import type { Broadcasts } from "@orbit/contract";
+import type { Broadcast } from "@orbit/contract";
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { me, read } from "../../../../../api";
 import { Alert, Badge, Container, Pairs, ui } from "../../../../ui";
@@ -12,7 +11,7 @@ import { Confirm } from "../forms";
 import { channelNames, segmentName, STATUS, TYPES } from "../shared";
 
 // One broadcast: its wording and audience, Confirm for a second Platform holder (never the author), Cancel while it is
-// waiting, scheduled or part sent, and how far it has got. Read from the list (the latest 100).
+// waiting, scheduled or part sent, and how far it has got (API: GET /galaxy/notifications/broadcasts/:id).
 export const metadata: Metadata = { title: "Broadcast" };
 
 export default function BroadcastPage({ params }: PageProps<"/notifications/broadcasts/[id]">) {
@@ -28,10 +27,9 @@ export default function BroadcastPage({ params }: PageProps<"/notifications/broa
 
 async function Body({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [r, who] = await Promise.all([read<Broadcasts>("/galaxy/notifications/broadcasts"), me()]);
+  const [r, who] = await Promise.all([read<Broadcast>(`/galaxy/notifications/broadcasts/${encodeURIComponent(id)}`), me()]);
   if (!r.ok) return <Alert>{r.error.message}</Alert>;
-  const b = r.data.items.find((x) => x.id === id);
-  if (!b) notFound();
+  const b = r.data;
   const mine = who.ok && who.data.id === b.author.id;
   const open = b.status === "waiting" || b.status === "scheduled" || b.status === "sending";
   return (
@@ -48,7 +46,7 @@ async function Body({ params }: { params: Promise<{ id: string }> }) {
             ["Progress", `${b.sent.toLocaleString("en-IN")} sent, ${b.failed.toLocaleString("en-IN")} failed`],
             ["Send", b.sendAt ? time(b.sendAt) : "Once confirmed"],
             ["Written by", `${b.author.name ?? "–"}, ${time(b.createdAt)}`],
-            ["Confirmed by", b.confirmer?.name ?? (b.autoAt ? `No one else holds Platform: goes by itself ${time(b.autoAt)}` : "–")],
+            ["Confirmed by", b.confirmer ? (b.confirmer.name ?? "–") : b.autoSent ? "Sent after the 24 h wait" : b.autoAt ? `No one else holds Platform: goes by itself ${time(b.autoAt)}` : "–"],
             ...(b.reason ? ([["Why cancelled", b.reason]] as [string, string][]) : []),
           ]}
         />

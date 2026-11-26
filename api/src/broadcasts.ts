@@ -1,19 +1,21 @@
-import { and, count, desc, eq, gt, inArray, isNull, lte, sql } from "drizzle-orm";
+import { and, count, desc, eq, gt, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { Hono } from "hono";
 import { type Broadcast, BroadcastSegment, type Broadcasts, CancelBroadcast, NewBroadcast } from "@orbit/contract";
 import { z } from "zod";
 import type { Deps } from "./auth/routes.ts";
 import type { Db } from "./db/index.ts";
-import { auditLog, bookings, broadcasts, events, follows, hosts, users } from "./db/schema.ts";
+import { auditLog, bookings, broadcasts, deliveries, events, follows, hosts, users } from "./db/schema.ts";
 import { fail, invalid, isUuid, type Notify, parse, signedIn } from "./http.ts";
 import { holdersOf, requireFeature, type StaffEnv, tell } from "./roles/access.ts";
 
 // Broadcasts (notifications build plan PR 9): Platform writes one to a segment, a second Platform holder confirms it,
 // and the minute tick sends it in batches with a saved cursor. With no other Platform holder, the author's own broadcast
-// moves on by itself 24 hours after it was written, and can be cancelled until then. Every write is in the audit log.
+// moves on by itself 24 hours after the author became the only one (auto_at), and can be cancelled until then. Every
+// write is in the audit log. A cancel also drops the deliveries still queued or held; the worker drops any written after.
 
 const DAY = 86_400_000;
+const MIN = 60_000;
 const BATCH = 500;
 const nothing = (c: Parameters<typeof fail>[0]) => fail(c, 404, "notFound", "There's nothing here.");
 
@@ -25,7 +27,8 @@ const audience = (db: Db, s: BroadcastSegment) => {
   if ("hostId" in s) return and(live, inArray(users.id, db.select({ id: follows.userId }).from(follows).where(eq(follows.hostId, s.hostId))));
   if ("eventId" in s)
     return and(live, inArray(users.id, db.select({ id: bookings.userId }).from(bookings).where(and(eq(bookings.eventId, s.eventId), eq(bookings.status, "confirmed")))));
-  return live;
+  if ("all" in s) return live;
+  throw new Error("unknown segment");
 };
 export const audienceCount = async (db: Db, s: BroadcastSegment) => (await db.select({ n: count() }).from(users).where(audience(db, s)))[0]!.n;
 
@@ -34,9 +37,28 @@ const missing = async (db: Db, s: BroadcastSegment) =>
   ("hostId" in s && !(await db.select({ id: hosts.id }).from(hosts).where(eq(hosts.id, s.hostId))).length) ||
   ("eventId" in s && !(await db.select({ id: events.id }).from(events).where(eq(events.id, s.eventId))).length);
 
+// The Platform holders who could confirm: everyone but the author who isn't suspended, deleted or closing their account.
+// Here only: holdersOf itself still counts them, as every staff email goes to them.
+const othersOf = async (db: Db, authorId: string, at: Date) => {
+  const ids = (await holdersOf(db, "platform", at)).filter((h) => h !== authorId);
+  if (!ids.length) return [];
+  const rows = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(
+      and(
+        inArray(users.id, ids),
+        isNull(users.deletedAt),
+        isNull(users.deletionRequestedAt),
+        or(isNull(users.suspendedAt), and(isNotNull(users.suspendedUntil), lte(users.suspendedUntil, at))),
+      ),
+    );
+  return rows.map((r) => r.id);
+};
+
 const confirmer = alias(users, "confirmer");
 type Row = { b: typeof broadcasts.$inferSelect; author: string | null; confirmer: string | null };
-const view = ({ b, author, confirmer: by }: Row, alone: boolean): Broadcast => ({
+const view = ({ b, author, confirmer: by }: Row): Broadcast => ({
   id: b.id,
   type: b.type,
   segment: b.segment,
@@ -52,10 +74,16 @@ const view = ({ b, author, confirmer: by }: Row, alone: boolean): Broadcast => (
   failed: b.failed,
   reason: b.reason,
   createdAt: b.createdAt.toISOString(),
-  autoAt: alone && b.status === "waiting" ? new Date(b.createdAt.getTime() + DAY).toISOString() : null,
+  autoAt: b.autoAt?.toISOString() ?? null,
+  // auto_at stays on one that went by itself; a cancel while waiting clears it.
+  autoSent: !b.confirmedBy && !!b.autoAt && b.status !== "waiting",
 });
-// No Platform holder but the author: the one-holder rule applies.
-const aloneIn = (holders: string[], authorId: string) => holders.every((h) => h === authorId);
+const withNames = (db: Db) =>
+  db
+    .select({ b: broadcasts, author: users.name, confirmer: confirmer.name })
+    .from(broadcasts)
+    .innerJoin(users, eq(users.id, broadcasts.createdBy))
+    .leftJoin(confirmer, eq(confirmer.id, broadcasts.confirmedBy));
 
 export function broadcastsRoutes({ db, secret, notify, now = Date.now }: Deps) {
   const app = new Hono<StaffEnv>();
@@ -65,16 +93,17 @@ export function broadcastsRoutes({ db, secret, notify, now = Date.now }: Deps) {
 
   // GET …/broadcasts: the latest 100, newest first, with who wrote and who confirmed each.
   app.get(base, auth, platform, async (c) => {
-    const rows = await db
-      .select({ b: broadcasts, author: users.name, confirmer: confirmer.name })
-      .from(broadcasts)
-      .innerJoin(users, eq(users.id, broadcasts.createdBy))
-      .leftJoin(confirmer, eq(confirmer.id, broadcasts.confirmedBy))
-      .orderBy(desc(broadcasts.createdAt))
-      .limit(100);
-    const holders = await holdersOf(db, "platform", new Date(now()));
-    const body: Broadcasts = { items: rows.map((r) => view(r, aloneIn(holders, r.b.createdBy))) };
+    const rows = await withNames(db).orderBy(desc(broadcasts.createdAt)).limit(100);
+    const body: Broadcasts = { items: rows.map(view) };
     return c.json(body);
+  });
+
+  // GET …/broadcasts/:id: one, however old.
+  app.get(`${base}/:id`, auth, platform, async (c) => {
+    const id = c.req.param("id");
+    if (!isUuid(id)) return nothing(c);
+    const [row] = await withNames(db).where(eq(broadcasts.id, id));
+    return row ? c.json(view(row)) : nothing(c);
   });
 
   // POST …/broadcasts/count {segment}: the audience the form shows before Save.
@@ -85,14 +114,19 @@ export function broadcastsRoutes({ db, secret, notify, now = Date.now }: Deps) {
     return c.json({ audienceCount: await audienceCount(db, b.segment) });
   });
 
-  // POST …/broadcasts: written as waiting, with its audience counted now; the other Platform holders are emailed.
+  // POST …/broadcasts: written as waiting, with its audience counted now; the other Platform holders are emailed. With
+  // none, the 24-hour wait starts now. A send time may be up to 5 minutes past (a slow form) and 90 days ahead.
   app.post(base, auth, platform, async (c) => {
     const b = await parse(c, NewBroadcast);
     if (!b) return invalid(c);
+    const at = new Date(now());
+    const sendAt = b.sendAt ? new Date(b.sendAt) : null;
+    if (sendAt && (sendAt.getTime() < at.getTime() - 5 * MIN || sendAt.getTime() > at.getTime() + 90 * DAY))
+      return fail(c, 400, "badSendAt", "Pick a send time from now to 90 days ahead.");
     if (await missing(db, b.segment)) return fail(c, 400, "noSuchTarget", "There's no host or event with that id.");
     const actor = c.var.actor.id;
-    const at = new Date(now());
     const n = await audienceCount(db, b.segment);
+    const others = await othersOf(db, actor, at);
     const row = await db.transaction(async (tx) => {
       const [made] = await tx
         .insert(broadcasts)
@@ -103,7 +137,8 @@ export function broadcastsRoutes({ db, secret, notify, now = Date.now }: Deps) {
           content: { title: b.title, text: b.text },
           status: "waiting",
           createdBy: actor,
-          sendAt: b.sendAt ? new Date(b.sendAt) : null,
+          sendAt,
+          autoAt: others.length ? null : new Date(at.getTime() + DAY),
           audienceCount: n,
           createdAt: at,
         })
@@ -111,9 +146,8 @@ export function broadcastsRoutes({ db, secret, notify, now = Date.now }: Deps) {
       await tx.insert(auditLog).values({ actorId: actor, action: "notifications.broadcast", data: { id: made!.id, type: b.type, segment: b.segment, audience: n }, at });
       return made!;
     });
-    const others = (await holdersOf(db, "platform", at)).filter((h) => h !== actor);
     await tell(notify, others, "broadcastWaiting", { title: b.title, audienceCount: n }, row.id);
-    return c.json(view({ b: row, author: c.var.user.name ?? null, confirmer: null }, !others.length), 201);
+    return c.json(view({ b: row, author: c.var.user.name ?? null, confirmer: null }), 201);
   });
 
   // POST …/broadcasts/:id/confirm: the second person. Never the author (the one-holder rule needs no confirm). Moves to
@@ -130,7 +164,7 @@ export function broadcastsRoutes({ db, secret, notify, now = Date.now }: Deps) {
     const done = await db.transaction(async (tx) => {
       const [moved] = await tx
         .update(broadcasts)
-        .set({ status, confirmedBy: actor })
+        .set({ status, confirmedBy: actor, autoAt: null })
         .where(and(eq(broadcasts.id, id), eq(broadcasts.status, "waiting")))
         .returning();
       if (moved) await tx.insert(auditLog).values({ actorId: actor, action: "notifications.broadcastConfirm", data: { id, status }, at });
@@ -140,7 +174,8 @@ export function broadcastsRoutes({ db, secret, notify, now = Date.now }: Deps) {
     return c.json({ id, status });
   });
 
-  // POST …/broadcasts/:id/cancel {reason}: stops one waiting, scheduled or part sent; the tick checks before each batch.
+  // POST …/broadcasts/:id/cancel {reason}: stops one waiting, scheduled or part sent, and drops its deliveries still
+  // queued or held. The tick checks before each batch; the worker drops any row written after this.
   app.post(`${base}/:id/cancel`, auth, platform, async (c) => {
     const id = c.req.param("id");
     if (!isUuid(id)) return nothing(c);
@@ -151,11 +186,16 @@ export function broadcastsRoutes({ db, secret, notify, now = Date.now }: Deps) {
     const done = await db.transaction(async (tx) => {
       const [moved] = await tx
         .update(broadcasts)
-        .set({ status: "cancelled", reason: body.reason })
+        .set({ status: "cancelled", reason: body.reason, autoAt: sql`case when ${broadcasts.status} = 'waiting' then null else ${broadcasts.autoAt} end` })
         .where(and(eq(broadcasts.id, id), inArray(broadcasts.status, ["waiting", "scheduled", "sending"])))
         .returning({ id: broadcasts.id });
-      if (moved) await tx.insert(auditLog).values({ actorId: actor, action: "notifications.broadcastCancel", reason: body.reason, data: { id }, at });
-      return moved;
+      if (!moved) return false;
+      await tx
+        .update(deliveries)
+        .set({ status: "dropped", reason: "cancelled", lockedUntil: null })
+        .where(and(eq(deliveries.broadcastId, id), inArray(deliveries.status, ["queued", "held"])));
+      await tx.insert(auditLog).values({ actorId: actor, action: "notifications.broadcastCancel", reason: body.reason, data: { id }, at });
+      return true;
     });
     if (!done) {
       const [b] = await db.select({ status: broadcasts.status }).from(broadcasts).where(eq(broadcasts.id, id));
@@ -168,21 +208,32 @@ export function broadcastsRoutes({ db, secret, notify, now = Date.now }: Deps) {
   return app;
 }
 
-// The minute tick's broadcast step: the one-holder rule's 24 hours, scheduled ones that are due, then each sending
-// broadcast in batches of people by id after its cursor. Status is read again before each batch, so a cancel stops the
-// rest; each person's notice is keyed by the broadcast, so a batch redone after a restart sends nothing twice. Cursor
-// and counts are saved after each batch. `sent` counts people notify took, `failed` those whose write threw.
+// The minute tick's broadcast step.
+// 1. Waiting ones: the one-holder rule. No other holder: auto_at is set 24 hours on, and once it passes the broadcast
+//    moves on (audited as the author's). Another holder again: auto_at is cleared and they're emailed.
+// 2. Scheduled ones that are due start sending.
+// 3. Each sending one goes in batches of people by id after its cursor. Status is read again before each batch, so a
+//    cancel stops the rest; each person's notice is keyed by the broadcast, so a batch redone after a restart sends
+//    nothing twice. Cursor and counts are saved after each batch. It is sent once the cursor is done and none of its
+//    deliveries is still queued, held or sending, so a cancel can stop those too.
 // ponytail: one box, one tick at a time (server.ts); two boxes would both send a batch (dedupe keeps it once each, the
 // counts would double). An advisory lock per broadcast when the API runs on more than one box.
 export async function runBroadcasts({ db, notify, now, batch = BATCH }: { db: Db; notify: Notify; now: () => number; batch?: number }) {
   const at = new Date(now());
-  const due = await db.select().from(broadcasts).where(and(eq(broadcasts.status, "waiting"), lte(broadcasts.createdAt, new Date(at.getTime() - DAY))));
-  const holders = due.length ? await holdersOf(db, "platform", at) : [];
-  for (const b of due.filter((b) => aloneIn(holders, b.createdBy)))
-    await db
-      .update(broadcasts)
-      .set({ status: b.sendAt && b.sendAt > at ? "scheduled" : "sending" })
-      .where(and(eq(broadcasts.id, b.id), eq(broadcasts.status, "waiting")));
+  for (const b of await db.select().from(broadcasts).where(eq(broadcasts.status, "waiting"))) {
+    const waiting = and(eq(broadcasts.id, b.id), eq(broadcasts.status, "waiting"));
+    const others = await othersOf(db, b.createdBy, at);
+    if (others.length) {
+      if (!b.autoAt) continue;
+      const [cleared] = await db.update(broadcasts).set({ autoAt: null }).where(and(waiting, isNotNull(broadcasts.autoAt))).returning({ id: broadcasts.id });
+      if (cleared) await tell(notify, others, "broadcastWaiting", { title: b.content.title, audienceCount: b.audienceCount }, b.id);
+    } else if (!b.autoAt) await db.update(broadcasts).set({ autoAt: new Date(at.getTime() + DAY) }).where(and(waiting, isNull(broadcasts.autoAt)));
+    else if (b.autoAt <= at) {
+      const status = b.sendAt && b.sendAt > at ? "scheduled" : "sending";
+      const [moved] = await db.update(broadcasts).set({ status }).where(waiting).returning({ id: broadcasts.id });
+      if (moved) await db.insert(auditLog).values({ actorId: b.createdBy, action: "notifications.broadcastAutoSend", data: { id: b.id, status }, at });
+    }
+  }
   await db.update(broadcasts).set({ status: "sending" }).where(and(eq(broadcasts.status, "scheduled"), lte(broadcasts.sendAt, at)));
 
   for (const { id } of await db.select({ id: broadcasts.id }).from(broadcasts).where(eq(broadcasts.status, "sending"))) {
@@ -196,23 +247,31 @@ export async function runBroadcasts({ db, notify, now, batch = BATCH }: { db: Db
         .orderBy(users.id)
         .limit(batch);
       if (!people.length) {
-        await db.update(broadcasts).set({ status: "sent" }).where(and(eq(broadcasts.id, id), eq(broadcasts.status, "sending")));
+        const [left] = await db
+          .select({ id: deliveries.id })
+          .from(deliveries)
+          .where(and(eq(deliveries.broadcastId, id), inArray(deliveries.status, ["queued", "held", "sending"])))
+          .limit(1);
+        if (!left) await db.update(broadcasts).set({ status: "sent" }).where(and(eq(broadcasts.id, id), eq(broadcasts.status, "sending")));
         break;
       }
       const kind = b.type === "news" ? "orbitNews" : "orbitNotice";
       const data = { ...b.content, broadcastId: id };
       let sent = 0;
       let failed = 0;
+      let code = "";
+      // ponytail: a person whose write failed isn't tried again (the cursor moves past them); `failed` counts them.
       for (const p of people) {
         try {
           await db.transaction((tx) => notify({ to: { userId: p.id }, kind, data, key: `broadcast:${id}`, broadcastId: id, channels: b.channels }, tx));
           sent++;
         } catch (e) {
           const err = e as { code?: string; cause?: { code?: string } };
-          console.error(`[broadcasts] ${id} not written for one person (${err.cause?.code ?? err.code ?? "error"})`);
+          code = err.cause?.code ?? err.code ?? "error";
           failed++;
         }
       }
+      if (failed) console.error(`[broadcasts] ${id}: ${failed} of ${people.length} in this batch not written (last: ${code})`);
       await db
         .update(broadcasts)
         .set({ cursor: people.at(-1)!.id, sent: sql`${broadcasts.sent} + ${sent}`, failed: sql`${broadcasts.failed} + ${failed}` })

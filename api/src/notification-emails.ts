@@ -204,5 +204,12 @@ export function opensFor(kind: NoticeKind, data: Data = {}) {
 
 export function inboxFor(kind: NoticeKind, data: Data = {}) {
   const { subject, line } = words(kind, data);
-  return { text: line || subject, fromName: str(data.hostName) || "Orbit", opens: opensFor(kind, data) };
+  const base: { text: string; fromName: string; opens: ReturnType<typeof opensFor>; title?: string; body?: string } = {
+    text: line || subject,
+    fromName: str(data.hostName) || "Orbit",
+    opens: opensFor(kind, data),
+  };
+  // A broadcast's title leads: "Title: text" in the inbox, the push's title.
+  if (kind === "orbitNews" || kind === "orbitNotice") return { ...base, text: `${subject}: ${line}`, title: subject, body: line };
+  return base;
 }
