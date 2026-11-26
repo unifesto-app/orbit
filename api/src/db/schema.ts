@@ -1202,7 +1202,7 @@ export const broadcasts = pgTable(
 );
 
 // Every Ask Orbit question and its reply (ask.ts), for Galaxy's log and cost per day. Tokens are what the model billed;
-// `costMicroUsd` is them at Claude Opus 5.5's prices (ASK_PRICES). An error row has no reply and no tokens. Deleted
+// `costMicroUsd` is them at the Ask Orbit model's prices (ASK_PRICES). An error row has no reply and no tokens. Deleted
 // with the account (auth/deletion.ts).
 export const askLog = pgTable(
   "ask_log",
