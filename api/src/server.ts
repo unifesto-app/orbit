@@ -12,6 +12,7 @@ import { ways, type WaysConfig } from "./auth/ways.ts";
 import { connect, migrateDb } from "./db/index.ts";
 import { checkProviders, createNotifier, pruneNotifications, runDeliveries } from "./notifications.ts";
 import { sendReminders } from "./announcements.ts";
+import { runBroadcasts } from "./broadcasts.ts";
 import { apnsSender, fcmSender, type Push } from "./push.ts";
 import { type Media, memoryFiles, s3Files } from "./media.ts";
 import { pollPayments } from "./payments/routes.ts";
@@ -198,6 +199,17 @@ setInterval(() => {
   sendReminders({ db, notify, now: Date.now })
     .catch((e) => console.error("[reminders]", e))
     .finally(() => (reminding = false));
+}, 60_000).unref();
+
+// Broadcasts (broadcasts.ts): the one-holder wait, due scheduled ones, and batches of the sending ones, every minute,
+// never two at once here.
+let broadcasting = false;
+setInterval(() => {
+  if (broadcasting) return;
+  broadcasting = true;
+  runBroadcasts({ db, notify, now: Date.now })
+    .catch((e) => console.error("[broadcasts]", e))
+    .finally(() => (broadcasting = false));
 }, 60_000).unref();
 
 // Push and email providers failing more than 20% over the last hour: an alert to Platform holders (notifications.ts).

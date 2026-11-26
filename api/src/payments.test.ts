@@ -6,6 +6,7 @@ import sharp from "sharp";
 import { runDeletions } from "./auth/deletion.ts";
 import { testApp } from "./testkit.ts";
 import { auditLog, bookings, events, failedWebhooks, hosts, payments, razorpayEvents, refunds, staffGrants, users } from "./db/schema.ts";
+import { galaxyEventsRoutes } from "./events/galaxy.ts";
 import { earningsOf } from "./payments/galaxy.ts";
 import { paymentsRoutes, pollPayments, sendRefund } from "./payments/routes.ts";
 import { razorpay, type RzPayment, type RzRefund } from "./payments/razorpay.ts";
@@ -153,6 +154,25 @@ test("pay: the order on the host's plan, the same order on a second tap, free ti
   const inc = await pay(c, e);
   assert.deepEqual(inc.body.breakdown, { pricePaise: 120000, feePaise: 0, feeIncluded: true, amountPaise: 120000 });
   assert.equal((await paymentOf(inc.body.orderId)).buyerFeePaise, 5714);
+});
+
+test("a Galaxy cancel without Razorpay still answers; the refund waits, requested, for the poller", async () => {
+  const a = await join(), b = await join(), s = await join();
+  await give(s, "hosts");
+  const e = await publish(a);
+  const o = (await pay(b, e)).body;
+  await verify(b, o.orderId, capture(o.orderId, o.amountPaise).id);
+  const app = galaxyEventsRoutes({ db: t.db, secret: t.secret, notify: t.notify, now: t.now });
+  const res = await app.request(`/galaxy/events/${e.id}/cancel`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${s.access}`, "content-type": "application/json" },
+    body: JSON.stringify({ reason: "Venue flooded" }),
+  });
+  assert.equal(res.status, 200);
+  const p = await paymentOf(o.orderId);
+  assert.equal(p.status, "refundPending");
+  const [r] = await t.db.select().from(refunds).where(eq(refunds.paymentId, p.id));
+  assert.deepEqual([r!.amountPaise, r!.status], [o.amountPaise, "requested"]);
 });
 
 test("paying is off without Razorpay's keys", async () => {
