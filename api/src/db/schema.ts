@@ -299,9 +299,14 @@ export const bookings = pgTable(
     link: text("link").unique(),
     createdAt: at("created_at").notNull().defaultNow(),
     cancelledAt: at("cancelled_at"),
+    // Check-in (checkin.ts): how many of `quantity` are in, and the first admit's when and who. Attended is admitted > 0.
+    admitted: integer("admitted").notNull().default(0),
+    checkedInAt: at("checked_in_at"),
+    checkedInBy: uuid("checked_in_by").references(() => users.id),
   },
   (t) => [
     check("bookings_quantity_range", sql`${t.quantity} between 1 and 10`),
+    check("bookings_admitted_in_quantity", sql`${t.admitted} between 0 and ${t.quantity}`),
     index().on(t.userId, t.createdAt),
     index().on(t.ticketTypeId, t.status),
     index().on(t.eventId, t.status),

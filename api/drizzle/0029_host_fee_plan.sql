@@ -1,1 +1,0 @@
-ALTER TABLE "hosts" ADD COLUMN "fee_plan" text DEFAULT '3+2' NOT NULL;
