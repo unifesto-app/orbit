@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import sharp from "sharp";
 import { runDeletions } from "./auth/deletion.ts";
 import { testApp } from "./testkit.ts";
-import { auditLog, bookings, events, failedWebhooks, hosts, payments, razorpayEvents, refunds, staffGrants, users } from "./db/schema.ts";
+import { auditLog, bookings, events, failedWebhooks, hosts, payments, razorpayEvents, refunds, staffGrants, stationClaims, stations, users } from "./db/schema.ts";
 import { galaxyEventsRoutes } from "./events/galaxy.ts";
 import { earningsOf, moneyRoutes } from "./payments/galaxy.ts";
 import { paymentsRoutes, pollPayments, sendRefund } from "./payments/routes.ts";
@@ -759,4 +759,132 @@ test("GET /payments/:orderId: Razorpay down is a 502; open attempts are pending;
   assert.equal((await as(c)("GET", `/payments/${oc.orderId}`)).status, 429);
   t.tick(MIN);
   assert.equal((await as(c)("GET", `/payments/${oc.orderId}`)).status, 200);
+});
+
+// ---------- Paying for a held slot (X8): POST /venues/:hostId/holds/:claimId/pay, settled through confirmHold ----------
+
+// A venue open 11 AM to 2 AM with one priced PC (₹500 an hour), the clock at the next 6:20 PM India time, and a held
+// hour at 7 PM. People join after the tick: access tokens last 15 minutes.
+const IST = 330 * MIN;
+const heldSlot = async () => {
+  t.tick(((66_000_000 - ((t.now() + IST) % DAY)) + DAY) % DAY);
+  const start = t.now() + 40 * MIN; // 7 PM
+  const a = await join(), b = await join();
+  const h = (await as(a)("POST", "/hosts", { name: `Slot Club ${++hn}`, kind: "venue", city: "Hyderabad" })).body.id as string;
+  const week = Array(7).fill([11, 26]);
+  assert.equal((await as(a)("PUT", `/venues/${h}`, { address: "1 Road", area: "Madhapur", lat: 17.4, lng: 78.4, deskPhone: "+914012345678", week })).status, 201);
+  const s = await as(a)("POST", `/venues/${h}/stations`, { name: "Gaming PC", unit: "PC", count: 1, pricePaise: 50000, tile: "gaming" });
+  assert.equal(s.status, 201, JSON.stringify(s.body));
+  const hold = await as(b)("POST", `/venues/${h}/holds`, { stationId: s.body.id, start: new Date(start).toISOString(), hours: 1, count: 1 });
+  assert.equal(hold.status, 201, JSON.stringify(hold.body));
+  return { a, b, h, stationId: s.body.id as string, claimId: hold.body.id as string, start };
+};
+const payHold = (u: P, h: string, claimId: string) => as(u)("POST", `/venues/${h}/holds/${claimId}/pay`);
+const claimOf = async (id: string) => (await t.db.select().from(stationClaims).where(eq(stationClaims.id, id)))[0]!;
+
+test("slot pay: the server's amount, the same order on a second tap; paid → booked, the team told, the code on confirm", async () => {
+  const { b, h, claimId } = await heldSlot();
+  // Not paid yet: the free confirm asks for money.
+  assert.equal((await as(b)("POST", `/venues/${h}/holds/${claimId}/confirm`)).status, 402);
+  const o = await payHold(b, h, claimId);
+  assert.equal(o.status, 201, JSON.stringify(o.body));
+  assert.equal(o.body.breakdown.pricePaise, 50000);
+  assert.equal(o.body.amountPaise, o.body.breakdown.amountPaise);
+  assert.equal(o.body.already, false);
+  const again = await payHold(b, h, claimId);
+  assert.deepEqual([again.status, again.body.orderId, again.body.already], [200, o.body.orderId, true]);
+  const notices = t.notices.length;
+  const p = capture(o.body.orderId, o.body.amountPaise);
+  const v = await verify(b, o.body.orderId, p.id);
+  assert.deepEqual([v.status, v.body.status], [200, "paid"]);
+  const c = await claimOf(claimId);
+  assert.equal(c.status, "paid");
+  assert.ok(c.code);
+  assert.equal((await paymentOf(o.body.orderId)).status, "paid");
+  assert.equal(t.notices.slice(notices).filter((x) => x.kind === "slotBooked").length, 1);
+  const done = await as(b)("POST", `/venues/${h}/holds/${claimId}/confirm`);
+  assert.deepEqual([done.status, done.body.code], [200, c.code]);
+  // Booked: no second order.
+  assert.deepEqual([(await payHold(b, h, claimId)).status], [409]);
+  assert.equal((await t.db.select().from(refunds).where(eq(refunds.paymentId, (await paymentOf(o.body.orderId)).id))).length, 0);
+});
+
+test("slot pay: money after the hold lapsed and the station was taken, or after the start: refunded in full, said why", async () => {
+  // Taken: the hold ran out, someone else booked the one PC for that hour, then the money landed.
+  const x = await heldSlot();
+  const o = (await payHold(x.b, x.h, x.claimId)).body;
+  t.tick(11 * MIN);
+  await t.db.insert(stationClaims).values({ stationId: x.stationId, kind: "booking", status: "paid", count: 1, startsAt: new Date(x.start), endsAt: new Date(x.start + HOUR), userId: x.a.me.id });
+  const notices = t.notices.length;
+  const p = capture(o.orderId, o.amountPaise);
+  const v = await verify(x.b, o.orderId, p.id);
+  assert.deepEqual([v.status, v.body.status, v.body.reason], [200, "refundPending", "full"]);
+  assert.equal((await claimOf(x.claimId)).status, "held");
+  const row = await paymentOf(o.orderId);
+  assert.equal(row.status, "refundPending");
+  const back = await t.db.select().from(refunds).where(eq(refunds.paymentId, row.id));
+  assert.deepEqual(back.map((r) => r.amountPaise), [o.amountPaise]); // in full, fee too
+  assert.ok(rzState.refunds.some((r) => r.payment_id === p.id && r.amount === o.amountPaise)); // sent after commit
+  const told = t.notices.slice(notices);
+  assert.ok(told.some((n) => n.kind === "soldOutWhilePaying" && "userId" in n.to && n.to.userId === x.b.me.id));
+  assert.ok(!told.some((n) => n.kind === "slotBooked"));
+
+  // Lapsed past its start: the webhook brings it, the same refund.
+  const y = await heldSlot();
+  const oy = (await payHold(y.b, y.h, y.claimId)).body;
+  t.tick(41 * MIN);
+  const py = capture(oy.orderId, oy.amountPaise);
+  assert.equal(await hook("payment.captured", { payment: { entity: py } }), 200);
+  const ry = await paymentOf(oy.orderId);
+  assert.equal(ry.status, "refundPending");
+  assert.equal((await t.db.select().from(refunds).where(eq(refunds.paymentId, ry.id))).length, 1);
+  assert.equal((await claimOf(y.claimId)).status, "held");
+  // A lapsed hold gets no new order.
+  assert.equal((await payHold(y.b, y.h, y.claimId)).status, 409);
+});
+
+test("slot pay: notFound for a made-up claim or someone else's hold", async () => {
+  const { a, b, h, claimId } = await heldSlot();
+  assert.equal((await payHold(b, h, "00000000-0000-4000-8000-000000000000")).status, 404);
+  assert.equal((await payHold(a, h, claimId)).status, 404); // the venue's own admin can't pay a player's hold
+  assert.equal((await payHold(b, "00000000-0000-4000-8000-000000000000", claimId)).status, 404);
+});
+
+test("slot pay: a webhook that arrives twice books once, refunds nothing", async () => {
+  const { b, h, claimId } = await heldSlot();
+  const o = (await payHold(b, h, claimId)).body;
+  const p = capture(o.orderId, o.amountPaise);
+  const notices = t.notices.length;
+  assert.equal(await hook("payment.captured", { payment: { entity: p } }, { id: "evt_slot_dup" }), 200);
+  const code = (await claimOf(claimId)).code;
+  assert.ok(code);
+  assert.equal(await hook("payment.captured", { payment: { entity: p } }, { id: "evt_slot_dup" }), 200);
+  // A second event id for the same payment: settled already, nothing more.
+  assert.equal(await hook("payment.captured", { payment: { entity: p } }), 200);
+  assert.equal((await claimOf(claimId)).code, code);
+  assert.equal(t.notices.slice(notices).filter((x) => x.kind === "slotBooked").length, 1);
+  assert.equal((await t.db.select().from(refunds).where(eq(refunds.paymentId, (await paymentOf(o.orderId)).id))).length, 0);
+});
+
+test("slot pay: a paused place or an archived station takes no order", async () => {
+  const one = await heldSlot();
+  await t.db.update(hosts).set({ status: "paused" }).where(eq(hosts.id, one.h));
+  const r = await payHold(one.b, one.h, one.claimId);
+  assert.deepEqual([r.status, r.body.error], [409, "hostClosed"]);
+  const two = await heldSlot();
+  await t.db.update(stations).set({ archivedAt: new Date(t.now()) }).where(eq(stations.id, two.stationId));
+  assert.equal((await payHold(two.b, two.h, two.claimId)).body.error, "hostClosed");
+  assert.equal((await t.db.select().from(payments).where(eq(payments.claimId, two.claimId))).length, 0);
+});
+
+test("slot pay: deleting the account refunds an upcoming paid slot in full", async () => {
+  const { b, h, claimId } = await heldSlot();
+  const o = (await payHold(b, h, claimId)).body;
+  assert.equal((await verify(b, o.orderId, capture(o.orderId, o.amountPaise).id)).body.status, "paid");
+  await t.db.update(users).set({ deletionDueAt: new Date(t.now() - 1000) }).where(eq(users.id, b.me.id));
+  assert.equal(await runDeletions(t.db, t.notify, t.now()), 1);
+  const p = await paymentOf(o.orderId);
+  assert.equal(p.status, "refundPending");
+  const [r] = await t.db.select().from(refunds).where(eq(refunds.paymentId, p.id));
+  assert.deepEqual([r!.amountPaise, r!.status], [o.amountPaise, "requested"]);
 });

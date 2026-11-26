@@ -2,13 +2,15 @@ import { randomUUID } from "node:crypto";
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, max, or, sql, type SQL } from "drizzle-orm";
 import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { feeTerms, type MyPayment, type MyRefund, type PayOrder, PayRequest, type Verified, VerifyPayment } from "@orbit/contract";
+import { feeTerms, type MyPayment, type MyRefund, type PayOrder, PayRequest, slotPrice, type Verified, VerifyPayment } from "@orbit/contract";
 import type { Deps } from "../auth/routes.ts";
 import type { Db } from "../db/index.ts";
-import { bookings, events, failedWebhooks, hosts, payments, razorpayEvents, refunds, users } from "../db/schema.ts";
+import { bookings, events, failedWebhooks, hosts, payments, razorpayEvents, refunds, stationClaims, users } from "../db/schema.ts";
 import { seatCheck, tokens } from "../bookings.ts";
 import { type Env, fail, invalid, isUuid, type Notify, parse, signedIn, taken, type Tx } from "../http.ts";
 import { mine } from "../saves.ts";
+import { confirmHold, lockHold } from "../slots/hold.ts";
+import { stationRow, tellTeam } from "../slots/routes.ts";
 import type { Razorpay, RzPayment, RzRefund } from "./razorpay.ts";
 
 // Paying for a ticket (Money flow; Booking flow, "Paying"; X2). The app asks for an order (/pay), Razorpay's checkout
@@ -111,10 +113,21 @@ export async function settle(db: Db, notify: Notify, orderId: string, paid: Pick
     }
     // created, failed or expired: give the seat, or give the money back.
     if (p.kind === "slot") {
-      // ponytail: slot payments land once X7's confirmHold(tx, claimId, now) merges (api/src/slots/hold.ts): call it here,
-      // "full" → refundPending + autoRefund, "notHeld" → refund unless this payment already paid the claim. No route
-      // makes slot payments until then.
-      throw new Error(`slot payment ${p.id} has no settle yet`);
+      // confirmHold takes the hold's locks (person, host, venue, station, claim) after this payment's: the same order.
+      const ok = await confirmHold(tx, p.claimId!, now);
+      if (!ok.ok) {
+        // Booked already (an older order on this hold paid first): this one is a second payment, not a lost slot.
+        const [c] = ok.error === "notHeld" ? await tx.select({ status: stationClaims.status }).from(stationClaims).where(eq(stationClaims.id, p.claimId!)) : [];
+        const reason = c?.status === "paid" ? "booked" : ok.error;
+        await tx.update(payments).set({ status: "refundPending", razorpayPaymentId: paid.id, ...costs, updatedAt: at }).where(eq(payments.id, p.id));
+        const id = await autoRefund(tx, p, paid.id, COULDNT + reason, at);
+        const kind = reason === "booked" ? "paidTwice" : "soldOutWhilePaying";
+        await notify({ to: { userId: p.userId }, kind, data: { claimId: p.claimId, hostId: p.hostId, reason }, key: `refund:${id}` }, tx);
+        return { status: "refundPending", bookingId: null, refundIds: [id], reason };
+      }
+      await tx.update(payments).set({ status: "paid", razorpayPaymentId: paid.id, ...costs, updatedAt: at }).where(eq(payments.id, p.id));
+      await tellTeam(tx, notify, ok.claim);
+      return { status: "paid", bookingId: null, refundIds: [] };
     }
     // book()'s locks: the person, then seatCheck's event and ticket type.
     const [u] = await tx.select({ id: users.id }).from(users).where(and(eq(users.id, p.userId), isNull(users.deletedAt))).for("update");
@@ -323,6 +336,72 @@ export function paymentsRoutes({ db, store, secret, notify, razorpay: rz, now = 
       if (open) return c.json(orderOf(open, rz.keyId, true));
       throw e;
     }
+  });
+
+  // POST /venues/:hostId/holds/:claimId/pay: the player's own live hold, priced here from the station and the host's fee
+  // plan (never the app's numbers). Their open order for this hold comes back as it is on the same terms; otherwise a new
+  // one. Money landing settles it through confirmHold (settle above): the booking, or the whole amount back.
+  app.post("/venues/:hostId/holds/:claimId/pay", auth, async (c) => {
+    if (!rz) return off(c);
+    const hostId = c.req.param("hostId");
+    const claimId = c.req.param("claimId");
+    if (!isUuid(hostId) || !isUuid(claimId)) return nothing(c);
+    const userId = c.var.user.id;
+    const openOf = async (q: Db | Tx) =>
+      (await q.select().from(payments).where(and(eq(payments.userId, userId), eq(payments.claimId, claimId), eq(payments.status, "created"))))[0];
+    // Under the hold's locks: its checks, its price, and the open order.
+    const r = await db.transaction(async (tx) => {
+        const k = await lockHold(tx, claimId, { userId, hostId });
+        if (!k || k.claim.kind !== "booking") return { no: [404, "notFound", "There's nothing here."] as const };
+        const h = k.claim;
+        if (h.status === "paid") return { no: [409, "booked", "That slot is already booked."] as const };
+        if (h.status !== "held" || h.releasedAt || h.holdEndsAt! <= new Date(now()))
+          return { no: [409, "notHeld", "That hold can't be booked any more. Hold it again."] as const };
+        // confirmHold would refuse these once paid: say so before any money moves.
+        if (k.host.status !== "live" || k.station.archivedAt) return { no: [409, "hostClosed", "This place isn't taking bookings right now."] as const };
+        const total = slotPrice(stationRow(k.station), h.startsAt.getTime(), (h.endsAt.getTime() - h.startsAt.getTime()) / HOUR, h.count);
+        if (total <= 0) return { no: [409, "free", "This slot is free. Confirm it instead."] as const };
+        const terms = feeTerms(total, 1, k.host.feePlan, k.host.feeIncluded);
+        const open = await openOf(tx);
+        if (open && open.amountPaise === terms.amountPaise && open.plan === terms.plan && open.feeIncluded === terms.feeIncluded) return { open };
+        return { terms, stale: open?.id };
+      });
+    if ("no" in r && r.no) return fail(c, r.no[0], r.no[1], r.no[2]);
+    if ("open" in r) return c.json(orderOf(r.open!, rz.keyId, true));
+    // As /events/:id/pay: the old order goes once the hold's locks are released, and Razorpay is asked outside any.
+    if (r.stale) await db.update(payments).set({ status: "expired", updatedAt: new Date(now()) }).where(and(eq(payments.id, r.stale), eq(payments.status, "created")));
+    const { terms } = r;
+    const paymentId = randomUUID();
+    let order: { id: string };
+    try {
+      order = await rz.createOrder(terms.amountPaise, paymentId);
+    } catch (e) {
+      console.error("[payments] order", (e as Error).message);
+      return fail(c, 502, "paymentsDown", "Paying isn't working right now. Try again in a minute.");
+    }
+    // The row goes in under the hold's locks again, so two taps at once make one open order (no unique index covers a
+    // claim): the second finds the first's and answers it.
+    const at = new Date(now());
+    const done = await db.transaction(async (tx) => {
+      const again = await lockHold(tx, claimId, { userId, hostId });
+      const open = again && (await openOf(tx));
+      if (open) return { open };
+      const c = again?.claim;
+      if (!c || c.status !== "held" || c.releasedAt || c.holdEndsAt! <= new Date(now())) return { gone: true };
+      const [row] = await tx
+        .insert(payments)
+        .values({
+          id: paymentId, kind: "slot", userId, hostId, claimId, eventId: null, ticketTypeId: null,
+          quantity: terms.quantity, unitPricePaise: terms.unitPricePaise, plan: terms.plan, buyerFeeBps: terms.buyerFeeBps,
+          buyerFeePaise: terms.buyerFeePaise, commissionBps: terms.commissionBps, commissionPaise: terms.commissionPaise,
+          feeIncluded: terms.feeIncluded, amountPaise: terms.amountPaise, razorpayOrderId: order.id, createdAt: at, updatedAt: at,
+        })
+        .returning();
+      return { row: row! };
+    });
+    if ("open" in done) return c.json(orderOf(done.open!, rz.keyId, true));
+    if ("gone" in done) return fail(c, 409, "notHeld", "That hold can't be booked any more. Hold it again.");
+    return c.json(orderOf(done.row, rz.keyId, false), 201);
   });
 
   // POST /payments/:orderId/verify {paymentId, signature}: checkout's answer, from the payer. Settles at once, so the app

@@ -1,30 +1,72 @@
 // Booking a slot at a real place to play, on the Orbit API (api/src/slots/routes.ts, X7): a venue's free starts for
 // anyone, then, signed in, hold → confirm (a ₹0 slot) or pay (a priced one, X2), let go, and "Hear if it frees up".
 // Pure, so slots.test.ts runs it on Node; the Book a slot sheet (src/app/slot/[venue].tsx) draws it.
-import type { ApiError, NewHold, NewSlotAlert, PublicSlots, SlotAlert, SlotHold } from '@orbit/contract';
+import type { ApiError, NewHold, NewSlotAlert, PayOrder, PublicSlots, SlotAlert, SlotHold, Verified } from '@orbit/contract';
 
 import type { makeApi, Result } from './api.ts';
 import { dayLabel, holdLeft } from './booking.ts';
+import { PAY_SAYS, paidNext, paymentsApi } from './pay.ts';
 
 type Api = Pick<ReturnType<typeof makeApi>, 'call' | 'authed'>;
 export const slotsApi = (api: Api) => ({
   // One India day (YYYY-MM-DD); none: the opening now, or the next.
   publicSlots: (hostId: string, day?: string) => api.call<PublicSlots>('GET', `/public/venues/${hostId}/slots${day ? `?day=${day}` : ''}`),
   hold: (hostId: string, b: NewHold) => api.authed<SlotHold>('POST', `/venues/${hostId}/holds`, b),
-  // A ₹0 hold becomes a booking with its code (a priced one answers 402 paymentNeeded: X2 pays it instead).
+  // A priced hold's Razorpay order (the open one again with `already`), paid through payForHold.
+  pay: (hostId: string, claimId: string) => api.authed<PayOrder>('POST', `/venues/${hostId}/holds/${claimId}/pay`),
+  // A ₹0 hold becomes a booking with its code (a priced one answers 402 paymentNeeded until it's paid; a paid one, its code).
   confirm: (hostId: string, claimId: string) => api.authed<SlotHold>('POST', `/venues/${hostId}/holds/${claimId}/confirm`),
   letGo: (hostId: string, claimId: string) => api.authed<null>('DELETE', `/venues/${hostId}/holds/${claimId}`),
   askAlert: (hostId: string, b: NewSlotAlert) => api.authed<SlotAlert>('POST', `/venues/${hostId}/alerts`, b),
   dropAlert: (hostId: string, alertId: string) => api.authed<null>('DELETE', `/venues/${hostId}/alerts/${alertId}`),
 });
 
-// The one seam for paying. ponytail: payments (X2, Razorpay) aren't built, so PAYS is false and the sheet's Pay stays
-// off. X2 makes this POST /venues/:hostId/holds/:claimId/pay, opens the checkout, and flips PAYS; the webhook confirms
-// the hold the way the free confirm does.
-export const PAYS = false;
-export const PAYMENTS_OFF: ApiError = { error: 'paymentsOff', message: 'Paying in the app is coming soon. Nothing was charged.' };
-export async function payForHold(_hostId: string, _claimId: string): Promise<Result<SlotHold>> {
-  return { ok: false, status: 0, error: PAYMENTS_OFF };
+// Paying for a priced hold: the API's order for it (POST …/pay, the amount and fee its own), Razorpay's checkout
+// (`open`, the sheet's: the native module can't load here), then the API's word on the payment as the event checkout
+// asks it (verify when checkout says paid, the order's status when it closed). Settled paid, the hold is booked on the
+// server already; the free confirm route hands back its code.
+export const PAYS = true;
+export type Opened = { paid: { id: string; signature: string } } | { closed: 'dismissed' | 'failed' };
+/** Booked; nothing taken (`no`: Pay again is safe); or money may have gone (`confirming`: never reopen checkout, keep
+ * the hold, ask the order's status until it settles). */
+export type Paid = { booked: SlotHold } | { no: string } | { confirming: string; orderId: string };
+export async function payForHold(
+  api: Api,
+  hostId: string,
+  claimId: string,
+  open: (o: PayOrder) => Promise<Opened>,
+): Promise<Paid> {
+  const o = await slotsApi(api).pay(hostId, claimId);
+  if (!o.ok) {
+    // Paid already (an earlier try settled): the code is there for the asking.
+    if (o.status === 409 && o.error.error === 'booked') return codeOf(api, hostId, claimId, null);
+    return { no: o.status === 503 && o.error.error === 'paymentsOff' ? PAY_SAYS.off : slotMessage(o.error) };
+  }
+  const got = await open(o.data);
+  const pays = paymentsApi(api);
+  const v = 'paid' in got ? await pays.verify(o.data.orderId, got.paid.id, got.paid.signature) : await pays.status(o.data.orderId);
+  return payWord(api, hostId, claimId, o.data.orderId, v, 'closed' in got ? got.closed : undefined);
+}
+/** The API's word on a slot payment (verify's, or the order's status; `closed`: checkout closed without paying), as
+ * paidNext reads it for tickets, but a paid slot's code comes from the confirm route. */
+export async function payWord(api: Api, hostId: string, claimId: string, orderId: string, v: Result<Verified>, closed?: 'dismissed' | 'failed'): Promise<Paid> {
+  const wait: Paid = { confirming: SLOT_PAID, orderId };
+  if (v.ok && v.data.status === 'paid') return codeOf(api, hostId, claimId, wait);
+  if (v.ok && (v.data.status === 'refundPending' || v.data.status === 'refunded')) return { no: slotRefund(v.data.reason) };
+  const n = paidNext(v, closed);
+  return n.next === 'again' ? { no: n.say } : wait;
+}
+async function codeOf(api: Api, hostId: string, claimId: string, wait: Paid | null): Promise<Paid> {
+  const c = await slotsApi(api).confirm(hostId, claimId);
+  return c.ok ? { booked: c.data } : (wait ?? { no: SLOT_PAID });
+}
+const SLOT_PAID = 'We’re confirming your payment. Your slot shows here within a few minutes.';
+/** Why a slot payment went back with no booking (settle's reason, confirmHold's code). */
+export function slotRefund(reason?: string): string {
+  if (reason === 'full') return 'That time filled up while you were paying. We’ve refunded you in full.';
+  if (reason === 'booked') return 'That slot was already yours, so we’ve refunded this payment in full.';
+  if (reason === 'notHeld' || reason === 'notFound') return 'Your hold ran out before the payment came through. We’ve refunded you in full.';
+  return 'We couldn’t book that slot, so we’ve refunded you in full.';
 }
 
 // What the player reads for each refusal; anything else, the API's own words.
@@ -87,9 +129,10 @@ export function startsFor(s: { step: number; free: readonly { at: string; free: 
 
 // The sheet's hold, as it moves (src/app/slot/[venue].tsx). The countdown runs from when the hold's answer arrived
 // (`heldAt`, the phone's clock) for the API's 10 minutes (hold.ts HOLD_MINUTES = booking.ts HOLD_MS), so a phone clock
-// that's off doesn't cut it short or stretch it. While a call is out (`busy`) a new pick is ignored.
-export type HoldSheet = { held: SlotHold | null; heldAt: number; booked: SlotHold | null; busy: boolean; said: string | null; asked: boolean };
-export const NO_HOLD: HoldSheet = { held: null, heldAt: 0, booked: null, busy: false, said: null, asked: false };
+// that's off doesn't cut it short or stretch it. While a call is out (`busy`) a new pick is ignored; so is one while
+// money may have gone (`paying`, the order being confirmed): the hold stays, never let go, until the API settles it.
+export type HoldSheet = { held: SlotHold | null; heldAt: number; booked: SlotHold | null; busy: boolean; said: string | null; asked: boolean; paying: string | null };
+export const NO_HOLD: HoldSheet = { held: null, heldAt: 0, booked: null, busy: false, said: null, asked: false, paying: null };
 export type HoldStep =
   | { t: 'busy' }
   | { t: 'done' }
@@ -97,6 +140,8 @@ export type HoldStep =
   | { t: 'booked'; hold: SlotHold }
   | { t: 'said'; text: string }
   | { t: 'asked' }
+  | { t: 'paying'; orderId: string }
+  | { t: 'unpaid' }
   | { t: 'pick' }; // a new pick, Let go, or Pick again: back to picking
 export function holdSheet(s: HoldSheet, a: HoldStep): HoldSheet {
   switch (a.t) {
@@ -107,17 +152,23 @@ export function holdSheet(s: HoldSheet, a: HoldStep): HoldSheet {
     case 'held':
       return { ...NO_HOLD, busy: s.busy, held: a.hold, heldAt: a.at };
     case 'booked':
-      return { ...s, booked: a.hold };
+      return { ...s, booked: a.hold, paying: null };
     case 'said':
       return { ...s, said: a.text };
     case 'asked':
       return { ...s, asked: true };
+    case 'paying':
+      return { ...s, paying: a.orderId };
+    case 'unpaid':
+      return { ...s, paying: null };
     case 'pick':
-      return s.busy ? s : NO_HOLD;
+      return s.busy || s.paying ? s : NO_HOLD;
   }
 }
-/** What's left of the hold, in ms (0 once it's run out, or when nothing's held or it's booked). */
-export const holdMsLeft = (s: HoldSheet, now: number) => (s.held && !s.booked ? holdLeft(s.heldAt, now) : 0);
+/** What's left of the hold, in ms (0 once it's run out, or when nothing's held, it's booked or it's being paid for). */
+export const holdMsLeft = (s: HoldSheet, now: number) => (s.held && !s.booked && !s.paying ? holdLeft(s.heldAt, now) : 0);
+/** A hold that ran out unpaid: Pick again. Not while its payment is being confirmed. */
+export const holdLapsed = (s: HoldSheet, now: number) => !!s.held && !s.booked && !s.paying && holdMsLeft(s, now) === 0;
 
 /** The venue page's bar: the cheapest hour across its stations (off-peak where cheaper), and the next start with room. */
 export function venueBar(p: PublicSlots): { fromPaise: number; next: number | null } | null {
