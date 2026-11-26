@@ -45,6 +45,15 @@ export async function liftPerson(_: Done, f: FormData) {
   return run("POST", `/galaxy/people/${path(f, "id")}/lift`, { reason: text(f, "reason") });
 }
 
+// ─── Reports ───
+// The note is optional and only staff see it.
+export async function resolveReport(_: Done, f: FormData) {
+  return run("POST", `/galaxy/reports/${path(f, "id")}/resolve`, { note: text(f, "reason") || undefined });
+}
+export async function dismissReport(_: Done, f: FormData) {
+  return run("POST", `/galaxy/reports/${path(f, "id")}/dismiss`, { note: text(f, "reason") || undefined });
+}
+
 // ─── Hosts ───
 // Verify carries the name staff saw, so the badge can't land on a name nobody checked.
 export async function verifyHost(_: Done, f: FormData) {

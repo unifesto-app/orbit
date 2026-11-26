@@ -18,6 +18,12 @@ export type DashboardStats = {
   hosts?: { total: number; verified: number; week: number; follows: number };
   // Hosts and events: published events still to come, published this week, drafts, cancelled ever.
   events?: { upcoming: number; week: number; drafts: number; cancelled: number };
+  // Hosts and events: confirmed ticket bookings made this week and the week before, and the share of tickets checked
+  // in at events that ended in the last 30 days (as Analytics counts it; null with no tickets).
+  bookings?: { week: number; prevWeek: number; checkInRate: number | null };
+  // Money: what buyers paid this week and the week before (payments that landed, a refund since included), and Orbit's
+  // part this week (buyer fee plus commission). Paise.
+  revenue?: { week: number; prevWeek: number; orbitWeek: number };
   // Staff: people holding at least one started, unended staff feature (the platform owner included).
   staff?: { active: number };
 };
