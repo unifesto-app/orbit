@@ -1,20 +1,22 @@
-// The money rules both host apps share (Money flow, 17 Nov 2026): rupees as they're written, the commission's intro
-// months, the two-part price, and the bank account and amount forms. Station builds a venue's numbers on these per
+// The money rules both host apps share (Money flow; fees per the owner, 25 Nov 2026): rupees as they're written, the
+// fee plans, the two-part price, and the bank account and amount forms. Station builds a venue's numbers on these per
 // booking (src/station/money.ts), Launch a host's per event (src/launch/money.ts). Pure, so money.test.ts runs on Node.
-// - Two parts on every paid sale: a 4% buyer fee with no cap, on top of the price, or carved out of it (price × 4 ÷ 104)
-//   where staff set the host to include it; and the host's commission out of its sales, on what's left after an
-//   included fee (decision 19). A refund hands the commission back; an included fee stays the host's cost and the buyer
-//   gets the whole price (decision 13). Amounts round half up to the paisa.
-// - The commission: 0% for the first 3 months from onboarding, half the rate for the next 3, then the rate (5% to 7%).
-//   A month turns at 00:00 India time on the onboarding day of the month, or the month's last day when it's shorter.
+// - Each host picks one of two fee plans, from day one with no intro months: 3% from the buyer + 2% commission from the
+//   host, or 5% from the buyer + 0% from the host. With the fee on top Orbit keeps ₹60 on ₹1,200 either way; with it
+//   included a little less (₹58.25 on 3+2, ₹57.14 on 5+0).
+// - Two parts on every paid sale: the plan's buyer fee with no cap, on top of the price, or carved out of it
+//   (price × b ÷ (1 + b)) where staff set the host to include it; and the plan's commission out of the host's sales, on
+//   what's left after an included fee (decision 19). A refund hands the commission back; an included fee stays the
+//   host's cost and the buyer gets the whole price (decision 13). Amounts round half up to the paisa.
 // - A bank account (holder, 9 to 18 digits and an IFSC, or a UPI ID) starts Checking for 72 hours; staff check it by
 //   hand, with no penny drop.
-// ponytail: the server works all of this out, with the rates frozen per sale, once the money API lands.
+// ponytail: the server works all of this out, with the plan frozen per sale, once the money API lands.
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
-const IST = 330 * MIN; // +05:30, all year
-export const FEE = 0.04;
+/** The two fee plans as shares: what the buyer pays on top, and Orbit's commission from the host. */
+export const PLANS = { '3+2': { buyer: 0.03, host: 0.02 }, '5+0': { buyer: 0.05, host: 0 } } as const;
+export type Plan = keyof typeof PLANS;
 
 // "₹0", "₹11,063" or "₹49.50": paise only when there are some, and nothing is ever "Free" here.
 // ponytail: @orbit/contract's formatPrice says "Free" for 0; use it once the host apps read the API's shapes.
@@ -26,31 +28,14 @@ export const rupees = (paise: number) => (paise % 100 ? withPaise : whole).forma
 /** A rate as a share, read as a percent: 0.065 → "6.5%", 0.0325 → "3.25%". */
 export const percent = (rate: number) => `${+(rate * 100).toFixed(2)}%`;
 
-/** Midnight in India, `k` calendar months after `start`'s day: the same day of the month, or the month's last. */
-export function monthsAfter(start: number, k: number): number {
-  const d = new Date(start + IST);
-  const y = d.getUTCFullYear();
-  const m = d.getUTCMonth() + k;
-  const last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
-  return Date.UTC(y, m, Math.min(d.getUTCDate(), last)) - IST;
-}
-/** Which of its months a host is in at `at`: 1 from its onboarding day (and before it). */
-export function monthOf(onboarded: number, at: number): number {
-  let k = 0;
-  while (monthsAfter(onboarded, k + 1) <= at) k += 1;
-  return k + 1;
-}
-/** The commission in a host's `month`: nothing for 3 months, half its `rate` for 3, then its rate, in the rate's own unit
- * (Station passes a share, 0.07; Launch a percent, 7). */
-export const introRate = (rate: number, month: number) => (month <= 3 ? 0 : month <= 6 ? rate / 2 : rate);
-
 /**
- * One sale's two parts at commission `rate`, a share (0.07, never a percent like 7): what the buyer pays, the fee the host included (else 0),
- * the commission (on what's left after an included fee), what went back on a refund, and the host's earnings.
+ * One sale's two parts on fee `plan`: what the buyer pays, the buyer fee, the part of it the host included (else 0), the
+ * commission (on what's left after an included fee), what went back on a refund, and the host's earnings.
  */
-export function twoPart(price: number, rate: number, feeIncluded: boolean, refunded = false) {
-  const fee = Math.round(feeIncluded ? (price * 4) / 104 : price * FEE);
-  const commission = refunded ? 0 : Math.round((feeIncluded ? price - fee : price) * rate);
+export function twoPart(price: number, plan: Plan, feeIncluded: boolean, refunded = false) {
+  const { buyer, host } = PLANS[plan];
+  const fee = Math.round(feeIncluded ? (price * buyer) / (1 + buyer) : price * buyer);
+  const commission = refunded ? 0 : Math.round((feeIncluded ? price - fee : price) * host);
   const included = feeIncluded ? fee : 0; // the host's cost even when the price goes back
   const back = refunded ? price : 0;
   return { buyerPays: feeIncluded ? price : price + fee, fee, included, commission, refunded: back, earnings: price - commission - included - back };

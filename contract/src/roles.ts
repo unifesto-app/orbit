@@ -8,20 +8,6 @@ export const STAFF_FEATURES = ["people", "hosts", "queues", "money", "platform",
 export const StaffFeature = z.enum(STAFF_FEATURES);
 export type StaffFeature = z.infer<typeof StaffFeature>;
 
-// Only roles that have started: an invite not yet accepted, or an Admin not yet confirmed, adds nothing.
-export const Team = z.object({
-  hostId: z.string(),
-  owner: z.boolean(),
-  admin: z.boolean(),
-  desk: z.boolean(), // a Venue's counter seat: role crew with no event (Play: At the desk)
-  events: z.record(z.string(), z.enum(["Curator", "Co-curator", "Crew"])), // empty until events exist
-});
-export type Team = z.infer<typeof Team>;
-export const Staff = z.object({ owner: z.boolean(), features: z.array(StaffFeature), confirmed: z.boolean() });
-export type Staff = z.infer<typeof Staff>;
-export const Roles = z.object({ teams: z.array(Team), staff: Staff.nullable() });
-export type Roles = z.infer<typeof Roles>;
-
 // Hosts (Orbit flows: Hosts, "Becoming a host"): start one with a name, a kind and a city from the city list.
 export const HOST_KINDS = {
   "college-club": "College club",
@@ -35,6 +21,22 @@ export const HOST_KINDS = {
   other: "Other",
 } as const;
 export const HostKind = z.enum(Object.keys(HOST_KINDS) as [keyof typeof HOST_KINDS, ...(keyof typeof HOST_KINDS)[]]);
+
+// Only roles that have started: an invite not yet accepted, or an Admin not yet confirmed, adds nothing.
+export const Team = z.object({
+  hostId: z.string(),
+  kind: z.string(), // a HostKind; plain text so an older app still reads a kind added later
+  name: z.string(),
+  owner: z.boolean(),
+  admin: z.boolean(),
+  desk: z.boolean(), // a Venue's counter seat: role crew with no event (Play: At the desk)
+  events: z.record(z.string(), z.enum(["Curator", "Co-curator", "Crew"])), // empty until events exist
+});
+export type Team = z.infer<typeof Team>;
+export const Staff = z.object({ owner: z.boolean(), features: z.array(StaffFeature), confirmed: z.boolean() });
+export type Staff = z.infer<typeof Staff>;
+export const Roles = z.object({ teams: z.array(Team), staff: Staff.nullable() });
+export type Roles = z.infer<typeof Roles>;
 
 // POST /hosts
 export const CityName = z.string().refine((c) => allCities.some((x) => x.name === c), "Pick a city from the list");

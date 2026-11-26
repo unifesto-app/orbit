@@ -53,7 +53,7 @@ test("start a host", async () => {
   for (const b of bad) assert.equal((await as(a)("POST", "/hosts", { name: "X", ...b })).status, 400);
   const h = await startHost(a);
   assert.match(h.slug, /^punchline-collective-[0-9a-f]{6}$/);
-  assert.deepEqual((await me(a)).teams, [{ hostId: h.id, owner: true, admin: true, desk: false, events: {} }]);
+  assert.deepEqual((await me(a)).teams, [{ hostId: h.id, kind: "comedy-group", name: "Punchline Collective", owner: true, admin: true, desk: false, events: {} }]);
   for (let i = 0; i < 4; i++) assert.equal((await as(a)("POST", "/hosts", { name: "More", kind: "other", city: "Hyderabad" })).status, 201);
   const r = await as(a)("POST", "/hosts", { name: "Sixth", kind: "other", city: "Hyderabad" });
   assert.equal(r.status, 429);
@@ -72,7 +72,7 @@ test("admin invite by phone: accept, then confirm", async () => {
   assert.deepEqual((await me(b)).teams, []);
   assert.ok(t.notices.some((x) => x.kind === "teamAccepted" && (x.to as any).userId === a.me.id));
   assert.equal((await as(a)("POST", `/hosts/${h.id}/team/${inv.body.id}/confirm`)).status, 200);
-  assert.deepEqual((await me(b)).teams, [{ hostId: h.id, owner: false, admin: true, desk: false, events: {} }]);
+  assert.deepEqual((await me(b)).teams, [{ hostId: h.id, kind: "comedy-group", name: "Punchline Collective", owner: false, admin: true, desk: false, events: {} }]);
 });
 
 test("invite responses don't reveal accounts", async () => {

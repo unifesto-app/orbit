@@ -1,4 +1,4 @@
-// Signed in to Orbit Launch and on no host yet (sign-in take, approved 22 Nov 2026: the "no host yet" board): invites
+// Signed in to Orbit Launch and on no host yet, or to Play Partner on no venue's team (no Host on Orbit there) (sign-in take, approved 22 Nov 2026: the "no host yet" board): invites
 // waiting for this account, read from the API (GET /me/invites) and accepted there (POST /invites/:id/accept); then
 // Host on Orbit, the Event Request (Hosts flow, Becoming a host); then which number and email to give a host; and Sign
 // out. An accepted Admin role starts once whoever added you confirms it's you, so it shows as waiting until then.
@@ -9,17 +9,23 @@ import { markOf } from '@orbit/mobile/mark';
 import { useLoad } from '@orbit/mobile/load';
 import { showPhone } from '@orbit/mobile/signin';
 import { color, font, space } from '@orbit/mobile/theme';
+import { Redirect } from 'expo-router';
 import { useState } from 'react';
 import { Image, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Monogram, Note, Pill, Section, styles as ui } from '../launch/ui';
 import { api, refreshMe, signOut, useSession } from '../session';
-import { thisApp } from '../variant';
+import { seats } from '../station/seats';
+import { isStation, thisApp } from '../variant';
 
-const ICON = require('../../assets/icons/launch.png');
-type Invite = { id: string; hostId: string; hostName: string; role: 'admin'; accepted: boolean };
-const ROLE = { admin: 'Admin' } as const;
+const ICON = {
+  launch: require('../../assets/icons/launch.png'),
+  station: require('../../assets/icons/station.png'),
+  crew: require('../../assets/icons/crew.png'),
+}[thisApp.word]; // static requires, for Metro
+type Invite = { id: string; hostId: string; hostName: string; role: 'admin' | 'crew'; accepted: boolean };
+const ROLE = { admin: 'Admin', crew: isStation ? 'Desk' : 'Crew' } as const;
 // "Sat 20 Dec", the day an account's deletion is due, in India time.
 const dayOf = (iso: string) => new Date(iso).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' });
 
@@ -32,6 +38,7 @@ export default function Welcome() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   if (!me) return null;
+  if (isStation && seats(me).length) return <Redirect href="/today" />; // an accepted seat opens Today
 
   const first = me.name?.trim().split(/\s+/)[0];
   const waiting = (invites.data ?? []).filter((i) => !hidden.has(i.id));
@@ -71,7 +78,9 @@ export default function Welcome() {
         {first ? `Hi, ${first}` : 'Hi'}
       </Text>
       <Text style={styles.line}>
-        {onTeams
+        {isStation
+          ? 'You’re not on a venue’s team yet. Accept an invite from a venue’s Admin.'
+          : onTeams
           ? `You’re on ${onTeams === 1 ? 'a host' : `${onTeams} hosts`}. Your events come here next.`
           : 'You’re not on a host yet. Accept an invite, or start your own.'}
       </Text>
@@ -104,14 +113,18 @@ export default function Welcome() {
       {invites.error && <Note>{invites.error.message}</Note>}
       {error && <Note>{error}</Note>}
 
-      <Section title="Host on Orbit" />
-      <View style={[ui.card, styles.invite]}>
-        <Text style={styles.cardLine}>Tell us about you and your first event. Orbit checks it, usually within a day, and you’re live.</Text>
-        <View style={[styles.pills, styles.soon]} accessibilityState={{ disabled: true }}>
-          <Pill label="Start a request" />
-        </View>
-      </View>
-      {contacts ? <Note>{`Expecting an invite? Ask your host to add ${contacts}.`}</Note> : null}
+      {!isStation && (
+        <>
+          <Section title="Host on Orbit" />
+          <View style={[ui.card, styles.invite]}>
+            <Text style={styles.cardLine}>Tell us about you and your first event. Orbit checks it, usually within a day, and you’re live.</Text>
+            <View style={[styles.pills, styles.soon]} accessibilityState={{ disabled: true }}>
+              <Pill label="Start a request" />
+            </View>
+          </View>
+        </>
+      )}
+      {contacts ? <Note>{`Expecting an invite? Ask ${isStation ? 'the venue' : 'your host'} to add ${contacts}.`}</Note> : null}
 
       <View style={styles.foot}>
         <Pill label="Sign out" onPress={signOut} />

@@ -8,15 +8,19 @@
 //   bookings fall outside them;
 // - invites: Desk starts on Accept and never ends on its own; an Admin starts once you confirm it's them; 14 days.
 // Cancelling and refunding a booking by hand is on the web Console (Play: Admins refund a slot by hand). Admins only.
-// ponytail: a station's 4:3 photo waits for uploads, and a new kind for the slots API's own ids and approval.
+// Signed in (S5) each save goes to the API and the sheet stays up until it answers: a refusal (a 409 naming the bookings
+// in the way, a field the contract refuses, no answer) shows here, a success closes it. The API checks bookings in the
+// way itself, so the mock day's checks run in the demo only. Signed in there's also the first setup (`first`), a kind's
+// Archive, and confirming an accepted Admin.
+// ponytail: a station's 4:3 photo waits for uploads.
 import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Text, TextInput, View } from 'react-native';
 
 import { hourWord, outside, stranded } from '../station/day';
-import { useStation } from '../station/state';
+import { useVenue } from '../station/state';
 import { Chip, close, Pill, Round, Sheet, SheetSays, Stepper, styles as ui } from '../station/ui';
-import { contactOk, hoursOk, inTheWay, type KindForm, kindFrom } from '../station/venue';
+import { contactOk, hoursOk, inTheWay, type KindForm, kindFrom, pinFrom } from '../station/venue';
 import { range, what as whatOf } from '../station/words';
 import { variants } from '../../variants';
 
@@ -26,15 +30,25 @@ const phoneOk = (text: string) => /^\+?[\d\s-]+$/.test(text.trim()) && contactOk
 
 export default function Setup() {
   const p = useLocalSearchParams<{ what: string; type?: string; dow?: string; name?: string; contact?: string; role?: string; key?: string }>();
-  const { role, venue: v, setup: s, claims, now, hours, saveKind, changeSetup } = useStation();
+  const st = useVenue();
+  const { role, venue: v, setup: s, claims, now, hours, load } = st;
+  const live = !!load; // signed in: the API's venue
   const done = useRef(false);
+  const up = useRef(true); // swiped away mid-write: a refusal goes to the Venue tab
+  useEffect(() => () => void (up.current = false), []);
+  const [busy, setBusy] = useState(false);
+  const [arming, setArming] = useState(false); // Archive's first tap; a second within 3 seconds archives
+  useEffect(() => {
+    if (!arming) return;
+    const t = setTimeout(() => setArming(false), 3000);
+    return () => clearTimeout(t);
+  }, [arming]);
   const [why, setWhy] = useState<string>();
-  // The person or invite as the sheet opened, so it never turns into the next one while it closes.
-  const [who] = useState(() => (p.name ? s.team.find((m) => m.name === p.name) : undefined));
-  const [invite] = useState(() => (p.contact ? s.invites.find((x) => x.contact === p.contact) : undefined));
+  // The person or invite as the sheet opened, so it never turns into the next one while it closes. Signed in, by seat id.
+  const [who] = useState(() => (p.name ? s?.team.find((m) => (m.id ?? m.name) === p.name) : undefined));
+  const [invite] = useState(() => (p.contact ? s?.invites.find((x) => (x.id ?? x.contact) === p.contact) : undefined));
   const t = p.type ? v.types.find((x) => x.id === p.type) : undefined;
-  const gaming = !v.types[0]?.whole;
-  const day = p.dow !== undefined ? s.week[Number(p.dow)] : null;
+  const day = p.dow !== undefined ? s?.week[Number(p.dow)] : null;
   // The form, from what's there now. One state object, so each mode keeps its own fields.
   const [f, setF] = useState(() => ({
     name: t?.name ?? '',
@@ -48,13 +62,20 @@ export default function Setup() {
     opPrice: rupeeText(t?.offPeak?.price),
     games: t?.games ?? '',
     open: day ? 'yes' : 'no',
-    from: day?.[0] ?? v.open[0], // a day that opens at midnight keeps its 0
-    to: day?.[1] ?? v.open[1],
-    cutoff: s.cutoff / 60,
+    from: p.what === 'first' ? 10 : (day?.[0] ?? v.open[0]), // a day that opens at midnight keeps its 0
+    to: p.what === 'first' ? 22 : (day?.[1] ?? v.open[1]),
+    cutoff: (s?.cutoff ?? 120) / 60,
     role: p.role ?? 'Desk',
     contact: '',
-    value: p.key === 'address' ? s.address : p.key === 'deskPhone' ? s.deskPhone : '',
+    value: p.key === 'address' ? (s?.address ?? '') : p.key === 'deskPhone' ? (s?.deskPhone ?? '') : '',
+    // A first kind says which it is; the first setup and the Place sheet's other fields.
+    tile: v.types[0]?.whole ? 'sports' : 'gaming',
+    area: s?.area ?? '',
+    pin: s?.pin ? `${s.pin.lat}, ${s.pin.lng}` : '',
+    phone: '',
   }));
+  // A pitch or court is booked whole: a kind keeps what it is; a new one says (starting as the venue's first kind).
+  const gaming = t ? !t.whole : f.tile === 'gaming';
   const set = (k: keyof typeof f, val: string | number) => {
     setWhy(undefined);
     setF((x) => ({ ...x, [k]: val }));
@@ -65,15 +86,21 @@ export default function Setup() {
   useEffect(() => {
     if (why) AccessibilityInfo.announceForAccessibility(why); // a refusal is heard, not only seen
   }, [why]);
-  if (role !== 'admin') return null;
+  if (role !== 'admin' || (!s && p.what !== 'first')) return null;
 
-  const finish = (f2: () => void) => {
+  // One save at a time; the sheet closes once it went in, and says why when it didn't.
+  const finish = async (run: () => Promise<string | null>) => {
     if (done.current) return;
     done.current = true;
-    f2();
-    close();
+    setBusy(true);
+    const line = await run();
+    done.current = false;
+    if (!up.current) return void (line && st.tell(line)); // already closed: nothing to close, the tab says it
+    setBusy(false);
+    if (line) setWhy(line);
+    else close();
   };
-  const input = (k: 'name' | 'unit' | 'price' | 'coop' | 'opPrice' | 'games' | 'contact' | 'value', label: string, placeholder: string, numeric = false) => (
+  const input = (k: 'name' | 'unit' | 'price' | 'coop' | 'opPrice' | 'games' | 'contact' | 'value' | 'area' | 'pin' | 'phone', label: string, placeholder: string, numeric = false) => (
     <View style={ui.field}>
       <Text style={ui.label}>{label}</Text>
       <TextInput
@@ -81,15 +108,15 @@ export default function Setup() {
         onChangeText={(x) => set(k, x)}
         placeholder={placeholder}
         placeholderTextColor={ui.label.color}
-        keyboardType={numeric ? 'number-pad' : k === 'contact' ? 'email-address' : 'default'}
-        autoCapitalize={k === 'contact' ? 'none' : 'sentences'}
+        keyboardType={numeric ? 'number-pad' : k === 'contact' ? 'email-address' : k === 'phone' ? 'phone-pad' : 'default'}
+        autoCapitalize={k === 'contact' || k === 'pin' ? 'none' : 'sentences'}
         autoCorrect={false}
         accessibilityLabel={label}
         style={ui.input}
       />
     </View>
   );
-  const chips = (k: 'op' | 'open' | 'cutoff' | 'role', opts: [string | number, string][]) => (
+  const chips = (k: 'op' | 'open' | 'cutoff' | 'role' | 'tile', opts: [string | number, string][]) => (
     <View style={ui.chips}>
       {opts.map(([val, label]) => (
         <Chip key={String(val)} label={label} on={f[k] === val} onPress={() => set(k, val)} />
@@ -115,11 +142,16 @@ export default function Setup() {
     const offTo = Math.min(v.open[1], 24);
     return (
       <Sheet title={t ? t.name : 'Add a kind'} note={gaming ? 'Starts every 30 minutes, each one on its own · Orbit sets these' : 'Booked whole, starting on the hour · Orbit sets these'}>
+        {!t &&
+          chips('tile', [
+            ['gaming', 'Gaming'],
+            ['sports', 'Sports'],
+          ])}
         {input('name', 'Name', gaming ? 'Gaming PC' : '5-a-side football')}
         {!t && input('unit', 'What one is called', gaming ? 'PC' : 'pitch')}
         <View style={ui.frow}>
           <Text style={ui.label}>How many</Text>
-          <Stepper n={f.count} min={1} max={60} onChange={(n) => set('count', n)} label={t?.unit[1] ?? 'of them'} />
+          <Stepper n={f.count} min={1} max={200} onChange={(n) => set('count', n)} label={t?.unit[1] ?? 'of them'} />
         </View>
         {input('price', 'Price an hour, ₹', '162', true)}
         {gaming && input('coop', 'Co-op price an hour for two, ₹ (optional)', 'None', true)}
@@ -148,17 +180,26 @@ export default function Setup() {
         <Pill
           wide
           label={t ? 'Save' : 'Add'}
+          disabled={busy}
           onPress={() => {
             const made = kindFrom(f, t, v.open, gaming, `k${Date.now()}`);
             if ('why' in made) return setWhy(made.why);
-            if (t) {
+            if (t && !live) {
               const inWay = stranded(claims, t, f.count, now);
               if (inWay.length)
                 return setWhy(`${inWay.length} booking${inWay.length > 1 ? 's' : ''} need more than ${f.count}: ${blocked(inWay)}. Cancel and refund ${them(inWay.length)} on the web Console first, or keep ${t.count}.`);
             }
-            finish(() => saveKind(made.kind));
+            void finish(() => st.saveKind(made.kind, gaming ? 'gaming' : 'sports'));
           }}
         />
+        {live && t && (
+          <Pill
+            wide
+            label={arming ? 'Archive? Tap again' : `Archive ${t.name}`}
+            disabled={busy}
+            onPress={() => (arming ? void finish(() => st.archiveKind(t.id)) : setArming(true))}
+          />
+        )}
       </Sheet>
     );
   }
@@ -182,15 +223,16 @@ export default function Setup() {
         <Pill
           wide
           label="Save"
+          disabled={busy}
           onPress={() => {
             const open: [number, number] | null = f.open === 'yes' ? [f.from, f.to] : null;
             if (open && !hoursOk(open)) return setWhy('It opens before it closes, for a day at most, closing by 6 AM.');
-            if (dow === today) {
+            if (dow === today && !live) {
               const inWay = outside(claims, hours.day, open, now);
               if (inWay.length)
                 return setWhy(`${inWay.length} booking${inWay.length > 1 ? 's' : ''} today would be left outside: ${blocked(inWay)}. Cancel and refund ${inWay.length > 1 ? 'them' : 'it'} on the web Console first.`);
             }
-            finish(() => changeSetup((x) => ({ ...x, week: x.week.map((w, i) => (i === dow ? open : w)) })));
+            void finish(() => st.changeSetup((x) => ({ ...x, week: x.week.map((w, i) => (i === dow ? open : w)) })));
           }}
         />
       </Sheet>
@@ -199,7 +241,7 @@ export default function Setup() {
 
   if (p.what === 'cutoff') {
     return (
-      <Sheet title="Players can cancel" note="Their price back, the 4% fee kept">
+      <Sheet title="Players can cancel" note="Their price back, the buyer fee kept">
         {chips('cutoff', [
           [1, '1 hour before'],
           [2, '2 hours'],
@@ -208,7 +250,8 @@ export default function Setup() {
           [24, 'A day'],
         ])}
         <SheetSays text="After that the ticket says it starts too soon to cancel; you can still refund by hand from the booking on the web Console." />
-        <Pill wide label="Save" onPress={() => finish(() => changeSetup((x) => ({ ...x, cutoff: Number(f.cutoff) * 60 })))} />
+        {why && <SheetSays text={why} />}
+        <Pill wide label="Save" disabled={busy} onPress={() => void finish(() => st.changeSetup((x) => ({ ...x, cutoff: Math.round(Number(f.cutoff) * 60) })))} />
       </Sheet>
     );
   }
@@ -233,12 +276,13 @@ export default function Setup() {
         <Pill
           wide
           label="Send invite"
+          disabled={busy}
           onPress={() => {
             const contact = f.contact.trim();
             if (!contactOk(contact)) return setWhy('A phone number or an email, please.');
             const key = contact.replace(/[\s-]/g, '').toLowerCase();
-            if (s.invites.some((x) => x.contact.replace(/[\s-]/g, '').toLowerCase() === key)) return setWhy('They’re invited already.');
-            finish(() => changeSetup((x) => ({ ...x, invites: [...x.invites, { contact, role: desk ? 'Desk' : 'Admin', sent: Date.now() }] })));
+            if (s!.invites.some((x) => x.contact.replace(/[\s-]/g, '').toLowerCase() === key)) return setWhy('They’re invited already.');
+            void finish(() => st.invite(contact, desk ? 'Desk' : 'Admin'));
           }}
         />
       </Sheet>
@@ -250,7 +294,8 @@ export default function Setup() {
     return (
       <Sheet title={who.name} note={who.role}>
         <SheetSays text={`Removing ${who.name} ends their ${who.role === 'Desk' ? 'counter' : 'Admin'} role at once.`} />
-        <Pill wide label={`Remove ${who.name}`} onPress={() => finish(() => changeSetup((x) => ({ ...x, team: x.team.filter((y) => y.name !== who.name) })))} />
+        {why && <SheetSays text={why} />}
+        <Pill wide label={`Remove ${who.name}`} disabled={busy} onPress={() => void finish(() => st.endSeat({ id: who.id, name: who.name }))} />
       </Sheet>
     );
   }
@@ -258,9 +303,19 @@ export default function Setup() {
   if (p.what === 'invite') {
     if (!invite) return null;
     return (
-      <Sheet title={invite.contact} note={`Invited as ${invite.role}`}>
-        <SheetSays text="It ends by itself after 14 days if they don’t accept." />
-        <Pill wide label="Withdraw invite" onPress={() => finish(() => changeSetup((y) => ({ ...y, invites: y.invites.filter((z) => z.contact !== invite.contact) })))} />
+      <Sheet title={invite.contact} note={invite.role ? `Invited as ${invite.role}` : invite.accepted ? `Accepted by ${invite.acceptedBy ?? 'them'}` : 'Invited'}>
+        <SheetSays
+          text={
+            !invite.accepted
+              ? 'It ends by itself after 14 days if they don’t accept.'
+              : invite.byYou
+                ? 'Their Admin role starts once you confirm it’s them.'
+                : `${invite.adder ?? 'The Admin who added them'} confirms it.` // only the adder can (confirmSeatRule)
+          }
+        />
+        {why && <SheetSays text={why} />}
+        {invite.accepted && invite.byYou && invite.id && <Pill wide label="Confirm it’s them" disabled={busy} onPress={() => void finish(() => st.confirmSeat(invite.id!))} />}
+        <Pill wide label="Withdraw invite" disabled={busy} onPress={() => void finish(() => st.endSeat({ id: invite.id, contact: invite.contact }))} />
       </Sheet>
     );
   }
@@ -270,15 +325,69 @@ export default function Setup() {
     return (
       <Sheet title={key === 'address' ? 'Place' : 'Desk phone'} note={key === 'address' ? 'Where people come to play' : 'For players who call the counter'}>
         {input('value', key === 'address' ? 'Address' : 'Phone', '')}
-        {key === 'address' && <SheetSays text="The map pin moves with it once the place search is in; events whose Where matches can ask to be at your venue." />}
+        {live && key === 'address' && (
+          <>
+            {input('area', 'Area', 'Gachibowli')}
+            {input('pin', 'Map pin', '17.4401, 78.3489')}
+          </>
+        )}
+        {key === 'address' && (
+          <SheetSays
+            text={
+              live
+                ? 'For the map pin, press and hold your entrance in Google Maps and paste the numbers it shows. Events whose Where matches can ask to be at your venue.'
+                : 'The map pin moves with it once the place search is in; events whose Where matches can ask to be at your venue.'
+            }
+          />
+        )}
         {why && <SheetSays text={why} />}
         <Pill
           wide
           label="Save"
+          disabled={busy}
           onPress={() => {
             if (!f.value.trim()) return setWhy(key === 'address' ? 'Where is it?' : 'A phone number, please.');
             if (key === 'deskPhone' && !phoneOk(f.value)) return setWhy('A phone number, please.');
-            finish(() => changeSetup((x) => ({ ...x, [key]: f.value.trim() })));
+            if (live && key === 'address') {
+              const pin = pinFrom(f.pin);
+              if (!f.area.trim()) return setWhy('Which area is it in?');
+              if (!pin) return setWhy('Paste the map pin from Google Maps, like 17.4401, 78.3489.');
+              return void finish(() => st.changeSetup((x) => ({ ...x, address: f.value.trim(), area: f.area.trim(), pin: { ...pin, placeId: x.pin?.placeId ?? null } })));
+            }
+            void finish(() => st.changeSetup((x) => ({ ...x, [key]: f.value.trim() })));
+          }}
+        />
+      </Sheet>
+    );
+  }
+  if (p.what === 'first' && live && !s) {
+    // Signed in, a venue with no setup yet: where it is, the desk phone, and one opening for every day (each day can be
+    // changed after). Cancelling up to 2 hours before and no walk-in count, as the API starts them.
+    return (
+      <Sheet title="Set up the venue" note={v.name}>
+        {input('value', 'Address', 'Above Inorbit Mall entrance, Gachibowli, Hyderabad')}
+        {input('area', 'Area', 'Gachibowli')}
+        {input('pin', 'Map pin', '17.4401, 78.3489')}
+        <SheetSays text="For the map pin, press and hold your entrance in Google Maps and paste the numbers it shows." />
+        {input('phone', 'Desk phone', '+91 90000 11001')}
+        {hour('from', 'Opens every day', 0, Math.min(f.to - 1, 23))}
+        {hour('to', 'Closes', f.from + 1, Math.min(f.from + 24, 30))}
+        {why && <SheetSays text={why} />}
+        <Pill
+          wide
+          label="Save"
+          disabled={busy}
+          onPress={() => {
+            const pin = pinFrom(f.pin);
+            if (!f.value.trim()) return setWhy('Where is it?');
+            if (!f.area.trim()) return setWhy('Which area is it in?');
+            if (!pin) return setWhy('Paste the map pin from Google Maps, like 17.4401, 78.3489.');
+            if (!phoneOk(f.phone)) return setWhy('A desk phone number, please.');
+            const open: [number, number] = [f.from, f.to];
+            if (!hoursOk(open)) return setWhy('It opens before it closes, for a day at most, closing by 6 AM.');
+            void finish(() =>
+              st.firstSetup({ address: f.value.trim(), area: f.area.trim(), ...pin, placeId: null, deskPhone: f.phone.trim(), week: Array.from({ length: 7 }, () => open), cutoffMinutes: 120, logsWalkIns: false }),
+            );
           }}
         />
       </Sheet>

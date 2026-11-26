@@ -13,6 +13,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, Image, LayoutAnimation, Platform, Pressable, StyleSheet, Text, useWindowDimensions } from 'react-native';
 import { SafeAreaInsetsContext, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useSession } from '../../session';
 import { useStation } from '../../station/state';
 import { isStation } from '../../variant';
 
@@ -26,12 +27,13 @@ const TABS = [
 ] as const;
 
 export default function StationTabs() {
-  if (!isStation) return <Redirect href="/" />;
+  const session = useSession();
+  if (!isStation || !session) return <Redirect href="/" />;
   return <Bar />;
 }
 
 function Bar() {
-  const { role } = useStation();
+  const { role, seats } = useStation();
   const desk = role === 'desk';
   const path = usePathname();
   const insets = useSafeAreaInsets();
@@ -45,6 +47,7 @@ function Bar() {
   useEffect(() => {
     Animated.spring(x, { toValue: open * slot, useNativeDriver: true, speed: 18, bounciness: 6 }).start();
   }, [open, slot, x]);
+  if (seats?.length === 0) return <Redirect href="/" />; // signed in on no venue: the invites screen
   if (desk && (path === '/money' || path === '/venue')) return <Redirect href="/today" />;
   return (
     <Tabs style={styles.root}>
@@ -66,7 +69,8 @@ function Bar() {
           ))}
         </Glass>
       </TabList>
-      {desk ? (
+      {/* Scan is the demo's only for now (the app's layout guards it). */}
+      {seats ? null : desk ? (
         <Pressable onPress={() => router.push('/scan')} accessibilityRole="button" style={({ pressed }) => [styles.deskScan, { bottom }, pressed && styles.pressed]}>
           <Glass tint={DARK} style={styles.deskFace}>
             <Image source={SCAN} style={styles.plain} />

@@ -1,8 +1,7 @@
 // Money, Orbit Launch's second tab (route `earnings`: Station has `/money`). Money take 1, approved 22 Nov 2026
 // (https://claude.ai/artifact/BwnBQDW2N2hpihmrSSTnsg), from the Money flow doc's Sales, commission and payouts:
 // - Available, big, with how much of it can be asked for now (a payout opens 3 days after an event's scheduled end);
-// - the commission clock: today's rate and intro month, then the changes still to come (0% for 3 months, half for 3,
-//   then the host's rate, 5% to 7%); a sale keeps the rate of the day it's sold;
+// - the host's fee plan (3% from buyers + 2% from the host, or 5% + 0%; owner, 25 Nov 2026);
 // - the host's numbers across all events (Ticket sales, Commission, Buyer fee you included where it does, Refunded,
 //   Your earnings, Paid out, Available), the same as on the web Console;
 // - each event, newest first, with its earnings and its payout: when it opens, Request ₹X, or what was paid out;
@@ -14,12 +13,11 @@ import { color, font, space } from '@orbit/mobile/theme';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { bank, commissionTerms, events, host, now, salesOf } from '../../launch/data';
+import { bank, events, feePlan, host, now, salesOf } from '../../launch/data';
 import { dayWord, startsToday } from '../../launch/day';
 import {
   type Sales,
   available,
-  commission,
   dayLabel,
   earnings,
   momentLabel,
@@ -29,10 +27,11 @@ import {
   rupees,
   total,
 } from '../../launch/money';
+import { PLANS, percent } from '../../money';
 import { Card, EventCard, Glow, HostHead, Note, Pill, Row, Section, styles as ui } from '../../launch/ui';
 
 const date = (when: string) => when.split(' · ')[0]; // "Fri 20 Nov"
-const pct = (n: number) => `${n}%`;
+const fees = PLANS[feePlan];
 
 export default function Money() {
   const insets = useSafeAreaInsets();
@@ -45,13 +44,12 @@ export default function Money() {
       return s ? [{ e, s }] : [];
     });
   const all = mine.map((m) => m.s);
-  const clock = commission(commissionTerms.onboarded, commissionTerms.ratePct, now);
   const ready = readyNow(all, now);
   const included = all.some((s) => s.feeBy === 'host');
   const held = total(all, (s) => s.openRefundsPaise);
   const waiting = total(all, (s) => s.refundsWaiting);
   const notes = [
-    included ? undefined : 'Buyers pay the 4% fee on top, so it isn’t in your numbers.',
+    included ? undefined : `Buyers pay the ${percent(fees.buyer)} fee on top, so it isn’t in your numbers.`,
     held > 0 ? `${rupees(held)} is held for ${waiting > 1 ? `${waiting} refund requests` : 'a refund request'}.` : undefined,
   ].filter(Boolean);
 
@@ -72,15 +70,11 @@ export default function Money() {
           </View>
         )}
 
-        {/* The clock shows before the first sale too: that's when the 0% months matter most. */}
+        {/* The plan shows before the first sale too: the host should know what a ticket costs it. */}
         <Section title="Commission" />
         <Card>
-          <Row label="Now" value={clock.month <= 3 ? `0% · intro, month ${clock.month} of 3` : clock.month <= 6 ? `${pct(clock.pct)} · half, month ${clock.month - 3} of 3` : pct(clock.pct)} />
-          {clock.next.map((c) => (
-            <Row key={c.from} label={`From ${dayLabel(c.from)}`} value={c.pct < commissionTerms.ratePct ? `${pct(c.pct)} · half` : pct(c.pct)} />
-          ))}
+          <Row label="Fee plan" value={`${percent(fees.buyer)} from buyers + ${percent(fees.host)} from you`} />
         </Card>
-        <Note>A sale keeps the rate of the day it’s sold. We’ll remind you a week before each change.</Note>
 
         {all.length > 0 && (
           <>

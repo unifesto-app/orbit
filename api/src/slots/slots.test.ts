@@ -194,7 +194,7 @@ test("desk runs the counter but sees no setup or price", async () => {
       for (const [m, p, b] of calls) assert.equal((await x(m, p, b)).status, 404, `${u.name} ${m} ${p}`);
     }
 
-    assert.deepEqual((await as(desk)("GET", "/me")).body.teams, [{ hostId: A, owner: false, admin: false, desk: true, events: {} }]);
+    assert.deepEqual((await as(desk)("GET", "/me")).body.teams, [{ hostId: A, kind: "venue", name: "Pixel Lounge", owner: false, admin: false, desk: true, events: {} }]);
     const bad = await as(admin)("POST", `/hosts/${C}/team`, { to: phone(), role: "desk" });
     assert.equal(bad.status, 400);
     assert.equal(bad.body.error, "notVenue");
