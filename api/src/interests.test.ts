@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import sharp from "sharp";
 import { testApp } from "./testkit.ts";
-import { eventInterests, hosts, users } from "./db/schema.ts";
+import { eventInterests, events, hosts, users } from "./db/schema.ts";
 
 // Interests on the account (orbit-pm X13): the picked kinds of event, I'm interested and its public count, and vibes.
 
@@ -42,6 +42,13 @@ const publish = async (u: P, hostId: string) => {
   assert.equal((await as(u)("POST", `/events/${e.id}/tickets`, { name: "General", pricePaise: 0 })).status, 201);
   assert.equal((await as(u)("POST", `/events/${e.id}/publish`)).status, 200);
   return e;
+};
+// Copies of an event the public can open, straight in the table (as saves.test.ts does), for the cap.
+const clones = async (like: string, n: number) => {
+  const [row] = await t.db.select().from(events).where(eq(events.id, like));
+  const made = Array.from({ length: n }, () => ({ ...row!, id: randomUUID(), slug: `c-${randomUUID().slice(0, 12)}` }));
+  for (let i = 0; i < made.length; i += 200) await t.db.insert(events).values(made.slice(i, i + 200));
+  return made.map((m) => m.id);
 };
 const page = async (slug: string) => (await t.call("GET", `/public/events/${slug}`)).body as { interested: number; vibes: string[] };
 
@@ -110,4 +117,53 @@ test("vibes: trimmed, each once, at most 6 of 1 to 24; on the team's read and th
   for (const vibes of [Array(7).fill("a").map((x, i) => x + i), ["x".repeat(25)], ["  "]])
     assert.equal((await as(host)("PATCH", `/events/${e.id}`, { vibes })).status, 400, JSON.stringify(vibes));
   assert.deepEqual((await as(host)("GET", `/events/${e.id}`)).body.vibes, ["Chill", "Loud crowd"]);
+});
+
+test("interested: signed out is a 401; link-only and cancelled events can be marked", async () => {
+  const host = await join();
+  const h = await start(host);
+  const link = await publish(host, h.id), off = await publish(host, h.id);
+  assert.equal((await t.call("PUT", `/me/interested/${link.id}`)).status, 401);
+  assert.equal((await t.call("DELETE", `/me/interested/${link.id}`)).status, 401);
+  assert.equal((await as(host)("PATCH", `/events/${link.id}`, { visibility: "link" })).status, 200);
+  assert.equal((await as(host)("POST", `/events/${off.id}/cancel`, { reason: "Rain" })).status, 200);
+  const a = await join();
+  assert.equal((await as(a)("PUT", `/me/interested/${link.id}`)).status, 204);
+  assert.equal((await as(a)("PUT", `/me/interested/${off.id}`)).status, 204);
+  assert.deepEqual(new Set((await as(a)("GET", "/me/interested")).body.events), new Set([link.id, off.id]));
+  // A deleted account is signed out here too, so nothing lands after the scrub.
+  await t.db.update(users).set({ deletedAt: new Date() }).where(eq(users.id, a.me.id));
+  assert.equal((await as(a)("DELETE", `/me/interested/${link.id}`)).status, 401);
+});
+
+test("interested: 1,000 at most over events that open; one already marked is fine at the cap", async () => {
+  const host = await join();
+  const e = await publish(host, (await start(host)).id);
+  const a = await join();
+  const ids = await clones(e.id, 999);
+  for (let i = 0; i < ids.length; i += 500)
+    await t.db.insert(eventInterests).values(ids.slice(i, i + 500).map((eventId) => ({ userId: a.me.id, eventId })));
+  assert.equal((await as(a)("PUT", `/me/interested/${e.id}`)).status, 204);
+  const [more] = await clones(e.id, 1);
+  const full = await as(a)("PUT", `/me/interested/${more}`);
+  assert.equal(full.status, 409);
+  assert.equal(full.body.message, "You're interested in 1,000 events; take some off first");
+  assert.equal((await as(a)("PUT", `/me/interested/${e.id}`)).status, 204);
+  assert.equal((await as(a)("DELETE", `/me/interested/${e.id}`)).status, 204);
+  assert.equal((await as(a)("PUT", `/me/interested/${more}`)).status, 204);
+});
+
+test("vibes stay off card reads", async () => {
+  const host = await join();
+  const h = await start(host);
+  const e = await publish(host, h.id);
+  assert.equal((await as(host)("PATCH", `/events/${e.id}`, { vibes: ["Chill"] })).status, 200);
+  const hostSlug = (await t.call("GET", `/public/events/${e.slug}`)).body.host.slug as string;
+  for (const path of ["/public/discover", "/public/search", `/public/hosts/${hostSlug}/events`]) {
+    const r = await t.call("GET", path);
+    assert.equal(r.status, 200, path);
+    const cards = [...(r.body.events ?? []), ...(r.body.near ?? []), ...(r.body.elsewhere ?? []), ...(r.body.upcoming ?? [])] as { id: string }[];
+    assert.ok(cards.length > 0, path); // every card comes from one place (cards()), so any one shows it
+    for (const card of cards) assert.equal("vibes" in card, false, path);
+  }
 });

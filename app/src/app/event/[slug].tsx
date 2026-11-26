@@ -42,7 +42,7 @@ import {
   Tag,
   Verified,
 } from '../../rows';
-import { addToList, needsAccount, setInterested, useInterested, useLetIn, useLoved, useSaved, useTicketsOnFocus, useViewer } from '../../session';
+import { addToList, needsAccount, setInterested, useInterested, useLetIn, useLoved, useSaved, useInterestsStatus, useTicketsOnFocus, useViewer } from '../../session';
 import { bookAction, eventStatus, seatsLine } from '../../status';
 import { useEvent } from '../../useEvent';
 import { around, color, font, radius, space } from '../../theme';
@@ -83,6 +83,7 @@ function EventView({ e, host, now, live }: { e: Event; host: Host; now: number; 
   const mine = viewer.signedIn ? (viewer.tickets ?? []).filter((t) => t.eventId === e.id) : [];
   const booked = mine.length > 0;
   const atDoor = useLetIn(e.id);
+  const kind = categories.find((c) => c.slug === e.category)?.label ?? e.category; // a vibe that repeats it isn't drawn
   const went = viewer.signedIn && (live ? atDoor : history.some((h) => h.eventId === e.id && h.status === 'Went'));
   const thanks = past && went && now < (e.endsAt ? Date.parse(e.endsAt) + 7 * 86_400_000 : Date.parse(e.startsAt) + WEEK); // a week after its end
   const book = bookAction(status, !e.pricePaise);
@@ -151,7 +152,7 @@ function EventView({ e, host, now, live }: { e: Event; host: Host; now: number; 
         {/* What it's like, as small cards: its kind, then the vibe (owner, 19 Nov 2026: interest cards, all four). */}
         <Section top={SECTION} title="What it’s like" />
         <View style={styles.tags}>
-          {[categories.find((c) => c.slug === e.category)?.label ?? e.category, ...(live ? (e.vibes ?? []) : (vibes[e.id] ?? []))].map((t) => (
+          {[kind, ...(live ? (e.vibes ?? []) : (vibes[e.id] ?? [])).filter((t) => t.toLowerCase() !== kind.toLowerCase())].map((t) => (
             <Tag key={t} text={t} />
           ))}
         </View>
@@ -245,18 +246,31 @@ function EventView({ e, host, now, live }: { e: Event; host: Host; now: number; 
 // Orbit asks, in its bubble, with the answer on your side (Home's Orbit speaks), and says how many are, yours included
 // ("in interested add count too"). Signed out, it asks to sign in first. A real event's count is the API's as the page
 // was read, which held your own tap if you'd made it then; a tap since moves it by one at once.
-// ponytail: whether the read held yours is taken when a read is first drawn (the key), so a tap still on its way when
-// the page was read can be off by one until it reads again.
+// Whether the read held yours is taken once your Interested list has been read (it may land after the page), or as
+// not if you tap first (signing in from here).
+// ponytail: a tap still on its way when the page was read can be off by one until it reads again.
 function Interested({ event: e, live }: { event: Event; live: boolean }) {
   const mine = useInterested(e.id);
-  const [atRead] = useState(mine);
+  const ready = useInterestsStatus() === 'ready';
+  const [atRead, setAtRead] = useState<boolean | null>(ready ? mine : null);
+  if (atRead === null && ready) setAtRead(mine);
   const n = live ? (e.interested ?? 0) - (atRead ? 1 : 0) + (mine ? 1 : 0) : interestedBase(e.id) + (mine ? 1 : 0);
   return (
     <OrbitSays
       top={SECTION}
       title={mine ? 'You’re interested' : 'Thinking of going?'}
       text={n > 0 ? `${n} ${n === 1 ? 'person is' : 'people are'} interested.` : 'Tell Orbit you might come.'}
-      answers={[{ label: mine ? 'Interested' : 'I’m interested', picked: mine, onPress: () => needsAccount(() => setInterested(e.id, !mine)) }]}
+      answers={[
+        {
+          label: mine ? 'Interested' : 'I’m interested',
+          picked: mine,
+          onPress: () =>
+            needsAccount(() => {
+              if (atRead === null) setAtRead(false);
+              setInterested(e.id, !mine);
+            }),
+        },
+      ]}
     />
   );
 }

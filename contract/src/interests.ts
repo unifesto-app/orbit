@@ -17,5 +17,9 @@ export const SetInterests = z.object({
 });
 export type SetInterests = z.input<typeof SetInterests>;
 
+// Interested on events that can be opened (hidden ones don't count), as saves cap theirs.
+export const MAX_INTERESTED = 1000;
+export const INTERESTED_FULL = "You're interested in 1,000 events; take some off first";
+
 // GET /me/interested: the ids of the events you're interested in that can still be opened.
 export type MyInterested = { events: string[] };
