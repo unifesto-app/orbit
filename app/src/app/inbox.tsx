@@ -124,6 +124,7 @@ function MessageRow({ m, whole, onPress }: { m: Message; whole: boolean; onPress
 }
 
 // The event's 3:4 poster, the host's 1:1 logo, or Orbit's orb for a message from Orbit (or about an event that's gone).
+// An id this build doesn't know (the API sends none yet, notification-emails.ts opensFor) falls through to the orb.
 function Picture({ of }: { of: Message['picture'] }) {
   const e = of && 'event' in of ? events.find((x) => x.id === of.event) : undefined;
   if (e) return <Poster media={e.poster} width={PICTURE} label={e.title} />;

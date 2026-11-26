@@ -96,9 +96,36 @@ export function emailFor(kind: string, data: Data = {}, site = SITE) {
   return { subject, html, text, replyTo: WAITLIST_CONTACT };
 }
 
-// `opens`: the app's Opens shape (app/src/inbox.ts).
+// `opens`: the app's Opens shape (app/src/inbox.ts), the catalog's target with its id from the data; null when the id
+// isn't there (the row then shows its whole text).
+// ponytail: `picture` stays null; real pictures (the event's poster, the host's logo) come with media on the rows.
+export function opensFor(kind: NoticeKind, data: Data = {}) {
+  const to = KINDS[kind].opens;
+  const id = (key: string) => (typeof data[key] === "string" && data[key] ? (data[key] as string) : null);
+  switch (to) {
+    case null:
+      return null;
+    case "ticket":
+    case "refund":
+    case "event":
+    case "room": {
+      const event = id("eventId");
+      return event ? { to, event } : null;
+    }
+    case "slot": {
+      const venue = id("venueId");
+      return venue ? { to, venue } : null;
+    }
+    case "host": {
+      const host = id("hostId");
+      return host ? { to, host } : null;
+    }
+    default:
+      return { to };
+  }
+}
+
 export function inboxFor(kind: NoticeKind, data: Data = {}) {
   const { subject, line } = words(kind, data);
-  const opens = KINDS[kind].opens;
-  return { text: line || subject, fromName: str(data.hostName) || "Orbit", opens: opens ? { to: opens } : null };
+  return { text: line || subject, fromName: str(data.hostName) || "Orbit", opens: opensFor(kind, data) };
 }

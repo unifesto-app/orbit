@@ -19,7 +19,7 @@ import { hrefFor, inAppPath, type PushStatus, pushStatusOf } from './inbox';
 import { loadInbox, markRead, useUnreadCount } from './inboxStore';
 import { needsSend, noticesApi, opensOf, type Sent } from './notices';
 import { OrbitSays } from './orbitSays';
-import { api, meNow, ticketNow, useMe, useSignedIn } from './session';
+import { api, signInNow, ticketNow, useSignIn, useSignedIn } from './session';
 
 export type { PushStatus };
 
@@ -65,15 +65,15 @@ const markAsked = () => {
 };
 
 let token: string | null = null; // this install's APNs or FCM token
-// The token as the API last took it this launch, and for whom.
+// The token as the API last took it, and for which sign-in (signing out and in again sends it anew).
 let sent: Sent = null;
 // ponytail: __DEV__ picks the APNs environment. A TestFlight or store build is a release build on production APNs,
 // which is right; a dev-client build is on sandbox. An ad-hoc debug build signed for production would be wrong.
 const ENV = __DEV__ ? 'sandbox' : 'production';
 function sendToken() {
-  const who = meNow();
+  const who = signInNow();
   if (!needsSend(sent, who, token) || (Platform.OS !== 'ios' && Platform.OS !== 'android')) return;
-  const mine = { user: who!, token };
+  const mine = { signIn: who!, token };
   sent = mine; // claimed now, so a second call meanwhile doesn't send it twice
   void noticesApi(api)
     .device({ app: 'orbit', platform: Platform.OS, env: ENV, token })
@@ -218,11 +218,15 @@ export function PushHost() {
       landed.remove();
     };
   }, []);
-  // Signed in (a launch, a sign-in, another account): the token goes to the API for this account, and the inbox is
-  // read, and again whenever the app comes back to the front.
-  const me = useMe().id;
+  // Signed in (a launch, a sign-in, another account): the token goes to the API for this sign-in, and the inbox is
+  // read, and again whenever the app comes back to the front. Signed out, nothing is sent and the last send is
+  // forgotten.
+  const me = useSignIn();
   useEffect(() => {
-    if (!me) return;
+    if (!me) {
+      sent = null;
+      return;
+    }
     sendToken();
     void loadInbox();
     const sub = AppState.addEventListener('change', (s) => s === 'active' && void loadInbox());

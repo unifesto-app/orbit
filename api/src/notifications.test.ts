@@ -2,12 +2,12 @@ import { after, before, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
-import type { NoticeKind } from "@orbit/contract";
+import { KINDS, type NoticeKind } from "@orbit/contract";
 import { runDeletions } from "./auth/deletion.ts";
 import { NotSent } from "./auth/senders.ts";
 import { deliveries, inboxItems, users } from "./db/schema.ts";
 import type { Notice } from "./http.ts";
-import { emailFor, inboxFor } from "./notification-emails.ts";
+import { emailFor, inboxFor, opensFor } from "./notification-emails.ts";
 import { pruneNotifications } from "./notifications.ts";
 import { testApp } from "./testkit.ts";
 
@@ -430,4 +430,24 @@ test("wording: every called kind builds a subject, text and html; data is escape
   }
   assert.deepEqual(inboxFor("teamRemoved", SAMPLES.teamRemoved), { text: "You no longer have access to this team.", fromName: "Hyderabad Runners", opens: null });
   assert.deepEqual(inboxFor("hostVerified", SAMPLES.hostVerified).text, "Hyderabad Runners is verified");
+});
+
+test("inbox rows open the app's screen with the id from the data, or nothing without it", () => {
+  const e = "0b9d6a3e-1c2f-4f7a-9d1e-2a3b4c5d6e7f";
+  assert.deepEqual(opensFor("hostAnnouncement", { eventId: e, hostName: "H" }), { to: "ticket", event: e });
+  assert.deepEqual(opensFor("refundSent", { eventId: e }), { to: "refund", event: e });
+  assert.deepEqual(opensFor("followedHostEvent", { hostId: "h", eventId: e }), { to: "event", event: e });
+  assert.deepEqual(opensFor("inRoomAsk", { eventId: e }), { to: "room", event: e });
+  assert.deepEqual(opensFor("thanksForComing", { eventId: e }), { to: "event", event: e });
+  assert.deepEqual(opensFor("slotFreedAgain", { venueId: "v" }), { to: "slot", venue: "v" });
+  assert.deepEqual(opensFor("teamInvite", { hostId: "h" }), { to: "host", host: "h" });
+  assert.deepEqual(opensFor("signInMethodChanged", {}), { to: "security" });
+  assert.equal(opensFor("hostAnnouncement", {}), null);
+  assert.equal(opensFor("hostAnnouncement", { eventId: 7 }), null);
+  assert.equal(opensFor("slotReleased", { hostId: "h", claimId: "c" }), null);
+  assert.equal(opensFor("orbitNews", { eventId: e }), null);
+  assert.equal(opensFor("teamRemoved", { hostId: "h" }), null); // a host-app inbox: nothing of the people app's
+  // Every target names one the app knows, and no other app's inbox gets one (an email-only kind has no inbox at all).
+  const known = ["security", "help", "refunds", "request", "ticket", "refund", "event", "room", "slot", "host"];
+  for (const [kind, def] of Object.entries(KINDS)) if (def.opens) assert.ok(known.includes(def.opens) && (def.app === "orbit" || !def.inbox), kind);
 });

@@ -38,9 +38,24 @@ export type KindDef = {
   // anything else → launch).
   app: InboxApp | "role" | null;
   type: InboxType;
-  opens: "security" | "help" | "refunds" | "request" | null;
+  // The screen it opens in the people app (app/src/inbox.ts Opens); the API fills the id from the data (eventId,
+  // venueId, hostId) and leaves it null when that id is missing. Host-app kinds open nothing yet: those apps' inboxes
+  // have their own screens, which come with them.
+  opens: Target | null;
   vars: readonly string[]; // the data keys the wording may use
   switch: PushSwitch | null; // the person's switch that governs it; null for Must kinds
+};
+
+export type Target = "security" | "help" | "refunds" | "request" | "ticket" | "refund" | "event" | "room" | "slot" | "host";
+
+// Where a kind opens when the catalog doesn't say: a booking its ticket (a refund its refund), an event you hold a
+// ticket for the ticket (inRoom its room, Thanks the event page, for Loved it), a followed host's or nearby event its
+// page. Account, From Orbit, host and staff kinds name theirs or open nothing.
+const targetOf = (group: KindDef["group"], type: InboxType): Target | null => {
+  if (group === "booking") return type === "refund" ? "refund" : "ticket";
+  if (group === "events") return type === "inRoom" ? "room" : type === "thanks" ? "event" : "ticket";
+  if (group === "following") return type === "announcement" ? null : "event";
+  return null;
 };
 
 // The plan's "Switch" column, by area: tickets for booking, Your hosts for the host apps, From Orbit for the account's
@@ -65,7 +80,7 @@ const k = (
   app: InboxApp | "role" | null,
   type: InboxType,
   vars: readonly string[] = [],
-  opens: KindDef["opens"] = null,
+  opens?: KindDef["opens"],
 ): KindDef => ({
   group,
   level,
@@ -74,12 +89,13 @@ const k = (
   email: ch.includes("E") ? "always" : ch.includes("e") ? "fallback" : false,
   app: ch.includes("I") ? app : null,
   type,
-  opens,
+  opens: opens === undefined ? targetOf(group, type) : opens,
   vars,
   switch: switchOf(group, level, type),
 });
 
 const acct = (level: Level, ch: string, vars: readonly string[] = [], opens: KindDef["opens"] = null) => k("account", level, ch, "orbit", "account", vars, opens);
+const slot = (level: Level, ch: string, vars: readonly string[] = []) => k("booking", level, ch, "orbit", "ticket", vars, "slot");
 const book = (level: Level, ch: string, type: InboxType = "ticket") => k("booking", level, ch, "orbit", type);
 const ev = (level: Level, ch: string, type: InboxType) => k("events", level, ch, "orbit", type);
 const host = (level: Level, ch: string, app: InboxApp | "role" | null = "launch", vars: readonly string[] = []) => k("host", level, ch, app, "account", vars);
@@ -99,8 +115,8 @@ export const KINDS = {
   accountDeleted: acct("must", "PIE", [], "security"),
   accountSuspended: acct("must", "E", ["until", "reason"]),
   accountLifted: acct("must", "E"),
-  teamInvite: acct("must", "PIE", ["hostName", "role"]),
-  teamInviteWithdrawn: acct("must", "PIE", ["hostName", "contact"]),
+  teamInvite: acct("must", "PIE", ["hostName", "role"], "host"),
+  teamInviteWithdrawn: acct("must", "PIE", ["hostName", "contact"], "host"),
   staffDecision: acct("must", "PIE"),
   supportReply: acct("must", "PIE"),
   dataExportReady: acct("must", "IE"),
@@ -128,9 +144,9 @@ export const KINDS = {
   ticketPassed: book("must", "PIE"),
   ticketMoveConfirm: book("must", "PIE"),
   waitlistSeatsFree: book("normal", "PIe"),
-  slotFreedAgain: book("normal", "PI"),
-  slotCancelledByVenue: book("must", "PIE"),
-  slotReleased: k("booking", "must", "PIE", "orbit", "ticket", ["hostName", "start"]),
+  slotFreedAgain: slot("normal", "PI"),
+  slotCancelledByVenue: slot("must", "PIE"),
+  slotReleased: slot("must", "PIE", ["hostName", "start"]),
 
   // Events you hold a ticket for
   eventTomorrow: ev("normal", "PIe", "reminder"),

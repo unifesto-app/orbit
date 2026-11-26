@@ -13,7 +13,8 @@ export type { Message };
 type Box = { owner: string; items: InboxRow[]; unread: number; next: string | null; loaded: boolean };
 const EMPTY: Box = { owner: '', items: [], unread: 0, next: null, loaded: false };
 let box = EMPTY;
-let epoch = 0; // bumped by a read marked here and by each first-page read: an answer from before it is dropped
+let epoch = 0; // bumped by a read marked here and by each first-page read
+let shown = 0; // the epoch of what the copy shows (a first page taken, or a read marked): older answers are dropped
 let more: Promise<void> | null = null; // the next page's read under way, if any
 const listeners = new Set<() => void>();
 const set = (next: Box) => {
@@ -34,7 +35,10 @@ export async function loadInbox() {
   if (!who) return;
   const at = ++epoch;
   const r = await noticesApi(api).inbox();
-  if (!r.ok || meNow() !== who || at !== epoch) return; // failed (the copy stays), or someone else in, or overtaken
+  // Failed: the copy stays as it is (still loaded, if a read ever landed). Taken unless someone else signed in or a
+  // newer answer is already shown, so a later read failing never undoes an earlier one that worked.
+  if (!r.ok || meNow() !== who || at <= shown) return;
+  shown = at;
   const had = mine();
   set({ owner: who, ...mergeFirst(had.items, had.next, r.data), unread: r.data.unread, loaded: true });
 }
@@ -66,7 +70,7 @@ export function markRead(ids?: readonly string[]) {
   const b = mine();
   const hit = (x: InboxRow) => !x.read && (!ids || ids.includes(x.id));
   const fresh = b.items.filter(hit).length;
-  epoch++;
+  shown = ++epoch;
   set({ ...b, items: b.items.map((x) => (hit(x) ? { ...x, read: true } : x)), unread: ids ? Math.max(0, b.unread - fresh) : 0 });
   void noticesApi(api).read(ids).then(() => (meNow() === who ? loadInbox() : undefined));
 }

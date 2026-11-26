@@ -117,7 +117,11 @@ export function mergeFirst(had: readonly InboxRow[], hadNext: string | null, pag
   const last = page.items.at(-1);
   if (!page.next || !last) return { items: page.items, next: page.next };
   const ids = new Set(page.items.map((x) => x.id));
-  const older = had.filter((x) => !ids.has(x.id) && (x.at < last.at || (x.at === last.at && x.id < last.id)));
+  // By place in the list, not by time: `at` is to the millisecond while the API orders by the microsecond, so two rows
+  // can share an `at` in either order. Rows after the page's last one stay; if it wasn't read in before, rows no newer
+  // than it stay (a tie kept, never dropped).
+  const end = had.findIndex((x) => x.id === last.id);
+  const older = end >= 0 ? had.slice(end + 1).filter((x) => !ids.has(x.id)) : had.filter((x) => !ids.has(x.id) && x.at <= last.at);
   return older.length ? { items: [...page.items, ...older], next: hadNext } : { items: page.items, next: page.next };
 }
 
@@ -130,10 +134,11 @@ export const announcementOf = <T extends Pick<InboxRow, 'kind' | 'at' | 'opens'>
     })
     .reduce<T | undefined>((newest, x) => (!newest || Date.parse(x.at) > Date.parse(newest.at) ? x : newest), undefined);
 
-// The token goes to the API once per account and token this launch: a launch, a sign-in or a rolled token sends it.
-export type Sent = { user: string; token: string } | null;
-export const needsSend = (last: Sent, user: string | undefined, token: string | null): token is string =>
-  !!user && !!token && (last?.user !== user || last.token !== token);
+// The token goes to the API once per sign-in and token: a launch, a sign-in (a new session on the API, even for the
+// same account, whose device row the sign-in dropped) or a rolled token sends it. `signIn`: session.ts signInKey.
+export type Sent = { signIn: string; token: string } | null;
+export const needsSend = (last: Sent, signIn: string | undefined, token: string | null): token is string =>
+  !!signIn && !!token && (last?.signIn !== signIn || last.token !== token);
 
 // One switch on Account › Notifications as the PUT's body: just that key. `push` and `quiet` are the settings' own;
 // anything else is a switch ("push.near", "email.follows").

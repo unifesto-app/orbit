@@ -239,6 +239,12 @@ const SIGNED_OUT = { id: '' };
 export const useMe = (): { id: string } => useSession()?.me ?? SIGNED_OUT;
 // The same, outside a component (src/inboxStore.ts, src/push.tsx).
 export const meNow = () => current?.me.id;
+// This sign-in, outside a component and as a hook: the account and a count of sign-ins this launch. A sign-in starts a
+// new session on the API even for the same account, so the push token goes again (src/push.tsx).
+let signIns = 0;
+const signInKey = () => (current ? `${current.me.id}#${signIns}` : undefined);
+export const signInNow = signInKey;
+export const useSignIn = () => useSyncExternalStore(subscribe, signInKey);
 
 export const useSaved = (eventId: string) => useSession()?.saved.some((x) => x.id === eventId) ?? false;
 export const useLoved = (eventId: string) => useSession()?.loved?.includes(eventId) ?? false;
@@ -490,6 +496,7 @@ export function signIn(done: Extract<AuthStep, { step: 'signedIn' }>, via: Way) 
     // Not kept: the next sign-in is a new device.
   }
   api.start(done);
+  signIns++;
   saveEpoch++; // reads still out belong to whoever was here before
   savesStatus = 'loading';
   queue = Promise.resolve(); // nothing of an earlier account's is waited on or sent
@@ -514,7 +521,13 @@ async function loadFollows(retry = true): Promise<void> {
   // ponytail: one re-read after a tap; a follow POST still in flight when that re-read lands can show Follow until the
   // next launch. Overlay the pending taps on the answer if that ever shows up.
   if (at !== followEpoch) return retry ? loadFollows(false) : undefined;
-  if (r.ok && current) set({ ...current, follows: r.data.map((h) => h.id), hostsOff: r.data.filter((h) => h.notify === 'off').map((h) => h.id) });
+  // Real hosts' Off comes from the API; a mock host's (not a UUID, kept on the phone only) stays as it was.
+  if (r.ok && current)
+    set({
+      ...current,
+      follows: r.data.map((h) => h.id),
+      hostsOff: [...(current.hostsOff ?? []).filter((x) => !UUID.test(x)), ...r.data.filter((h) => h.notify === 'off').map((h) => h.id)],
+    });
 }
 
 // The saves and lists as the API has them: they become what the server confirmed, with the changes still waiting drawn

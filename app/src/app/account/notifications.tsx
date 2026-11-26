@@ -47,13 +47,19 @@ export default function Notifications() {
     };
   }, []);
   const is = (key: SettingKey) => (settings ? valueOf(settings, key) : false);
+  // A flip shows at once. Each PUT answers with the whole settings; only the newest PUT's answer is taken, so answers
+  // landing out of order still end on the server's last word. A failed one puts back what that switch was before it.
+  const saves = useRef(0);
   const flip = (key: SettingKey) => (v: boolean) => {
+    const was = is(key);
+    const at = ++saves.current;
     setSettings((s) => s && withValue(s, key, v));
     void noticesApi(api)
       .saveSettings(patchFor(key, v))
       .then((r) => {
-        if (r.ok || !live.current) return;
-        setSettings((s) => s && withValue(s, key, !v));
+        if (!live.current) return;
+        if (r.ok) return at === saves.current && setSettings(r.data);
+        setSettings((s) => s && withValue(s, key, was));
         showNote({ text: 'Couldn’t save that. Try again.' });
       });
   };

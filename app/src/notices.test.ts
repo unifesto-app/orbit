@@ -65,6 +65,17 @@ test('mergeFirst: a refresh keeps the older pages already read in', () => {
   assert.deepEqual(mergeFirst(had, 'cursor-a', { ...page, next: null }), { items: page.items, next: null });
 });
 
+test('mergeFirst: rows sharing a millisecond with the page end are never dropped', () => {
+  const at = '2026-11-20T00:00:00.000Z';
+  // The API ordered z before a (microseconds apart); by id alone a would look newer and be lost.
+  const had = [row({ id: 'm', at: '2026-11-21T00:00:00.000Z' }), row({ id: 'z', at }), row({ id: 'a', at })];
+  const page: InboxPage = { items: [had[0], had[1]], unread: 0, next: 'cursor-z' };
+  assert.deepEqual(mergeFirst(had, 'cursor-a', page).items.map((x) => x.id), ['m', 'z', 'a']);
+  // The page's last row is new to the copy: the tie still stays.
+  const fresh: InboxPage = { items: [row({ id: 'n', at: '2026-11-22T00:00:00.000Z' }), row({ id: 'y', at })], unread: 0, next: 'cursor-y' };
+  assert.deepEqual(mergeFirst(had, 'cursor-a', fresh).items.map((x) => x.id), ['n', 'y', 'z', 'a']);
+});
+
 test("announcementOf: the host's newest announcement for that event", () => {
   const ann = (id: string, at: string, event: unknown) => row({ id, at, kind: 'hostAnnouncement', type: 'announcement', opens: { to: 'ticket', event } });
   const rows = [ann('1', '2026-11-20T08:00:00Z', 'e1'), ann('2', '2026-11-21T08:00:00Z', 'e1'), ann('3', '2026-11-22T08:00:00Z', 'e2'), row({ id: '4', at: '2026-11-23T08:00:00Z', opens: { to: 'ticket', event: 'e1' } })];
@@ -72,13 +83,14 @@ test("announcementOf: the host's newest announcement for that event", () => {
   assert.equal(announcementOf(rows, 'e9'), undefined);
 });
 
-test('needsSend: once per account and token', () => {
+test('needsSend: once per sign-in and token', () => {
   assert.equal(needsSend(null, undefined, 'tok'), false); // signed out
-  assert.equal(needsSend(null, 'u1', null), false); // no token yet
-  assert.equal(needsSend(null, 'u1', 'tok'), true);
-  assert.equal(needsSend({ user: 'u1', token: 'tok' }, 'u1', 'tok'), false);
-  assert.equal(needsSend({ user: 'u1', token: 'tok' }, 'u1', 'tok2'), true); // rolled
-  assert.equal(needsSend({ user: 'u1', token: 'tok' }, 'u2', 'tok'), true); // another account
+  assert.equal(needsSend(null, 'u1#1', null), false); // no token yet
+  assert.equal(needsSend(null, 'u1#1', 'tok'), true);
+  assert.equal(needsSend({ signIn: 'u1#1', token: 'tok' }, 'u1#1', 'tok'), false);
+  assert.equal(needsSend({ signIn: 'u1#1', token: 'tok' }, 'u1#1', 'tok2'), true); // rolled
+  assert.equal(needsSend({ signIn: 'u1#1', token: 'tok' }, 'u2#2', 'tok'), true); // another account
+  assert.equal(needsSend({ signIn: 'u1#1', token: 'tok' }, 'u1#2', 'tok'), true); // the same account signed in again
 });
 
 test('patchFor: just the switch flipped', () => {
