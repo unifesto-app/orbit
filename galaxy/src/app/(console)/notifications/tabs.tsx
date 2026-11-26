@@ -1,43 +1,58 @@
+import type { Channel, GalaxyKind } from "@orbit/contract";
 import Link from "next/link";
 import { Suspense } from "react";
 import { me } from "../../../api";
 import { PageHeader, ui } from "../../ui";
 
-// Notifications' pages, each its own address, as the PM board's tabs. Holders of Platform or People open Kinds and the
-// log; Broadcasts shows only to holders of Platform.
+// Notifications' pages, each its own address, as the PM board's tabs. Kinds and the log open to Platform or People;
+// Wording and Broadcasts to Platform only, so their tabs show to them alone.
 const TABS = [
   { key: "kinds", label: "Kinds", href: "/notifications" },
   { key: "log", label: "Delivery log", href: "/notifications/log" },
+  { key: "wording", label: "Wording", href: "/notifications/wording" },
+  { key: "broadcasts", label: "Broadcasts", href: "/notifications/broadcasts" },
 ] as const;
-const BROADCASTS = { key: "broadcasts", label: "Broadcasts", href: "/notifications/broadcasts" } as const;
-type Tab = (typeof TABS)[number] | typeof BROADCASTS;
+type Key = (typeof TABS)[number]["key"];
 
-const TabLink = ({ t, current }: { t: Tab; current: Tab["key"] }) => (
+const Tab = ({ t, current }: { t: (typeof TABS)[number]; current: Key }) => (
   <Link href={t.href} prefetch={false} className={ui.tab} aria-current={t.key === current ? "page" : undefined}>
     {t.label}
   </Link>
 );
-
-async function BroadcastsTab({ current }: { current: Tab["key"] }) {
-  const r = await me();
-  return r.ok && r.data.staff?.features.includes("platform") ? <TabLink t={BROADCASTS} current={current} /> : null;
+async function PlatformTabs({ current }: { current: Key }) {
+  const who = await me();
+  if (!(who.ok && who.data.staff?.features.includes("platform"))) return null;
+  return (
+    <>
+      <Tab t={TABS[2]} current={current} />
+      <Tab t={TABS[3]} current={current} />
+    </>
+  );
 }
 
-export function NotificationsHeader({ current, description }: { current: Tab["key"]; description: string }) {
+export function NotificationsHeader({ current, description }: { current: Key; description: string }) {
   return (
     <>
       <PageHeader title="Notifications" description={description} />
       <nav aria-label="Notifications" className={ui.tabs}>
-        {TABS.map((t) => (
-          <TabLink key={t.key} t={t} current={current} />
-        ))}
+        <Tab t={TABS[0]} current={current} />
+        <Tab t={TABS[1]} current={current} />
         <Suspense fallback={null}>
-          <BroadcastsTab current={current} />
+          <PlatformTabs current={current} />
         </Suspense>
       </nav>
     </>
   );
 }
 
-// Its own file so the delivery log's client search can use it without this header's server read.
+// The catalog's groups, in order, with their titles.
+export const GROUPS: [GalaxyKind["group"], string][] = [
+  ["account", "Account"],
+  ["booking", "Booking and tickets"],
+  ["events", "Events you hold a ticket for"],
+  ["following", "Following and from Orbit"],
+  ["host", "Host apps"],
+  ["staff", "Galaxy staff"],
+];
+export const CHANNEL_NAMES: Record<Channel, string> = { email: "Email", push: "Push", inbox: "Inbox" };
 export { kindName } from "./kind-name";

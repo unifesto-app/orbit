@@ -1,4 +1,4 @@
-import { CHANNELS, type Channel, type GalaxyKind, type GalaxyKinds, type KillSwitch } from "@orbit/contract";
+import { CHANNELS, type Channel, type GalaxyKinds, type KillSwitch } from "@orbit/contract";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { me, read } from "../../../api";
@@ -6,22 +6,13 @@ import { Alert, Badge, Container, ui } from "../../ui";
 import { Act } from "../act";
 import { time } from "../requests/status";
 import { setSwitch } from "./actions";
-import { kindName, NotificationsHeader } from "./tabs";
+import { CHANNEL_NAMES, GROUPS, kindName, NotificationsHeader } from "./tabs";
 
 // Notifications › Kinds (notifications build plan, PR 7; API: GET /galaxy/notifications/kinds, PUT …/switches): every
 // kind in the catalog by group, and Galaxy's kill switch per channel. Holders of Platform switch; People only read.
 // Must kinds have no switch of their own; the whole-channel switch stops them too.
 export const metadata: Metadata = { title: "Notifications" };
 
-const GROUPS: [GalaxyKind["group"], string][] = [
-  ["account", "Account"],
-  ["booking", "Booking and tickets"],
-  ["events", "Events you hold a ticket for"],
-  ["following", "Following and from Orbit"],
-  ["host", "Host apps"],
-  ["staff", "Galaxy staff"],
-];
-const CHANNEL_NAMES: Record<Channel, string> = { email: "Email", push: "Push", inbox: "Inbox" };
 const LEVELS = { must: "Must", normal: "Normal", low: "Low" } as const;
 
 export default function Kinds() {
