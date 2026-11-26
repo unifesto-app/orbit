@@ -73,11 +73,13 @@ export function checkInLine(t: Pick<Ticket, 'quantity' | 'admitted' | 'checkedIn
 }
 
 const WEEK = 7 * DAY;
+// Live tickets anyone was let in on (a cancelled one never counts). An event with no end reads NaN, so never "ended".
+const attended = (m: MyTickets | null) => [...(m?.upcoming ?? []), ...(m?.past ?? [])].filter((t) => t.status === 'confirmed' && t.admitted > 0);
 /** Thanks for coming: the events you were let in at that ended in the last week, newest first, two at most. */
 export function thanksOf(m: MyTickets | null, now: number) {
-  const went = [...(m?.upcoming ?? []), ...(m?.past ?? [])].filter((t) => t.admitted > 0 && Date.parse(t.event.endsAt) <= now && now < Date.parse(t.event.endsAt) + WEEK);
+  const went = attended(m).filter((t) => Date.parse(t.event.endsAt) <= now && now < Date.parse(t.event.endsAt) + WEEK);
   return [...new Map(went.map((t) => [t.event.id, t.event])).values()].sort((a, b) => Date.parse(b.startsAt) - Date.parse(a.startsAt)).slice(0, 2);
 }
 
 /** Whether you were let in at this event on any ticket: inRoom opens at the door. */
-export const letInAt = (m: MyTickets | null, eventId: string) => [...(m?.upcoming ?? []), ...(m?.past ?? [])].some((t) => t.event.id === eventId && t.admitted > 0);
+export const letInAt = (m: MyTickets | null, eventId: string) => attended(m).some((t) => t.event.id === eventId);

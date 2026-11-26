@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { bump, fresh, fromScan, inLine, left, refused, stateLine } from './door.ts';
+import { admitTotal, afterFail, bump, fresh, fromScan, inLine, left, refused, scanFailed, stateLine, tooLong } from './door.ts';
 
 const g = (quantity: number, admitted: number, name: string | null = 'Meera Pillai') => ({ id: 'b1', name, quantity, admitted, checkedInAt: admitted ? '2026-11-26T13:42:00Z' : null });
 
@@ -38,4 +38,25 @@ test('Find rows say where a ticket stands', () => {
   assert.equal(stateLine(g(2, 0)), 'Not in yet');
   assert.equal(stateLine(g(2, 1)), '1 of 2 in');
   assert.equal(stateLine(g(2, 2, null)), 'In');
+});
+
+test('admitTotal never goes past the ticket', () => {
+  assert.equal(admitTotal(g(4, 1), 2), 3);
+  assert.equal(admitTotal(g(4, 3), 5), 4);
+});
+
+test('a QR over 64 characters is no Orbit ticket, never sent; a 400 reads the same', () => {
+  assert.equal(tooLong('x'.repeat(65))?.kind, 'no');
+  assert.equal((tooLong('x'.repeat(65)) as { word: string }).word, 'Not an Orbit ticket');
+  assert.equal(tooLong('RZ7Q-2M9X'), null);
+  assert.equal((scanFailed({ error: 'invalid', message: 'x' }) as { word: string }).word, 'Not an Orbit ticket');
+  assert.equal((scanFailed({ error: 'offline', message: 'Can’t reach Orbit.' }) as { retry?: boolean }).retry, true);
+});
+
+test('a failed admit or undo: changed asks again, a refusal shows, anything else keeps the card for a retry', () => {
+  assert.deepEqual(afterFail({ error: 'changed', message: 'x', guest: g(4, 2) }, 'admit'), { show: fresh(g(4, 2), true) });
+  assert.deepEqual(afterFail({ error: 'ended', message: 'Closed.' }, 'undo'), { show: refused('ended', 'Closed.') });
+  assert.deepEqual(afterFail({ error: 'offline', message: 'x' }, 'admit'), { retry: 'Couldn’t let them in. Try again.' });
+  assert.deepEqual(afterFail({ error: 'hostClosed', message: 'x' }, 'undo'), { retry: 'Couldn’t undo. Try again.' });
+  assert.deepEqual(afterFail({ error: 'server', message: 'x' }, 'admit'), { retry: 'Couldn’t let them in. Try again.' });
 });

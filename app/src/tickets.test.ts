@@ -80,4 +80,10 @@ test('thanksOf: let in, ended within the week, newest first, two at most; letInA
   assert.deepEqual(thanksOf(null, NOW), []);
   assert.equal(letInAt(m, 'e1'), true);
   assert.equal(letInAt(m, 'e3'), false);
+  // Cancelled with people in, or an event with no end: neither counts.
+  const cancelled = { ...t('b7', 'e7', '2026-11-23T20:00:00+05:30', 1), status: 'cancelledByHost' as const };
+  const noEnd = t('b8', 'e8', '2026-11-23T20:00:00+05:30', 1);
+  const odd: MyTickets = { upcoming: [], past: [cancelled, { ...noEnd, event: { ...noEnd.event, endsAt: null as unknown as string } }, { ...noEnd, id: 'b9', event: { ...noEnd.event, id: 'e9', endsAt: 'junk' } }] };
+  assert.deepEqual(thanksOf(odd, NOW), []);
+  assert.equal(letInAt(odd, 'e7'), false);
 });

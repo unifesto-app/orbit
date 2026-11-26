@@ -7,8 +7,9 @@
 //   Already in and Too early in amber, the rest in the app's red. A haptic on every result.
 // - A ticket for one is in on the scan, with Undo for 5 seconds. A group asks how many are here and lets nobody in until
 //   the tap. If another door moved the count meanwhile (409 `changed`), the card shows the fresh count and asks again.
-// - The same code, seen again within 2.5 seconds, is ignored (station/day.ts seenRecently); no new ticket replaces the
-//   card while it's counting heads, Undo is up or a request is out.
+// - The same code, seen again within 2.5 seconds, is ignored (station/day.ts seenRecently), and the card's own ticket
+//   stays ignored while it's still in view after Scan next; no new ticket replaces the card while it's counting heads,
+//   Undo is up or a request is out. An admit or undo that fails offline keeps its card, with a line, for a safe retry.
 // - Find: name, or a whole phone number, email or the code, from 2 characters; a row lets them in (a group asks how
 //   many) or undoes one.
 // ponytail: no sound yet (the switch is kept; the sounds come with expo-audio), and no offline list: the door needs the
@@ -28,7 +29,7 @@ import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Animated, AppState, Image, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { bump, fresh, fromScan, inLine, left, nameOf, refused, type Shown, stateLine } from '../launch/door';
+import { admitTotal, afterFail, bump, type Failure, fresh, fromScan, inLine, left, nameOf, scanFailed, type Shown, stateLine, tooLong } from '../launch/door';
 import { api } from '../session';
 import { seenRecently, timeLabel } from '../station/day';
 import { Pill, Round } from '../station/ui';
@@ -45,7 +46,6 @@ const ICON = {
   mute: require('../../assets/tabs/mute.png'),
 };
 type Counts = { booked: number; in: number };
-type Failed = { ok: false; error: { error: string; message: string; guest?: DoorGuest } };
 
 const feel = (s: Shown) =>
   void Haptics.notificationAsync(
@@ -68,6 +68,7 @@ export default function Scanner() {
   const [undo, setUndo] = useState<number | null>(null);
   const [finding, setFinding] = useState(p.find === '1');
   const [sound, setSound] = useState(true);
+  const [error, setError] = useState<string | null>(null); // an admit or undo to try again
   const seen = useRef(new Map<string, number>());
   const busy = useRef(false);
   const seq = useRef(0);
@@ -99,49 +100,67 @@ export default function Scanner() {
   const present = (s: Shown, text?: string) => {
     feel(s);
     setFinding(false);
+    setError(null);
     setUndo(s.kind === 'in' ? UNDO_S : null);
     if (s.kind === 'ask') setN(left(s.guest));
+    if (text) seen.current.set(text, Date.now());
     setShown({ ...s, text, seq: ++seq.current });
   };
-  // A 409 `changed` carries the guest as it is now: ask again. Anything else is a refusal with the API's words.
-  const failed = (r: Failed) => {
-    if (r.error.error === 'changed' && r.error.guest) {
+  // A failed admit or undo (door.ts afterFail): a new card, or this one kept, same from and total, with a line to retry.
+  const failed = (e: Failure, action: 'admit' | 'undo', g: DoorGuest) => {
+    const next = afterFail(e, action);
+    if ('show' in next) {
       load.reload();
-      return present(fresh(r.error.guest, true));
+      return present(next.show, shown?.text);
     }
-    present(refused(r.error.error, r.error.message));
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    if (!shown) present(fresh(g)); // from Find: the card to retry on
+    if (action === 'undo') setUndo(UNDO_S);
+    setError(next.retry);
   };
 
   const onCode = async ({ data }: BarcodeScanningResult) => {
+    if (busy.current) return; // not stamped: seen once the request can start
     if (seenRecently(seen.current, data, Date.now(), SAME_MS)) return;
     if (shown?.text === data) return; // the ticket on the card, seen again
+    const long = tooLong(data);
+    if (long) return present(long, data);
     const r = await once(() => api.authed<ScanResult>('POST', `${base}/check-in/scan`, { eventId: p.eventId, text: data }));
     if (!r) return;
-    if (!r.ok) return failed(r);
+    if (!r.ok) return present(scanFailed(r.error), data);
     const s = fromScan(r.data);
-    if (s.kind === 'in') moved(s.before, s.guest.admitted);
+    if (s.kind === 'in') {
+      moved(s.before, s.guest.admitted);
+      load.reload();
+    }
     present(s, data);
   };
   // Have `count` more of a ticket in, from the count the door last saw.
   const admit = async (g: DoorGuest, count: number) => {
-    const r = await once(() => api.authed<DoorGuest>('POST', `${base}/check-in/${g.id}/admit`, { from: g.admitted, total: g.admitted + count }));
+    const r = await once(() => api.authed<DoorGuest>('POST', `${base}/check-in/${g.id}/admit`, { from: g.admitted, total: admitTotal(g, count) }));
     if (!r) return;
-    if (!r.ok) return failed(r);
+    if (!r.ok) return failed(r.error, 'admit', g);
     moved(g.admitted, r.data.admitted);
-    present({ kind: 'in', guest: r.data, before: g.admitted });
+    load.reload();
+    present({ kind: 'in', guest: r.data, before: g.admitted }, shown?.text);
   };
   const undoIn = async (s: Extract<Shown, { kind: 'in' }>) => {
     const r = await once(() => api.authed<DoorGuest>('POST', `${base}/check-in/${s.guest.id}/undo`, { from: s.guest.admitted, total: s.before }));
     if (!r) return;
-    if (!r.ok) return failed(r);
+    if (!r.ok) return failed(r.error, 'undo', s.guest);
     moved(s.guest.admitted, r.data.admitted);
+    load.reload();
     setUndo(null);
+    setError(null);
     setShown(null);
   };
   // Find, then a ticket: the one for one is let in, a group asked how many, a full one Already in.
   const pick = (g: DoorGuest) => (g.quantity === 1 && g.admitted === 0 ? void admit(g, 1) : present(fresh(g)));
+  // The ticket on the card, still in view, stays ignored after Scan next (unless its scan can be tried again).
   const next = () => {
+    if (shown?.text && !(shown.kind === 'no' && shown.retry)) seen.current.set(shown.text, Date.now());
     setUndo(null);
+    setError(null);
     setShown(null);
   };
 
@@ -217,6 +236,7 @@ export default function Scanner() {
             n={n}
             onN={setN}
             undo={undo ?? undefined}
+            error={error}
             onUndo={() => shown.kind === 'in' && void undoIn(shown)}
             onLetIn={() => shown.kind === 'ask' && void admit(shown.guest, n)}
             onNext={next}
@@ -242,7 +262,7 @@ function Circle({ label, selected, onPress, children }: { label: string; selecte
 }
 
 // One result, sliding up over the camera with its colour as a dot and a glow.
-function Card(p: { shown: Shown; n: number; onN: (n: number) => void; undo?: number; onUndo: () => void; onLetIn: () => void; onNext: () => void; onFind: () => void }) {
+function Card(p: { shown: Shown; error: string | null; n: number; onN: (n: number) => void; undo?: number; onUndo: () => void; onLetIn: () => void; onNext: () => void; onFind: () => void }) {
   const insets = useSafeAreaInsets();
   const still = useAccessibility('reduceMotionChanged');
   const [rise] = useState(() => new Animated.Value(0));
@@ -297,6 +317,7 @@ function Card(p: { shown: Shown; n: number; onN: (n: number) => void; undo?: num
         </Text>
       </View>
       <Text style={styles.line}>{line}</Text>
+      {p.error && <Text style={styles.err}>{p.error}</Text>}
       {s.kind === 'ask' && (
         <View style={styles.askRow}>
           <Text style={styles.askLabel}>Here now</Text>
@@ -354,11 +375,12 @@ function Find(p: {
   }, [load.data, onCounts]);
   // A row undone here shows its new count until the next search.
   const [patch, setPatch] = useState<Record<string, DoorGuest>>({});
+  useEffect(() => setPatch({}), [load.data]); // fresh rows replace what was patched
   const [error, setError] = useState<string | null>(null);
   const undoOne = async (g: DoorGuest) => {
     setError(null);
     const r = await api.authed<DoorGuest>('POST', p.undoPath(g.id), { from: g.admitted, total: g.admitted - 1 });
-    const now = r.ok ? r.data : (r.error as Failed['error']).guest;
+    const now = r.ok ? r.data : (r.error as Failure).guest;
     if (now) setPatch((x) => ({ ...x, [g.id]: now }));
     if (!r.ok) setError(r.error.message);
     else load.reload(); // the counts
