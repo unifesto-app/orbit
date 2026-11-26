@@ -53,6 +53,8 @@ const config: ExpoConfig = {
     // The ticket scanner (host apps plan, decision 16). Camera only: no microphone on either platform. The full name, not
     // $(PRODUCT_NAME): that's the Xcode target's, squashed from the label ("PlayPartner").
     ['expo-camera', { cameraPermission: `${v.name} uses the camera to scan tickets.`, microphonePermission: false, recordAudioAndroid: false }],
+    // Event posters and 4:3s in Event Partner's editor (src/app/edit.tsx): the photo library only, no camera or microphone.
+    ['expo-image-picker', { photosPermission: `${v.name} uses your photos for event posters.`, cameraPermission: false, microphonePermission: false }],
   ],
   owner: 'unifesto-app',
 };

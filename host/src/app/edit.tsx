@@ -4,15 +4,18 @@
 // fixes) and, once published, Cancel with a reason. Saves send only what changed (src/launch/editor.ts), and the
 // screen shows the API’s answer, so nothing typed since snaps back. The form parts are the Event Request’s (app/request.tsx).
 // ponytail: cancelling cancels the bookings but tells no one yet (eventCancelled is H13.5); the copy says so.
-// ponytail: no poster or 4:3 upload here: host/ has no image picker, and adding one is a native module (a rebuild).
-// Until then a draft can't publish from the phone (its poster is the first fix listed).
-import { categories, FEE_PLANS, type FeePlan, type HostPage, type TeamEvent, type TicketType } from '@orbit/contract';
+// The 3:4 poster (publishing needs it) and the optional 4:3 are picked from the library, cropped there, and sent to
+// PUT /events/:id/poster and /wide, which refuse a wrong shape in words; the event is read again after, so Publish's fixes
+// clear. A new event gets them once its draft is made, as it has no id before.
+import { categories, FEE_PLANS, type FeePlan, type HostPage, PHOTO_MAX_BYTES, type TeamEvent, type TicketType } from '@orbit/contract';
 import { Glass } from '@orbit/mobile/glass';
 import { useLoad } from '@orbit/mobile/load';
-import { color, space } from '@orbit/mobile/theme';
+import { color, radius, space } from '@orbit/mobile/theme';
+import { File } from 'expo-file-system';
+import * as ImagePicker from 'expo-image-picker';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
-import { Alert, Text, TextInput, View } from 'react-native';
+import { useRef, useState } from 'react';
+import { Alert, Image, Text, TextInput, View } from 'react-native';
 
 import { bodyOf, fixesOf, type Form, formOf, LASTS, lastsLabel, paiseOf, placeHalf, priceLabel, saveable } from '../launch/editor';
 import { useHost } from '../launch/host';
@@ -205,11 +208,9 @@ function Editor({ id }: { id: string }) {
       )}
 
       <Section title="Poster" />
-      <Card>
-        <Row label="3:4 poster" value={e.poster ? 'Added' : 'Not yet'} strong={!!e.poster} />
-        <Row label="4:3 wide · optional" value={e.wide ? 'Added' : 'Not yet'} strong={!!e.wide} />
-      </Card>
-      <Note>Uploads come with a later app update.</Note>
+      <Picture id={id} shape="poster" link={e.poster} locked={locked} onDone={setAnswer} />
+      <Section title="Wide image · optional" />
+      <Picture id={id} shape="wide" link={e.wide} locked={locked} onDone={setAnswer} />
 
       <Section title="Tickets" />
       <Tickets id={id} list={tickets.data ?? []} published={e.status === 'published'} locked={locked} onChange={tickets.reload} />
@@ -258,6 +259,71 @@ function Editor({ id }: { id: string }) {
         />
       )}
     </Frame>
+  );
+}
+
+// One of the event's two images: what's there, then Add or Change (and Remove for the optional 4:3). The library crops
+// it to its shape; the API still checks it (3:4 or 4:3, big enough, 5 MB) and says why in words. After an upload or a
+// removal the event is read again, so the page shows its new link and Publish's fixes drop the poster.
+function Picture({ id, shape, link, locked, onDone }: { id: string; shape: 'poster' | 'wide'; link: string | null; locked: boolean; onDone: (e: TeamEvent) => void }) {
+  const [busy, setBusy] = useState<string | null>(null); // the pill's word while it's out
+  const [error, setError] = useState<string | null>(null);
+  const picking = useRef(false);
+  const poster = shape === 'poster';
+  const send = async (word: string, call: () => ReturnType<typeof api.authed>) => {
+    setBusy(word);
+    setError(null);
+    const r = await call();
+    if (r.ok) {
+      const fresh = await api.authed<TeamEvent>('GET', `/events/${id}`);
+      if (fresh.ok) onDone(fresh.data);
+    } else setError(r.error.message);
+    setBusy(null);
+  };
+  const choose = async () => {
+    if (busy || picking.current) return;
+    picking.current = true;
+    let picked: ImagePicker.ImagePickerResult;
+    try {
+      picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: poster ? [3, 4] : [4, 3], quality: 0.85 });
+    } catch {
+      return setError('Couldn’t open your photos. Try again.');
+    } finally {
+      picking.current = false;
+    }
+    const a = picked.canceled ? null : picked.assets[0];
+    if (!a) return;
+    if (a.fileSize && a.fileSize > PHOTO_MAX_BYTES) return setError('That image is over 5 MB. Choose a smaller one.');
+    const form = new FormData();
+    // As a File: SDK 58's fetch (expo/fetch) sends a part with bytes(), not React Native's { uri, name, type }.
+    form.append('image', new File(a.uri));
+    await send('Uploading…', () => api.authed('PUT', `/events/${id}/${shape}`, form));
+  };
+  const remove = () =>
+    Alert.alert('Remove the wide image?', 'The page shows the poster instead.', [
+      { text: 'Keep it', style: 'cancel' },
+      { text: 'Remove', style: 'destructive', onPress: () => void send('Removing…', () => api.authed('DELETE', `/events/${id}/wide`)) },
+    ]);
+  const size = poster ? styles.poster : styles.wide;
+  return (
+    <>
+      <View style={styles.picture}>
+        {link ? (
+          <Image source={{ uri: link }} style={size} alt={poster ? 'The event’s poster' : 'The event’s wide image'} />
+        ) : (
+          <View style={[size, styles.blank]}>
+            <Text style={s.chipText}>{poster ? '3:4 · needed to publish' : '4:3 · shown instead of the poster'}</Text>
+          </View>
+        )}
+        {!locked && (
+          <View style={styles.buttons}>
+            <Pill label={busy ?? (link ? 'Change' : poster ? 'Add poster' : 'Add wide image')} onPress={busy ? undefined : () => void choose()} />
+            {!poster && link && <Pill label="Remove" onPress={busy ? undefined : remove} />}
+          </View>
+        )}
+      </View>
+      {error && <Note live>{error}</Note>}
+    </>
   );
 }
 
@@ -350,4 +416,9 @@ function Tickets({ id, list, published, locked, onChange }: { id: string; list: 
 const styles = {
   margin: { marginHorizontal: 20 },
   buttons: { flexDirection: 'row', gap: space.small },
+  picture: { marginHorizontal: 20, gap: 12 },
+  // Both sides set: a bundled RN Image loses aspectRatio to the file's own height.
+  poster: { width: 180, height: 240, borderRadius: radius.sm, backgroundColor: color.raised },
+  wide: { width: 240, height: 180, borderRadius: radius.sm, backgroundColor: color.raised },
+  blank: { alignItems: 'center', justifyContent: 'center', padding: 12 },
 } as const;
