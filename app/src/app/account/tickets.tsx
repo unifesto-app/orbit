@@ -1,45 +1,31 @@
 // Tickets: the viewer's upcoming bookings, soonest first (Booking doc, The ticket: "Upcoming and Past"; the past half
-// is History). Each row opens its ticket (src/app/ticket/[id].tsx). A ticket with a refund request open says so.
-// Signed out, a line and Sign in.
+// is History), from GET /me/tickets; with no signal, the ones kept on the phone (Try again only when none are). Each row
+// opens its ticket (src/app/ticket/[id].tsx). Signed out, a line and Sign in.
 import { router } from 'expo-router';
 import { View } from 'react-native';
 
-import { refunds, ticketFor } from '../../account/data';
 import { Note, Page, SignInNote } from '../../account/kit';
-import { isOpen, type RefundStatus } from '../../account/rules';
-import { events, hosts } from '../../mock';
-import { EventRow } from '../../rows';
-import { useViewer } from '../../session';
+import { toEvent, toHost } from '../../events';
+import { EventRow, Failed, Waiting } from '../../rows';
+import { loadTickets, useTickets, useSignedIn, useTicketsOnFocus } from '../../session';
 import { space } from '../../theme';
 
-// "Refund with the host": the Booking doc's status, read as a tag.
-const refundTag = (s: RefundStatus) => (s.startsWith('Refund') ? s : `Refund ${s[0].toLowerCase()}${s.slice(1)}`);
-
 export default function Tickets() {
-  const viewer = useViewer();
-  const booked = new Set(viewer.tickets?.map((t) => t.eventId));
-  const list = events.filter((e) => booked.has(e.id)).sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt));
+  const signedIn = useSignedIn();
+  const mine = useTickets();
+  useTicketsOnFocus();
+  const list = mine.data?.upcoming ?? [];
   return (
     <Page title="Tickets">
-      {!viewer.signedIn ? (
+      {!signedIn ? (
         <SignInNote>Sign in to see your tickets.</SignInNote>
+      ) : !mine.data ? (
+        mine.error ? <Failed message={mine.error.message} retry={() => void loadTickets()} /> : <Waiting />
       ) : list.length ? (
         <View style={{ marginTop: space.big }}>
-          {list.map((e) => {
-            const refund = refunds.find((r) => r.eventId === e.id && isOpen(r.status));
-            const host = hosts.find((h) => h.id === e.hostId)!;
-            const ticket = ticketFor(e.id);
-            return (
-              <EventRow
-                key={e.id}
-                event={e}
-                host={host}
-                past
-                tag={refund && refundTag(refund.status)}
-                onPress={ticket ? () => router.push(`/ticket/${ticket.id}`) : undefined}
-              />
-            );
-          })}
+          {list.map((t) => (
+            <EventRow key={t.id} event={toEvent(t.event)} host={toHost(t.event.host)} past now={Date.now()} onPress={() => router.push(`/ticket/${t.id}`)} />
+          ))}
         </View>
       ) : (
         <Note>No upcoming tickets.</Note>

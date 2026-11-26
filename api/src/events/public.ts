@@ -4,6 +4,7 @@ import { z } from "zod";
 import { categories, EventCategory, EventSlug, HostSlug, type EventCard, type HostCard, MAX_QUERY, span, type PublicEvent, type TierCard, WHEN } from "@orbit/contract";
 import type { Db } from "../db/index.ts";
 import { events, eventSlugs, hosts, hostSlugs, ticketTypes } from "../db/schema.ts";
+import { seatsTaken } from "../bookings.ts";
 import { fail, invalid } from "../http.ts";
 import { effectiveVisibility } from "./rules.ts";
 
@@ -59,11 +60,12 @@ export async function cards(db: Db, q: { where: SQL | undefined; order: SQL[]; l
   const tiers = rows.length
     ? await db.select().from(ticketTypes).where(inArray(ticketTypes.eventId, rows.map((r) => r.id))).orderBy(asc(ticketTypes.sortOrder), asc(ticketTypes.createdAt))
     : [];
+  const sold = await seatsTaken(db, tiers.map((t) => t.id));
   return rows.map((r) => {
     const mine: TierCard[] = tiers
       .filter((t) => t.eventId === r.id)
-      // ponytail: no bookings exist yet, so `left` is the whole quantity; the bookings slice (P10.1) subtracts what's sold.
-      .map((t) => ({ id: t.id, name: t.name, pricePaise: t.pricePaise, quantity: t.quantity, left: t.quantity, salesStartAt: t.salesStartAt?.toISOString() ?? null, salesEndAt: t.salesEndAt?.toISOString() ?? null, note: t.note, perPersonLimit: t.perPersonLimit }));
+      // Seats left: the quantity less confirmed bookings (P10.1); null with no limit.
+      .map((t) => ({ id: t.id, name: t.name, pricePaise: t.pricePaise, quantity: t.quantity, left: t.quantity === null ? null : t.quantity - (sold.get(t.id) ?? 0), salesStartAt: t.salesStartAt?.toISOString() ?? null, salesEndAt: t.salesEndAt?.toISOString() ?? null, note: t.note, perPersonLimit: t.perPersonLimit }));
     const host: HostCard = { id: r.hid, slug: r.hslug, name: r.hname, kind: r.hkind, city: r.hcity, verified: !!r.hverified, logo: r.hlogo };
     return {
       id: r.id, slug: r.slug, title: r.title, category: r.category, startsAt: iso(r.startsAt), endsAt: iso(r.endsAt), timezone: r.timezone,

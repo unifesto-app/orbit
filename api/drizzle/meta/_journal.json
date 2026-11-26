@@ -155,6 +155,13 @@
       "when": 1795629601766,
       "tag": "0021_brief_wolf_cub",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1795632686506,
+      "tag": "0022_abandoned_jubilee",
+      "breakpoints": true
     }
   ]
 }

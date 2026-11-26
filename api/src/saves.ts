@@ -40,7 +40,7 @@ const openIn = async (tx: Tx | Db, ids: string[]) =>
 // listed-but-unsaved event and a delete during a tick can't fail. A deleted account has no row to hold and is told
 // it's signed out, as anywhere else.
 const SINCE = Date.parse("2026-01-01T00:00:00Z"); // no save is older than Orbit
-async function mine<R>(db: Db, c: Context, userId: string, run: (tx: Tx) => Promise<R>): Promise<R | Response> {
+export async function mine<R>(db: Db, c: Context, userId: string, run: (tx: Tx) => Promise<R>): Promise<R | Response> {
   return db.transaction(async (tx) => {
     const [u] = await tx.select({ id: users.id }).from(users).where(and(eq(users.id, userId), isNull(users.deletedAt))).for("update");
     return u ? run(tx) : fail(c, 401, "signedOut", "You're signed out. Sign in again.");
