@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { testApp } from "./testkit.ts";
-import { activity, auditLog, events, follows, hosts, interest, staffGrants, users, visit } from "./db/schema.ts";
+import { activity, auditLog, bookings, events, follows, hosts, interest, payments, staffGrants, ticketTypes, users, visit } from "./db/schema.ts";
 
 let t: Awaited<ReturnType<typeof testApp>>;
 const DAY = 86_400_000, HOUR = 3_600_000, IST = 330 * 60_000;
@@ -76,16 +76,17 @@ test("1 gates: 401, 404, and each feature opens only its blocks, each read audit
   const q = await withOnly("queues");
   assert.deepEqual(await keys(q), []);
   assert.deepEqual(await keys(await withOnly("people")), ["people", "waitlist", "website"]);
-  assert.deepEqual(await keys(await withOnly("hosts")), ["events", "hosts"]);
+  assert.deepEqual(await keys(await withOnly("hosts")), ["bookings", "events", "hosts"]);
+  assert.deepEqual(await keys(await withOnly("money")), ["revenue"]);
   assert.deepEqual(await keys(await withOnly("staff")), ["staff"]);
   const o = await join();
   await makeOwner(o);
-  assert.deepEqual(await keys(o), ["events", "hosts", "people", "staff", "waitlist", "website"]);
+  assert.deepEqual(await keys(o), ["bookings", "events", "hosts", "people", "revenue", "staff", "waitlist", "website"]);
   const mine = (await t.db.select().from(auditLog).where(eq(auditLog.actorId, q.me.id))).filter((a) => a.action === "dashboard.view");
   assert.equal(mine.length, 1);
   assert.deepEqual(mine[0]!.data, { blocks: [] });
   const owns = (await t.db.select().from(auditLog).where(eq(auditLog.actorId, o.me.id))).filter((a) => a.action === "dashboard.view");
-  assert.deepEqual((owns[0]!.data as any).blocks.sort(), ["events", "hosts", "people", "staff", "waitlist", "website"]);
+  assert.deepEqual((owns[0]!.data as any).blocks.sort(), ["bookings", "events", "hosts", "people", "revenue", "staff", "waitlist", "website"]);
 });
 
 test("2 people: totals, windows, 30 days and active", async () => {
@@ -185,4 +186,31 @@ test("6 staff: started and unended grants count once, plus the owner", async () 
   const o = await join();
   await makeOwner(o); // no grant row
   assert.equal((await dash(u)).staff.active - a, 3);
+});
+
+test("7 bookings and revenue: this week against the one before, check-in as Analytics counts it", async () => {
+  const u = await getReader(); // people, hosts, staff: no Money
+  const banker = await join();
+  await give(banker, "money");
+  assert.equal((await dash(u)).revenue, undefined);
+  const a = await dash(u), ar = (await dash(banker)).revenue;
+  const owner = await newUser(onDay(0));
+  const [h] = await t.db.insert(hosts).values({ name: "H", slug: `h-${randomUUID()}`, kind: "venue", city: "Hyderabad", ownerId: owner, createdBy: owner }).returning({ id: hosts.id });
+  const [e] = await t.db.insert(events).values({ hostId: h!.id, slug: `e-${randomUUID()}`, title: "E", status: "published", startsAt: new Date(t.now() - 2 * DAY), createdBy: owner }).returning({ id: events.id });
+  const [tt] = await t.db.insert(ticketTypes).values({ eventId: e!.id, name: "General", pricePaise: 10_000 }).returning({ id: ticketTypes.id });
+  const book = async (k: number, status: "confirmed" | "cancelled" = "confirmed") =>
+    (await t.db.insert(bookings).values({ userId: await newUser(onDay(20)), eventId: e!.id, ticketTypeId: tt!.id, quantity: 2, admitted: status === "confirmed" ? 1 : 0, status, qr: randomUUID(), code: randomUUID(), createdAt: onDay(k) }).returning({ id: bookings.id }))[0]!.id;
+  const pay = (bookingId: string, k: number, amountPaise: number, status: "paid" | "refunded" | "expired") =>
+    t.db.insert(payments).values({ kind: "ticket", userId: owner, hostId: h!.id, eventId: e!.id, ticketTypeId: tt!.id, quantity: 1, unitPricePaise: amountPaise, plan: "5+0", buyerFeeBps: 500, buyerFeePaise: amountPaise / 20, commissionBps: 0, commissionPaise: 0, feeIncluded: false, amountPaise, razorpayOrderId: `order_${randomUUID()}`, status, bookingId, createdAt: onDay(k), updatedAt: onDay(k) });
+  await pay(await book(0), 0, 20_000, "paid");
+  await pay(await book(6), 6, 40_000, "refunded"); // landed, refunded since: still came in, but no fee kept
+  await pay(await book(8), 8, 60_000, "paid"); // the week before
+  await pay(await book(2, "cancelled"), 2, 10_000, "expired"); // never landed, and cancelled
+  await book(14); // older than both weeks
+  const b = await dash(u), br = (await dash(banker)).revenue;
+  assert.deepEqual([b.bookings.week - a.bookings.week, b.bookings.prevWeek - a.bookings.prevWeek], [2, 1]);
+  assert.deepEqual([br.week - ar.week, br.prevWeek - ar.prevWeek, br.orbitWeek - ar.orbitWeek], [60_000, 60_000, 1_000]);
+  const an = (await as(u)("GET", "/galaxy/analytics")).body;
+  assert.equal(b.bookings.checkInRate, an.checkIn.rate);
+  assert.notEqual(b.bookings.checkInRate, null); // this event's 4 confirmed tickets, 2 in
 });

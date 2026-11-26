@@ -55,4 +55,37 @@ export type AnalyticsStats = {
   // while nobody follows one). Percentiles, not an average, so a few accounts following many hosts don't lift it.
   follows: { people: number; following: number; p50: number | null; p90: number | null };
   deletions: { pending: number; month: number }; // waiting out their 30 days; carried out in the last 30 days
+  // Ticket bookings made in the last 30 days (X17): all of them, those still confirmed, those cancelled (by the buyer or
+  // the host), and the tickets on the confirmed ones. `days`: bookings made a day, oldest first. `sources`: confirmed
+  // ones by where they came from. Paid: confirmed with a payment that landed (a refund since included); free the rest.
+  // `perBooking`: tickets on each confirmed booking, median and 90th percentile (null while there are none).
+  bookings: {
+    total: number;
+    confirmed: number;
+    cancelled: number;
+    tickets: number;
+    days: { day: string; count: number }[];
+    sources: Tally;
+    paid: number;
+    free: number;
+    perBooking: { p50: number | null; p90: number | null };
+  };
+  // Check-in over published events (not cancelled) that ended in the last 30 days, before now (an event with no end
+  // ends at its start), on their confirmed bookings: events with any, tickets on them, people admitted, and the share
+  // admitted (0 to 1, null with no tickets). Each event's own share: the median and the lowest tenth (null with none).
+  checkIn: CheckIn;
+  // Money, only for holders of Money (null for the rest): payments made in the last 30 days that landed (a refund since
+  // included), in paise. What buyers paid, Orbit's part (buyer fee plus commission), refunds processed in the window,
+  // how many payments; paid a day, by kind (Tickets, Slots), and each payment's amount, median and 90th percentile.
+  revenue: {
+    gross: number;
+    orbit: number;
+    refunded: number;
+    payments: number;
+    days: { day: string; count: number }[];
+    kinds: Tally;
+    order: { p50: number | null; p90: number | null };
+  } | null;
 };
+
+export type CheckIn = { events: number; tickets: number; admitted: number; rate: number | null; p50: number | null; p10: number | null };
