@@ -808,7 +808,7 @@ export const deliveries = pgTable(
     userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
     contact: text("contact"), // the contact a notice was addressed to, when it was
     kind: text("kind").notNull(),
-    channel: text("channel", { enum: ["email", "push"] }).notNull(),
+    channel: text("channel", { enum: ["email", "push", "inbox"] }).notNull(), // inbox: only a kill switch's skipped row
     target: text("target").notNull().default(""), // the email address; '' on a skipped row that has none
     dedupeKey: text("dedupe_key").notNull(),
     payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),

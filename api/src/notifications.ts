@@ -2,7 +2,7 @@ import { and, count, countDistinct, eq, gt, gte, inArray, isNull, lt, lte, notIn
 import { inboxApp, type InboxApp, isMust, KINDS, type NoticeKind, type NotificationSettings, SWITCH_KEYS, type SwitchKey } from "@orbit/contract";
 import { type Mail, NotSent } from "./auth/senders.ts";
 import type { Db } from "./db/index.ts";
-import { deliveries, events, inboxItems, notificationPrefs, pushDevices, sessions, users } from "./db/schema.ts";
+import { deliveries, events, inboxItems, notificationPrefs, notificationSwitches, pushDevices, sessions, users } from "./db/schema.ts";
 import { isUuid, type Notice, type Notify, type Tx } from "./http.ts";
 import { emailFor, inboxFor } from "./notification-emails.ts";
 import type { Push } from "./push.ts";
@@ -103,14 +103,20 @@ const heldAt = (p: typeof users.$inferSelect, at: Date) => !!((p.suspendedAt && 
 const addressOf = (contact: string | null, person: typeof users.$inferSelect | undefined) =>
   contact ? (contact.includes("@") ? contact : null) : person?.emailVerifiedAt ? person.email : null;
 
+// Galaxy's kill switches (PR 7): the channels switched off for this kind, its own or the whole channel's (kind *). Read
+// on every notice and every worker pass, so a switch takes hold at once.
+export const killedFor = async (q: Tx | Db, kind: string) =>
+  new Set((await q.select({ channel: notificationSwitches.channel }).from(notificationSwitches).where(inArray(notificationSwitches.kind, [kind, "*"]))).map((r) => r.channel));
+
 type Base = Pick<typeof deliveries.$inferInsert, "userId" | "contact" | "kind" | "dedupeKey" | "payload" | "runAt" | "createdAt" | "inboxItemId">;
 // The email row for a notice: switched off, held (optional), queued to its address, or no address. `s` is null for Must
 // kinds and notices with no account. Used by "always" kinds in write() and by "fallback" kinds when the push can't land.
-const writeEmail = (q: Tx | Db, row: Base, s: NotificationSettings | null, address: string | null) => {
+const writeEmail = (q: Tx | Db, row: Base, s: NotificationSettings | null, address: string | null, killed: boolean) => {
   const kind = row.kind as NoticeKind;
   const must = isMust(kind);
-  const v: Pick<typeof deliveries.$inferInsert, "status" | "reason" | "target"> =
-    s && switchedOff(s, kind, "email")
+  const v: Pick<typeof deliveries.$inferInsert, "status" | "reason" | "target"> = killed
+    ? { status: "skipped", reason: "killSwitch", target: "" }
+    : s && switchedOff(s, kind, "email")
       ? { status: "skipped", reason: "switchOff", target: "" }
       : // ponytail: optional email (not Must, not the one-off welcome) waits for unsubscribe links; lifts in PR 6.
         !must && kind !== "welcome"
@@ -139,7 +145,7 @@ const fallBack = async (db: Db, d: typeof deliveries.$inferSelect, at: Date) => 
   if (!isMust(kind) && heldAt(person, at)) return; // suspended or waiting for deletion since: Must only, as in write()
   const s = isMust(kind) ? null : await settingsOf(db, person.id, person.city);
   const row = { userId: d.userId, contact: d.contact, kind, dedupeKey: d.dedupeKey, payload: d.payload, runAt: at, createdAt: at, inboxItemId: d.inboxItemId };
-  await writeEmail(db, row, s, addressOf(d.contact, person));
+  await writeEmail(db, row, s, addressOf(d.contact, person), (await killedFor(db, kind)).has("email"));
 };
 
 export function createNotifier({ db, now }: { db: Db; now: () => number }): Notify {
@@ -179,10 +185,12 @@ export function createNotifier({ db, now }: { db: Db; now: () => number }): Noti
     const held = person && heldAt(person, at);
     if (held && !isMust(n.kind)) return void (await log({ channel: "email", status: "skipped", reason: "accountState", target: "" }));
 
-    // Here: staff's kill switch (notification_switches), from Galaxy's slice.
+    // Galaxy's kill switches: each channel switched off writes a skipped row instead.
+    const killed = await killedFor(q, n.kind);
     let inboxItemId: string | null = null;
     const app = inboxApp(n.kind, payload);
-    if (def.inbox && person && app) {
+    if (def.inbox && person && app && killed.has("inbox")) await log({ channel: "inbox", status: "skipped", reason: "killSwitch", target: "" });
+    else if (def.inbox && person && app) {
       const words = inboxFor(n.kind, payload);
       const [made] = await q
         .insert(inboxItems)
@@ -195,7 +203,7 @@ export function createNotifier({ db, now }: { db: Db; now: () => number }): Noti
     // The person's switches, caps and quiet hours. Must kinds skip all three. Whatever happens here, the inbox item landed.
     const must = isMust(n.kind);
     const s = person && !must ? await settingsOf(q, person.id, person.city) : null;
-    const email = () => writeEmail(q, { ...row, inboxItemId }, s, address);
+    const email = () => writeEmail(q, { ...row, inboxItemId }, s, address, killed.has("email"));
     if (def.email === "always") await email();
     if (!def.push || !person) return;
     // No push for a "fallback" kind (switched off, no device): its email goes now. A cap or quiet hours isn't that.
@@ -203,6 +211,7 @@ export function createNotifier({ db, now }: { db: Db; now: () => number }): Noti
       await log({ channel: "push", status: "skipped", reason, target: "", inboxItemId });
       if (def.email === "fallback" && reason !== "capReached") await email();
     };
+    if (killed.has("push")) return void (await skip("killSwitch"));
     if (s && switchedOff(s, n.kind, "push")) return void (await skip("switchOff"));
     // Low pushes are held in quiet hours and capped at 5 a day (by the day they deliver); followedHostEvent at 1 a day per
     // host. Normal pushes are neither held nor counted toward the 5.
@@ -286,6 +295,8 @@ export async function runDeliveries({ db, mail, push, now, limit = 20 }: { db: D
     .set({ status: "sending", lockedUntil: new Date(at.getTime() + 2 * MIN), tries: sql`${deliveries.tries} + 1` })
     .where(inArray(deliveries.id, due))
     .returning();
+  // Galaxy's kill switches, read once a pass: a claimed row on a channel switched off since it was queued is skipped.
+  const off = new Set((await db.select().from(notificationSwitches)).map((r) => `${r.kind}:${r.channel}`));
 
   for (const d of claimed) {
     // Only while the row is still this pass's: a slow pass whose lock lapsed has lost it to another worker's claim.
@@ -307,6 +318,10 @@ export async function runDeliveries({ db, mail, push, now, limit = 20 }: { db: D
     const relet = await db.update(deliveries).set({ lockedUntil: new Date(now() + 2 * MIN) }).where(ours).returning({ id: deliveries.id });
     if (!relet.length) continue;
 
+    if (off.has(`${d.kind}:${d.channel}`) || off.has(`*:${d.channel}`)) {
+      if ((await done({ status: "skipped", reason: "killSwitch" })) && d.channel === "push") await fallBack(db, d, at);
+      continue;
+    }
     if (d.channel === "push") {
       // The device behind the row's session, while that sign-in is live: sign-out, security sweeps and deletion keep
       // the device row, so this is what keeps a push off an ended session.
