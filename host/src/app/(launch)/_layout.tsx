@@ -2,26 +2,24 @@
 // dark glass capsule low on the screen, the open tab under a lighter pill that springs to it, Phosphor filled icons
 // beside DM Sans 600 labels (the open tab's in the Sage to Moss gradient), shrinking to the open tab while the page
 // scrolls down. Beside it, the round Inbox with its count (owner, 22 Nov 2026: "Inbox", over the chat orb and Scan,
-// which only works around check-in), with how many of its messages are unread (GET /me/inbox, read every minute here).
+// which only works around check-in), with how many of its messages are unread (src/inboxButton.tsx, shared with Play Partner).
 // ponytail: the same bar as Station's (host/src/app/(station)/_layout.tsx) with other tabs and circle; pull both into one
 // host tab bar once Station lands. No drag along the bar (the Orbit app's has one).
 import { DARK_TINT as DARK, Glass } from '@orbit/mobile/glass';
 import { BAR, barAfterScroll, barBottom, SIDE, TabBarScroll, TabBarSmall } from '@orbit/mobile/tabBar';
 import { color, font, stoneAt } from '@orbit/mobile/theme';
-import { Redirect, router } from 'expo-router';
+import { Redirect } from 'expo-router';
 import { TabList, Tabs, TabSlot, TabTrigger, type TabTriggerSlotProps } from 'expo-router/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, AppState, Image, LayoutAnimation, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Animated, AppState, Image, LayoutAnimation, Platform, Pressable, StyleSheet, Text, useWindowDimensions } from 'react-native';
 import { SafeAreaInsetsContext, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { badge } from '../../launch/inbox';
-import { refreshInbox, useInbox } from '../../launch/inboxStore';
+import { InboxButton } from '../../inboxButton';
 import { useHost } from '../../launch/host';
 import { refreshMe, useSession } from '../../session';
 
 const PAD = 4;
 const GAP = 10;
-const BELL = require('../../../assets/tabs/bell.png');
 const TABS = [
   { name: 'events', href: '/events', label: 'Events', icon: require('../../../assets/tabs/events.png'), on: require('../../../assets/tabs/events-on.png') },
   { name: 'earnings', href: '/earnings', label: 'Money', icon: require('../../../assets/tabs/money.png'), on: require('../../../assets/tabs/money-on.png') },
@@ -41,23 +39,12 @@ export default function LaunchTabs() {
   useEffect(() => {
     Animated.spring(x, { toValue: open * slot, useNativeDriver: true, speed: 18, bounciness: 6 }).start();
   }, [open, slot, x]);
-  const { unread } = useInbox();
-  const count = badge(unread);
   const me = useSession()?.me.id;
   useEffect(() => {
     if (!me) return;
-    void refreshInbox(me);
-    const every = setInterval(() => void refreshInbox(me), 60_000);
-    // Back from the background: the account (Admin seats added or ended meanwhile) and the inbox read again.
-    const back = AppState.addEventListener('change', (s) => {
-      if (s !== 'active') return;
-      void refreshMe();
-      void refreshInbox(me);
-    });
-    return () => {
-      clearInterval(every);
-      back.remove();
-    };
+    // Back from the background: the account (Admin seats added or ended meanwhile) read again; the inbox is src/push.tsx's.
+    const back = AppState.addEventListener('change', (s) => s === 'active' && void refreshMe());
+    return () => back.remove();
   }, [me]);
   const host = useHost();
   if (!host) return <Redirect href="/pick" />; // several hosts and none picked (the root guard keeps out no host at all)
@@ -81,21 +68,7 @@ export default function LaunchTabs() {
           ))}
         </Glass>
       </TabList>
-      <Pressable
-        onPress={() => router.push('/inbox')}
-        accessibilityRole="button"
-        accessibilityLabel={count ? `Inbox, ${unread} new` : 'Inbox'}
-        style={({ pressed }) => [styles.inbox, { bottom }, pressed && styles.pressed]}
-      >
-        <Glass tint={DARK} style={styles.ring}>
-          <Image source={BELL} style={styles.bell} />
-        </Glass>
-        {count && (
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>{count}</Text>
-          </View>
-        )}
-      </Pressable>
+      <InboxButton style={[styles.inbox, { bottom }]} />
     </Tabs>
   );
 }
@@ -163,23 +136,4 @@ const styles = StyleSheet.create({
   plain: { width: 20, height: 20, tintColor: color.text },
   label: { fontFamily: font.price, fontSize: 14, color: color.text }, // DM Sans 600
   inbox: { position: 'absolute', right: SIDE },
-  ring: { width: BAR, height: BAR, borderRadius: BAR / 2, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  bell: { width: 22, height: 22, tintColor: color.text },
-  // The count on the accent (an element), Charcoal on Sage: Stone on Sage is only 2.3:1. Ringed in the ground colour.
-  badge: {
-    position: 'absolute',
-    top: -3,
-    right: -3,
-    minWidth: 20,
-    height: 20,
-    paddingHorizontal: 5,
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: color.ground,
-    backgroundColor: color.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  badgeText: { fontFamily: font.price, fontSize: 11, lineHeight: 14, color: color.onAccent },
-  pressed: { opacity: 0.8 },
 });

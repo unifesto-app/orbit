@@ -1,10 +1,11 @@
-// Orbit Launch's Inbox, from the round button beside the tabs. Inbox take 1, approved 22 Nov 2026
+// Each host app's Inbox (Event Partner's first; Play Partner and Crew since Notifications PR 5), from the round button
+// beside the tabs (on Crew's screen). Inbox take 1, approved 22 Nov 2026
 // (https://claude.ai/artifact/BwnBQDW2N2hpihmrSSTnsg): the Orbit app's Rows take (app/src/app/inbox.tsx), with the
 // Notifications flow's messages to hosts. A heading per day, newest first, the last 180 days. Each row is the event's
 // poster, the host's logo or Orbit's orb; who it's from and what it is; the whole message; the time; a Sage dot until
 // it's opened. A tap marks it read; Mark all read sits by the title. The back circle and Settings stay pinned on top, with
-// the app's bar glass fading in once the page scrolls under them; back goes back, or to Events when a link opened the
-// Inbox with nothing under it.
+// the app's bar glass fading in once the page scrolls under them; back goes back, or to the app's first screen when a
+// push opened the Inbox with nothing under it.
 // Messages come from GET /me/inbox (src/launch/inboxStore.ts), read again each time the Inbox opens.
 // ponytail: no screen opens from a message yet (the refund request, the event's team, the link, the payout); each comes
 // with its own take. Settings (which messages email you) waits for the account screens. A ScrollView suits the first
@@ -27,7 +28,7 @@ const DAYS_APART = 40; // between days, as the Orbit app's sections
 const BAR = 48; // the pinned bar: the 44pt back circle and a little room
 const BACK = require('../../assets/tabs/chevron.png');
 
-const back = () => (router.canGoBack() ? router.back() : router.replace('/events'));
+const back = () => (router.canGoBack() ? router.back() : router.replace('/'));
 
 export default function Inbox() {
   const insets = useSafeAreaInsets();
