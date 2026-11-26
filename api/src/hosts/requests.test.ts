@@ -1,10 +1,11 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
-import { eq } from "drizzle-orm";
-import { HostEvents } from "@orbit/contract";
+import { and, eq } from "drizzle-orm";
+import { HostEvents, inboxApp } from "@orbit/contract";
+import { emailFor } from "../notification-emails.ts";
 import { testApp } from "../testkit.ts";
 import { runDeletions } from "../auth/deletion.ts";
-import { auditLog, bookings, eventRequests, events, hosts, staffGrants, teamRoles, ticketTypes, users } from "../db/schema.ts";
+import { auditLog, bookings, deliveries, eventRequests, events, hosts, inboxItems, staffGrants, teamRoles, ticketTypes, users } from "../db/schema.ts";
 
 let t: Awaited<ReturnType<typeof testApp>>;
 before(async () => {
@@ -259,6 +260,7 @@ test("day-30 deletion drops requests that never became a host and clears notes o
 
 test("an approved venue request leaves the requester able to set the venue up; Galaxy lists it", async () => {
   const a = await join(), st = await staff(), nobody = await join();
+  const other = (await as(nobody)("POST", "/hosts", { name: "Not A Venue", kind: "comedy-group", city: "Hyderabad" })).body;
   const sent = await as(a)("POST", "/event-requests", { host: { name: "Respawn Arena", kind: "venue", city: "Hyderabad", about: null } });
   assert.equal(sent.status, 201);
   const ok = await as(st)("POST", `/galaxy/event-requests/${sent.body.id}/approve`, R);
@@ -271,6 +273,9 @@ test("an approved venue request leaves the requester able to set the venue up; G
   // Setup pending until Play Partner saves the venue.
   const pending = (await as(st)("GET", "/galaxy/venues")).body.venues.find((v: any) => v.host.id === hostId);
   assert.equal(pending.venue, null);
+  assert.equal(pending.host.status, "live");
+  // Only Venue hosts.
+  assert.ok(!(await as(st)("GET", "/galaxy/venues")).body.venues.some((v: any) => v.host.id === other.id));
   assert.deepEqual(pending.stations, []);
 
   const setup = await as(a)("PUT", `/venues/${hostId}`, { address: "1 Road", area: "Madhapur", lat: 17.4, lng: 78.4, deskPhone: "+914012345678", week: Array(7).fill([11, 23]) });
@@ -286,4 +291,24 @@ test("an approved venue request leaves the requester able to set the venue up; G
   assert.equal((await as(nobody)("GET", "/galaxy/venues")).status, 404);
   assert.equal((await as(a)("GET", "/galaxy/venues")).status, 404);
   assert.equal((await t.call("GET", "/galaxy/venues")).status, 401);
+});
+
+test("a venue request's answers land in Play Partner, its email names Play Partner; others stay in Event Partner", async () => {
+  const a = await join(), st = await staff();
+  assert.equal((await as(a)("PUT", "/me/push-device", { app: "station", platform: "ios", env: "sandbox", token: `tok-x9-${a.me.id}` })).status, 204);
+  const venue = { name: "Respawn Arena", kind: "venue", city: "Hyderabad", about: null };
+  const sent = await as(a)("POST", "/event-requests", { host: venue });
+  assert.equal((await as(st)("POST", `/galaxy/event-requests/${sent.body.id}/changes`, { reason: "Add the area" })).status, 200);
+  assert.equal((await as(a)("PATCH", "/me/event-request", { host: { ...venue, about: "Madhapur" } })).status, 200);
+  assert.equal((await as(st)("POST", `/galaxy/event-requests/${sent.body.id}/approve`, R)).status, 200);
+
+  const items = await t.db.select().from(inboxItems).where(and(eq(inboxItems.userId, a.me.id), eq(inboxItems.kind, "eventRequestAnswered")));
+  assert.deepEqual(items.map((i) => i.app), ["station", "station"]);
+  const pushes = await t.db.select().from(deliveries).where(and(eq(deliveries.userId, a.me.id), eq(deliveries.kind, "eventRequestAnswered"), eq(deliveries.channel, "push")));
+  assert.equal(pushes.length, 2);
+  assert.ok(pushes.every((p) => p.status === "queued"), JSON.stringify(pushes.map((p) => p.reason)));
+
+  assert.match(emailFor("eventRequestAnswered", { decision: "approved", name: "Respawn Arena", kind: "venue" }).text, /Orbit Play Partner/);
+  assert.match(emailFor("eventRequestAnswered", { decision: "changes", name: "Punchline", kind: "comedy-group", reason: "x" }).text, /Orbit Event Partner/);
+  assert.equal(inboxApp("eventRequestAnswered", { kind: "comedy-group" }), "launch");
 });

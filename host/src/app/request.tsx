@@ -223,7 +223,7 @@ function Steps({ initial, see = null }: { initial: Draft; see?: RequestStatus | 
 
       {step === 1 && (
         <View style={s.fields}>
-          <Field label="Name" value={d.name} onChangeText={(name) => put({ name })} placeholder="Punchline Comedy" autoCapitalize="words" maxLength={100} />
+          <Field label="Name" value={d.name} onChangeText={(name) => put({ name })} placeholder={isStation ? 'Respawn Gaming Lounge' : 'Punchline Comedy'} autoCapitalize="words" maxLength={100} />
           {!isStation && (
             <Label text="Kind">
               <View style={s.chips} accessibilityRole="radiogroup" accessibilityLabel="Kind">
@@ -242,7 +242,7 @@ function Steps({ initial, see = null }: { initial: Draft; see?: RequestStatus | 
                 accessibilityLabel="About"
                 value={d.about}
                 onChangeText={(about) => put({ about })}
-                placeholder="What you run, who comes"
+                placeholder={isStation ? 'What players book: PCs, consoles, a turf or court' : 'What you run, who comes'}
                 placeholderTextColor={color.secondary}
                 selectionColor={color.accent}
                 style={s.areaText}

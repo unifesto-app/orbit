@@ -18,10 +18,10 @@ export function galaxyVenuesRoutes({ db, secret, now = Date.now }: Deps) {
   app.get("/galaxy/venues", signedIn(db, secret, now), requireFeature(db, now, "hosts"), async (c) => {
     const rows = await db.select().from(hosts).leftJoin(venues, eq(venues.hostId, hosts.id)).where(eq(hosts.kind, "venue")).orderBy(asc(hosts.name), asc(hosts.id));
     const ids = rows.map((r) => r.hosts.id);
-    const all = ids.length ? await db.select().from(stations).where(inArray(stations.hostId, ids)).orderBy(asc(stations.createdAt)) : [];
+    const all = ids.length ? await db.select().from(stations).where(inArray(stations.hostId, ids)).orderBy(asc(stations.createdAt), asc(stations.id)) : [];
     const out: StaffVenues = {
       venues: rows.map(({ hosts: h, venues: v }) => ({
-        host: { id: h.id, name: h.name, city: h.city, createdAt: h.createdAt.toISOString() },
+        host: { id: h.id, name: h.name, city: h.city, status: h.status, createdAt: h.createdAt.toISOString() },
         venue: v && { area: v.area, address: v.address, deskPhone: v.deskPhone },
         stations: all
           .filter((s) => s.hostId === h.id)

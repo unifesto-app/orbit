@@ -9,7 +9,7 @@
 // not its Admin is told Event Partner is for Admins; an Admin goes to the tabs.
 // Play Partner (X9) shows the same request card, as List your venue: a Venue request with no event. Approved, the new
 // Admin seat on the Venue opens Today, which sends a venue not set up yet to setup. Another kind's approved request
-// (sent from Event Partner) makes no seat here, so it reads as no request.
+// (sent from Event Partner) reads as no request here, whatever its state (welcomeState's venueOnly).
 import { markOf } from '@orbit/mobile/mark';
 import { showPhone } from '@orbit/mobile/signin';
 import { color, font, space } from '@orbit/mobile/theme';
@@ -49,7 +49,7 @@ export default function Welcome() {
   const [said, setSaid] = useState<string | null>(null); // a refused withdraw
   const [withdrawing, setWithdrawing] = useState(false);
   const r = request.data;
-  const state = welcomeState(isStation && r?.status === 'approved' && r.host.kind !== 'venue' ? null : r);
+  const state = welcomeState(r, isStation);
   const approved = useRef(false);
   approved.current = state === 'approved';
   // Back from the form (sent, or left mid-way): read the request again, showing no card until it's in, so a request
@@ -134,7 +134,7 @@ export default function Welcome() {
         {state === 'waiting'
           ? 'Your request is with Orbit. We’ll tell you as soon as it’s checked.'
           : state === 'changes'
-          ? 'Orbit asked for a change before your host goes live.'
+          ? `Orbit asked for a change before your ${isStation ? 'venue' : 'host'} goes live.`
           : isStation
           ? 'You’re not on a venue’s team yet. Accept an invite from a venue’s Admin, or list your own.'
           : onTeams
