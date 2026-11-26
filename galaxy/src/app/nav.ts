@@ -19,6 +19,8 @@ export const sections: { title: string; items: NavItem[] }[] = [
       { label: "People", href: "/users", also: ["/hosts", "/teams", "/staff"] },
       // Event Requests: people asking to host, answered here (Hosts flow, H1.5).
       { label: "Requests", href: "/requests" },
+      // Doors open now or closed in the last week: booked against checked in, and an undo (X5).
+      { label: "Check-in", href: "/check-in" },
       // DAU, WAU, MAU, retention, platforms and versions (owner, 19 Nov 2026: "user analytics, mau, dau etc").
       { label: "Analytics", href: "/analytics" },
       // Coming Soon's waitlist until launch (owner, 17 Nov 2026: "create a page in galaxy web - prelaunch").
