@@ -1,7 +1,7 @@
 import { and, eq, gt, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import type { Db } from "../db/index.ts";
-import { activity, deliveries, follows, hosts, identities, inboxItems, listEvents, lists, passkeys, saves, pmActivity, sessions, staffGrants, teamRoles, users } from "../db/schema.ts";
+import { activity, bookings, deliveries, events, follows, hosts, identities, inboxItems, listEvents, lists, passkeys, saves, pmActivity, sessions, staffGrants, teamRoles, users } from "../db/schema.ts";
 import { type Env, fail, type Notify, signedIn } from "../http.ts";
 import { drop, type Media } from "../media.ts";
 import { holdIfUnanswered, ownerOnlySql } from "../roles/access.ts";
@@ -143,6 +143,12 @@ export async function runDeletions(db: Db, notify: Notify, now: number, revokeAp
         await tx.delete(inboxItems).where(eq(inboxItems.userId, u.id));
         await tx.update(deliveries).set({ status: "skipped", reason: "accountDeleted" }).where(and(eq(deliveries.userId, u.id), eq(deliveries.status, "queued")));
         await tx.update(deliveries).set({ userId: null, contact: null, payload: {}, target: sql`'deleted:' || ${deliveries.id}` }).where(eq(deliveries.userId, u.id));
+        // Their tickets for events that haven't ended are cancelled, freeing the seats; past bookings stay as records.
+        // ponytail: free bookings only exist yet; P3.2 makes deletion wait for upcoming paid tickets instead.
+        await tx
+          .update(bookings)
+          .set({ status: "cancelled", cancelledAt: at, link: null })
+          .where(and(eq(bookings.userId, u.id), eq(bookings.status, "confirmed"), inArray(bookings.eventId, tx.select({ id: events.id }).from(events).where(gt(events.endsAt, at)))));
         const seats = await tx
           .update(teamRoles)
           .set({ endedAt: at, endReason: "deleted" })

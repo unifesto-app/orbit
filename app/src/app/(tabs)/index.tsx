@@ -13,7 +13,7 @@ import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
-import { past as history, ticketFor } from '../../account/data';
+import { past as history } from '../../account/data';
 import { Carousel, type CarouselSlide } from '../../home/Carousel';
 import { DARK_TINT, Glass } from '../../glass';
 import { planHome, type Viewer } from '../../home/layout';
@@ -30,7 +30,7 @@ import { meetups, tileFor } from '../../kinds';
 import { promoteOne } from '../../labels';
 import { EventRow, Failed, HostRow, isPromoted, loveIt, Monogram, Poster, SEAT, SeatCard, Section, StatusLine, Waiting } from '../../rows';
 import { bookAction, eventStatus } from '../../status';
-import { api, needsAccount, setFollowing, setInterest, skipInterests, useLoved, useViewer } from '../../session';
+import { api, needsAccount, setFollowing, setInterest, skipInterests, useLoved, useTickets, useTicketsOnFocus, useViewer } from '../../session';
 import { useTabBarScroll, useTabBarSmall } from '../../tabBar';
 import { around, color, font, radius, rim, space, stoneAt } from '../../theme';
 
@@ -82,16 +82,26 @@ export default function Home() {
   const where = whereOf(v.place);
   const page = useLoad(JSON.stringify(where), () => eventsApi(api).discover(where), { keep: true }); // keep: a new place never blanks the page
   const now = Date.now();
-  const cards = page.data ? [...page.data.near, ...page.data.elsewhere] : [];
-  const events = page.data ? [...page.data.near.map((c) => toEvent(c, true)), ...page.data.elsewhere.map((c) => toEvent(c, false))] : [];
+  // Your tickets (GET /me/tickets): an event you booked that discover doesn't list (link-only, or far away) still
+  // joins Home's ticket stack; planHome keeps booked events out of every other section.
+  useTicketsOnFocus();
+  const booked = (useTickets().data?.upcoming ?? []).map((t) => t.event);
+  const listed = page.data ? [...page.data.near, ...page.data.elsewhere] : [];
+  // Offline before discover's first answer, the tickets kept on the phone still draw the stack.
+  const extra = [...new Map(booked.filter((c) => !listed.some((x) => x.id === c.id)).map((c) => [c.id, c])).values()];
+  const events = [
+    ...(page.data ? [...page.data.near.map((c) => toEvent(c, true)), ...page.data.elsewhere.map((c) => toEvent(c, false))] : []),
+    ...extra.map((c) => toEvent(c, false)),
+  ];
   // The hosts of those events, and the mock's places to play.
   // ponytail: Places to play stay on the mock venue hosts (with tileFor) until slots reach the API (P17); mock hosts
   // also stay in hostOf, for the mock's Thanks for coming below (bookings slice).
-  const apiHosts = hostsOf(cards);
+  const apiHosts = hostsOf(listed);
   // Their nearness the old way (Hyderabad only), since the API doesn't know them.
   const hyderabad = v.place?.area === 'Hyderabad' || v.place?.city === 'Hyderabad';
   const hosts = [...apiHosts, ...mockHosts.filter((h) => tileFor(h.id)).map((h) => ({ ...h, near: hyderabad }))];
-  const hostOf = (id: string) => (apiHosts.find((h) => h.id === id) ?? mockHosts.find((h) => h.id === id)) as Host;
+  const ticketHosts = hostsOf(extra);
+  const hostOf = (id: string) => (apiHosts.find((h) => h.id === id) ?? ticketHosts.find((h) => h.id === id) ?? mockHosts.find((h) => h.id === id)) as Host;
   // Staff's picks from Galaxy's App content (src/content.ts): the events marked Promoted, the carousel's featured
   // slides, and Orbit's own strips.
   const promoted = usePromoted();
@@ -99,7 +109,7 @@ export default function Home() {
   const ads = useAds('home');
   const boosted = (e: Event) => isPromoted(e, hostOf(e.hostId), promoted, now);
   const plan = planHome(v, events, hosts.map((h) => ({ ...h, tile: tileFor(h.id) })), now, boosted, featured);
-  const ticketLabel = (id: string) => v.tickets?.find((t) => t.eventId === id)?.label ?? '';
+  const ticketOf = (id: string) => v.tickets?.find((t) => t.eventId === id);
 
   const headerTop = insets.top + 4;
   const posterTop = headerTop + HEADER + 4;
@@ -120,6 +130,29 @@ export default function Home() {
   const toggleTickets = () => setTicketsOpen((open) => !open);
   const ticketsAction =
     plan.tickets.length > 1 ? { label: ticketsOpen ? 'Show less' : `See all ${plan.tickets.length}`, onPress: toggleTickets } : undefined;
+
+  // Your tickets, drawn with discover's events, or alone before its first answer (offline, from the phone's copies).
+  const ticketStack = plan.tickets.length > 0 && (
+    <>
+      <Section top={SECTION} title="Your tickets" />
+      <Stack
+        items={plan.tickets}
+        height={TICKET_FACE + 2 * FRAME}
+        open={ticketsOpen}
+        onOpen={ticketsAction && !ticketsOpen ? toggleTickets : undefined}
+        openLabel={`Show all ${plan.tickets.length} tickets`}
+        render={(e) => <TicketCard event={e} host={hostOf(e.hostId)} label={ticketOf(e.id)?.label ?? ''} ticketId={ticketOf(e.id)?.id} />}
+      />
+      {/* Under the stack (owner: "move see all to the bottom of stack"). */}
+      {ticketsAction && (
+        <Pressable onPress={ticketsAction.onPress} accessibilityRole="button" hitSlop={10} style={styles.stackToggle}>
+          <Glass style={styles.stackToggleGlass} tint={DARK_TINT}>
+            <Text style={styles.stackToggleText}>{ticketsAction.label}</Text>
+          </Glass>
+        </Pressable>
+      )}
+    </>
+  );
 
   const hostCards = (
     <View style={styles.grid}>
@@ -144,31 +177,12 @@ export default function Home() {
             way to retry. */}
         {/* A failed read for a new place, with the last place's events still up: the failure over them. */}
         {page.error && page.data && <Failed message={page.error.message} retry={page.reload} />}
+        {!page.data && ticketStack}
         {!page.data && <View style={{ marginTop: SECTION }}>{page.loading || !page.error ? <Waiting /> : <Failed message={page.error.message} retry={page.reload} />}</View>}
         {page.data && (
           <>
 
-        {plan.tickets.length > 0 && (
-          <>
-            <Section top={SECTION} title="Your tickets" />
-            <Stack
-              items={plan.tickets}
-              height={TICKET_FACE + 2 * FRAME}
-              open={ticketsOpen}
-              onOpen={ticketsAction && !ticketsOpen ? toggleTickets : undefined}
-              openLabel={`Show all ${plan.tickets.length} tickets`}
-              render={(e) => <TicketCard event={e} host={hostOf(e.hostId)} label={ticketLabel(e.id)} />}
-            />
-            {/* Under the stack (owner: "move see all to the bottom of stack"). */}
-            {ticketsAction && (
-              <Pressable onPress={ticketsAction.onPress} accessibilityRole="button" hitSlop={10} style={styles.stackToggle}>
-                <Glass style={styles.stackToggleGlass} tint={DARK_TINT}>
-                  <Text style={styles.stackToggleText}>{ticketsAction.label}</Text>
-                </Glass>
-              </Pressable>
-            )}
-          </>
-        )}
+        {ticketStack}
 
         {/* Thanks for coming, for each event you were let in at in the last week, newest first (two at most). */}
         {v.signedIn &&
@@ -408,8 +422,7 @@ function StackCard({
 // on their own lines beside a small View ticket at the bottom (owner: "small the view ticket", "instead of clipping
 // the text use two lines as space is there").
 // The face's top 10px (rim and padding) stays empty, so a stacked card's peek never shows text.
-function TicketCard({ event: e, host, label }: { event: Event; host: Host; label: string }) {
-  const ticket = ticketFor(e.id);
+function TicketCard({ event: e, host, label, ticketId }: { event: Event; host: Host; label: string; ticketId?: string }) {
   return (
     <Glass style={styles.cardRim}>
       <View style={styles.ticketCard}>
@@ -423,8 +436,8 @@ function TicketCard({ event: e, host, label }: { event: Event; host: Host; label
             <Text style={[styles.ticketMeta, styles.grow]} numberOfLines={2}>{host.name}{'\n'}{e.area}</Text>
             {/* Opens the ticket, its QR for the gate (src/app/ticket/[id].tsx). */}
             <Pressable
-              onPress={() => ticket && router.push(`/ticket/${ticket.id}`)}
-              disabled={!ticket}
+              onPress={() => ticketId && router.push(`/ticket/${ticketId}`)}
+              disabled={!ticketId}
               accessibilityRole="button"
               hitSlop={6}>
               <Button label="View ticket" small />

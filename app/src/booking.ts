@@ -10,6 +10,8 @@
 //   once (Play 18).
 // Times are India time (UTC+5:30, no summer time), as the rest of the app writes them. Kept free of other app modules
 // so Node can run it on its own.
+import type { TierCard } from '@orbit/contract';
+
 import type { Station, Venue } from './kinds';
 
 const IST = 330 * 60_000;
@@ -170,3 +172,28 @@ export const teamNameOk = (name: string) => {
 export const holdLeft = (heldAt: number, now: number) => Math.max(HOLD_MS - (now - heldAt), 0);
 /** "9:05". */
 export const mmss = (ms: number) => `${Math.floor(ms / MIN)}:${String(Math.floor((ms % MIN) / 1000)).padStart(2, '0')}`;
+
+/**
+ * A real event's ticket types as the booking sheet lists them (one type per booking, Booking doc). `off` says why one
+ * can't be picked now, shown instead of a stepper, the first that holds: Coming soon (paid: paying in the app is the
+ * next slice), Opens <day> (sales not started), Closed (sales over), Sold out. `max` is the most one booking takes:
+ * the type's per-person limit, and the seats left when it counts them.
+ */
+export function liveTiers(tiers: readonly TierCard[], now: number) {
+  return tiers.map((t) => ({
+    id: t.id,
+    name: t.name,
+    pricePaise: t.pricePaise,
+    max: Math.max(Math.min(t.perPersonLimit, t.left ?? 10), 0),
+    off:
+      t.pricePaise > 0
+        ? 'Coming soon'
+        : t.salesStartAt && Date.parse(t.salesStartAt) > now
+          ? `Opens ${dayLabel(Date.parse(t.salesStartAt))}`
+          : t.salesEndAt && Date.parse(t.salesEndAt) <= now
+            ? 'Closed'
+            : t.left !== null && t.left <= 0
+              ? 'Sold out'
+              : undefined,
+  }));
+}

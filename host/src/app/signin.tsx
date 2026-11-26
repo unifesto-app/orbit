@@ -22,7 +22,7 @@ import { Field, Pill, Wide, styles as ui } from '../launch/ui';
 import { requestCode } from '../proof';
 import { api, openDemo, signIn, thisDevice } from '../session';
 import { type Step, clock, initialsOf, secondsLeft, stepAfter, stepBack } from '../signinSteps';
-import { thisApp } from '../variant';
+import { isLaunch, thisApp } from '../variant';
 
 const ICON = {
   launch: require('../../assets/icons/launch.png'),
@@ -132,7 +132,7 @@ export default function SignIn() {
             onDone={(name, dob) => run(() => api.call<AuthStep>('POST', '/auth/signup', { signup: step.signup, name, dob, device: thisDevice() }), answer)}
           />
         )}
-        {__DEV__ && step.at === 'contact' && (
+        {__DEV__ && isLaunch && step.at === 'contact' && (
           <Text style={styles.demo} onPress={openDemo} accessibilityRole="button">
             Open the demo (development builds only)
           </Text>

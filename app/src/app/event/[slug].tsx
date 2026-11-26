@@ -15,7 +15,7 @@ import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { past as history, ticketFor } from '../../account/data';
+import { past as history } from '../../account/data';
 import { BookBar } from '../../bookBar';
 import { barPrice, cast, followersLine } from '../../detail';
 import { Fact, FactCard } from '../../fact';
@@ -42,7 +42,7 @@ import {
   Tag,
   Verified,
 } from '../../rows';
-import { addToList, needsAccount, setInterested, useInterested, useLoved, useSaved, useViewer } from '../../session';
+import { addToList, needsAccount, setInterested, useInterested, useLoved, useSaved, useTicketsOnFocus, useViewer } from '../../session';
 import { bookAction, eventStatus, seatsLine } from '../../status';
 import { useEvent } from '../../useEvent';
 import { around, color, font, radius, space } from '../../theme';
@@ -67,23 +67,26 @@ export default function EventPage() {
   return found.e ? <EventView e={found.e} host={found.host} now={found.now} live={found.live} /> : found.screen;
 }
 
-// `live`: an event from the API. Its page has no fake counts or mock-only sections, and booking opens with the
-// bookings slice (P10.1), so the bar shows the price and "Booking opens soon". Save, Interested and Loved keep
-// today's on-phone behaviour (saves are slice P9).
+// `live`: an event from the API. Its page has no fake counts or mock-only sections. A free one registers (P10.1); a
+// paid one's bar shows the price and "Booking opens soon" until paying in the app arrives. Interested and Loved keep
+// today's on-phone behaviour.
 function EventView({ e, host, now, live }: { e: Event; host: Host; now: number; live: boolean }) {
   const insets = useSafeAreaInsets();
   const [bar, setBar] = useState(insets.bottom + 108); // room under the page for the ticket bar, a guess until measured
   const viewer = useViewer(); // signed out, no tickets and no follows (src/session.ts)
+  useTicketsOnFocus(); // back from booking, the bar says View ticket
   const saved = useSaved(e.id);
 
   // Over once it ends (the API's end time); a mock event, with none, once it starts.
   const past = e.endsAt ? now >= Date.parse(e.endsAt) : Date.parse(e.startsAt) < now;
   const status = eventStatus(e, now); // the line under the title (src/status.ts)
   const seats = seatsLine(e, status);
-  const booked = viewer.signedIn && !!viewer.tickets?.some((t) => t.eventId === e.id);
+  const mine = viewer.signedIn ? (viewer.tickets ?? []).filter((t) => t.eventId === e.id) : [];
+  const booked = mine.length > 0;
   const went = viewer.signedIn && history.some((h) => h.eventId === e.id && h.status === 'Went');
   const thanks = past && went && now < Date.parse(e.startsAt) + WEEK;
   const book = bookAction(status, !e.pricePaise);
+  const paidLater = live && book.can && e.pricePaise > 0; // a real event with no free ticket: paying isn't on yet
   // The ticket bar: a ticket holder keeps View ticket until the event has ended, while it's on and if it's cancelled;
   // anyone else sees it until the start, never on a cancelled event.
   const showBar = booked ? status.kind !== 'ended' : !past && status.kind !== 'cancelled';
@@ -198,18 +201,16 @@ function EventView({ e, host, now, live }: { e: Event; host: Host; now: number; 
           price={formatPrice(price.paise)}
           from={price.from}
           note={booked ? undefined : seats}
-          action={booked ? 'View ticket' : live && book.can ? 'Booking opens soon' : book.label}
+          action={booked ? 'View ticket' : paidLater ? 'Booking opens soon' : book.label}
           // A booking opens its ticket (src/app/ticket/[id].tsx, keyed by booking id). Signed out, Book and Register open
           // the sign-in sheet over this page and come back to it (Booking doc, step 2).
           onAction={
             booked
-              ? () => {
-                  const t = ticketFor(e.id);
-                  if (t) router.push(`/ticket/${t.id}`);
-                }
-              : live || !book.can
+              ? // Two ticket types booked on one event: both are in Account › Tickets.
+                () => (mine.length > 1 ? router.push('/account/tickets') : mine[0]?.id && router.push(`/ticket/${mine[0].id}`))
+              : paidLater || !book.can
                 ? undefined
-                : () => needsAccount(() => router.push(`/book/${e.id}`)) // signed out, sign in first, then on to it
+                : () => needsAccount(() => router.push(`/book/${e.slug}`)) // signed out, sign in first, then on to it
           }
           onHeight={setBar}
         />

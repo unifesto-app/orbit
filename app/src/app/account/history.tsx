@@ -1,24 +1,37 @@
-// History: bookings that are no longer tickets, latest first: events that are over (Went or Missed), and bookings
-// cancelled or refunded (Booking doc: "cancelled as plain status text"). The upcoming half is Tickets. An event you
-// went to has Loved it's heart.
+// History: bookings that are no longer tickets, latest first (GET /me/tickets' past): events that are over, and bookings
+// cancelled, by you or the host (Booking doc: "cancelled as plain status text"). The upcoming half is Tickets.
+// ponytail: Went and Missed, and Loved it's heart, need check-in (Event day); until then a past booking shows the event.
 import { View } from 'react-native';
 
-import { past } from '../../account/data';
-import { Note, Page } from '../../account/kit';
-import { events, hosts } from '../../mock';
-import { EventRow } from '../../rows';
+import { Note, Page, SignInNote } from '../../account/kit';
+import { toEvent, toHost } from '../../events';
+import { EventRow, Failed, Waiting } from '../../rows';
+import { loadTickets, useSignedIn, useTickets, useTicketsOnFocus } from '../../session';
 import { space } from '../../theme';
+import { statusText } from '../../tickets';
 
 export default function History() {
-  const list = past
-    .map((p) => ({ ...p, event: events.find((e) => e.id === p.eventId)! }))
-    .sort((a, b) => Date.parse(b.event.startsAt) - Date.parse(a.event.startsAt));
+  const signedIn = useSignedIn();
+  const mine = useTickets();
+  useTicketsOnFocus();
+  const list = mine.data?.past ?? [];
   return (
     <Page title="History">
-      {list.length ? (
+      {!signedIn ? (
+        <SignInNote>Sign in to see your history.</SignInNote>
+      ) : !mine.data || !mine.fresh ? (
+        mine.error ? <Failed message={mine.error.message} retry={() => void loadTickets()} /> : <Waiting />
+      ) : list.length ? (
         <View style={{ marginTop: space.big }}>
-          {list.map(({ event: e, status }) => (
-            <EventRow key={e.id} event={e} host={hosts.find((h) => h.id === e.hostId)!} past went={status === 'Went'} tag={status} />
+          {list.map((t) => (
+            <EventRow
+              key={t.id}
+              event={toEvent(t.event)}
+              host={toHost(t.event.host)}
+              past
+              now={Date.now()}
+              tag={statusText(t.status)}
+            />
           ))}
         </View>
       ) : (

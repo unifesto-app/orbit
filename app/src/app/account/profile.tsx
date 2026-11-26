@@ -5,8 +5,8 @@
 // cards: Going, Been and Following, each opening its screen; the hosts you follow; and your interests. The back circle
 // returns to Account, as on every Account screen.
 // The account is the API's (/me, src/session.ts); the hosts you follow are the Following screen's (useFollows). Going
-// and Been still count the mock's tickets and past bookings until bookings reach the API; interests are kept on this
-// phone (src/session.ts).
+// counts your upcoming tickets (GET /me/tickets); Been still counts the mock's past bookings until check-in says who
+// went; interests are kept on this phone (src/session.ts).
 import { categories } from '@orbit/contract';
 import { type Href, router } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';

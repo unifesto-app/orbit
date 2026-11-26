@@ -19,3 +19,4 @@ export * from "./prelaunch.ts";
 export * from "./visit.ts";
 export * from "./saves.ts";
 export * from "./notifications.ts";
+export * from "./bookings.ts";

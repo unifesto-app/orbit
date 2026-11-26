@@ -11,7 +11,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { Venue } from './day';
 
-/** The top of a tab: the venue on top, the title, its line, and your circle (Account and, for now, the mock's picks). */
+/** The top of a tab: the venue on top, the title, its line, and your circle (You: your venues and Sign out). */
 export function Head({ venue, title, line }: { venue: Venue; title: string; line: string }) {
   const insets = useSafeAreaInsets();
   return (

@@ -1,7 +1,6 @@
 // Venue's words and checks (Station take 4, approved 22 Nov 2026), pure so venue.test.ts runs them on Node.
 import { paiseFrom, rupees } from '../money.ts';
 import { HOUR, hourWord, type StationType } from './day.ts';
-import type { Invite, Member, mockVenue } from './mock.ts';
 
 /** A kind's price line: "₹162/hr · ₹120/hr 11 AM to 4 PM on weekdays · ₹350/hr for two · Valorant, CS2". */
 export function priceLine(t: StationType): string {
@@ -81,9 +80,22 @@ export type StationRowish = StationBody & { id: string; whole: boolean; step: 30
 export type Pin = { lat: number; lng: number; placeId: string | null };
 /** What PUT /venues/:hostId takes and GET answers (contract VenueSetup / VenueSettings), less the stations. */
 export type Settings = { address: string; area: string; lat: number; lng: number; placeId: string | null; deskPhone: string; week: ([number, number] | null)[]; cutoffMinutes: number; logsWalkIns: boolean };
-// A venue's page and settings as Venue draws them. Signed in there are no followers yet, and the API's area and map pin
-// ride along so a save sends them back; `archived` is the kinds put away, for Restore.
-export type VenueSetup = Omit<ReturnType<typeof mockVenue>, 'followers'> & { followers?: number; area?: string; pin?: Pin; archived?: StationType[] };
+/** Someone on the team (`id` is their seat). */
+export type Member = { id: string; name: string; role: 'Admin' | 'Desk'; you?: boolean; owner?: boolean };
+/**
+ * An invite waiting (`id` is the seat it makes). An accepted Admin invite waits for its adder's confirm.
+ * ponytail: no role or sent time from GET /hosts/:id/team yet; they show once the API sends them.
+ */
+export type Invite = { id: string; contact: string; role?: 'Admin' | 'Desk'; sent?: number; accepted?: boolean; acceptedBy?: string | null; addedBy?: string; byYou?: boolean; adder?: string | null };
+/**
+ * A venue's page and settings as Venue draws them, with its team and weekly hours (Sunday first). The API's area and map
+ * pin ride along so a save sends them back; `archived` is the kinds put away, for Restore.
+ * ponytail: no followers, "at your venue" asks or hosted events: they wait for the follows and event-venue links APIs.
+ */
+export type VenueSetup = {
+  kind: string; address: string; deskPhone: string; logWalkIns: boolean; cutoff: number; week: ([number, number] | null)[];
+  team: Member[]; invites: Invite[]; area?: string; pin?: Pin; archived?: StationType[];
+};
 
 export function venueApi(hostId: string, authed: Authed) {
   const at = `/venues/${hostId}`;
@@ -157,10 +169,9 @@ export function readVenue<T>(r: Res<unknown>, check: (x: unknown) => T | undefin
 
 /** The setup Venue draws from the API's venue, with the team. */
 export function setupFrom(v: Settings & { stations: StationRowish[] }, team: { team: Member[]; invites: Invite[] }): VenueSetup {
-  // ponytail: no "at your venue" asks or hosted events yet; they wait for the event-venue links API.
   return {
     kind: 'Venue', address: v.address, area: v.area, deskPhone: v.deskPhone, logWalkIns: v.logsWalkIns, cutoff: v.cutoffMinutes, week: v.week,
-    pin: { lat: v.lat, lng: v.lng, placeId: v.placeId }, asks: [], hosted: [], archived: v.stations.filter((s) => s.archived).map(fromStation), ...team,
+    pin: { lat: v.lat, lng: v.lng, placeId: v.placeId }, archived: v.stations.filter((s) => s.archived).map(fromStation), ...team,
   };
 }
 

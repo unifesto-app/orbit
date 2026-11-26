@@ -10,24 +10,31 @@
 // Since 19 Nov 2026 in the event page's language (owner approved Take 7 of the detail pages mockup): the back circle on
 // the dark glass with nothing behind it, the announcement as the host talking in its bubble, the event as a Clean row
 // and the booking's details in an outlined card.
-import { formatPrice } from '@orbit/contract';
+// A real ticket (a uuid id, P12.1) is the API's (GET /me/tickets/:id): its QR and code, how many it admits, the event,
+// and the event's online link while it's live. The last answer is kept on the phone (src/session.ts keepTicket), drawn
+// while it loads or with no signal. A cancelled one says so in plain words where the QR was. A free one can be
+// cancelled before the start. Mock ids keep the mock ticket.
+import { formatPrice, type Ticket as LiveTicket } from '@orbit/contract';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Alert, Linking, ScrollView, Share, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 
-import { bookings, payments, refunds } from '../../account/data';
+import { bookings, type Payment, payments, type Refund, refunds } from '../../account/data';
 import { EDGE, PAD, Page, Pill, RIM, SignInNote } from '../../account/kit';
 import { calendarLink, isOpen, spacedCode, ticketActions } from '../../account/rules';
 import { Fact, FactCard } from '../../fact';
 import { Glass } from '../../glass';
 import { dayLabel, timeLabel } from '../../inbox';
 import { announcementFor } from '../../inboxStore';
-import { events, hosts, now } from '../../mock';
+import { type Event, type Host, toEvent, toHost } from '../../events';
+import { useLoad } from '../../load';
+import { events, hosts, now as mockNow } from '../../mock';
 import { qr } from '../../qr';
-import { BackBar, EventRow, HostSays, NotFound, TOP } from '../../rows';
-import { useSession, useSignedIn } from '../../session';
+import { BackBar, EventRow, Failed, HostSays, NotFound, TOP, Waiting } from '../../rows';
+import { api, keepTicket, keptTicket, real, ticketsChanged, useSession, useSignedIn } from '../../session';
+import { statusText, ticketsApi } from '../../tickets';
 import { around, color, font, radius, space } from '../../theme';
 
 const WEB = 'https://heyorbit.in'; // the event's page on the web, for sharing
@@ -35,23 +42,95 @@ const mapsUrl = (q: string) => `https://www.google.com/maps/search/?api=1&query=
 
 export default function Ticket() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { width } = useWindowDimensions();
-  const insets = useSafeAreaInsets();
   const signedIn = useSignedIn();
-  const holder = useSession()?.me.name ?? '';
-  const b = bookings.find((x) => x.id === id);
-  const e = b && events.find((x) => x.id === b.eventId);
-  const host = e && hosts.find((h) => h.id === e.hostId);
   if (!signedIn)
     return (
       <Page title="Ticket">
         <SignInNote>Sign in to see this ticket.</SignInNote>
       </Page>
     );
-  if (!b || !e || !host) return <NotFound what="ticket" />;
+  return real(id) ? <Live id={id} /> : <Mock id={id} />;
+}
 
-  const paid = payments.find((p) => p.eventId === e.id);
-  const refund = refunds.find((r) => r.eventId === e.id && isOpen(r.status));
+// What the ticket draws, from the mock's booking or the API's.
+type Shown = {
+  e: Event;
+  host: Host;
+  now: number;
+  qr: string | null; // null once cancelled
+  code: string | null;
+  count: number;
+  tier: string;
+  booking?: string; // the mock's booking id; a real one's is internal
+  status?: string; // a cancelled one's plain words
+  paid?: Payment;
+  refund?: Refund;
+  group?: string;
+  online?: string | null;
+  onCancel?: () => void;
+};
+
+function Mock({ id }: { id: string }) {
+  const b = bookings.find((x) => x.id === id);
+  const e = b && events.find((x) => x.id === b.eventId);
+  const host = e && hosts.find((h) => h.id === e.hostId);
+  if (!b || !e || !host) return <NotFound what="ticket" />;
+  const cancel = () =>
+    Alert.alert('Cancel this ticket?', 'Your seat goes back to the host at once.', [
+      { text: 'Keep it', style: 'cancel' },
+      { text: 'Cancel ticket', style: 'destructive', onPress: () => router.back() },
+    ]);
+  return (
+    <TicketView
+      t={{
+        e, host, now: mockNow, qr: b.qr, code: b.code, count: b.count, tier: b.tier, booking: b.id, group: b.group,
+        paid: payments.find((p) => p.eventId === e.id), refund: refunds.find((r) => r.eventId === e.id && isOpen(r.status)), onCancel: cancel,
+      }}
+    />
+  );
+}
+
+function Live({ id }: { id: string }) {
+  const me = useSession()?.me.id ?? '';
+  const page = useLoad(`ticket|${me}|${id}`, () => ticketsApi(api).one(id));
+  const [cancelled, setCancelled] = useState<LiveTicket>();
+  useEffect(() => {
+    if (page.data && !cancelled) keepTicket(page.data); // never the confirmed answer over a cancel made here
+  }, [page.data, cancelled]);
+  const t = cancelled ?? page.data ?? (page.status === 404 ? null : keptTicket(id)); // the phone's copy until the answer comes
+  if (!t) return page.status === 404 ? <NotFound what="ticket" /> : page.error ? <Failed message={page.error.message} retry={page.reload} /> : <Waiting />;
+
+  const now = Date.now();
+  const live = t.status === 'confirmed';
+  const cancel = () =>
+    Alert.alert('Cancel this ticket?', 'Your seat goes back to the host at once.', [
+      { text: 'Keep it', style: 'cancel' },
+      {
+        text: 'Cancel ticket',
+        style: 'destructive',
+        onPress: async () => {
+          const r = await ticketsApi(api).cancel(t.id);
+          if (!r.ok) return Alert.alert('Couldn’t cancel', r.error.message);
+          setCancelled(r.data);
+          ticketsChanged(r.data);
+        },
+      },
+    ]);
+  return (
+    <TicketView
+      t={{
+        e: toEvent(t.event), host: toHost(t.event.host), now, qr: t.qr, code: t.code, count: t.quantity, tier: t.ticketType.name,
+        status: statusText(t.status), online: t.onlineLink, onCancel: live && t.ticketType.pricePaise === 0 ? cancel : undefined,
+      }}
+    />
+  );
+}
+
+function TicketView({ t }: { t: Shown }) {
+  const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const holder = useSession()?.me.name ?? '';
+  const { e, host, now, paid, refund } = t;
   // The host's newest announcement sits on top (Notifications doc: a host announcement opens "the ticket, with the
   // announcement on top").
   const news = announcementFor(e.id);
@@ -67,11 +146,6 @@ export default function Ticket() {
       // ponytail: nothing to send it to until the API exists.
       { text: 'Ask for a refund' },
     ]);
-  const cancel = () =>
-    Alert.alert('Cancel this ticket?', 'Your seat goes back to the host at once.', [
-      { text: 'Keep it', style: 'cancel' },
-      { text: 'Cancel ticket', style: 'destructive', onPress: () => router.back() },
-    ]);
 
   return (
     <View style={styles.screen}>
@@ -83,28 +157,34 @@ export default function Ticket() {
         )}
         {/* A Clean row, the host on top; no price or star on a ticket. */}
         <View style={[styles.event, news && styles.afterNews]}>
-          <EventRow event={e} host={host} found kicker={host.name} past />
+          <EventRow event={e} host={host} found kicker={host.name} past now={now} />
         </View>
 
         {/* The QR on white, as scanners read best: a 1px frosted rim round a plate whose padding, with the QR's own
             margin, gives it the standard's quiet zone. Corners nest as on every card (6 + 16 = 22, rim 23). */}
-        <View style={styles.gate}>
-          <Glass style={styles.qrRim}>
-            <View style={styles.plate}>
-              <QrCode value={b.qr} size={size} />
-            </View>
-          </Glass>
-          <Text style={styles.admits}>{b.count > 1 ? `Admits ${b.count}` : 'Admits 1'}</Text>
-          <Text style={styles.code} selectable accessibilityLabel={`Ticket code ${b.code.split('').join(' ')}`}>
-            {spacedCode(b.code)}
-          </Text>
-        </View>
+        {t.qr && t.code ? (
+          <View style={styles.gate}>
+            <Glass style={styles.qrRim}>
+              <View style={styles.plate}>
+                <QrCode value={t.qr} size={size} />
+              </View>
+            </Glass>
+            <Text style={styles.admits}>{t.count > 1 ? `Admits ${t.count}` : 'Admits 1'}</Text>
+            <Text style={styles.code} selectable accessibilityLabel={`Ticket code ${t.code.split('').join(' ')}`}>
+              {spacedCode(t.code)}
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.gate}>
+            <Text style={styles.admits}>{t.status}</Text>
+          </View>
+        )}
 
         <View style={styles.details}>
           <FactCard>
-            <Fact label="Ticket" value={b.tier} />
+            <Fact label="Ticket" value={t.tier} />
             <Fact label="Holder" value={holder} />
-            <Fact label="Booking" value={b.id} />
+            {t.booking && <Fact label="Booking" value={t.booking} />}
             <Fact label="Venue" value={e.venue.name} />
             <Fact label="Paid" value={paid ? formatPrice(paid.pricePaise + paid.feePaise) : 'Free'} />
             {refund && <Fact label="Refund" value={refund.status} />}
@@ -113,9 +193,10 @@ export default function Ticket() {
 
         <View style={styles.actions}>
           <Pill label="Add to calendar" size="small" onPress={() => Linking.openURL(calendarLink({ title: e.title, startsAt: e.startsAt, place }))} />
-          <Pill label="Directions" size="small" onPress={() => Linking.openURL(mapsUrl(place))} />
-          <Pill label="Share" size="small" onPress={() => Share.share({ message: `I’m going to ${e.title}, ${e.when}. ${WEB}/event/${e.id}` })} />
-          {b.group && <Pill label="WhatsApp group" size="small" onPress={() => Linking.openURL(b.group!)} />}
+          {!!e.venue.address && <Pill label="Directions" size="small" onPress={() => Linking.openURL(mapsUrl(place))} />}
+          <Pill label="Share" size="small" onPress={() => Share.share({ message: `I’m going to ${e.title}, ${e.when}. ${WEB}/event/${e.slug}` })} />
+          {t.online && <Pill label="Join online" size="small" onPress={() => Linking.openURL(t.online!)} />}
+          {t.group && <Pill label="WhatsApp group" size="small" onPress={() => Linking.openURL(t.group!)} />}
         </View>
 
         {can.refund && (
@@ -123,9 +204,9 @@ export default function Ticket() {
             <Pill label="Ask for a refund" size="wide" onPress={askRefund} />
           </View>
         )}
-        {can.cancel && (
+        {can.cancel && t.onCancel && (
           <View style={styles.last}>
-            <Pill label="Cancel ticket" size="wide" onPress={cancel} />
+            <Pill label="Cancel ticket" size="wide" onPress={t.onCancel} />
           </View>
         )}
       </ScrollView>

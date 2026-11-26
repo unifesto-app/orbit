@@ -1,5 +1,5 @@
 {
-  "id": "e5b9e087-4c9f-4bfb-8de5-f481671266c0",
+  "id": "38b252cd-da46-49f7-bab0-1a12c80167d8",
   "prevId": "c0ff39ed-60ed-4718-9bfb-075606da52a8",
   "version": "7",
   "dialect": "postgresql",
@@ -487,8 +487,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.deliveries": {
-      "name": "deliveries",
+    "public.bookings": {
+      "name": "bookings",
       "schema": "",
       "columns": {
         "id": {
@@ -502,42 +502,23 @@
           "name": "user_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
-        "contact": {
-          "name": "contact",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
+        "event_id": {
+          "name": "event_id",
+          "type": "uuid",
           "primaryKey": false,
           "notNull": true
         },
-        "channel": {
-          "name": "channel",
-          "type": "text",
+        "ticket_type_id": {
+          "name": "ticket_type_id",
+          "type": "uuid",
           "primaryKey": false,
           "notNull": true
         },
-        "target": {
-          "name": "target",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "''"
-        },
-        "dedupe_key": {
-          "name": "dedupe_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "payload": {
-          "name": "payload",
-          "type": "jsonb",
+        "quantity": {
+          "name": "quantity",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true
         },
@@ -545,48 +526,31 @@
           "name": "status",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": true,
+          "default": "'confirmed'"
         },
-        "reason": {
-          "name": "reason",
+        "source": {
+          "name": "source",
           "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "tries": {
-          "name": "tries",
-          "type": "integer",
           "primaryKey": false,
           "notNull": true,
-          "default": 0
+          "default": "'orbit'"
         },
-        "run_at": {
-          "name": "run_at",
-          "type": "timestamp with time zone",
+        "qr": {
+          "name": "qr",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "locked_until": {
-          "name": "locked_until",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "provider_id": {
-          "name": "provider_id",
+        "code": {
+          "name": "code",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
-        "broadcast_id": {
-          "name": "broadcast_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "inbox_item_id": {
-          "name": "inbox_item_id",
-          "type": "uuid",
+        "link": {
+          "name": "link",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -597,32 +561,16 @@
           "notNull": true,
           "default": "now()"
         },
-        "sent_at": {
-          "name": "sent_at",
+        "cancelled_at": {
+          "name": "cancelled_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         }
       },
       "indexes": {
-        "deliveries_due_idx": {
-          "name": "deliveries_due_idx",
-          "columns": [
-            {
-              "expression": "run_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"deliveries\".\"status\" in ('queued', 'sending')",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "deliveries_user_idx": {
-          "name": "deliveries_user_idx",
+        "bookings_user_id_created_at_index": {
+          "name": "bookings_user_id_created_at_index",
           "columns": [
             {
               "expression": "user_id",
@@ -642,11 +590,17 @@
           "method": "btree",
           "with": {}
         },
-        "deliveries_created_idx": {
-          "name": "deliveries_created_idx",
+        "bookings_ticket_type_id_status_index": {
+          "name": "bookings_ticket_type_id_status_index",
           "columns": [
             {
-              "expression": "created_at",
+              "expression": "ticket_type_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -656,12 +610,55 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "bookings_event_id_status_index": {
+          "name": "bookings_event_id_status_index",
+          "columns": [
+            {
+              "expression": "event_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "bookings_one_live_per_type": {
+          "name": "bookings_one_live_per_type",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "ticket_type_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"bookings\".\"status\" = 'confirmed'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
-        "deliveries_user_id_users_id_fk": {
-          "name": "deliveries_user_id_users_id_fk",
-          "tableFrom": "deliveries",
+        "bookings_user_id_users_id_fk": {
+          "name": "bookings_user_id_users_id_fk",
+          "tableFrom": "bookings",
           "tableTo": "users",
           "columnsFrom": [
             "user_id"
@@ -669,37 +666,67 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
+          "onDelete": "no action",
           "onUpdate": "no action"
         },
-        "deliveries_inbox_item_id_inbox_items_id_fk": {
-          "name": "deliveries_inbox_item_id_inbox_items_id_fk",
-          "tableFrom": "deliveries",
-          "tableTo": "inbox_items",
+        "bookings_event_id_events_id_fk": {
+          "name": "bookings_event_id_events_id_fk",
+          "tableFrom": "bookings",
+          "tableTo": "events",
           "columnsFrom": [
-            "inbox_item_id"
+            "event_id"
           ],
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "bookings_ticket_type_id_ticket_types_id_fk": {
+          "name": "bookings_ticket_type_id_ticket_types_id_fk",
+          "tableFrom": "bookings",
+          "tableTo": "ticket_types",
+          "columnsFrom": [
+            "ticket_type_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "deliveries_dedupe_uq": {
-          "name": "deliveries_dedupe_uq",
+        "bookings_qr_unique": {
+          "name": "bookings_qr_unique",
           "nullsNotDistinct": false,
           "columns": [
-            "dedupe_key",
-            "channel",
-            "target"
+            "qr"
+          ]
+        },
+        "bookings_code_unique": {
+          "name": "bookings_code_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "code"
+          ]
+        },
+        "bookings_link_unique": {
+          "name": "bookings_link_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "link"
           ]
         }
       },
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "bookings_quantity_range": {
+          "name": "bookings_quantity_range",
+          "value": "\"bookings\".\"quantity\" between 1 and 10"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.event_slugs": {
@@ -1571,159 +1598,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.inbox_items": {
-      "name": "inbox_items",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "app": {
-          "name": "app",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "type": {
-          "name": "type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "from_name": {
-          "name": "from_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "text": {
-          "name": "text",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "picture": {
-          "name": "picture",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "opens": {
-          "name": "opens",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "dedupe_key": {
-          "name": "dedupe_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "read_at": {
-          "name": "read_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "inbox_items_user_app_idx": {
-          "name": "inbox_items_user_app_idx",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "app",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "inbox_items_created_idx": {
-          "name": "inbox_items_created_idx",
-          "columns": [
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "inbox_items_user_id_users_id_fk": {
-          "name": "inbox_items_user_id_users_id_fk",
-          "tableFrom": "inbox_items",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "inbox_items_user_dedupe_uq": {
-          "name": "inbox_items_user_dedupe_uq",
-          "nullsNotDistinct": false,
-          "columns": [
-            "user_id",
-            "dedupe_key"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.interest": {
       "name": "interest",
       "schema": "",
@@ -2074,148 +1948,6 @@
           "columns": [
             "user_id",
             "id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.notification_switches": {
-      "name": "notification_switches",
-      "schema": "",
-      "columns": {
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "channel": {
-          "name": "channel",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "off_by": {
-          "name": "off_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "off_at": {
-          "name": "off_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "notification_switches_off_by_users_id_fk": {
-          "name": "notification_switches_off_by_users_id_fk",
-          "tableFrom": "notification_switches",
-          "tableTo": "users",
-          "columnsFrom": [
-            "off_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "notification_switches_kind_channel_pk": {
-          "name": "notification_switches_kind_channel_pk",
-          "columns": [
-            "kind",
-            "channel"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.notification_templates": {
-      "name": "notification_templates",
-      "schema": "",
-      "columns": {
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "channel": {
-          "name": "channel",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "subject": {
-          "name": "subject",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "title": {
-          "name": "title",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "body": {
-          "name": "body",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "notification_templates_updated_by_users_id_fk": {
-          "name": "notification_templates_updated_by_users_id_fk",
-          "tableFrom": "notification_templates",
-          "tableTo": "users",
-          "columnsFrom": [
-            "updated_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "notification_templates_kind_channel_pk": {
-          "name": "notification_templates_kind_channel_pk",
-          "columns": [
-            "kind",
-            "channel"
           ]
         }
       },

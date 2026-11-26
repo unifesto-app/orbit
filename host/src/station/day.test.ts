@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { type Claim, HOUR, MIN, admit, admitTo, byCode, dayLabel, door, freeOne, hourWord, hours, openingDay, outside, scan, seenRecently, steps, stranded, taken, timeLabel, walkIn, walkInStart } from './day.ts';
-import { mockDay, venues } from './mock.ts';
+import { mockDay, venues } from './fixtures.ts';
 
 const [cafe, turf] = venues;
 const pc = cafe.types[0];

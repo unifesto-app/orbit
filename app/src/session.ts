@@ -6,7 +6,7 @@
 // token is kept in the Keychain, and the access token only in memory.
 // Followed hosts come from the API (GET /me/follows), and so do saved events and lists (GET /me/saves) since 25 Nov 2026:
 // the phone shows a change at once, tells the API, and puts it back if the API says no; the server's copy wins.
-import { type AuthStep, type CategorySlug, type Me as Account, movedCategory } from '@orbit/contract';
+import { type ApiError, type AuthStep, type CategorySlug, type Me as Account, movedCategory, type MyTickets, type Ticket } from '@orbit/contract';
 import Constants from 'expo-constants';
 import { router, useFocusEffect } from 'expo-router';
 import Storage from 'expo-sqlite/kv-store';
@@ -21,8 +21,8 @@ import { isKnown, remember } from './account/seen';
 import { API_URL, makeApi, OFFLINE, type Result } from './api';
 import { hostsApi } from './hosts';
 import type { Viewer } from './home/layout';
-import { viewer } from './mock';
 import { hideNote, showNote } from './note';
+import { CACHE_PREFIX, cacheKey, keptUpcoming, packTicket, ticketsApi, unpackTicket, upcomingOf } from './tickets';
 
 let saveEpoch = 0; // bumped by every save change made here, and by sign-in and sign-out: an older read can't undo it
 // Whether the saves have been read this launch: Account › Saved draws a wait, not "Nothing saved yet", until they have.
@@ -119,6 +119,8 @@ function set(next: Session | null) {
     queue = Promise.resolve(); // the next account never waits behind, or sends, what this one left
     reading = null;
     model = fresh({ saved: [], lists: [] });
+    tickets = NO_TICKETS;
+    forgetTickets(); // the tickets kept for offline go with the account
   }
   current = next;
   for (const fn of listeners) fn();
@@ -140,16 +142,95 @@ function subscribe(fn: () => void) {
 export const useSession = () => useSyncExternalStore(subscribe, () => current);
 export const useSignedIn = () => useSession() !== null;
 
-// Who Home and the pages draw for: once signed in, the account's initial, its follows and interests; the place is
-// src/place.ts's, never the session's (null here). The tickets are still the mock's until bookings reach the API.
-// ponytail: `tickets` from the mock viewer until the bookings slice (P12.2).
+// Who Home and the pages draw for: once signed in, the account's initial, its follows, interests and upcoming tickets
+// (GET /me/tickets); the place is src/place.ts's, never the session's (null here).
 export function useViewer(): Viewer {
   const s = useSession();
+  const mine = useTickets().data;
   const initial = s?.me.name?.trim()[0]?.toUpperCase();
   return s
-    ? { signedIn: true, follows: s.follows, place: null, tickets: viewer.tickets, interests: s.interests, ...(initial && { initial }) }
+    ? { signedIn: true, follows: s.follows, place: null, tickets: upcomingOf(mine, Date.now()), interests: s.interests, ...(initial && { initial }) }
     : { signedIn: false, follows: [], place: null };
 }
+
+// The account's tickets (GET /me/tickets, src/tickets.ts): read at launch and sign-in, when Home, an event page or the
+// Tickets and History screens come into view, and after a booking or a cancel. Each upcoming one is also kept on the
+// phone (kv-store, one key per ticket) so its QR opens with no signal; the rest are dropped from there.
+// `fresh`: the API's answer, not the phone's copies (which have no past half, so History waits for the answer).
+type Tickets = { owner: string; data: MyTickets | null; error: ApiError | null; fresh: boolean };
+const NO_TICKETS: Tickets = { owner: '', data: null, error: null, fresh: false };
+// At launch, the tickets kept on this phone for the account signed in, until GET /me/tickets answers.
+function keptTickets(): Tickets {
+  if (!current) return NO_TICKETS;
+  try {
+    const raws = Storage.getAllKeysSync().filter((k) => k.startsWith(CACHE_PREFIX)).map((k) => Storage.getItemSync(k));
+    const upcoming = keptUpcoming(raws, current.me.id, Date.now());
+    return upcoming.length ? { owner: current.me.id, data: { upcoming, past: [] }, error: null, fresh: false } : NO_TICKETS;
+  } catch {
+    return NO_TICKETS;
+  }
+}
+let tickets = keptTickets();
+let ticketEpoch = 0; // bumped by a booking or cancel here: a list read that started before it is dropped, never kept
+const emit = () => {
+  for (const fn of listeners) fn();
+};
+function forgetTickets(keep: readonly string[] = []) {
+  try {
+    for (const k of Storage.getAllKeysSync()) if (k.startsWith(CACHE_PREFIX) && !keep.includes(k)) Storage.removeItemSync(k);
+  } catch {
+    // unreadable: left until the next read
+  }
+}
+export function keepTicket(t: Ticket) {
+  if (!current) return;
+  try {
+    Storage.setItemSync(cacheKey(t.id), packTicket(current.me.id, t));
+  } catch {
+    // not kept this time: the ticket still shows while online
+  }
+}
+export function keptTicket(id: string): Ticket | null {
+  if (!current) return null;
+  try {
+    return unpackTicket(Storage.getItemSync(cacheKey(id)), current.me.id);
+  } catch {
+    return null;
+  }
+}
+export async function loadTickets() {
+  const who = current?.me.id;
+  if (!who) return;
+  const at = ticketEpoch;
+  const r = await ticketsApi(api).mine();
+  if (current?.me.id !== who) return; // signed out, or someone else in: not theirs
+  if (at !== ticketEpoch) return; // a booking or cancel landed meanwhile: this answer may not have it
+  const had = tickets.owner === who ? tickets : NO_TICKETS;
+  tickets = r.ok ? { owner: who, data: r.data, error: null, fresh: true } : { owner: who, data: had.data, error: r.error, fresh: had.fresh };
+  if (r.ok) {
+    r.data.upcoming.forEach(keepTicket);
+    forgetTickets(r.data.upcoming.map((t) => cacheKey(t.id)));
+  }
+  emit();
+}
+// A ticket booked or cancelled here: kept as it now is, and the list read again (any read already out is dropped).
+export function ticketsChanged(t: Ticket) {
+  ticketEpoch++;
+  keepTicket(t);
+  void loadTickets();
+}
+// The tickets for the account signed in now: `data` is null until the first answer (or the phone's copies).
+export function useTickets() {
+  const t = useSyncExternalStore(subscribe, () => tickets);
+  const me = useSession()?.me.id;
+  return t.owner === me ? t : NO_TICKETS;
+}
+export const useTicketsOnFocus = () =>
+  useFocusEffect(
+    useCallback(() => {
+      void loadTickets();
+    }, []),
+  );
 // The account's id, to key what's read for it; '' while signed out.
 const SIGNED_OUT = { id: '' };
 export const useMe = (): { id: string } => useSession()?.me ?? SIGNED_OUT;
@@ -410,6 +491,7 @@ export function signIn(done: Extract<AuthStep, { step: 'signedIn' }>, via: Way) 
   set({ via, ...kept, ...mine, follows: current?.follows ?? [], me: done.me });
   void loadFollows();
   void loadSaves();
+  void loadTickets();
 }
 
 // The hosts the account follows, as the API has them (ids only; a host gone private is left out there).
@@ -483,6 +565,7 @@ export function useSavesOnFocus() {
 export async function refreshAccount() {
   if (!current) return;
   const saved = loadSaves(); // not behind /me: a failing /me must not leave Saved waiting
+  void loadTickets();
   const r = await api.authed<Account>('GET', '/me');
   if (r.ok && current?.me.id === r.data.id) {
     set({ ...current, me: r.data });

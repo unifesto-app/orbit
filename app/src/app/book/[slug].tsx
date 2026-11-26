@@ -15,26 +15,32 @@
 // The rules and notes are Orbit's bubbles, and what a tap can't do yet Orbit says in the sheet, not in an alert.
 // How many of a type fit is ticketMax (src/booking.ts): the booking's limit and the seats left, a team ticket taking its
 // team's seats. Free or paid is the event's prices, not what's picked.
-// ponytail: payments (Razorpay) and the bookings API aren't on yet, so the last button says so and charges nothing.
-import { formatPrice } from '@orbit/contract';
+// A real event (the API's, P10.1) registers its free ticket types for real: one type per booking, up to its per-person
+// limit and the seats left, then its ticket opens. Its paid types say Coming soon, and the mock's steps (questions,
+// teams, Add people, waitlists) stay the mock's until their slices.
+// ponytail: payments (Razorpay) aren't on yet, so a paid last button says so and charges nothing.
+import { formatPrice, type PublicEvent } from '@orbit/contract';
 import { router, useLocalSearchParams } from 'expo-router';
-import { type ComponentRef, useRef, useState } from 'react';
+import { type ComponentRef, useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { Field, Pill } from '../../account/kit';
 import { BookBar } from '../../bookBar';
-import { answered, firstTeam, maxGuests, maxTickets, TEAM_NAME, teamFits, teamNameOk, ticketMax } from '../../booking';
+import { answered, firstTeam, liveTiers, maxGuests, maxTickets, TEAM_NAME, teamFits, teamNameOk, ticketMax } from '../../booking';
 import { Fact, FactCard } from '../../fact';
 import { Glass } from '../../glass';
 import { Icon } from '../../icons';
 import { fests, hackathons, type Question, questions, shows, teamSeats } from '../../kinds';
-import { events, now } from '../../mock';
+import { type Event, eventsApi, toEvent } from '../../events';
+import { useLoad } from '../../load';
+import { events, now as mockNow } from '../../mock';
 import { payLabel, payReady } from '../../pay';
 import { PayMark } from '../../payChoices';
 import { Chip, Stepper, Steps } from '../../pickers';
-import { NotFound, Sheet, SheetSays } from '../../rows';
-import { usePayWith, useSession } from '../../session';
+import { Failed, NotFound, Sheet, SheetSays, Waiting } from '../../rows';
+import { api, needsAccount, ticketsChanged, usePayWith, useSession } from '../../session';
 import { eventStatus } from '../../status';
+import { ticketsApi } from '../../tickets';
 import { color, font, space, stoneAt } from '../../theme';
 
 type Step = 'pick' | 'team' | 'details' | 'review';
@@ -44,24 +50,36 @@ const NOT_ON = {
   waitlist: 'Waitlists aren’t on yet, so nothing was joined.',
 };
 
+// The API's event first (an old slug too); only when it says 404 and the slug is a mock event's id does the mock's
+// booking draw, as useEvent does.
 export default function Book() {
   const { slug } = useLocalSearchParams<{ slug: string }>();
+  const page = useLoad(`book|${slug}`, () => eventsApi(api).event(slug));
+  const mock = page.status === 404 ? events.find((x) => x.id === slug) : undefined;
+  if (mock) return <Booking slug={slug} e={mock} now={mockNow} />;
+  if (page.data) return <Booking slug={page.data.slug} e={toEvent(page.data)} live={page.data} now={Date.now()} reload={page.reload} />;
+  return page.status === 404 ? <NotFound what="event" /> : page.error ? <Failed message={page.error.message} retry={page.reload} /> : <Waiting />;
+}
+
+// `reload` reads the event again (a real one's), after the API refused a booking on what this sheet showed.
+function Booking({ slug, e, live, now, reload }: { slug: string; e: Event; live?: PublicEvent; now: number; reload?: () => void }) {
   const me = useSession()?.me;
-  const e = events.find((x) => x.id === slug);
-  const tiers = (e?.tiers?.length ? e.tiers : [{ name: e?.pricePaise ? 'Ticket' : 'Entry', pricePaise: e?.pricePaise ?? 0 }]).map((t) => ({
-    ...t,
-    seats: teamSeats[slug]?.[t.name] ?? t.seats,
-  }));
+  const tiers: { name: string; pricePaise: number; soldOut?: boolean; seats?: number; id?: string; max?: number; off?: string }[] = live
+    ? liveTiers(live.tiers, now)
+    : (e.tiers?.length ? e.tiers : [{ name: e.pricePaise ? 'Ticket' : 'Entry', pricePaise: e.pricePaise }]).map((t) => ({
+        ...t,
+        seats: teamSeats[slug]?.[t.name] ?? t.seats,
+      }));
   const hack = hackathons[slug];
   const asks = questions[slug] ?? [];
   // Whether a team ticket fits at all (src/booking.ts).
-  const fits = (i: number) => teamFits(tiers, i, { age: shows[slug]?.age, left: e?.left });
+  const fits = (i: number) => teamFits(tiers, i, { age: shows[slug]?.age, left: e.left });
   const [qty, setQty] = useState<number[]>(() => {
-    const first = tiers.findIndex((t) => !t.soldOut);
+    const first = tiers.findIndex((t) => !t.soldOut && !t.off);
     return tiers.map((_, i) => (i === first ? 1 : 0));
   });
   // A hackathon's team ticket, the biggest team that fits first; when none fits, nothing is booked.
-  const [team, setTeam] = useState(() => Math.max(firstTeam(tiers, { age: shows[slug]?.age, left: e?.left }), 0));
+  const [team, setTeam] = useState(() => Math.max(firstTeam(tiers, { age: shows[slug]?.age, left: e.left }), 0));
   const [teamName, setTeamName] = useState('');
   const [track, setTrack] = useState(hack?.tracks[0]?.name);
   const [rules, setRules] = useState(false);
@@ -73,7 +91,14 @@ export default function Book() {
   const pay = usePayWith(); // the way you usually pay (Account › Payment methods), changed from the bar
   const [bar, setBar] = useState(140);
   const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
-  if (!e) return <NotFound what="event" />;
+  const [sending, setSending] = useState(false); // draws the bar's button as off
+  const sendingNow = useRef(false); // the guard itself: a second tap in the same frame sees it at once
+  // A real event read again (after a refusal): each pick held to what its type takes now, so the stepper matches the
+  // server. Same tiers by index, as liveTiers keeps the API's order.
+  useEffect(() => {
+    if (live) setQty((q) => tiers.map((t, i) => Math.min(q[i] ?? 0, t.off ? 0 : (t.max ?? 10))));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `tiers` is drawn from `live`
+  }, [live]);
 
   // ponytail: only comedy shows carry an age in the mock (src/kinds.ts); the API's events carry their own.
   const age = shows[e.id]?.age;
@@ -89,7 +114,8 @@ export default function Book() {
       : tiers.map((t, i) => ({ name: t.name, count: qty[i]!, pricePaise: t.pricePaise })).filter((l) => l.count > 0);
   const count = lines.reduce((n, l) => n + l.count, 0);
   const total = lines.reduce((n, l) => n + l.count * l.pricePaise, 0);
-  const free = tiers.every((t) => t.pricePaise === 0);
+  // A real event books only its free types for now, so it reads as a registration.
+  const free = !!live || tiers.every((t) => t.pricePaise === 0);
   // A paid event with nothing picked shows ₹0, not Free.
   const price = !free && total === 0 ? '₹0' : formatPrice(total);
   const seats = picked.seats ?? 1;
@@ -140,7 +166,35 @@ export default function Book() {
     ...(middle ? [{ key: middle, label: hack ? 'Your team' : 'Details', ready: count > 0 }] : []),
     { key: 'review' as Step, label: 'Review', ready: count > 0 && (!middle || middleDone) },
   ];
-  const finish = () => say(free ? NOT_ON.register : NOT_ON.pay);
+  // A real event: the one type picked, booked through the API (signed out, the sign-in sheet first, keeping the pick),
+  // then its ticket opens in place of this sheet. A refusal is said in the sheet in the API's words.
+  const register = () => {
+    const i = qty.findIndex((q) => q > 0);
+    const t = tiers[i];
+    if (!live || !t?.id || sendingNow.current) return;
+    const n = qty[i]!;
+    needsAccount(async () => {
+      if (sendingNow.current) return;
+      sendingNow.current = true;
+      setSending(true);
+      const r = await ticketsApi(api).book(live.id, t.id!, n);
+      sendingNow.current = false;
+      setSending(false);
+      if (!r.ok) {
+        // Seats, the sales window or a booking of yours changed since this sheet read the event: read it again and go
+        // back to the pick, where the stepper now matches, with the API's words.
+        if (r.status === 409) {
+          reload?.();
+          setStep('pick');
+        }
+        return say(r.error.message);
+      }
+      ticketsChanged(r.data);
+      router.dismiss();
+      router.push(`/ticket/${r.data.id}`);
+    });
+  };
+  const finish = live ? register : () => say(free ? NOT_ON.register : NOT_ON.pay);
   // What the middle step still needs, said by Orbit when Review is tapped too soon (the button stays a button).
   const missing = hack && !teamNameOk(teamName) ? 'Name your team first.' : !answered(asks, answers) ? 'Answer the questions marked Required first.' : hack && !rules ? 'Accept the hackathon’s rules first.' : undefined;
   const you = me?.name ? <Fact label={hack ? 'You, the lead' : 'You'} value={me.name} note={[me.phone ?? me.email, 'from your profile'].filter(Boolean).join(' · ')} /> : null;
@@ -192,14 +246,15 @@ export default function Book() {
                     <Text style={styles.name}>{t.name}</Text>
                     <Text style={styles.meta}>{formatPrice(t.pricePaise)}</Text>
                   </View>
-                  {t.soldOut ? (
-                    <Text style={styles.meta}>Sold out</Text>
+                  {t.soldOut || t.off ? (
+                    <Text style={styles.meta}>{t.off ?? 'Sold out'}</Text>
                   ) : (
                     <Stepper
                       value={qty[i]!}
-                      max={ticketMax(tiers, qty, i, { age, left: e.left })}
+                      max={t.max ?? ticketMax(tiers, qty, i, { age, left: e.left })}
                       label={`${t.name} tickets`}
-                      onChange={(n) => setQty((q) => q.map((v, j) => (j === i ? n : v)))}
+                      // A real event's booking is one ticket type (Booking doc): picking one clears the others.
+                      onChange={(n) => setQty((q) => q.map((v, j) => (j === i ? n : live && n > 0 ? 0 : v)))}
                     />
                   )}
                 </View>
@@ -323,9 +378,11 @@ export default function Book() {
         action={step === 'review' ? (free ? 'Register' : 'Pay') : step === 'pick' && middle ? 'Continue' : 'Review'}
         onAction={
           step === 'review'
-            ? free || payReady(pay)
-              ? finish
-              : () => router.push('/pay')
+            ? sending
+              ? undefined
+              : free || payReady(pay)
+                ? finish
+                : () => router.push('/pay')
             : step === 'pick'
               ? count > 0
                 ? () => go(middle ?? 'review')
