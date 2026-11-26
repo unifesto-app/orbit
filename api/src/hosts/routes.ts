@@ -3,7 +3,7 @@ import { Hono, type Context } from "hono";
 import { createMiddleware } from "hono/factory";
 import { EditHost, HostSlug, type HostPage, type NoticeKind, SetParent, StaffReason, VerifyHost } from "@orbit/contract";
 import type { Db } from "../db/index.ts";
-import { auditLog, follows, hosts, hostSlugs, teamRoles, users, venues } from "../db/schema.ts";
+import { auditLog, follows, hosts, hostSlugs, payouts, teamRoles, users, venues } from "../db/schema.ts";
 import { type Env, fail, invalid, isUuid, type Notify, listPage, parse, signedIn, taken } from "../http.ts";
 import { adminsOf, changeable, holdersOf, holdIfUnanswered, masked, onHost, requireFeature, type StaffEnv, teamOf, tell } from "../roles/access.ts";
 import { type Action, parentRule, statusRule } from "./rules.ts";
@@ -125,9 +125,10 @@ export function hostsRoutes({ db, notify, secret, now = Date.now }: Deps) {
       const t = await teamOf(db, c.req.param("id"), c.var.user.id);
       if (!t || t.host.ownerId !== c.var.user.id) return nothing(c);
       const { host } = t;
-      // ponytail: events with bookings, and payouts or refunds open, don't exist yet; the Events, Booking and Money
-      // slices fill these in.
-      const ok = statusRule(host.status, action, { eventsWithBookings: 0, openMoney: 0 });
+      // ponytail: events with bookings and refunds open still count as none; payouts asked for and not yet paid or
+      // cancelled (X4) do count, as a paused or archived host can't ask, and Orbit shouldn't pay one mid-close.
+      const [{ n: openMoney }] = (await db.select({ n: count() }).from(payouts).where(and(eq(payouts.hostId, host.id), eq(payouts.status, "requested")))) as [{ n: number }];
+      const ok = statusRule(host.status, action, { eventsWithBookings: 0, openMoney });
       const notNow = () => fail(c, 409, "notNow", `You can't ${action} a host that is ${host.status}.`);
       if (!ok.ok) return ok.error === "busy" ? fail(c, 409, "busy", "Wait until every event with bookings has ended and no payout or refund is open.") : notNow();
       // Only if it's still where we read it, so two requests can't both win.

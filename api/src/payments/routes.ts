@@ -32,7 +32,7 @@ type Settled = { status: Pay["status"]; bookingId: string | null; refundIds: str
 
 // Why a payment that found no seat went back: seatCheck's code (fewLeft, cancelled, ended, closed, tooMany, booked, …),
 // kept in its automatic refund's reason by settle. Undefined for anything else.
-const COULDNT = "Couldn't confirm: ";
+export const COULDNT = "Couldn't confirm: ";
 const reasonOf = async (q: Db | Tx, paymentId: string) => {
   const [r] = await q
     .select({ reason: refunds.reason })

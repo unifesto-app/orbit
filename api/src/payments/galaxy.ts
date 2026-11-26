@@ -1,17 +1,19 @@
 import { and, desc, eq, gt, ilike, inArray, isNotNull, isNull, lte, or, sql, type SQL } from "drizzle-orm";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import {
-  type EventEarnings, type FailedWebhook, type HostFees, NewPayout, PAYMENT_STATUSES, type PaymentDetail, type PaymentList, type PaymentRow,
-  MoneyReason, PayoutPaid, type Payouts, readPhone, type RefundQueue, type RefundRow, SetFees, type StaffBooking, StaffRefund,
+  CheckAccount, type EventEarnings, type FailedWebhook, type HostFees, NewPayout, PAYMENT_STATUSES, type PaymentDetail, type PaymentList, type PaymentRow,
+  MoneyReason, PayoutPaid, type Payouts, readPhone, type RefundQueue, type RefundRow, SetFees, type StaffBooking, type StaffPayoutAccount, StaffRefund,
+  type VenueEarnings,
 } from "@orbit/contract";
+import { alias } from "drizzle-orm/pg-core";
 import type { Deps } from "../auth/routes.ts";
 import type { Db } from "../db/index.ts";
-import { auditLog, bookings, events, failedWebhooks, hosts, payments, payouts, refunds, ticketTypes, users } from "../db/schema.ts";
+import { auditLog, bookings, events, failedWebhooks, hosts, payments, payoutAccounts, payouts, refunds, stationClaims, ticketTypes, users } from "../db/schema.ts";
 import { fail, invalid, isUuid, listPage, PAGE_SIZE, parse, signedIn, taken, type Tx } from "../http.ts";
-import { adminsOf, holdersOf, requireFeature, type StaffEnv, tell } from "../roles/access.ts";
+import { adminsOf, holdersOf, onHost, requireFeature, type StaffEnv, tell } from "../roles/access.ts";
 import { holds } from "../roles/rules.ts";
-import { askedBack, CLAIM, refundPaid, sendRefund } from "./routes.ts";
+import { askedBack, CLAIM, COULDNT, refundPaid, sendRefund } from "./routes.ts";
 
 // Galaxy's Money pages (Money flow, "Galaxy"; X2), for holders of Money: payments with their frozen terms and a refund,
 // the refunds queue and the failed ones, payouts with their UTRs, each host's fee plan, and webhooks refused. Every
@@ -19,6 +21,9 @@ import { askedBack, CLAIM, refundPaid, sendRefund } from "./routes.ts";
 
 type Pay = typeof payments.$inferSelect;
 type Ref = typeof refunds.$inferSelect;
+
+const ownHost = (c: Context) =>
+  fail(c, 403, "ownHost", "Staff never act on a host they're on, invited to or left in the last 30 days. Ask another staff member with this access.");
 
 const halfUp = (n: number, d: number) => Math.floor((2 * n + d) / (2 * d));
 
@@ -35,20 +40,20 @@ const refundsWhere = async (db: Db, where: SQL) =>
     (x) => refundRow(x.r, x.by),
   );
 
-// Each event's numbers, worked out here once (Money flow, "Your earnings"). Per sale that gave a ticket: the price, less
-// the commission and any fee the host included (both handed back in proportion to the price refunded), less the price
-// refunded. Only refunds of the sale's own Razorpay payment count (a paid-twice refund is the buyer's own money). A refund counts against the price first; any fee on top it hands back is Orbit's. Paid out and requested
-// payouts come off what's available.
-// ponytail: reads every sale of the events asked; per-event totals kept as rows when there are tens of thousands.
-export async function earningsOf(db: Db | Tx, eventIds?: string[]): Promise<EventEarnings[]> {
-  const sold = await db
-    .select({ p: payments, title: events.title, hostName: hosts.name })
-    .from(payments)
-    .innerJoin(events, eq(events.id, payments.eventId))
-    .innerJoin(hosts, eq(hosts.id, payments.hostId))
-    .where(and(isNotNull(payments.bookingId), eventIds ? inArray(payments.eventId, eventIds) : undefined));
-  const ids = sold.map((s) => s.p.id);
-  const back = new Map(
+// One sale's numbers (Money flow, "Your earnings"): the price, less the commission and any fee the host included (both
+// handed back in proportion to the price refunded), less the price refunded. A refund counts against the price first;
+// any fee on top it hands back is Orbit's.
+const saleOf = (p: Pay, back: number) => {
+  const price = p.unitPricePaise * p.quantity;
+  const refunded = Math.min(back, price);
+  const commission = p.commissionPaise - halfUp(p.commissionPaise * refunded, price);
+  const included = p.feeIncluded ? p.buyerFeePaise - halfUp(p.buyerFeePaise * refunded, price) : 0;
+  return { price, refunded, commission, included, earnings: price - commission - included - refunded };
+};
+// What went back on each payment. Only refunds of the sale's own Razorpay payment count (a paid-twice refund is the
+// buyer's own money).
+const refundedOf = async (db: Db | Tx, ids: string[]) =>
+  new Map(
     (ids.length
       ? await db
           .select({ id: refunds.paymentId, n: sql<number>`sum(${refunds.amountPaise})::int` })
@@ -59,10 +64,23 @@ export async function earningsOf(db: Db | Tx, eventIds?: string[]): Promise<Even
       : []
     ).map((r) => [r.id, r.n]),
   );
+
+// Each event's numbers, worked out here once, per sale that gave a ticket (saleOf). Paid out and requested payouts come
+// off what's available.
+// ponytail: reads every sale of the events asked; per-event totals kept as rows when there are tens of thousands.
+export async function earningsOf(db: Db | Tx, eventIds?: string[]): Promise<EventEarnings[]> {
+  if (eventIds && !eventIds.length) return [];
+  const sold = await db
+    .select({ p: payments, title: events.title, hostName: hosts.name })
+    .from(payments)
+    .innerJoin(events, eq(events.id, payments.eventId))
+    .innerJoin(hosts, eq(hosts.id, payments.hostId))
+    .where(and(isNotNull(payments.bookingId), eventIds ? inArray(payments.eventId, eventIds) : undefined));
+  const back = await refundedOf(db, sold.map((s) => s.p.id));
   const outs = await db
     .select({ eventId: payouts.eventId, status: payouts.status, n: sql<number>`sum(${payouts.amountPaise})::int` })
     .from(payouts)
-    .where(eventIds ? inArray(payouts.eventId, eventIds) : undefined)
+    .where(eventIds ? inArray(payouts.eventId, eventIds) : isNotNull(payouts.eventId))
     .groupBy(payouts.eventId, payouts.status);
   const by = new Map<string, EventEarnings>();
   for (const { p, title, hostName } of sold) {
@@ -70,25 +88,133 @@ export async function earningsOf(db: Db | Tx, eventIds?: string[]): Promise<Even
       eventId: p.eventId!, eventTitle: title, hostId: p.hostId, hostName,
       salesPaise: 0, commissionPaise: 0, includedPaise: 0, refundedPaise: 0, earningsPaise: 0, paidOutPaise: 0, requestedPaise: 0, availablePaise: 0,
     };
-    const price = p.unitPricePaise * p.quantity;
-    const refunded = Math.min(back.get(p.id) ?? 0, price);
-    const commission = p.commissionPaise - halfUp(p.commissionPaise * refunded, price);
-    const included = p.feeIncluded ? p.buyerFeePaise - halfUp(p.buyerFeePaise * refunded, price) : 0;
-    e.salesPaise += price;
-    e.commissionPaise += commission;
-    e.includedPaise += included;
-    e.refundedPaise += refunded;
-    e.earningsPaise += price - commission - included - refunded;
+    const x = saleOf(p, back.get(p.id) ?? 0);
+    e.salesPaise += x.price;
+    e.commissionPaise += x.commission;
+    e.includedPaise += x.included;
+    e.refundedPaise += x.refunded;
+    e.earningsPaise += x.earnings;
     by.set(e.eventId, e);
   }
   for (const o of outs) {
-    const e = by.get(o.eventId);
+    const e = by.get(o.eventId!);
     if (!e) continue;
     if (o.status === "paid") e.paidOutPaise += o.n;
     if (o.status === "requested") e.requestedPaise += o.n;
   }
   for (const e of by.values()) e.availablePaise = e.earningsPaise - e.paidOutPaise - e.requestedPaise;
   return [...by.values()];
+}
+
+const DAY = 24 * 3600_000;
+const IST = 330 * 60_000;
+export const WAIT = 3 * DAY; // after an event's or a slot's end, before its money can be asked for (Money decision 10)
+const WEEK = 7 * DAY; // between a Venue's asks (Play)
+const indiaMidnight = (t: number) => Math.floor((t + IST) / DAY) * DAY - IST;
+export const indiaDay = (t: number) => new Date(t).toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" });
+
+// A Venue's slot money (X4), as earningsOf's, per slot payment that gave the slot: paid, or refunded since. One that
+// found the slot gone went back whole with settle's "Couldn't confirm" refund and never counts. A slot's money is
+// ready 3 days after it ends; one still to come counts in the numbers but neither ready nor waiting. Payouts with no
+// event are this money's. Available goes below 0 when refunds come after an ask, as earningsOf's; the apps show 0.
+// ponytail: reads every slot sale of the host, as earningsOf; totals kept as rows when a venue has tens of thousands.
+export async function venueEarningsOf(db: Db | Tx, hostId: string, now: number): Promise<VenueEarnings> {
+  const sold = await db
+    .select({ p: payments, endsAt: stationClaims.endsAt })
+    .from(payments)
+    .innerJoin(stationClaims, eq(stationClaims.id, payments.claimId))
+    .where(
+      and(
+        eq(payments.hostId, hostId),
+        eq(payments.kind, "slot"),
+        inArray(payments.status, ["paid", "refundPending", "refunded"]),
+        sql`not exists (select 1 from ${refunds} where ${refunds.paymentId} = ${payments.id} and ${refunds.kind} = 'auto' and ${refunds.reason} like ${COULDNT + "%"})`,
+      ),
+    );
+  const back = await refundedOf(db, sold.map((s) => s.p.id));
+  const [h] = await db.select({ name: hosts.name }).from(hosts).where(eq(hosts.id, hostId));
+  const v: VenueEarnings = {
+    hostId, hostName: h?.name ?? "", bookings: sold.length,
+    salesPaise: 0, commissionPaise: 0, includedPaise: 0, refundedPaise: 0, earningsPaise: 0,
+    paidOutPaise: 0, requestedPaise: 0, waitingPaise: 0, opensAt: null, availablePaise: 0, nextAskAt: null,
+  };
+  let ready = 0, opensBy = 0;
+  for (const { p, endsAt } of sold) {
+    const x = saleOf(p, back.get(p.id) ?? 0);
+    v.salesPaise += x.price;
+    v.commissionPaise += x.commission;
+    v.includedPaise += x.included;
+    v.refundedPaise += x.refunded;
+    v.earningsPaise += x.earnings;
+    const end = endsAt.getTime();
+    if (end > now) continue;
+    if (end + WAIT <= now) ready += x.earnings;
+    else {
+      v.waitingPaise += x.earnings;
+      opensBy = Math.max(opensBy, end + WAIT);
+    }
+  }
+  const outs = await db
+    .select({ status: payouts.status, fromHost: payouts.fromHost, n: sql<number>`sum(${payouts.amountPaise})::int`, last: sql<Date | null>`max(${payouts.createdAt})` })
+    .from(payouts)
+    .where(and(eq(payouts.hostId, hostId), isNull(payouts.eventId)))
+    .groupBy(payouts.status, payouts.fromHost);
+  let last = 0;
+  for (const o of outs) {
+    if (o.status === "paid") v.paidOutPaise += o.n;
+    if (o.status === "requested") v.requestedPaise += o.n;
+    if (o.fromHost && o.status !== "cancelled" && o.last) last = Math.max(last, new Date(o.last).getTime());
+  }
+  v.opensAt = opensBy ? new Date(opensBy).toISOString() : null;
+  v.availablePaise = ready - v.paidOutPaise - v.requestedPaise;
+  // From the start of the day a week after the host's last ask; a cancelled one, or one staff made, doesn't count.
+  const next = last ? indiaMidnight(last + WEEK) : 0;
+  v.nextAskAt = next > now ? new Date(next).toISOString() : null;
+  return v;
+}
+
+type No = { no: [400 | 404 | 409, string, string, object?] };
+// One payout asked for: an event's (`eventId`), or a Venue's slot money (`hostId` alone). Serialised by the row lock of
+// the event, or of the host for slot money, so two asks never both take what's available. Staff (Galaxy) may ask any
+// time for up to what's available. A host's Admin (`fromHost`, with the host's id) asks only for its own, once the
+// account is verified, for an event 3 days after its scheduled end and while no other ask for it is open, and for slot
+// money at most once a week.
+export async function askPayout(
+  tx: Tx, b: { eventId?: string; hostId?: string; amountPaise: number; reason?: string }, who: { id: string; fromHost: boolean }, now: number,
+): Promise<typeof payouts.$inferSelect | No> {
+  const at = new Date(now);
+  let hostId: string, left: number;
+  if (b.eventId) {
+    const [e] = await tx.select({ id: events.id, hostId: events.hostId, endsAt: events.endsAt }).from(events).where(eq(events.id, b.eventId)).for("update");
+    if (!e || (b.hostId && e.hostId !== b.hostId)) return { no: [404, "notFound", "There's nothing here."] };
+    if (who.fromHost && (!e.endsAt || e.endsAt.getTime() + WAIT > now))
+      return { no: [409, "notYet", e.endsAt ? `Payouts for this event open on ${indiaDay(e.endsAt.getTime() + WAIT)}.` : "Payouts open 3 days after the event ends."] };
+    if (who.fromHost) {
+      const [open] = await tx.select({ id: payouts.id }).from(payouts).where(and(eq(payouts.eventId, e.id), eq(payouts.status, "requested"))).limit(1);
+      if (open) return { no: [409, "askOpen", "You've already asked for this event's money. Orbit pays that first."] };
+    }
+    hostId = e.hostId;
+    left = (await earningsOf(tx, [e.id]))[0]?.availablePaise ?? 0;
+  } else {
+    // No key update: enough to serialise asks, without holding up rows that point at the host.
+    const [h] = await tx.select({ id: hosts.id }).from(hosts).where(eq(hosts.id, b.hostId!)).for("no key update");
+    if (!h) return { no: [404, "notFound", "There's nothing here."] };
+    hostId = h.id;
+    const v = await venueEarningsOf(tx, h.id, now);
+    if (who.fromHost && v.nextAskAt) return { no: [409, "weekly", `You can ask once a week. Your next ask is from ${indiaDay(Date.parse(v.nextAskAt))}.`] };
+    left = v.availablePaise;
+  }
+  if (who.fromHost) {
+    const [a] = await tx.select({ state: payoutAccounts.state }).from(payoutAccounts).where(eq(payoutAccounts.hostId, hostId));
+    if (a?.state !== "verified") return { no: [409, "accountNotVerified", a ? "Orbit pays once your bank account is verified." : "Add where you get paid first."] };
+  }
+  left = Math.max(0, left);
+  if (b.amountPaise > left) return { no: [400, "tooMuch", `At most ₹${(left / 100).toFixed(2)} is available${b.eventId ? " for this event" : ""}.`, { availablePaise: left }] };
+  const [o] = await tx
+    .insert(payouts)
+    .values({ hostId, eventId: b.eventId ?? null, amountPaise: b.amountPaise, reason: b.reason ?? null, askedBy: who.id, fromHost: who.fromHost, by: who.id, at, createdAt: at })
+    .returning();
+  return o!;
 }
 
 export function moneyRoutes({ db, secret, notify, razorpay: rz, now = Date.now }: Deps) {
@@ -225,52 +351,76 @@ export function moneyRoutes({ db, secret, notify, razorpay: rz, now = Date.now }
     return c.json((await refundsWhere(db, eq(refunds.id, id)))[0]);
   });
 
-  // GET /galaxy/money/payouts: every payout, newest first, and each event's earnings.
+  // GET /galaxy/money/payouts: every payout, newest first (slot money has no event), with who asked, each event's
+  // earnings and each Venue's slot money.
   app.get("/galaxy/money/payouts", ...staff, async (c) => {
+    const asker = alias(users, "asker");
     const rows = await db
-      .select({ o: payouts, hostName: hosts.name, eventTitle: events.title, byName: users.name })
+      .select({ o: payouts, hostName: hosts.name, eventTitle: events.title, byName: users.name, askedByName: asker.name })
       .from(payouts)
       .innerJoin(hosts, eq(hosts.id, payouts.hostId))
-      .innerJoin(events, eq(events.id, payouts.eventId))
+      .leftJoin(events, eq(events.id, payouts.eventId))
       .leftJoin(users, eq(users.id, payouts.by))
+      .leftJoin(asker, eq(asker.id, payouts.askedBy))
       .orderBy(desc(payouts.createdAt))
       .limit(500);
+    // ponytail: one venueEarningsOf per Venue with slot sales; a grouped query when there are hundreds of venues.
+    const venueIds = await db.selectDistinct({ id: payments.hostId }).from(payments).where(and(eq(payments.kind, "slot"), isNotNull(payments.razorpayPaymentId)));
+    const venues: VenueEarnings[] = [];
+    for (const v of venueIds) venues.push(await venueEarningsOf(db, v.id, now()));
     const out: Payouts = {
-      payouts: rows.map(({ o, hostName, eventTitle, byName }) => ({
-        id: o.id, hostId: o.hostId, hostName, eventId: o.eventId, eventTitle, amountPaise: o.amountPaise, status: o.status, utr: o.utr, reason: o.reason, byName, at: o.at.toISOString(),
+      payouts: rows.map(({ o, hostName, eventTitle, byName, askedByName }) => ({
+        id: o.id, hostId: o.hostId, hostName, eventId: o.eventId, eventTitle, amountPaise: o.amountPaise, status: o.status, utr: o.utr, reason: o.reason,
+        fromHost: o.fromHost, askedByName, byName, createdAt: o.createdAt.toISOString(), at: o.at.toISOString(),
       })),
       earnings: await earningsOf(db),
+      venues: venues.filter((v) => v.bookings > 0),
+      accounts: Object.fromEntries((await db.select({ hostId: payoutAccounts.hostId, state: payoutAccounts.state }).from(payoutAccounts)).map((a) => [a.hostId, a.state])),
     };
     return c.json(out);
   });
 
-  // POST /galaxy/money/payouts {eventId, amountPaise, reason}: up to what the event has available.
-  // ponytail: one payout at a time per event is serialised by the event's row lock; hosts ask from Event Partner later.
+  // POST /galaxy/money/payouts {eventId | hostId, amountPaise, reason}: up to what the event, or the Venue's slot money,
+  // has available (askPayout).
   app.post("/galaxy/money/payouts", cap, ...staff, async (c) => {
     const b = await parse(c, NewPayout);
     if (!b) return invalid(c);
+    const [e] = b.eventId && isUuid(b.eventId) ? await db.select({ hostId: events.hostId }).from(events).where(eq(events.id, b.eventId)) : [];
+    const hostOf = b.eventId ? e?.hostId : b.hostId;
+    if (hostOf && (await onHost(db, hostOf, c.var.user, now()))) return ownHost(c);
     const actorId = c.var.actor.id;
     const done = await db.transaction(async (tx) => {
-      const [e] = await tx.select({ id: events.id, hostId: events.hostId }).from(events).where(eq(events.id, b.eventId)).for("update");
-      if (!e) return fail(c, 404, "notFound", "There's nothing here.");
-      const [mine] = await earningsOf(tx, [e.id]);
-      const left = mine?.availablePaise ?? 0;
-      if (b.amountPaise > left) return fail(c, 400, "tooMuch", `At most ₹${(left / 100).toFixed(2)} is available for this event.`, { availablePaise: left });
-      const [o] = await tx.insert(payouts).values({ hostId: e.hostId, eventId: e.id, amountPaise: b.amountPaise, reason: b.reason, by: actorId, at: at(), createdAt: at() }).returning();
-      await logged(tx, actorId, "money.payout.create", b.reason, { payoutId: o!.id, eventId: e.id, amountPaise: b.amountPaise }, e.hostId);
-      return o!;
+      const o = await askPayout(tx, b, { id: actorId, fromHost: false }, now());
+      if ("no" in o) return fail(c, ...o.no);
+      await logged(tx, actorId, "money.payout.create", b.reason, { payoutId: o.id, eventId: o.eventId, amountPaise: b.amountPaise }, o.hostId);
+      return o;
     });
     if (done instanceof Response) return done;
     await tellMoney("money.payout.create", b.reason, actorId);
     return c.json({ id: done.id }, 201);
   });
 
-  // A requested payout, locked, moved on by `change`; the host's Admins hear `kind`.
+  // A requested payout moved on by `set`, under its event's lock, or its host's for slot money, as askPayout takes, then
+  // its own. Paid only to a verified account, and only while what it's from still covers it: refunds since the ask can
+  // take available below 0.
   const settlePayout = (id: string, actorId: string, action: string, reason: string, set: Partial<typeof payouts.$inferInsert>) =>
     db.transaction(async (tx) => {
+      const [from] = await tx.select({ eventId: payouts.eventId, hostId: payouts.hostId }).from(payouts).where(eq(payouts.id, id));
+      if (!from) return "notFound" as const;
+      if (from.eventId) await tx.select({ id: events.id }).from(events).where(eq(events.id, from.eventId)).for("update");
+      else await tx.select({ id: hosts.id }).from(hosts).where(eq(hosts.id, from.hostId)).for("no key update");
       const [o] = await tx.select().from(payouts).where(eq(payouts.id, id)).for("update");
       if (!o) return "notFound" as const;
       if (o.status !== "requested") return "notOpen" as const;
+      if (set.status === "paid") {
+        const [a] = await tx.select({ state: payoutAccounts.state }).from(payoutAccounts).where(eq(payoutAccounts.hostId, o.hostId)).for("share");
+        if (a?.state !== "verified") return "unverified" as const;
+        // This payout is already off available as requested; paid moves it, so available stays as it is now.
+        const left = o.eventId
+          ? ((await earningsOf(tx, [o.eventId]))[0]?.availablePaise ?? -o.amountPaise)
+          : (await venueEarningsOf(tx, o.hostId, now())).availablePaise;
+        if (left < 0) return "short" as const;
+      }
       await tx.update(payouts).set({ ...set, by: actorId, at: at() }).where(eq(payouts.id, id));
       await logged(tx, actorId, action, reason, { payoutId: id, ...set }, o.hostId);
       return o;
@@ -283,6 +433,8 @@ export function moneyRoutes({ db, secret, notify, razorpay: rz, now = Date.now }
     const b = await parse(c, PayoutPaid);
     if (!b) return fail(c, 400, "invalid", "A UTR is 6 to 40 letters and digits.");
     const reason = b.reason || `UTR ${b.utr}`;
+    const [mine] = await db.select({ hostId: payouts.hostId }).from(payouts).where(eq(payouts.id, id));
+    if (mine && (await onHost(db, mine.hostId, c.var.user, now()))) return ownHost(c);
     let o;
     try {
       o = await settlePayout(id, c.var.actor.id, "money.payout.paid", reason, { status: "paid", utr: b.utr.toUpperCase() }); // one UTR, however it's typed
@@ -292,6 +444,8 @@ export function moneyRoutes({ db, secret, notify, razorpay: rz, now = Date.now }
     }
     if (o === "notFound") return fail(c, 404, "notFound", "There's nothing here.");
     if (o === "notOpen") return fail(c, 409, "notOpen", "Only a requested payout can be marked paid.");
+    if (o === "unverified") return fail(c, 409, "accountNotVerified", "This host's bank account isn't verified. Check it on Accounts first.");
+    if (o === "short") return fail(c, 409, "short", "Refunds since this ask leave less than its amount. Cancel it and pay what's available.");
     await tell(notify, await adminsOf(db, o.hostId), "payoutPaid", { hostId: o.hostId, amountPaise: o.amountPaise, utr: b.utr.toUpperCase() });
     await tellMoney("money.payout.paid", reason, c.var.actor.id);
     return c.json({ ok: true });
@@ -306,10 +460,61 @@ export function moneyRoutes({ db, secret, notify, razorpay: rz, now = Date.now }
     const o = await settlePayout(id, c.var.actor.id, "money.payout.cancel", b.reason, { status: "cancelled", reason: b.reason });
     if (o === "notFound") return fail(c, 404, "notFound", "There's nothing here.");
     if (o === "notOpen") return fail(c, 409, "notOpen", "Only a requested payout can be cancelled.");
+    if (typeof o === "string") throw new Error(o); // only paid checks the account and the amount
     await tell(notify, await adminsOf(db, o.hostId), "payoutCancelled", { hostId: o.hostId, amountPaise: o.amountPaise, reason: b.reason });
     await tellMoney("money.payout.cancel", b.reason, c.var.actor.id);
     return c.json({ ok: true });
   });
+
+  // GET /galaxy/money/payout-accounts: where each host is paid, in full (Money holders check them by hand against a
+  // cancelled cheque or statement), those still to check first.
+  app.get("/galaxy/money/payout-accounts", ...staff, async (c) => {
+    const rows = await db
+      .select({ a: payoutAccounts, hostName: hosts.name, checkedByName: users.name })
+      .from(payoutAccounts)
+      .innerJoin(hosts, eq(hosts.id, payoutAccounts.hostId))
+      .leftJoin(users, eq(users.id, payoutAccounts.checkedBy))
+      .orderBy(sql`${payoutAccounts.state} <> 'checking'`, desc(payoutAccounts.updatedAt))
+      .limit(500);
+    const out: StaffPayoutAccount[] = rows.map(({ a, hostName, checkedByName }) => ({
+      hostId: a.hostId, hostName, kind: a.kind, holder: a.holder, accountNumber: a.accountNumber, ifsc: a.ifsc, upi: a.upi, bankName: a.bankName,
+      state: a.state, reason: a.reason, checkedByName, checkedAt: a.checkedAt?.toISOString() ?? null, updatedAt: a.updatedAt.toISOString(),
+    }));
+    // Full account details seen: who looked, and whose (hosts, never the numbers), as bookings.search.
+    await db.insert(auditLog).values({ actorId: c.var.actor.id, action: "money.accounts.view", data: { hosts: out.map((a) => a.hostId) }, at: at() });
+    return c.json(out);
+  });
+
+  // POST /galaxy/money/payout-accounts/:hostId/verify | reject {reason, seen}: only the details staff saw (`seen`, the
+  // account's updatedAt); a replacement since then is checked afresh. The host's Admins hear; nothing of the number is
+  // logged.
+  for (const action of ["verify", "reject"] as const)
+    app.post(`/galaxy/money/payout-accounts/:hostId/${action}`, cap, ...staff, async (c) => {
+      const id = c.req.param("hostId");
+      if (!isUuid(id)) return fail(c, 404, "notFound", "There's nothing here.");
+      const b = await parse(c, CheckAccount);
+      if (!b) return invalid(c);
+      if (await onHost(db, id, c.var.user, now())) return ownHost(c);
+      const actorId = c.var.actor.id;
+      const state = action === "verify" ? "verified" : "rejected";
+      const done = await db.transaction(async (tx) => {
+        const [a] = await tx.select().from(payoutAccounts).where(eq(payoutAccounts.hostId, id)).for("update");
+        if (!a) return fail(c, 404, "notFound", "There's nothing here.");
+        if (a.updatedAt.getTime() !== Date.parse(b.seen)) return fail(c, 409, "changed", "The host changed this account since you opened it. Look at it again.");
+        if (a.state === state) return fail(c, 409, "already", `This account is already ${state}.`);
+        await tx
+          .update(payoutAccounts)
+          .set({ state, reason: action === "reject" ? b.reason : null, checkedBy: actorId, checkedAt: at() })
+          .where(eq(payoutAccounts.hostId, id));
+        await logged(tx, actorId, `money.account.${action}`, b.reason, { kind: a.kind, state }, id);
+        return a;
+      });
+      if (done instanceof Response) return done;
+      const [h] = await db.select({ name: hosts.name }).from(hosts).where(eq(hosts.id, id));
+      await tell(notify, await adminsOf(db, id), "bankChecked", { hostId: id, hostName: h!.name, state, reason: action === "reject" ? b.reason : null });
+      await tellMoney(`money.account.${action}`, b.reason, actorId);
+      return c.json({ ok: true });
+    });
 
   // GET /galaxy/money/fees?q=&page=: hosts by name with their fee plan.
   app.get("/galaxy/money/fees", ...staff, async (c) => {
