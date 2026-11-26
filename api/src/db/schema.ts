@@ -895,6 +895,7 @@ export const announcements = pgTable(
     authorId: uuid("author_id").notNull().references(() => users.id),
     text: text("text").notNull(),
     audience: text("audience", { enum: ["everyone", "notCheckedIn"] }).notNull(),
+    reached: integer("reached").notNull().default(0), // ticket holders at send time
     createdAt: at("created_at").notNull().defaultNow(),
   },
   (t) => [index().on(t.eventId, t.createdAt)],

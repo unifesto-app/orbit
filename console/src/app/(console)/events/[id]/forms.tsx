@@ -30,7 +30,7 @@ export function Announce({ eventId, left }: { eventId: string; left: number }) {
           {busy ? "Sending…" : "Send"}
         </button>
         <span className={ui.secondary}>
-          {left === 0 ? "That’s all 3 for today. More tomorrow." : `${left} of ${ANNOUNCEMENTS_A_DAY} left today. Each goes by push, inbox and email.`}
+          {left === 0 ? "That’s all 3 for today. More tomorrow." : `${left} of ${ANNOUNCEMENTS_A_DAY} left today. Each goes by push and inbox.`}
         </span>
       </div>
     </form>

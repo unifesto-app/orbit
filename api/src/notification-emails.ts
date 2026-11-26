@@ -21,7 +21,11 @@ const day = (v: unknown) => {
 const dayTime = (v: unknown) => {
   const d = new Date(str(v));
   if (isNaN(d.getTime())) return "";
-  return `${day(v)}, ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })}`;
+  return `${day(v)}, ${time(v)}`;
+};
+const time = (v: unknown) => {
+  const d = new Date(str(v));
+  return isNaN(d.getTime()) ? "" : d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" });
 };
 const METHOD: Record<string, string> = { email: "email", phone: "phone number", passkey: "passkey", google: "Google", apple: "Apple" };
 const THE_METHOD: Record<string, string> = { email: "your email", phone: "your phone number", passkey: "a passkey", google: "Google", apple: "Apple" };
@@ -78,9 +82,9 @@ const WORDS: Partial<Record<NoticeKind, (d: Data) => Words>> = {
         : { subject: "Your request to host was declined", line: `Reason: ${str(d.reason)}.` },
   slotReleased: (d) => ({ subject: `Your slot at ${str(d.hostName)} was released`, line: `You didn’t check in for ${dayTime(d.start)}, so the slot was freed.` }),
   hostAnnouncement: (d) => ({ subject: `${str(d.hostName) || "The host"} about ${str(d.title)}`, line: str(d.text) }),
-  eventTomorrow: (d) => ({ subject: `Coming up: ${str(d.title)}`, line: `Starts ${dayTime(d.startsAt)}.` }),
-  eventStartingSoon: (d) => ({ subject: `${str(d.title)} starts soon`, line: `Starts ${dayTime(d.startsAt)}.` }),
-  thanksForComing: (d) => ({ subject: `Thanks for coming to ${str(d.title)}`, line: "Loved it? Say so on the event page." }),
+  eventTomorrow: (d) => ({ subject: `Coming up: ${str(d.title)}`, line: `${str(d.title)} starts tomorrow at ${time(d.startsAt)}.` }),
+  eventStartingSoon: (d) => ({ subject: `${str(d.title)} starts soon`, line: `${str(d.title)} starts in an hour.` }),
+  thanksForComing: (d) => ({ subject: `Thanks for coming to ${str(d.title)}`, line: `Thanks for coming to ${str(d.title)}. Loved it? Say so on the event page.` }),
   followedHostEvent: (d) => ({ subject: `${str(d.hostName) || "A host you follow"} has a new event`, line: str(d.title) }),
   staffGrantAdded: (d) => ({
     subject: "Staff access was given",
@@ -101,10 +105,12 @@ const words = (kind: string, d: Data): Words => WORDS[kind as NoticeKind]?.(d) ?
 
 const WHY = "You’re getting this because it’s about your Orbit account. Account and security emails can’t be switched off.";
 const WHY_STAFF = "You’re getting this because you hold staff access on Orbit.";
+const WHY_EVENT = "You’re getting this because you have a ticket for this event on Orbit.";
 
 export function emailFor(kind: string, data: Data = {}, site = SITE) {
   const { subject, line = "" } = words(kind, data);
-  const why = KINDS[kind as NoticeKind]?.group === "staff" ? WHY_STAFF : WHY;
+  const group = KINDS[kind as NoticeKind]?.group;
+  const why = group === "staff" ? WHY_STAFF : group === "events" ? WHY_EVENT : WHY;
   const html = frame({ subject, heading: subject, lead: esc(line), why }, site);
   const text = [subject, ...(line ? ["", line] : []), "", why, `Terms: ${site}/terms · Privacy: ${site}/privacy`, "© 2027 Orbit"].join("\n");
   return { subject, html, text, replyTo: WAITLIST_CONTACT };

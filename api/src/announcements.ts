@@ -1,8 +1,8 @@
-import { and, count, desc, eq, gt, gte, inArray, lte, sql } from "drizzle-orm";
+import { and, count, desc, eq, gt, gte, isNotNull, isNull, lte, notExists, sql } from "drizzle-orm";
 import { Hono, type Context } from "hono";
 import { ANNOUNCEMENTS_A_DAY, type AutoMessages, AutoMessagesBody, type EventAnnouncements, NewAnnouncement, type NoticeKind } from "@orbit/contract";
 import type { Db } from "./db/index.ts";
-import { announcements, bookings, events, hosts, inboxItems, users } from "./db/schema.ts";
+import { announcements, bookings, events, hosts, inboxItems, teamRoles, users } from "./db/schema.ts";
 import { fail, invalid, isUuid, type Notify, parse, signedIn, type Tx, type Env } from "./http.ts";
 import { changeable, teamOf } from "./roles/access.ts";
 
@@ -18,6 +18,7 @@ const DAY = 86_400_000;
 const HOUR = 3_600_000;
 const MIN = 60_000;
 const IST = 330 * MIN;
+const AFTER = 7 * DAY; // announcements close a week after the end
 const istDay = (t: number) => Math.floor((t + IST) / DAY) * DAY - IST; // the start of t's India day
 const nothing = (c: Context) => fail(c, 404, "notFound", "There's nothing here.");
 
@@ -40,51 +41,56 @@ export function announcementsRoutes({ db, notify, secret, now = Date.now }: Deps
     return t ? { event, host: t.host, admin: t.mine.role === "admin" } : null;
   };
 
-  // POST /events/:id/announcements {text, audience}: to every ticket holder (or those not checked in), by push, inbox
-  // and email, in the same transaction as the row. The event's row is locked while today's count is read, so two sends
-  // at once can't make a fourth.
-  // ponytail: one notify per holder, awaited in turn inside the transaction; a fan-out row for the worker when events
-  // run to thousands of holders.
+  // POST /events/:id/announcements {text, audience}: to every ticket holder (or those not checked in), by push and inbox
+  // (email once optional emails are on). An advisory lock on the event, not its row (bookings lock the person and then
+  // share the event row), holds the seat, host and event checks, today's count and the row together, so two sends at
+  // once can't make a fourth. The fan-out runs after the commit; notify keeps its own errors.
+  // ponytail: one notify per holder, awaited in turn; a fan-out row for the worker when events run to thousands.
   app.post("/events/:id/announcements", auth, async (c) => {
     const got = await seatOn(c.req.param("id"), c.var.user.id);
     if (!got?.admin) return nothing(c);
     const b = await parse(c, NewAnnouncement);
     if (!b) return invalid(c);
-    if (!changeable(got.host)) return fail(c, 409, "hostClosed", "This host can't change anything right now.");
-    if (got.event.status !== "published") return fail(c, 409, "notNow", `You can't announce on an event that is ${got.event.status}.`);
+    const userId = c.var.user.id;
     const out = await db.transaction(async (tx) => {
-      await tx.select({ id: events.id }).from(events).where(eq(events.id, got.event.id)).for("update");
-      if ((await sentToday(tx, got.event.id, now())) >= ANNOUNCEMENTS_A_DAY) return null;
-      const [row] = await tx.insert(announcements).values({ eventId: got.event.id, authorId: c.var.user.id, text: b.text, audience: b.audience, createdAt: new Date(now()) }).returning();
-      const ids = await holders(tx, got.event.id);
-      const data = { eventId: got.event.id, hostName: got.host.name, title: got.event.title, text: b.text };
-      for (const userId of ids) await notify({ to: { userId }, kind: "hostAnnouncement", data, key: row!.id }, tx);
-      return { row: row!, reached: ids.length };
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`announce:${got.event.id}`}))`);
+      const [host] = await tx.select().from(hosts).where(eq(hosts.id, got.event.hostId));
+      const [seat] = await tx
+        .select({ id: teamRoles.id })
+        .from(teamRoles)
+        .where(and(eq(teamRoles.hostId, got.event.hostId), eq(teamRoles.userId, userId), eq(teamRoles.role, "admin"), isNotNull(teamRoles.startedAt), isNull(teamRoles.endedAt)));
+      if (!seat) return nothing(c);
+      if (!changeable(host!)) return fail(c, 409, "hostClosed", "This host can't change anything right now.");
+      const [cur] = await tx.select().from(events).where(eq(events.id, got.event.id));
+      if (cur!.status !== "published") return fail(c, 409, "notNow", `You can't announce on an event that is ${cur!.status}.`);
+      if (cur!.endsAt && now() > cur!.endsAt.getTime() + AFTER) return fail(c, 409, "ended", "This event ended more than a week ago, so announcements are closed.");
+      if ((await sentToday(tx, cur!.id, now())) >= ANNOUNCEMENTS_A_DAY)
+        return fail(c, 429, "tooMany", `You've sent ${ANNOUNCEMENTS_A_DAY} announcements for this event today. Try again tomorrow.`);
+      const ids = await holders(tx, cur!.id);
+      const [row] = await tx
+        .insert(announcements)
+        .values({ eventId: cur!.id, authorId: userId, text: b.text, audience: b.audience, reached: ids.length, createdAt: new Date(now()) })
+        .returning();
+      return { row: row!, ids, data: { eventId: cur!.id, hostName: host!.name, title: cur!.title, text: b.text } };
     });
-    if (!out) return fail(c, 429, "tooMany", `You've sent ${ANNOUNCEMENTS_A_DAY} announcements for this event today. Try again tomorrow.`);
-    const { row, reached } = out;
-    return c.json({ id: row.id, text: row.text, audience: row.audience, author: c.var.user.name ?? null, reached, createdAt: row.createdAt.toISOString() }, 201);
+    if (out instanceof Response) return out;
+    const { row, ids, data } = out;
+    for (const id of ids) await notify({ to: { userId: id }, kind: "hostAnnouncement", data, key: row.id });
+    return c.json({ id: row.id, text: row.text, audience: row.audience, author: c.var.user.name ?? null, reached: row.reached, createdAt: row.createdAt.toISOString() }, 201);
   });
 
-  // GET /events/:id/announcements: what was sent, by whom and how many inboxes it reached; today's left; the switches.
+  // GET /events/:id/announcements: what was sent, by whom and to how many ticket holders; today's left; the switches.
   app.get("/events/:id/announcements", auth, async (c) => {
     const got = await seatOn(c.req.param("id"), c.var.user.id);
     if (!got) return nothing(c);
     const rows = await db
-      .select({ id: announcements.id, text: announcements.text, audience: announcements.audience, author: users.name, createdAt: announcements.createdAt })
+      .select({ id: announcements.id, text: announcements.text, audience: announcements.audience, author: users.name, reached: announcements.reached, createdAt: announcements.createdAt })
       .from(announcements)
       .innerJoin(users, eq(users.id, announcements.authorId))
       .where(eq(announcements.eventId, got.event.id))
       .orderBy(desc(announcements.createdAt));
-    // The inbox key ends in the announcement's id (notify: kind:user:key).
-    const ref = sql<string>`split_part(${inboxItems.dedupeKey}, ':', 3)`;
-    const reached = rows.length
-      ? new Map(
-          (await db.select({ id: ref, n: count() }).from(inboxItems).where(and(eq(inboxItems.kind, "hostAnnouncement"), inArray(ref, rows.map((r) => r.id)))).groupBy(ref)).map((r) => [r.id, r.n]),
-        )
-      : new Map<string, number>();
     const body: EventAnnouncements = {
-      items: rows.map((r) => ({ ...r, author: r.author ?? null, reached: reached.get(r.id) ?? 0, createdAt: r.createdAt.toISOString() })),
+      items: rows.map((r) => ({ ...r, author: r.author ?? null, createdAt: r.createdAt.toISOString() })),
       left: Math.max(0, ANNOUNCEMENTS_A_DAY - (await sentToday(db, got.event.id, now()))),
       autoMessages: got.event.autoMessages,
     };
@@ -111,8 +117,12 @@ export function announcementsRoutes({ db, notify, secret, now = Date.now }: Deps
 
 // The minute tick: Tomorrow (20 to 24 hours before the start), Starting soon (within the hour before it) and Thanks
 // (after the end, 09:00 to 21:00 India time, up to a day on) to each published event's ticket holders, where the host
-// left that switch on. Keyed by the event and its start, so a second tick (or a second box) sends nothing again and a
-// moved event reminds afresh. Quiet hours, caps and the person's switches are notify's.
+// is live and left that switch on. Keyed by the event alone, so a second tick (or box), or a start moved inside the
+// window, sends nothing again; holders who already have the item are left out by the query. Quiet hours, caps and the
+// person's switches are notify's.
+// ponytail: Tomorrow goes on the first tick inside 20 to 24 hours, so in practice at exactly 24 hours before; a
+// different moment needs only the window moved.
+// ponytail: the 09:00 to 21:00 window is India time; per-city time zones when Orbit runs in the UAE.
 export async function sendReminders({ db, notify, now }: { db: Db; notify: Notify; now: () => number }) {
   const t = now();
   const h = (t - istDay(t)) / HOUR;
@@ -123,14 +133,27 @@ export async function sendReminders({ db, notify, now }: { db: Db; notify: Notif
   if (h >= 9 && h < 21) runs.push({ kind: "thanksForComing", on: "thanks", where: and(lte(events.endsAt, new Date(t)), gt(events.endsAt, new Date(t - DAY))) });
   for (const r of runs) {
     const due = await db
-      .select({ id: events.id, title: events.title, startsAt: events.startsAt, hostName: hosts.name })
+      .selectDistinct({ userId: bookings.userId, id: events.id, title: events.title, startsAt: events.startsAt, hostName: hosts.name })
       .from(events)
       .innerJoin(hosts, eq(hosts.id, events.hostId))
-      .where(and(eq(events.status, "published"), sql`(${events.autoMessages}->>${r.on})::boolean`, r.where));
+      .innerJoin(bookings, and(eq(bookings.eventId, events.id), eq(bookings.status, "confirmed")))
+      .where(
+        and(
+          eq(events.status, "published"),
+          eq(hosts.status, "live"),
+          sql`(${events.autoMessages}->>${r.on})::boolean`,
+          r.where,
+          notExists(
+            db
+              .select({ one: sql`1` })
+              .from(inboxItems)
+              .where(and(eq(inboxItems.userId, bookings.userId), sql`${inboxItems.dedupeKey} = ${r.kind} || ':' || ${bookings.userId} || ':' || ${events.id}`)),
+          ),
+        ),
+      );
     for (const e of due) {
       const data = { eventId: e.id, title: e.title, hostName: e.hostName, startsAt: e.startsAt?.toISOString() };
-      const key = `${e.id}:${e.startsAt?.getTime()}`;
-      for (const userId of await holders(db, e.id)) await notify({ to: { userId }, kind: r.kind, data, key });
+      await notify({ to: { userId: e.userId }, kind: r.kind, data, key: e.id });
     }
   }
 }

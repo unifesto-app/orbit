@@ -8,7 +8,7 @@ import { DARK_TINT, Glass } from '@orbit/mobile/glass';
 import { useLoad } from '@orbit/mobile/load';
 import { color, font, space } from '@orbit/mobile/theme';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -18,6 +18,8 @@ import { Card, Note, Row, Section, Wide, styles as ui } from '../../launch/ui';
 import { api } from '../../session';
 
 const BACK = require('../../../assets/tabs/chevron.png');
+// A 404 here means the seat is no longer Admin's (Crew reads only).
+const say = (r: { status: number; error: { message: string } }) => (r.status === 404 ? 'Only event admins can send messages.' : r.error.message);
 const back = () => (router.canGoBack() ? router.back() : router.replace('/events'));
 const SWITCHES: { key: keyof AutoMessages; label: string; note: string }[] = [
   { key: 'tomorrow', label: 'A day before', note: 'When and where, the day before' },
@@ -34,6 +36,7 @@ export default function EventMessages() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [auto, setAuto] = useState<AutoMessages | null>(null); // shown at once, back as it was on a refusal
+  const flips = useRef(0); // only the latest switch's answer lands
   const left = load.data?.left ?? ANNOUNCEMENTS_A_DAY;
   const switches = auto ?? load.data?.autoMessages;
 
@@ -42,16 +45,18 @@ export default function EventMessages() {
     setError(null);
     const r = await api.authed<Announcement>('POST', `/events/${id}/announcements`, { text, audience: notIn ? 'notCheckedIn' : 'everyone' });
     setBusy(false);
-    if (!r.ok) return setError(r.error.message);
+    if (!r.ok) return setError(say(r));
     setText('');
     load.reload();
   };
   const flip = async (key: keyof AutoMessages, on: boolean) => {
     const was = switches!;
+    const n = ++flips.current;
     setAuto({ ...was, [key]: on });
     const r = await api.authed<AutoMessages>('PUT', `/events/${id}/auto-messages`, { [key]: on });
+    if (n !== flips.current) return;
     setAuto(r.ok ? r.data : was);
-    if (!r.ok) setError(r.error.message);
+    if (!r.ok) setError(say(r));
   };
 
   return (
@@ -88,7 +93,7 @@ export default function EventMessages() {
         <View style={styles.send}>
           <Wide label={busy ? 'Sending…' : 'Send to ticket holders'} onPress={send} disabled={busy || !text.trim() || left === 0} />
         </View>
-        <Note live={!!error}>{error ?? (left === 0 ? 'That’s all 3 for today. More tomorrow.' : `${left} of ${ANNOUNCEMENTS_A_DAY} left today. Each goes by push, inbox and email.`)}</Note>
+        <Note live={!!error}>{error ?? (left === 0 ? 'That’s all 3 for today. More tomorrow.' : `${left} of ${ANNOUNCEMENTS_A_DAY} left today. Each goes by push and inbox.`)}</Note>
 
         {switches && (
           <>

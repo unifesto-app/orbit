@@ -4,6 +4,7 @@ CREATE TABLE "announcements" (
 	"author_id" uuid NOT NULL,
 	"text" text NOT NULL,
 	"audience" text NOT NULL,
+	"reached" integer DEFAULT 0 NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint

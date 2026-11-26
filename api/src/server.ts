@@ -185,8 +185,16 @@ setInterval(() => {
     .finally(() => (busy = false));
 }, 5_000).unref();
 
-// Tomorrow, Starting soon and Thanks to ticket holders (announcements.ts), every minute; keyed, so overlap sends once.
-setInterval(() => sendReminders({ db, notify, now: Date.now }).catch((e) => console.error("[reminders]", e)), 60_000).unref();
+// Tomorrow, Starting soon and Thanks to ticket holders (announcements.ts), every minute, never two at once here; keyed,
+// so another box's overlap sends once.
+let reminding = false;
+setInterval(() => {
+  if (reminding) return;
+  reminding = true;
+  sendReminders({ db, notify, now: Date.now })
+    .catch((e) => console.error("[reminders]", e))
+    .finally(() => (reminding = false));
+}, 60_000).unref();
 
 // Push and email providers failing more than 20% over the last hour: an alert to Platform holders (notifications.ts).
 // On start, then hourly.
