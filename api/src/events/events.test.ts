@@ -426,7 +426,7 @@ test("a team event carries exactly its documented keys", async () => {
   const h = await start(a);
   const keys = [
     "id", "hostId", "slug", "status", "visibility", "title", "category", "startsAt", "endsAt", "timezone", "place", "online", "onlineLink",
-    "about", "agenda", "faq", "terms", "poster", "wide", "wideEdge", "tone", "publishedAt", "cancelledAt", "cancelReason", "saved", "createdAt", "updatedAt",
+    "about", "agenda", "faq", "terms", "vibes", "poster", "wide", "wideEdge", "tone", "publishedAt", "cancelledAt", "cancelReason", "saved", "createdAt", "updatedAt",
   ].sort();
   const made = await as(a)("POST", `/hosts/${h.id}/events`, { title: "Keys" });
   assert.deepEqual(Object.keys(made.body).sort(), keys);

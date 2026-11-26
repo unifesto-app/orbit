@@ -10,6 +10,7 @@ import { galaxySlotsRoutes, galaxyVenuesRoutes } from "./slots/galaxy.ts";
 import { announcementsRoutes } from "./announcements.ts";
 import { publicEventsRoutes } from "./events/public.ts";
 import { savesRoutes } from "./saves.ts";
+import { interestsRoutes } from "./interests.ts";
 import { reportsRoutes } from "./reports.ts";
 import { supportRoutes } from "./support.ts";
 import { meNotificationsRoutes } from "./me-notifications.ts";
@@ -58,6 +59,7 @@ export function createApp(deps?: Deps) {
     app.route("/", announcementsRoutes(deps));
     app.route("/", publicEventsRoutes(deps));
     app.route("/", savesRoutes(deps));
+    app.route("/", interestsRoutes(deps));
     app.route("/", reportsRoutes(deps));
     app.route("/", supportRoutes(deps));
     app.route("/", meNotificationsRoutes(deps));

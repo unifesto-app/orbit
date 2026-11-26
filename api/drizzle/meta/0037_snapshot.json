@@ -1,5 +1,5 @@
 {
-  "id": "016892a7-ac0f-44a9-8e6f-3cf4e905b2ec",
+  "id": "0859c1a9-04a0-40ea-91f5-86fcf54c4b57",
   "prevId": "c36443ce-08f7-4745-bb68-02ba3b9063b8",
   "version": "7",
   "dialect": "postgresql",
@@ -1319,6 +1319,89 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.event_interests": {
+      "name": "event_interests",
+      "schema": "",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "event_id": {
+          "name": "event_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "at": {
+          "name": "at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "event_interests_event_id_index": {
+          "name": "event_interests_event_id_index",
+          "columns": [
+            {
+              "expression": "event_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "event_interests_user_id_users_id_fk": {
+          "name": "event_interests_user_id_users_id_fk",
+          "tableFrom": "event_interests",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "event_interests_event_id_events_id_fk": {
+          "name": "event_interests_event_id_events_id_fk",
+          "tableFrom": "event_interests",
+          "tableTo": "events",
+          "columnsFrom": [
+            "event_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "event_interests_user_id_event_id_pk": {
+          "name": "event_interests_user_id_event_id_pk",
+          "columns": [
+            "user_id",
+            "event_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.event_requests": {
       "name": "event_requests",
       "schema": "",
@@ -1741,6 +1824,13 @@
         },
         "terms": {
           "name": "terms",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "vibes": {
+          "name": "vibes",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true,
@@ -3810,140 +3900,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.payout_accounts": {
-      "name": "payout_accounts",
-      "schema": "",
-      "columns": {
-        "host_id": {
-          "name": "host_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "holder": {
-          "name": "holder",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "account_number": {
-          "name": "account_number",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "ifsc": {
-          "name": "ifsc",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "upi": {
-          "name": "upi",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "bank_name": {
-          "name": "bank_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "last4": {
-          "name": "last4",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "state": {
-          "name": "state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'checking'"
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "checked_by": {
-          "name": "checked_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "checked_at": {
-          "name": "checked_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "payout_accounts_host_id_hosts_id_fk": {
-          "name": "payout_accounts_host_id_hosts_id_fk",
-          "tableFrom": "payout_accounts",
-          "tableTo": "hosts",
-          "columnsFrom": [
-            "host_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "payout_accounts_checked_by_users_id_fk": {
-          "name": "payout_accounts_checked_by_users_id_fk",
-          "tableFrom": "payout_accounts",
-          "tableTo": "users",
-          "columnsFrom": [
-            "checked_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "payout_accounts_kind": {
-          "name": "payout_accounts_kind",
-          "value": "(\"payout_accounts\".\"kind\" = 'bank' and \"payout_accounts\".\"account_number\" is not null and \"payout_accounts\".\"ifsc\" is not null and \"payout_accounts\".\"upi\" is null) or (\"payout_accounts\".\"kind\" = 'upi' and \"payout_accounts\".\"upi\" is not null and \"payout_accounts\".\"account_number\" is null and \"payout_accounts\".\"ifsc\" is null)"
-        },
-        "payout_accounts_state": {
-          "name": "payout_accounts_state",
-          "value": "\"payout_accounts\".\"state\" in ('checking', 'verified', 'rejected')"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.payouts": {
       "name": "payouts",
       "schema": "",
@@ -3991,19 +3947,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "asked_by": {
-          "name": "asked_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "from_host": {
-          "name": "from_host",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
         },
         "by": {
           "name": "by",
@@ -4054,27 +3997,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "payouts_host_id_created_at_index": {
-          "name": "payouts_host_id_created_at_index",
-          "columns": [
-            {
-              "expression": "host_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -4097,19 +4019,6 @@
           "tableTo": "events",
           "columnsFrom": [
             "event_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "payouts_asked_by_users_id_fk": {
-          "name": "payouts_asked_by_users_id_fk",
-          "tableFrom": "payouts",
-          "tableTo": "users",
-          "columnsFrom": [
-            "asked_by"
           ],
           "columnsTo": [
             "id"
@@ -6834,6 +6743,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": false
+        },
+        "interests": {
+          "name": "interests",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
         },
         "created_at": {
           "name": "created_at",

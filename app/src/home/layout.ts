@@ -27,6 +27,7 @@ export type Viewer = {
   place: Place | null;
   tickets?: readonly { eventId: string; label: string; id?: string }[]; // the viewer's upcoming bookings; `id` opens the ticket
   interests?: readonly string[]; // category slugs picked on Account › Interests; unset until picked or skipped
+  interestsRead?: boolean; // the API's picks have landed for this sign-in (orbit-pm X13); until then they aren't known
 };
 // `near`: discover's call (within 25 km, or online), which wins over the area list when it's there.
 export type PlanEvent = { id: string; slug?: string; endsAt?: string; hostId: string; area: string; startsAt: string; announced: string; category?: string; wide?: unknown; near?: boolean };
@@ -122,8 +123,9 @@ export function planHome<E extends PlanEvent, H extends PlanHost>(
     tickets,
     orbit,
     near: notice === null, // whether Places to play is near you
-    // Home asks once, signed in, until interests are picked or skipped.
-    askInterests: viewer.signedIn && viewer.interests === undefined,
+    // Home asks once, signed in, until interests are picked or skipped; never before the API's picks are read (a failed
+    // read leaves it hidden rather than asking someone who already answered).
+    askInterests: viewer.signedIn && viewer.interestsRead === true && viewer.interests === undefined,
     notice,
     list,
     places,
