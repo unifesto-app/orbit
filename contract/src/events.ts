@@ -243,7 +243,7 @@ export type StaffEvents = { events: StaffEventRow[]; total: number; page: number
 // GET /galaxy/events/:id: the event as its team reads it, its host, each ticket type with its confirmed seats, and how
 // many bookings it has ever had (Unpublish needs none).
 export type StaffEvent = {
-  event: TeamEvent; host: { id: string; name: string; slug: string };
+  event: Omit<TeamEvent, "onlineLink">; host: { id: string; name: string; slug: string };
   tickets: (TicketType & { sold: number })[]; bookings: number;
 };
 

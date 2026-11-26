@@ -1,28 +1,44 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { bodyOf, type Form, fixesOf, paiseOf, placeHalf, priceLabel, saveable } from './editor.ts';
+import type { TeamEvent } from '@orbit/contract';
 
-const f: Form = { title: ' Open Mic ', category: 'comedy', startsAt: '2026-12-12T19:30:00+05:30', hours: 2, venue: 'Hall', address: 'Road 1', area: 'Jubilee Hills', city: 'Hyderabad', about: '' };
+import { bodyOf, fixesOf, formOf, lastsLabel, paiseOf, placeHalf, priceLabel, saveable } from './editor.ts';
 
-test('the body: endsAt from the hours, a whole place with no coordinates, blank about as null', () => {
-  const b = bodyOf(f);
-  assert.equal(b.title, 'Open Mic');
-  assert.equal(b.endsAt, '2026-12-12T16:00:00.000Z');
-  assert.deepEqual(b.place, { venue: 'Hall', address: 'Road 1', area: 'Jubilee Hills', city: 'Hyderabad' });
-  assert.equal(b.about, null);
-  assert.ok(saveable(f));
-  assert.equal(bodyOf({ ...f, hours: null }).endsAt, null);
+// A 90-minute event at a place found by search, with coordinates the form can't show.
+const e = {
+  title: 'Open Mic',
+  category: 'comedy',
+  startsAt: '2026-12-12T14:00:00.000Z',
+  endsAt: '2026-12-12T15:30:00.000Z',
+  place: { venue: 'Hall', address: 'Road 1', area: 'Jubilee Hills', city: 'Hyderabad', lat: 17.43, lng: 78.41, placeId: 'abc' },
+  about: null,
+} as unknown as TeamEvent;
+const was = formOf(e);
+
+test('untouched, nothing is sent; a title edit sends only the title', () => {
+  assert.deepEqual(bodyOf(was, was), {});
+  assert.ok(!saveable(was, was));
+  assert.equal(was.minutes, 90);
+  assert.deepEqual(bodyOf({ ...was, title: ' Open Mic Night ' }, was), { title: 'Open Mic Night' });
+  assert.ok(saveable({ ...was, title: 'Open Mic Night' }, was));
 });
 
-test('half a place is held back; none at all saves as null', () => {
-  assert.ok(placeHalf({ ...f, area: ' ' }));
-  assert.ok(!saveable({ ...f, area: '' }));
-  const none = { ...f, venue: '', address: '', area: '' };
-  assert.ok(!placeHalf(none));
-  assert.equal(bodyOf(none).place, null);
-  assert.ok(saveable(none));
-  assert.ok(!saveable({ ...f, title: '  ' }));
+test('a new start keeps the 90 minutes; a new length moves only the end', () => {
+  assert.deepEqual(bodyOf({ ...was, startsAt: '2026-12-13T19:30:00+05:30' }, was), { startsAt: '2026-12-13T19:30:00+05:30', endsAt: '2026-12-13T15:30:00.000Z' });
+  assert.deepEqual(bodyOf({ ...was, minutes: 120 }, was), { endsAt: '2026-12-12T16:00:00.000Z' });
+  assert.equal(lastsLabel(90), '1 hr 30 min');
+});
+
+test('a retyped place goes whole, without coordinates; half of one is held back; blank about stays unsent', () => {
+  assert.deepEqual(bodyOf({ ...was, venue: 'Big Hall' }, was), { place: { venue: 'Big Hall', address: 'Road 1', area: 'Jubilee Hills', city: 'Hyderabad' } });
+  assert.ok(placeHalf({ ...was, area: ' ' }));
+  assert.ok(!saveable({ ...was, area: '' }, was));
+  const none = { ...was, venue: '', address: '', area: '' };
+  assert.deepEqual(bodyOf(none, was), { place: null });
+  assert.ok(saveable(none, was));
+  assert.deepEqual(bodyOf({ ...was, about: '  ' }, was), {});
+  assert.ok(!saveable({ ...was, title: '  ' }, was));
 });
 
 test('prices in whole rupees', () => {

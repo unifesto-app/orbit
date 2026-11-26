@@ -11,8 +11,9 @@ import { Promote } from "../promote";
 import { EventBadge } from "../status";
 
 // One event (X1; API: GET /galaxy/events/:id): its details and ticket types with seats sold. Unpublish takes it back to
-// draft while nobody has booked; Cancel tells every ticket holder the reason; Promote puts it in App content's Promoted
-// list (needs Platform too). The API refuses staff an event of a host they're on.
+// draft while nobody has booked; Cancel cancels its bookings (not until it has ended). Both tell the host's Admins the
+// reason; ticket holders aren't told yet (H13.5). Promote puts it in App content's Promoted list (needs Platform too),
+// and Unpromote shows whenever it's there, whatever the status. The API refuses staff an event of a host they're on.
 export const metadata: Metadata = { title: "Event" };
 
 const rupees = (paise: number) => (paise === 0 ? "Free" : `₹${(paise / 100).toLocaleString("en-IN")}`);
@@ -32,7 +33,9 @@ async function Event({ params }: Pick<PageProps<"/events/[id]">, "params">) {
   const { event: e, host, tickets, bookings } = r.data;
   const promoted = content.ok ? content.data.content.promoted.some((p) => p.href === `/event/${e.slug}`) : null; // null: no Platform
   const place = e.place && `${e.place.venue}, ${e.place.address}, ${e.place.area}, ${e.place.city}`;
-  const toldThem = "Every ticket holder sees this";
+  const ended = Date.parse(e.endsAt ?? e.startsAt ?? "") <= new Date().getTime();
+  const published = e.status === "published";
+  const toldThem = "The host's Admins get this; ticket holders aren't told yet";
 
   return (
     <div className={ui.page}>
@@ -85,12 +88,12 @@ async function Event({ params }: Pick<PageProps<"/events/[id]">, "params">) {
         )}
       </Container>
 
-      {e.status === "published" && (
+      {(published || promoted) && (
         <Container title="Actions">
           <div className={ui.page}>
             {promoted !== null && <Promote slug={e.slug} on={promoted} />}
-            {bookings === 0 && <Act label="Unpublish" action={unpublishEvent} hidden={{ id: e.id }} who="Staff see this; the host doesn't" />}
-            <Act label="Cancel event" action={cancelEvent} hidden={{ id: e.id }} who={toldThem} />
+            {published && bookings === 0 && <Act label="Unpublish" action={unpublishEvent} hidden={{ id: e.id }} who="The host's Admins get this" />}
+            {published && !ended && <Act label="Cancel event" action={cancelEvent} hidden={{ id: e.id }} who={toldThem} />}
           </div>
         </Container>
       )}

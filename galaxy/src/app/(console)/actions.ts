@@ -92,7 +92,8 @@ export async function declineRequest(_: Done, f: FormData) {
 }
 
 // ─── Events ───
-// Unpublish takes a published event back to draft while nobody has booked; cancel tells every ticket holder the reason.
+// Unpublish takes a published event back to draft while nobody has booked; cancel cancels its bookings. The host's Admins get the reason;
+// ticket holders aren't told yet (H13.5).
 export async function unpublishEvent(_: Done, f: FormData) {
   return run("POST", `/galaxy/events/${path(f, "id")}/unpublish`, { reason: text(f, "reason") });
 }

@@ -1,8 +1,9 @@
 // An event's editor in Event Partner (X1), from New event (no `id`: name it, and the draft is made) and a draft's
 // Continue or a published card's Edit event (`?id=`): title, category, when and how long, where (typed by hand), about,
 // the poster's state, the ticket types (free, or whole rupees), the host's fee pick, then Publish (its 409 listed as
-// fixes) and, once published, Cancel with the reason ticket holders get. The form parts are the Event Request's
-// (app/request.tsx); the rules and words in src/launch/editor.ts.
+// fixes) and, once published, Cancel with a reason. Saves send only what changed (src/launch/editor.ts), and the
+// screen shows the API’s answer, so nothing typed since snaps back. The form parts are the Event Request’s (app/request.tsx).
+// ponytail: cancelling cancels the bookings but tells no one yet (eventCancelled is H13.5); the copy says so.
 // ponytail: no poster or 4:3 upload here: host/ has no image picker, and adding one is a native module (a rebuild).
 // Until then a draft can't publish from the phone (its poster is the first fix listed).
 import { categories, FEE_PLANS, type FeePlan, type HostPage, type TeamEvent, type TicketType } from '@orbit/contract';
@@ -13,7 +14,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Alert, Text, TextInput, View } from 'react-native';
 
-import { bodyOf, fixesOf, type Form, formOf, LASTS, paiseOf, placeHalf, priceLabel, saveable } from '../launch/editor';
+import { bodyOf, fixesOf, type Form, formOf, LASTS, lastsLabel, paiseOf, placeHalf, priceLabel, saveable } from '../launch/editor';
 import { useHost } from '../launch/host';
 import { whenLabel } from '../launch/request';
 import { Card, Field, Note, Pill, Row, Section, Wide } from '../launch/ui';
@@ -56,62 +57,89 @@ function Create() {
 }
 
 function Editor({ id }: { id: string }) {
-  const host = useHost();
   const load = useLoad<TeamEvent>(`event|${id}`, () => api.authed<TeamEvent>('GET', `/events/${id}`));
+  const [answer, setAnswer] = useState<TeamEvent | null>(null); // the API's latest answer (save, publish, cancel), over the load
+  const e = answer ?? load.data;
+  const hostId = e?.hostId;
   const tickets = useLoad<TicketType[]>(`tickets|${id}`, () => api.authed<TicketType[]>('GET', `/events/${id}/tickets`));
-  const page = useLoad<HostPage>(host && `host|${host.id}`, () => api.authed<HostPage>('GET', `/hosts/${host!.id}`));
-  const [form, setForm] = useState<Form | null>(null); // what's typed; null until the first change
+  const page = useLoad<HostPage>(hostId ? `host|${hostId}` : null, () => api.authed<HostPage>('GET', `/hosts/${hostId}`));
+  const [form, setForm] = useState<Form | null>(null); // what's typed; null while nothing is
   const [sheet, setSheet] = useState<'when' | 'city' | null>(null);
   const [busy, setBusy] = useState(false);
   const [say, setSay] = useState<string[]>([]); // the last answer: a refusal, or publish's fixes
   const [reason, setReason] = useState('');
-  const e = load.data;
+  const [feeBusy, setFeeBusy] = useState(false);
+  const [feeSay, setFeeSay] = useState<string | null>(null);
   if (!e) return <Frame step={null} onBack={back}>{load.error && <Note>{load.error.message}</Note>}</Frame>;
-  const f = form ?? formOf(e);
+  const was = formOf(e);
+  const f = form ?? was;
   const put = (p: Partial<Form>) => setForm({ ...f, ...p });
   const draft = e.status === 'draft';
   const locked = e.status === 'cancelled';
+  const ended = !!e.endsAt && Date.parse(e.endsAt) <= Date.now();
 
-  // Saves what's typed (when anything is), then runs `then`.
-  const go = async (then?: () => Promise<void>) => {
+  // Sends what changed, if anything; false on a refusal. What's typed while it's out stays.
+  const save = async () => {
+    if (!form) return true;
+    const sent = form;
+    const r = await api.authed<TeamEvent>('PATCH', `/events/${id}`, bodyOf(sent, was));
+    if (!r.ok) {
+      setSay([r.error.message]);
+      return false;
+    }
+    setAnswer(r.data);
+    setForm((cur) => (cur === sent ? null : cur));
+    return true;
+  };
+  const run = async (step: () => Promise<unknown>) => {
     setBusy(true);
     setSay([]);
-    if (form) {
-      const r = await api.authed<TeamEvent>('PATCH', `/events/${id}`, bodyOf(form));
-      if (!r.ok) {
-        setBusy(false);
-        return setSay([r.error.message]);
-      }
-      setForm(null);
-    }
-    await then?.();
-    load.reload();
+    await step();
     setBusy(false);
   };
   const publish = () =>
-    go(async () => {
+    run(async () => {
+      if (!(await save())) return;
       const r = await api.authed<TeamEvent>('POST', `/events/${id}/publish`);
-      if (r.ok) return setSay(['Published. It’s on Orbit now.']);
+      if (r.ok) {
+        setAnswer(r.data);
+        return setSay(['Published. It’s on Orbit now.']);
+      }
       const missing = (r.error as { missing?: string[] }).missing;
       setSay(missing ? ['Before it can go out:', ...fixesOf(missing)] : [r.error.message]);
     });
+  // Cancel goes as it is: unsaved edits aren't sent first.
   const cancel = () =>
-    Alert.alert('Cancel this event?', 'Every ticket holder gets your reason. This can’t be undone.', [
+    Alert.alert('Cancel this event?', 'Its bookings are cancelled. Orbit doesn’t tell ticket holders yet, so tell them yourself. This can’t be undone.', [
       { text: 'Keep it', style: 'cancel' },
       {
         text: 'Cancel event',
         style: 'destructive',
         onPress: () =>
-          void go(async () => {
+          void run(async () => {
             const r = await api.authed<TeamEvent>('POST', `/events/${id}/cancel`, { reason: reason.trim() });
-            setSay([r.ok ? 'Cancelled. Ticket holders are being told.' : r.error.message]);
+            if (!r.ok) return setSay([r.error.message]);
+            setAnswer(r.data);
+            setForm(null);
+            setSay(['Cancelled, with its bookings. Tell your ticket holders yourself for now.']);
           }),
       },
     ]);
-  const fee = async (feePlan: FeePlan) => {
-    const r = await api.authed<HostPage>('PATCH', `/hosts/${host!.id}`, { feePlan });
-    if (!r.ok) return setSay([r.error.message]);
-    page.reload();
+  const fee = (feePlan: FeePlan) => {
+    if (feeBusy || feePlan === page.data?.feePlan) return;
+    Alert.alert('Change Orbit’s fee?', `${FEE_PLANS[feePlan]}, on paid tickets for every event this host runs.`, [
+      { text: 'Keep it', style: 'cancel' },
+      {
+        text: 'Change',
+        onPress: async () => {
+          setFeeBusy(true);
+          const r = await api.authed<HostPage>('PATCH', `/hosts/${e.hostId}`, { feePlan });
+          setFeeBusy(false);
+          setFeeSay(r.ok ? null : r.error.message);
+          if (r.ok) page.reload();
+        },
+      },
+    ]);
   };
 
   return (
@@ -119,13 +147,11 @@ function Editor({ id }: { id: string }) {
       step={null}
       onBack={back}
       foot={
-        !locked && (
-          <>
-            {say.length > 0 && <Note live>{say.join('\n')}</Note>}
-            <Wide label={busy ? 'Saving…' : 'Save'} onPress={() => void go()} disabled={busy || !form || !saveable(f)} muted={!draft} />
-            {draft && <Wide label="Publish" onPress={() => void publish()} disabled={busy || (!!form && !saveable(f))} />}
-          </>
-        )
+        <>
+          {say.length > 0 && <Note live>{say.join('\n')}</Note>}
+          {!locked && <Wide label={busy ? 'Saving…' : 'Save'} onPress={() => void run(save)} disabled={busy || !saveable(f, was)} muted={!draft} />}
+          {draft && <Wide label="Publish" onPress={() => void publish()} disabled={busy || (!!form && !saveable(f, was))} />}
+        </>
       }
     >
       <Text style={s.title} accessibilityRole="header">
@@ -148,8 +174,8 @@ function Editor({ id }: { id: string }) {
           </Label>
           <Label text="Lasts">
             <View style={s.chips} accessibilityRole="radiogroup" accessibilityLabel="Lasts">
-              {LASTS.map((h) => (
-                <Chip key={h} label={`${h} hr`} on={f.hours === h} onPress={() => put({ hours: h })} />
+              {(f.minutes && !LASTS.includes(f.minutes) ? [f.minutes, ...LASTS] : LASTS).map((m) => (
+                <Chip key={m} label={lastsLabel(m)} on={f.minutes === m} onPress={() => put({ minutes: m })} />
               ))}
             </View>
           </Label>
@@ -194,18 +220,18 @@ function Editor({ id }: { id: string }) {
           <Section title="Orbit’s fee on paid tickets" />
           <View style={[s.chips, styles.margin]} accessibilityRole="radiogroup" accessibilityLabel="Orbit’s fee">
             {(Object.keys(FEE_PLANS) as FeePlan[]).map((k) => (
-              <Chip key={k} label={FEE_PLANS[k]} on={page.data!.feePlan === k} onPress={() => void fee(k)} />
+              <Chip key={k} label={FEE_PLANS[k]} on={page.data!.feePlan === k} onPress={() => fee(k)} />
             ))}
           </View>
-          <Note>For every event this host runs. Free tickets pay nothing.</Note>
+          <Note live={!!feeSay}>{feeSay ?? (feeBusy ? 'Saving…' : 'For every event this host runs. Free tickets pay nothing.')}</Note>
         </>
       )}
 
-      {e.status === 'published' && (
+      {e.status === 'published' && !ended && (
         <>
           <Section title="Cancel event" />
           <View style={s.fields}>
-            <Field label="Reason, sent to every ticket holder" value={reason} onChangeText={setReason} placeholder="The venue closed for repairs" maxLength={500} />
+            <Field label="Reason, kept on the event" value={reason} onChangeText={setReason} placeholder="The venue closed for repairs" maxLength={500} />
             <Wide label="Cancel event" onPress={cancel} disabled={busy || !reason.trim()} muted />
           </View>
         </>
@@ -237,34 +263,49 @@ function Editor({ id }: { id: string }) {
 
 // The ticket types: each with its price and Edit or Remove, and one form that adds a new one or changes the one picked.
 // The API holds the rules (20 at most, a booked ticket's price, a published event's last one) and says them in words.
+// An edit sends the price only when it's retyped, so a renamed ticket keeps a price the rupee box can't hold (₹49.50).
 function Tickets({ id, list, published, locked, onChange }: { id: string; list: TicketType[]; published: boolean; locked: boolean; onChange: () => void }) {
   const [editing, setEditing] = useState<string | null>(null); // the ticket type the form changes; null adds one
   const [name, setName] = useState('');
   const [rupees, setRupees] = useState('');
+  const [start, setStart] = useState(''); // the price as the edit began
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const keepPrice = !!editing && rupees === start;
   const paise = paiseOf(rupees);
   const pick = (t: TicketType | null) => {
+    const was = t && t.pricePaise ? (t.pricePaise % 100 ? (t.pricePaise / 100).toFixed(2) : String(t.pricePaise / 100)) : '';
     setEditing(t?.id ?? null);
     setName(t?.name ?? '');
-    setRupees(t && t.pricePaise ? String(t.pricePaise / 100) : '');
+    setRupees(was);
+    setStart(was);
     setError(null);
   };
   const save = async () => {
     setBusy(true);
-    const body = { name: name.trim(), pricePaise: paise };
+    const body = { name: name.trim(), ...(keepPrice ? {} : { pricePaise: paise }) };
     const r = editing ? await api.authed('PATCH', `/events/${id}/tickets/${editing}`, body) : await api.authed('POST', `/events/${id}/tickets`, body);
     setBusy(false);
     if (!r.ok) return setError(r.error.message);
     pick(null);
     onChange();
   };
-  const remove = async (t: TicketType) => {
-    const r = await api.authed('DELETE', `/events/${id}/tickets/${t.id}`);
-    if (!r.ok) return setError(r.error.message);
-    if (editing === t.id) pick(null);
-    onChange();
-  };
+  const remove = (t: TicketType) =>
+    Alert.alert(`Remove ${t.name}?`, undefined, [
+      { text: 'Keep it', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: async () => {
+          setBusy(true);
+          const r = await api.authed('DELETE', `/events/${id}/tickets/${t.id}`);
+          setBusy(false);
+          if (!r.ok) return setError(r.error.message);
+          if (editing === t.id) pick(null);
+          onChange();
+        },
+      },
+    ]);
   const full = !editing && list.length >= MAX_TICKETS;
   return (
     <>
@@ -279,8 +320,8 @@ function Tickets({ id, list, published, locked, onChange }: { id: string; list: 
               right={
                 !locked && (
                   <>
-                    <Pill label="Edit" onPress={() => pick(t)} />
-                    <Pill label="Remove" onPress={() => void remove(t)} />
+                    <Pill label="Edit" onPress={busy ? undefined : () => pick(t)} />
+                    <Pill label="Remove" onPress={busy ? undefined : () => remove(t)} />
                   </>
                 )
               }
@@ -292,10 +333,10 @@ function Tickets({ id, list, published, locked, onChange }: { id: string; list: 
       {!locked && !full && (
         <View style={s.fields}>
           <Field label={editing ? 'Ticket name' : 'New ticket name'} value={name} onChangeText={setName} placeholder="General" maxLength={60} />
-          <Field label="Price in rupees · blank for free" value={rupees} onChangeText={setRupees} placeholder="Free" keyboardType="number-pad" maxLength={9} />
-          {paise === null && <Text style={s.line}>A price is whole rupees, up to 10,00,000.</Text>}
+          <Field label="Price in rupees · blank for free" value={rupees} onChangeText={setRupees} placeholder="Free" keyboardType="number-pad" maxLength={10} />
+          {!keepPrice && paise === null && <Text style={s.line}>A price is whole rupees, up to 10,00,000.</Text>}
           <View style={styles.buttons}>
-            <Pill label={busy ? 'Saving…' : editing ? 'Save ticket' : 'Add ticket'} onPress={busy || !name.trim() || paise === null ? undefined : () => void save()} />
+            <Pill label={busy ? 'Saving…' : editing ? 'Save ticket' : 'Add ticket'} onPress={busy || !name.trim() || (!keepPrice && paise === null) ? undefined : () => void save()} />
             {editing && <Pill label="Stop editing" onPress={() => pick(null)} />}
           </View>
         </View>

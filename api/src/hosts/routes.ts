@@ -19,6 +19,14 @@ const SHOWN_FROM = 10; // Discover decision 16: a host's follower count shows fr
 const nothing = (c: Context) => fail(c, 404, "notFound", "There's nothing here.");
 const visible = and(eq(hosts.visibility, "public"), eq(hosts.status, "live")); // what the public sees
 
+// A staff action on a host: its Admins hear it, and every holder of Hosts, who see what staff do (as in Roles).
+export async function sayStaff(
+  db: Db, notify: Notify, at: Date, h: { id: string; name: string }, kind: NoticeKind, extra: Record<string, unknown>, action: string, reason: string, by: string,
+) {
+  await tell(notify, await adminsOf(db, h.id), kind, { hostId: h.id, hostName: h.name, ...extra });
+  await tell(notify, await holdersOf(db, "hosts", at), "staffRiskyAction", { action, hostId: h.id, reason, by });
+}
+
 export function hostsRoutes({ db, notify, secret, now = Date.now }: Deps) {
   const app = new Hono<StaffEnv>();
   const auth = signedIn(db, secret, now);
@@ -27,11 +35,8 @@ export function hostsRoutes({ db, notify, secret, now = Date.now }: Deps) {
   const at = () => new Date(now());
   const audit = (tx: Tx, row: Omit<typeof auditLog.$inferInsert, "at">) => tx.insert(auditLog).values({ ...row, at: at() });
   const say = (ids: string[], kind: NoticeKind, data: Record<string, unknown>) => tell(notify, ids, kind, data);
-  // Admins hear it, and every holder of Hosts, who see what staff do (as in Roles).
-  const sayStaff = async (h: Host, kind: NoticeKind, extra: Record<string, unknown>, action: string, reason: string, by: string) => {
-    await say(await adminsOf(db, h.id), kind, { hostId: h.id, hostName: h.name, ...extra });
-    await say(await holdersOf(db, "hosts", at()), "staffRiskyAction", { action, hostId: h.id, reason, by });
-  };
+  const staffSays = (h: Host, kind: NoticeKind, extra: Record<string, unknown>, action: string, reason: string, by: string) =>
+    sayStaff(db, notify, at(), h, kind, extra, action, reason, by);
 
   const followersOf = async (hostId: string) => (await db.select({ n: count() }).from(follows).where(eq(follows.hostId, hostId)))[0]!.n;
   // What the public and the team both read of a host. A parent or club that isn't public and live isn't shown.
@@ -92,6 +97,9 @@ export function hostsRoutes({ db, notify, secret, now = Date.now }: Deps) {
             .returning();
           if (!got) return "taken" as const;
         }
+        // The fee plan is money: who changed it and from what is kept, as staff's changes are.
+        if (b.feePlan !== undefined && b.feePlan !== cur!.feePlan)
+          await audit(tx, { actorId: c.var.user.id, action: "hosts.feePlan", targetHost: host.id, data: { from: cur!.feePlan, to: b.feePlan } });
         const renamed = b.name !== undefined && b.name !== cur!.name;
         await tx
           .update(hosts)
@@ -271,7 +279,7 @@ export function hostsRoutes({ db, notify, secret, now = Date.now }: Deps) {
     });
     if (done === "changed") return fail(c, 409, "changed", "The host changed its name since you opened it. Open it again and check.");
     if (done === "already") return fail(c, 409, "already", "That host is already verified.");
-    await sayStaff(h, "hostVerified", {}, "hosts.verify", b.reason, c.var.actor.id);
+    await staffSays(h, "hostVerified", {}, "hosts.verify", b.reason, c.var.actor.id);
     return c.json({ id: h.id, verified: true });
   });
 
@@ -288,7 +296,7 @@ export function hostsRoutes({ db, notify, secret, now = Date.now }: Deps) {
       return row;
     });
     if (!done) return fail(c, 409, "notVerified", "That host isn't verified.");
-    await sayStaff(h, "hostUnverified", { reason: b.reason }, "hosts.unverify", b.reason, c.var.actor.id);
+    await staffSays(h, "hostUnverified", { reason: b.reason }, "hosts.unverify", b.reason, c.var.actor.id);
     return c.json({ id: h.id, verified: false });
   });
 
@@ -311,7 +319,7 @@ export function hostsRoutes({ db, notify, secret, now = Date.now }: Deps) {
       return "done" as const;
     });
     if (done === "already") return fail(c, 409, "already", "That host is already suspended by staff.");
-    await sayStaff(h, "hostSuspended", { reason: b.reason }, "hosts.suspend", b.reason, c.var.actor.id);
+    await staffSays(h, "hostSuspended", { reason: b.reason }, "hosts.suspend", b.reason, c.var.actor.id);
     return c.json({ id: h.id, status: "suspended" });
   });
 
@@ -332,7 +340,7 @@ export function hostsRoutes({ db, notify, secret, now = Date.now }: Deps) {
       return (await tx.select({ status: hosts.status }).from(hosts).where(eq(hosts.id, h.id)))[0]!.status;
     });
     if (!status) return fail(c, 409, "notSuspended", "That host wasn't suspended by staff.");
-    await sayStaff(h, "hostLifted", {}, "hosts.lift", b.reason, c.var.actor.id);
+    await staffSays(h, "hostLifted", {}, "hosts.lift", b.reason, c.var.actor.id);
     return c.json({ id: h.id, status });
   });
 
@@ -361,7 +369,7 @@ export function hostsRoutes({ db, notify, secret, now = Date.now }: Deps) {
     if (out === "self") return fail(c, 400, "self", "A host can't be its own parent.");
     if (out === "notFound") return fail(c, 404, "notFound", "Pick a host that exists and isn't archived.");
     if (out === "tooDeep") return fail(c, 409, "tooDeep", "A club can't have clubs of its own; Orbit hosts go one level deep.");
-    await sayStaff(h, "hostParentSet", { parentId: b.parentId, parentName: out }, "hosts.parent", b.reason, c.var.actor.id);
+    await staffSays(h, "hostParentSet", { parentId: b.parentId, parentName: out }, "hosts.parent", b.reason, c.var.actor.id);
     return c.json({ id: h.id, parentId: b.parentId });
   });
 

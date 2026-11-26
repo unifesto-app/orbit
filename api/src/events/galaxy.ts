@@ -5,12 +5,13 @@ import type { Db } from "../db/index.ts";
 import { auditLog, bookings, events, hosts, ticketTypes } from "../db/schema.ts";
 import { seatsTaken } from "../bookings.ts";
 import { fail, invalid, isUuid, listPage, type Notify, parse, signedIn } from "../http.ts";
-import { holdersOf, onHost, requireFeature, type StaffEnv, tell } from "../roles/access.ts";
+import { onHost, requireFeature, type StaffEnv } from "../roles/access.ts";
+import { sayStaff } from "../hosts/routes.ts";
 import { cancelling, cancelRefused, toTeamEvent, toTicket } from "./routes.ts";
 
 // Galaxy's Events (X1), for holders of Hosts: every host's events, one with its tickets, and staff's two moves on a
-// published one: back to draft while nobody has booked, or cancel with the reason ticket holders get (the host's own
-// cancel, `cancelling`). Each move is logged and told to every holder of Hosts, as requests.ts does. Staff never act on
+// published one: back to draft while nobody has booked, or cancel with a reason (the host's own cancel, `cancelling`).
+// Each move is logged and told to the host's Admins and every holder of Hosts, as the host tools do (`sayStaff`). Staff never act on
 // a host they're on (Roles flow).
 
 type Deps = { db: Db; notify: Notify; secret: string; now?: () => number };
@@ -67,8 +68,9 @@ export function galaxyEventsRoutes({ db, notify, secret, now = Date.now }: Deps)
     const tiers = await db.select().from(ticketTypes).where(eq(ticketTypes.eventId, e.id)).orderBy(asc(ticketTypes.sortOrder), asc(ticketTypes.createdAt));
     const sold = await seatsTaken(db, tiers.map((t) => t.id));
     const [booked] = await db.select({ n: count() }).from(bookings).where(eq(bookings.eventId, e.id));
+    const { onlineLink: _private, ...event } = toTeamEvent(e, h.visibility); // for ticket holders only
     const out: StaffEvent = {
-      event: toTeamEvent(e, h.visibility),
+      event,
       host: { id: h.id, name: h.name, slug: h.slug },
       tickets: tiers.map((t) => ({ ...toTicket(t), sold: sold.get(t.id) ?? 0 })),
       bookings: booked!.n,
@@ -77,7 +79,7 @@ export function galaxyEventsRoutes({ db, notify, secret, now = Date.now }: Deps)
   });
 
   // One move on one event, under the event's lock: `step` answers the columns to write or a refusal; the change and its
-  // audit row land together, then every holder of Hosts hears of it.
+  // audit row land together, then the host's Admins and every holder of Hosts hear of it, with the reason.
   const act = async (c: Context<StaffEnv>, action: string, reason: string, step: (tx: Tx, cur: Event) => Promise<Response | Partial<typeof events.$inferInsert>>) => {
     const id = c.req.param("id") ?? "";
     const [found] = isUuid(id) ? await db.select({ hostId: events.hostId }).from(events).where(eq(events.id, id)) : [];
@@ -93,8 +95,8 @@ export function galaxyEventsRoutes({ db, notify, secret, now = Date.now }: Deps)
       return row!;
     });
     if (done instanceof Response) return done;
-    await tell(notify, await holdersOf(db, "hosts", at()), "staffRiskyAction", { action, eventId: id, reason, by: actor });
-    const [h] = await db.select({ visibility: hosts.visibility }).from(hosts).where(eq(hosts.id, done.hostId));
+    const [h] = await db.select({ name: hosts.name, visibility: hosts.visibility }).from(hosts).where(eq(hosts.id, done.hostId));
+    await sayStaff(db, notify, at(), { id: done.hostId, name: h!.name }, "eventTakenDown", { eventId: id, title: done.title, action, reason }, action, reason, actor);
     return c.json(toTeamEvent(done, h!.visibility));
   };
 

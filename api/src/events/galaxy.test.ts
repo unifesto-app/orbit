@@ -89,6 +89,7 @@ test("the list filters by status and host, newest first; one event comes with it
   assert.equal(one.body.tickets.length, 1);
   assert.equal(one.body.tickets[0].sold, 0);
   assert.equal(one.body.bookings, 0);
+  assert.ok(!("onlineLink" in one.body.event)); // for ticket holders only
   assert.equal((await as(st)("GET", "/galaxy/events/not-a-uuid")).status, 404);
 });
 
@@ -115,6 +116,8 @@ test("unpublish is refused once anyone has booked, and goes back to draft otherw
   assert.equal(log!.actorId, st.me.id);
   assert.equal(log!.reason, R.reason);
   assert.ok(t.notices.some((x) => x.kind === "staffRiskyAction" && x.data?.action === "events.unpublish"));
+  // The host's Admins hear it too, with the reason.
+  assert.ok(t.notices.some((x) => x.kind === "eventTakenDown" && "userId" in x.to && x.to.userId === a.me.id && x.data?.eventId === e.id && x.data?.reason === R.reason));
   // Staff on the host's team never act on it.
   const own = await start(st);
   const mine = await publish(st, own.id);
@@ -142,6 +145,10 @@ test("a host's Admins pick its fee plan; 3% + 2% until they do", async () => {
   const r = await as(a)("PATCH", `/hosts/${h.id}`, { feePlan: "5+0" });
   assert.equal(r.status, 200);
   assert.equal(r.body.feePlan, "5+0");
+  const logged = await t.db.select().from(auditLog).where(and(eq(auditLog.action, "hosts.feePlan"), eq(auditLog.targetHost, h.id)));
+  assert.deepEqual(logged.map((l) => [l.actorId, l.data]), [[a.me.id, { from: "3+2", to: "5+0" }]]);
+  await as(a)("PATCH", `/hosts/${h.id}`, { feePlan: "5+0", about: "Same plan" });
+  assert.equal((await t.db.select().from(auditLog).where(eq(auditLog.action, "hosts.feePlan"))).length, 1); // unchanged: not logged
   assert.equal((await as(a)("PATCH", `/hosts/${h.id}`, { feePlan: "4+1" })).status, 400);
   assert.equal((await as(out)("PATCH", `/hosts/${h.id}`, { feePlan: "3+2" })).status, 404);
 });
