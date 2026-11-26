@@ -5,9 +5,9 @@ import { eq } from "drizzle-orm";
 import sharp from "sharp";
 import { runDeletions } from "./auth/deletion.ts";
 import { testApp } from "./testkit.ts";
-import { auditLog, bookings, events, failedWebhooks, hosts, payments, razorpayEvents, refunds, staffGrants, stationClaims, stations, users } from "./db/schema.ts";
+import { auditLog, bookings, events, failedWebhooks, hosts, payoutAccounts, payments, payouts, razorpayEvents, refunds, staffGrants, stationClaims, stations, teamRoles, users } from "./db/schema.ts";
 import { galaxyEventsRoutes } from "./events/galaxy.ts";
-import { earningsOf, moneyRoutes } from "./payments/galaxy.ts";
+import { earningsOf, moneyRoutes, venueEarningsOf } from "./payments/galaxy.ts";
 import { paymentsRoutes, pollPayments, sendRefund } from "./payments/routes.ts";
 import { razorpay, type RzPayment, type RzRefund } from "./payments/razorpay.ts";
 
@@ -110,6 +110,9 @@ const hook = async (event: string, payload: object, o: { id?: string; sig?: stri
   });
   return res.status;
 };
+// A payout account straight in the table, in `state`.
+const account = (hostId: string, state: "checking" | "verified" | "rejected" = "verified") =>
+  t.db.insert(payoutAccounts).values({ hostId, kind: "bank", holder: "Riya Kapoor", accountNumber: "123456789012", ifsc: "HDFC0001234", bankName: "HDFC Bank", last4: "9012", state, createdAt: new Date(t.now()), updatedAt: new Date(t.now()) });
 const paymentOf = async (orderId: string) => (await t.db.select().from(payments).where(eq(payments.razorpayOrderId, orderId)))[0]!;
 const bookingsOf = (u: P) => t.db.select().from(bookings).where(eq(bookings.userId, u.me.id));
 
@@ -288,7 +291,7 @@ test("a second payment on a settled order goes back whole; refund.processed befo
   const kept = await paymentOf(o.orderId);
   assert.equal(kept.status, "paid");
   assert.equal((await t.db.select().from(bookings).where(eq(bookings.id, kept.bookingId!)))[0]!.status, "confirmed");
-  const [earned] = await earningsOf(t.db, { eventIds: [e.id] });
+  const [earned] = await earningsOf(t.db, { eventIds: [e.id] }, new Date(t.now()));
   assert.deepEqual([earned!.refundedPaise, earned!.earningsPaise], [0, 120000 - 2400]);
   // payment.failed after paid moves nothing back.
   assert.equal(await hook("payment.failed", { payment: { entity: { ...p1, status: "failed" } } }), 200);
@@ -365,6 +368,13 @@ test("Galaxy Money: only holders of Money; staff refunds up to what's left; payo
   const po = await as(boss)("POST", "/galaxy/money/payouts", { eventId: e.id, amountPaise: 98000, reason: "Payout" });
   assert.equal(po.status, 201);
   assert.equal((await as(boss)("POST", `/galaxy/money/payouts/${po.body.id}/paid`, { utr: "123" })).status, 400);
+  // Paid only to a verified account, staff-made payouts too.
+  const none = await as(boss)("POST", `/galaxy/money/payouts/${po.body.id}/paid`, { utr: "hdfcn52026112600001" });
+  assert.deepEqual([none.status, none.body.error], [409, "accountNotVerified"]);
+  await account(e.hostId, "checking");
+  assert.equal((await as(boss)("GET", "/galaxy/money/payouts")).body.accounts[e.hostId], "checking");
+  assert.equal((await as(boss)("POST", `/galaxy/money/payouts/${po.body.id}/paid`, { utr: "hdfcn52026112600001" })).body.error, "accountNotVerified");
+  await t.db.update(payoutAccounts).set({ state: "verified" }).where(eq(payoutAccounts.hostId, e.hostId));
   assert.equal((await as(boss)("POST", `/galaxy/money/payouts/${po.body.id}/paid`, { utr: "hdfcn52026112600001" })).status, 200);
   assert.equal((await as(boss)("GET", "/galaxy/money/payouts")).body.payouts.find((x: { id: string }) => x.id === po.body.id).utr, "HDFCN52026112600001");
   assert.equal((await as(boss)("POST", `/galaxy/money/payouts/${po.body.id}/cancel`, { reason: "Oops" })).status, 409);
@@ -413,7 +423,7 @@ test("cancelling an event refunds its paid tickets in full; earnings go to 0", a
   for (let i = 0; i < 100 && (await t.db.select().from(refunds).where(eq(refunds.paymentId, p.id)))[0]?.status !== "sent"; i++) await new Promise((r) => setTimeout(r, 10));
   const [r] = await t.db.select().from(refunds).where(eq(refunds.paymentId, p.id));
   assert.deepEqual([r!.amountPaise, r!.kind, r!.status], [o.amountPaise, "auto", "sent"]);
-  const [earned] = await earningsOf(t.db, { eventIds: [e.id] });
+  const [earned] = await earningsOf(t.db, { eventIds: [e.id] }, new Date(t.now()));
   assert.deepEqual([earned!.refundedPaise, earned!.commissionPaise, earned!.earningsPaise], [120000, 0, 0]);
 
   // Staff cancelling from Galaxy's Events refunds the same way.
@@ -889,6 +899,305 @@ test("slot pay: deleting the account refunds an upcoming paid slot in full", asy
   assert.deepEqual([r!.amountPaise, r!.status], [o.amountPaise, "requested"]);
 });
 
+// ---------- A host's own money (X4): GET /hosts/:id/money, POST /hosts/:id/payouts, the payout account ----------
+
+const audits = async (action: string) => JSON.stringify(await t.db.select().from(auditLog).where(eq(auditLog.action, action)));
+
+test("host money: Admins only; the account masked and never logged; an ask waits 3 days, a verified account and what's there", async () => {
+  const a = await join(), b = await join(), boss = await join();
+  await give(boss, "money");
+  const e = await publish(a);
+  const o = (await pay(b, e)).body;
+  await verify(b, o.orderId, capture(o.orderId, o.amountPaise).id);
+  const h = e.hostId;
+
+  // Not an Admin of this host: the same 404 as anything else that isn't there.
+  assert.equal((await as(b)("GET", `/hosts/${h}/money`)).status, 404);
+  assert.equal((await as(b)("GET", `/hosts/${h}/payout-account`)).status, 404);
+  assert.equal((await as(b)("PUT", `/hosts/${h}/payout-account`, { upi: "riya@okhdfc" })).status, 404);
+  assert.equal((await as(b)("POST", `/hosts/${h}/payouts`, { eventId: e.id, amountPaise: 100 })).status, 404);
+
+  const m = (await as(a)("GET", `/hosts/${h}/money`)).body;
+  assert.deepEqual([m.plan, m.account, m.venue, m.payouts], ["3+2", null, null, []]);
+  const earned = m.events.find((x: { eventId: string }) => x.eventId === e.id);
+  assert.ok(earned.availablePaise > 0);
+  assert.equal(Date.parse(earned.opensAt) - Date.parse(earned.endsAt), 3 * DAY);
+
+  // Too soon: the event hasn't ended 3 days ago.
+  const soon = await as(a)("POST", `/hosts/${h}/payouts`, { eventId: e.id, amountPaise: 100 });
+  assert.deepEqual([soon.status, soon.body.error], [409, "notYet"]);
+
+  assert.equal((await as(a)("PUT", `/hosts/${h}/payout-account`, { holder: "Riya Kapoor", account: "1234", ifsc: "HDFC0001234" })).status, 400);
+  assert.equal((await as(a)("PUT", `/hosts/${h}/payout-account`, { holder: "Riya Kapoor", account: "123456789012", ifsc: "HDFC1001234" })).status, 400);
+  const notices = t.notices.length;
+  const put = await as(a)("PUT", `/hosts/${h}/payout-account`, { holder: "Riya Kapoor", account: "1234 5678 9012", ifsc: "hdfc0001234" });
+  assert.equal(put.status, 200, JSON.stringify(put.body));
+  assert.deepEqual(
+    [put.body.kind, put.body.bankName, put.body.last4, put.body.holder, put.body.state],
+    ["bank", "HDFC Bank", "9012", "Riya Kapoor", "checking"],
+  );
+  assert.ok(!JSON.stringify(put.body).includes("123456789012") && !JSON.stringify(put.body).includes("HDFC0001234"));
+  assert.ok(!(await audits("payouts.account")).includes("123456789012"));
+  assert.ok(t.notices.slice(notices).some((x) => x.kind === "bankChanged" && (x.to as any).userId === a.me.id));
+
+  t.tick(DAY + 2 * HOUR + 3 * DAY + MIN);
+  const unchecked = await as(a)("POST", `/hosts/${h}/payouts`, { eventId: e.id, amountPaise: 100 });
+  assert.deepEqual([unchecked.status, unchecked.body.error], [409, "accountNotVerified"]);
+
+  // Galaxy sees it whole, and verifies only the details it saw.
+  const acc = (await as(boss)("GET", "/galaxy/money/payout-accounts")).body.find((x: { hostId: string }) => x.hostId === h);
+  assert.deepEqual([acc.accountNumber, acc.ifsc, acc.state], ["123456789012", "HDFC0001234", "checking"]);
+  assert.equal((await as(a)("POST", `/galaxy/money/payout-accounts/${h}/verify`, { reason: "Checked", seen: acc.updatedAt })).status, 404);
+  const stale = await as(boss)("POST", `/galaxy/money/payout-accounts/${h}/verify`, { reason: "Checked", seen: new Date(0).toISOString() });
+  assert.deepEqual([stale.status, stale.body.error], [409, "changed"]);
+  assert.equal((await as(boss)("POST", `/galaxy/money/payout-accounts/${h}/verify`, { reason: "Penny drop matched", seen: acc.updatedAt })).status, 200);
+  assert.equal((await as(boss)("POST", `/galaxy/money/payout-accounts/${h}/verify`, { reason: "Again", seen: acc.updatedAt })).body.error, "already");
+  assert.ok(t.notices.some((x) => x.kind === "bankChecked" && (x.to as any).userId === a.me.id));
+  assert.equal((await as(a)("GET", `/hosts/${h}/payout-account`)).body.state, "verified");
+
+  const over = await as(a)("POST", `/hosts/${h}/payouts`, { eventId: e.id, amountPaise: earned.availablePaise + 1 });
+  assert.deepEqual([over.status, over.body.error], [400, "tooMuch"]);
+  const ask = await as(a)("POST", `/hosts/${h}/payouts`, { eventId: e.id, amountPaise: earned.availablePaise });
+  assert.equal(ask.status, 201, JSON.stringify(ask.body));
+  const after = (await as(a)("GET", `/hosts/${h}/money`)).body;
+  assert.deepEqual([after.payouts[0].status, after.payouts[0].eventTitle], ["requested", "Open Mic Night"]);
+  assert.equal(after.events.find((x: { eventId: string }) => x.eventId === e.id).availablePaise, 0);
+  assert.ok((await audits("payouts.request")).includes(ask.body.id));
+  const listed = (await as(boss)("GET", "/galaxy/money/payouts")).body.payouts.find((x: { id: string }) => x.id === ask.body.id);
+  assert.deepEqual([listed.fromHost, listed.askedByName], [true, "Riya Kapoor"]);
+
+  // Replaced with a UPI ID: checked again, the ID itself never goes back. Galaxy rejects it with a reason.
+  const upi = await as(a)("PUT", `/hosts/${h}/payout-account`, { upi: "riya.kapoor@okhdfc" });
+  assert.deepEqual([upi.body.kind, upi.body.bankName, upi.body.state], ["upi", "UPI · okhdfc", "checking"]);
+  assert.ok(!JSON.stringify(upi.body).includes("riya.kapoor@okhdfc"));
+  assert.ok(!(await audits("payouts.account")).includes("riya.kapoor"));
+  const seen = (await t.db.select().from(payoutAccounts).where(eq(payoutAccounts.hostId, h)))[0]!.updatedAt.toISOString();
+  assert.equal((await as(boss)("POST", `/galaxy/money/payout-accounts/${h}/reject`, { reason: "Name doesn't match", seen })).status, 200);
+  assert.deepEqual(
+    [(await as(a)("GET", `/hosts/${h}/payout-account`)).body.state, (await as(a)("GET", `/hosts/${h}/payout-account`)).body.reason],
+    ["rejected", "Name doesn't match"],
+  );
+});
+
+test("venue payouts: slot money 3 days after the slot ends, one ask a week; Galaxy pays a Venue with no event", async () => {
+  const boss = await join();
+  await give(boss, "money");
+  const { a, b, h, claimId, start } = await heldSlot();
+  const o = (await payHold(b, h, claimId)).body;
+  assert.equal((await verify(b, o.orderId, capture(o.orderId, o.amountPaise).id)).body.status, "paid");
+
+  const v = (await as(a)("GET", `/hosts/${h}/money`)).body.venue;
+  assert.equal(v.bookings, 1);
+  assert.ok(v.earningsPaise > 0);
+  // Not played yet: earned, waiting till 3 days after it ends, not available.
+  assert.deepEqual([v.waitingPaise, v.availablePaise, v.nextAskAt, v.opensAt], [v.earningsPaise, 0, null, new Date(start + HOUR + 3 * DAY).toISOString()]);
+  await as(a)("PUT", `/hosts/${h}/payout-account`, { holder: "Riya Kapoor", account: "123456789012", ifsc: "SBIN0001234" });
+  await t.db.update(payoutAccounts).set({ state: "verified" }).where(eq(payoutAccounts.hostId, h));
+  assert.equal((await as(a)("POST", `/hosts/${h}/payouts`, { amountPaise: 1 })).body.error, "tooMuch");
+
+  t.tick(start + HOUR + MIN - t.now());
+  const played = (await as(a)("GET", `/hosts/${h}/money`)).body.venue;
+  assert.deepEqual([played.waitingPaise, played.availablePaise, played.opensAt], [v.earningsPaise, 0, new Date(start + HOUR + 3 * DAY).toISOString()]);
+  t.tick(3 * DAY);
+  const ready = (await as(a)("GET", `/hosts/${h}/money`)).body.venue;
+  assert.deepEqual([ready.waitingPaise, ready.availablePaise], [0, v.earningsPaise]);
+  assert.equal((await as(a)("POST", `/hosts/${h}/payouts`, { amountPaise: ready.availablePaise - 100 })).status, 201);
+  const week = await as(a)("POST", `/hosts/${h}/payouts`, { amountPaise: 100 });
+  assert.deepEqual([week.status, week.body.error], [409, "weekly"]);
+  assert.ok((await as(a)("GET", `/hosts/${h}/money`)).body.venue.nextAskAt);
+
+  // Galaxy isn't held to the week, and pays a Venue by host with no event.
+  assert.equal((await as(boss)("POST", "/galaxy/money/payouts", { hostId: h, amountPaise: 101, reason: "Slots" })).body.error, "tooMuch");
+  assert.equal((await as(boss)("POST", "/galaxy/money/payouts", { hostId: h, eventId: claimId, amountPaise: 1, reason: "Both" })).status, 400);
+  const staff = await as(boss)("POST", "/galaxy/money/payouts", { hostId: h, amountPaise: 100, reason: "Slots" });
+  assert.equal(staff.status, 201, JSON.stringify(staff.body));
+  const g = (await as(boss)("GET", "/galaxy/money/payouts")).body;
+  const rows = g.payouts.filter((x: { hostId: string }) => x.hostId === h);
+  assert.deepEqual(rows.map((x: { eventId: string | null; fromHost: boolean }) => [x.eventId, x.fromHost]).sort(), [[null, false], [null, true]]);
+  assert.equal(g.venues.find((x: { hostId: string }) => x.hostId === h).availablePaise, 0);
+
+  t.tick(8 * DAY);
+  assert.equal((await as(a)("GET", `/hosts/${h}/money`)).body.venue.nextAskAt, null);
+});
+
+// ---------- X4 review: what a host or staff can't do ----------
+
+const earnedOn = async (boss: P, eventId: string) =>
+  (await as(boss)("GET", "/galaxy/money/payouts")).body.earnings.find((x: { eventId: string }) => x.eventId === eventId);
+
+test("host asks: two at once, one wins; Crew, ended seats and other hosts' Admins get 404; an open ask blocks archive; only a cancel's reason shows", async () => {
+  const a = await join(), b = await join(), boss = await join(), crew = await join(), gone = await join();
+  await give(boss, "money");
+  const e = await publish(a);
+  const o = (await pay(b, e)).body;
+  await verify(b, o.orderId, capture(o.orderId, o.amountPaise).id);
+  const h = e.hostId;
+  await account(h);
+  const other = await publish(b);
+  await account(other.hostId);
+  const now = new Date(t.now());
+  await t.db.insert(teamRoles).values([
+    { hostId: h, role: "crew", contact: `+91${crew.p}`, userId: crew.me.id, addedBy: a.me.id, addedAt: now, acceptedAt: now, startedAt: now },
+    { hostId: h, role: "admin", contact: `+91${gone.p}`, userId: gone.me.id, addedBy: a.me.id, addedAt: now, acceptedAt: now, startedAt: now, endedAt: now, endedBy: a.me.id, endReason: "removed" },
+  ]);
+  t.tick(DAY + 2 * HOUR + 3 * DAY + MIN);
+
+  for (const u of [crew, gone]) {
+    assert.equal((await as(u)("GET", `/hosts/${h}/money`)).status, 404);
+    assert.equal((await as(u)("POST", `/hosts/${h}/payouts`, { eventId: e.id, amountPaise: 100 })).status, 404);
+    assert.equal((await as(u)("PUT", `/hosts/${h}/payout-account`, { upi: "crew@okhdfc" })).status, 404);
+  }
+  // Another host's Admin naming this host's event, through their own host.
+  assert.equal((await as(b)("POST", `/hosts/${other.hostId}/payouts`, { eventId: e.id, amountPaise: 100 })).status, 404);
+
+  const [x, y] = await Promise.all([1, 2].map(() => as(a)("POST", `/hosts/${h}/payouts`, { eventId: e.id, amountPaise: 100 })));
+  assert.deepEqual([x!.status, y!.status].sort(), [201, 409]);
+  const [won, lost] = x!.status === 201 ? [x!, y!] : [y!, x!];
+  assert.equal(lost.body.error, "askOpen");
+
+  const busy = await as(a)("POST", `/hosts/${h}/archive`);
+  assert.deepEqual([busy.status, busy.body.error], [409, "busy"]);
+
+  assert.equal((await as(boss)("POST", `/galaxy/money/payouts/${won.body.id}/cancel`, { reason: "Ask for all of it" })).status, 200);
+  const staff = await as(boss)("POST", "/galaxy/money/payouts", { eventId: e.id, amountPaise: 100, reason: "Internal: split payment" });
+  assert.equal(staff.status, 201);
+  const listed = (await as(a)("GET", `/hosts/${h}/money`)).body.payouts as { id: string; reason: string | null }[];
+  assert.equal(listed.find((p) => p.id === won.body.id)!.reason, "Ask for all of it");
+  assert.equal(listed.find((p) => p.id === staff.body.id)!.reason, null);
+});
+
+test("marking paid: refused once refunds leave less than the ask; staff never act on a host they're on; the account view is audited", async () => {
+  const a = await join(), b = await join(), boss = await join();
+  await give(boss, "money");
+  const e = await publish(a);
+  const o = (await pay(b, e)).body;
+  await verify(b, o.orderId, capture(o.orderId, o.amountPaise).id);
+  await account(e.hostId);
+  const all = (await earnedOn(boss, e.id)).availablePaise;
+  const po = await as(boss)("POST", "/galaxy/money/payouts", { eventId: e.id, amountPaise: all, reason: "Payout" });
+  assert.equal(po.status, 201);
+  const id = (await paymentOf(o.orderId)).id;
+  assert.equal((await as(boss)("POST", `/galaxy/money/payments/${id}/refund`, { amountPaise: 20000, reason: "Seat was broken" })).status, 201);
+  assert.ok((await earnedOn(boss, e.id)).availablePaise < 0);
+  // The host sees nothing to ask for, not a debt.
+  assert.equal((await as(a)("GET", `/hosts/${e.hostId}/money`)).body.events.find((x: { eventId: string }) => x.eventId === e.id).availablePaise, 0);
+  const short = await as(boss)("POST", `/galaxy/money/payouts/${po.body.id}/paid`, { utr: "UTR000000000001" });
+  assert.deepEqual([short.status, short.body.error], [409, "short"]);
+  assert.equal((await as(boss)("POST", `/galaxy/money/payouts/${po.body.id}/cancel`, { reason: "Refund since" })).status, 200);
+  const left = (await earnedOn(boss, e.id)).availablePaise;
+  const po2 = await as(boss)("POST", "/galaxy/money/payouts", { eventId: e.id, amountPaise: left, reason: "Payout" });
+  assert.equal((await as(boss)("POST", `/galaxy/money/payouts/${po2.body.id}/paid`, { utr: "UTR000000000001" })).status, 200);
+
+  // Staff on a host: no verify, no payout, no paid, whoever made it.
+  const mine = await publish(boss);
+  await account(mine.hostId, "checking");
+  const seen = (await t.db.select().from(payoutAccounts).where(eq(payoutAccounts.hostId, mine.hostId)))[0]!.updatedAt.toISOString();
+  assert.equal((await as(boss)("POST", `/galaxy/money/payout-accounts/${mine.hostId}/verify`, { reason: "Mine", seen })).body.error, "ownHost");
+  assert.equal((await as(boss)("POST", "/galaxy/money/payouts", { eventId: mine.id, amountPaise: 1, reason: "Mine" })).body.error, "ownHost");
+  assert.equal((await as(boss)("POST", "/galaxy/money/payouts", { hostId: mine.hostId, amountPaise: 1, reason: "Mine" })).body.error, "ownHost");
+  const [theirs] = await t.db
+    .insert(payouts)
+    .values({ hostId: mine.hostId, eventId: mine.id, amountPaise: 1, askedBy: a.me.id, fromHost: false, by: a.me.id, at: new Date(t.now()), createdAt: new Date(t.now()) })
+    .returning();
+  const own = await as(boss)("POST", `/galaxy/money/payouts/${theirs!.id}/paid`, { utr: "UTR000000000002" });
+  assert.deepEqual([own.status, own.body.error], [403, "ownHost"]);
+
+  // Every look at the full accounts leaves a row naming whose, never the numbers.
+  const views = async () => (await t.db.select().from(auditLog).where(eq(auditLog.action, "money.accounts.view"))).filter((r) => r.actorId === boss.me.id);
+  const before = (await views()).length;
+  const list = (await as(boss)("GET", "/galaxy/money/payout-accounts")).body as { hostId: string; updatedAt: string }[];
+  const rows = await views();
+  assert.equal(rows.length, before + 1);
+  assert.ok((rows.at(-1)!.data as { hosts: string[] }).hosts.includes(e.hostId));
+  assert.ok(!JSON.stringify(rows).includes("123456789012"));
+
+  // Replaced since staff looked: the old details can't be verified.
+  const old = list.find((x) => x.hostId === e.hostId)!.updatedAt;
+  t.tick(1000);
+  assert.equal((await as(a)("PUT", `/hosts/${e.hostId}/payout-account`, { upi: "ab@okhdfc" })).body.last4, "b"); // a short name shows its last letter
+  const stale = await as(boss)("POST", `/galaxy/money/payout-accounts/${e.hostId}/verify`, { reason: "Checked", seen: old });
+  assert.deepEqual([stale.status, stale.body.error], [409, "changed"]);
+
+  // UPI masking, then 5 changes a day.
+  assert.equal((await as(a)("PUT", `/hosts/${e.hostId}/payout-account`, { upi: "abcd@ybl" })).body.last4, "d");
+  assert.equal((await as(a)("PUT", `/hosts/${e.hostId}/payout-account`, { upi: "riyak@ybl" })).body.last4, "iyak");
+  assert.equal((await as(a)("PUT", `/hosts/${e.hostId}/payout-account`, { upi: "riya.k@ybl" })).status, 200);
+  assert.equal((await as(a)("PUT", `/hosts/${e.hostId}/payout-account`, { upi: "riya.kk@ybl" })).status, 200);
+  const sixth = await as(a)("PUT", `/hosts/${e.hostId}/payout-account`, { upi: "riya.kkk@ybl" });
+  assert.deepEqual([sixth.status, sixth.body.error], [429, "tooMany"]);
+});
+
+test("venue asks: two at once take one; a cancel frees the amount and the week; staff payouts don't start it; paid and cancelled", async () => {
+  const boss = await join();
+  await give(boss, "money");
+  const { a, b, h, claimId, start } = await heldSlot();
+  const o = (await payHold(b, h, claimId)).body;
+  await verify(b, o.orderId, capture(o.orderId, o.amountPaise).id);
+  await account(h);
+  t.tick(start + HOUR + 3 * DAY + MIN - t.now());
+  const all = (await as(a)("GET", `/hosts/${h}/money`)).body.venue.availablePaise as number;
+
+  const [x, y] = await Promise.all([1, 2].map(() => as(a)("POST", `/hosts/${h}/payouts`, { amountPaise: 100 })));
+  assert.deepEqual([x!.status, y!.status].sort(), [201, 409]);
+  const [won, lost] = x!.status === 201 ? [x!, y!] : [y!, x!];
+  assert.equal(lost.body.error, "weekly");
+
+  assert.equal((await as(boss)("POST", `/galaxy/money/payouts/${won.body.id}/cancel`, { reason: "Ask for all of it" })).status, 200);
+  const freed = (await as(a)("GET", `/hosts/${h}/money`)).body.venue;
+  assert.deepEqual([freed.availablePaise, freed.nextAskAt], [all, null]);
+
+  const staff = await as(boss)("POST", "/galaxy/money/payouts", { hostId: h, amountPaise: 100, reason: "Slots" });
+  assert.equal(staff.status, 201);
+  assert.equal((await as(a)("GET", `/hosts/${h}/money`)).body.venue.nextAskAt, null);
+  assert.equal((await as(boss)("POST", `/galaxy/money/payouts/${staff.body.id}/paid`, { utr: "UTR000000000101" })).status, 200);
+  const rest = await as(a)("POST", `/hosts/${h}/payouts`, { amountPaise: all - 100 });
+  assert.equal(rest.status, 201, JSON.stringify(rest.body));
+  assert.equal((await as(boss)("POST", `/galaxy/money/payouts/${rest.body.id}/paid`, { utr: "UTR000000000102" })).status, 200);
+  const done = (await as(a)("GET", `/hosts/${h}/money`)).body.venue;
+  assert.deepEqual([done.paidOutPaise, done.requestedPaise, done.availablePaise], [all, 0, 0]);
+  assert.ok(done.nextAskAt);
+});
+
+test("venueEarningsOf: a partly refunded slot and one with the fee in the price", async () => {
+  const boss = await join();
+  await give(boss, "money");
+  const { a, b, h, stationId, claimId, start } = await heldSlot();
+  const o = (await payHold(b, h, claimId)).body;
+  await verify(b, o.orderId, capture(o.orderId, o.amountPaise).id);
+  const first = await paymentOf(o.orderId);
+  assert.equal((await as(boss)("POST", `/galaxy/money/payments/${first.id}/refund`, { amountPaise: 10000, reason: "Lag" })).status, 201);
+  assert.equal((await as(boss)("PUT", `/galaxy/money/fees/${h}`, { plan: "3+2", feeIncluded: true, reason: "Host asked" })).status, 200);
+  const hold = await as(b)("POST", `/venues/${h}/holds`, { stationId, start: new Date(start + HOUR).toISOString(), hours: 1, count: 1 });
+  assert.equal(hold.status, 201, JSON.stringify(hold.body));
+  const o2 = (await payHold(b, h, hold.body.id)).body;
+  await verify(b, o2.orderId, capture(o2.orderId, o2.amountPaise).id);
+  const second = await paymentOf(o2.orderId);
+  assert.ok(!first.feeIncluded && second.feeIncluded);
+
+  t.tick(start + 2 * HOUR + 3 * DAY + MIN - t.now());
+  const v = await venueEarningsOf(t.db, h, t.now());
+  assert.equal(v.bookings, 2);
+  assert.equal(v.refundedPaise, 10000);
+  assert.ok(v.includedPaise > 0);
+  assert.equal(v.earningsPaise, v.salesPaise - v.commissionPaise - v.includedPaise - v.refundedPaise);
+  assert.equal(v.salesPaise, 100000); // two ₹500 hours, whatever the fee
+  assert.deepEqual([v.availablePaise, v.waitingPaise], [v.earningsPaise, 0]);
+});
+
+test("once someone has paid, or is paying, an event's end only moves later", async () => {
+  const a = await join(), b = await join();
+  const e = await publish(a);
+  const end = (await t.db.select().from(events).where(eq(events.id, e.id)))[0]!.endsAt!.getTime();
+  const move = (ms: number) => as(a)("PATCH", `/events/${e.id}`, { endsAt: new Date(ms).toISOString() });
+  assert.equal((await move(end - 30 * MIN)).status, 200); // nobody has paid
+  const o = (await pay(b, e)).body;
+  const open = await move(end - HOUR);
+  assert.deepEqual([open.status, open.body.error], [409, "endLocked"]);
+  await verify(b, o.orderId, capture(o.orderId, o.amountPaise).id);
+  assert.equal((await move(end - HOUR)).body.error, "endLocked");
+  assert.equal((await move(end + HOUR)).status, 200);
+});
+
 // A held slot, paid and settled: the player, the payment row.
 const paidSlot = async () => {
   const x = await heldSlot();
@@ -926,17 +1235,21 @@ test("slot pay: the venue's earnings and a venue payout; a player's cancel undoe
   const boss = await join();
   await give(boss, "money");
   const one = await paidSlot();
-  const [e] = await earningsOf(t.db, { venue: one.h });
+  const [e] = await earningsOf(t.db, { venue: one.h }, new Date(t.now()));
   assert.equal(e!.eventId, null);
   assert.equal(e!.salesPaise, 50000);
   assert.ok(e!.earningsPaise > 0 && e!.earningsPaise <= 50000);
   // Not played yet: the player can still cancel, so none of it is available.
   assert.equal(e!.availablePaise, 0);
   assert.equal((await as(boss)("POST", "/galaxy/money/payouts", { hostId: one.h, amountPaise: 1, reason: "Early" })).status, 400);
+  // Played, but slot money waits 3 days after the slot ends.
   t.tick(41 * MIN);
+  assert.equal((await earningsOf(t.db, { venue: one.h }, new Date(t.now())))[0]!.availablePaise, 0);
+  t.tick(one.start + HOUR + 3 * DAY - t.now());
   assert.equal((await earningsOf(t.db, { venue: one.h }, new Date(t.now())))[0]!.availablePaise, e!.earningsPaise);
-  const listed = (await as(boss)("GET", "/galaxy/money/payouts")).body.earnings.find((x: { hostId: string; eventId: string | null }) => x.hostId === one.h && !x.eventId);
-  assert.equal(listed.availablePaise, e!.earningsPaise);
+  const g = (await as(boss)("GET", "/galaxy/money/payouts")).body;
+  assert.ok(!g.earnings.some((x: { eventId: string | null }) => !x.eventId)); // venues show once, under venues
+  assert.equal(g.venues.find((x: { hostId: string }) => x.hostId === one.h).availablePaise, e!.earningsPaise);
   assert.equal((await as(boss)("POST", "/galaxy/money/payouts", { hostId: one.h, eventId: "00000000-0000-4000-8000-000000000000", amountPaise: 1, reason: "Both" })).status, 400);
   assert.equal((await as(boss)("POST", "/galaxy/money/payouts", { hostId: one.h, amountPaise: e!.earningsPaise + 1, reason: "Payout" })).status, 400);
   const po = await as(boss)("POST", "/galaxy/money/payouts", { hostId: one.h, amountPaise: e!.earningsPaise, reason: "Payout" });
@@ -954,7 +1267,7 @@ test("slot pay: the venue's earnings and a venue payout; a player's cancel undoe
   assert.equal((await paymentOf(two.o.orderId)).status, "refundPending");
   const [rf] = await t.db.select().from(refunds).where(eq(refunds.paymentId, two.p.id));
   assert.deepEqual([rf!.kind, rf!.amountPaise], ["request", r.body.refundPaise]);
-  assert.equal((await earningsOf(t.db, { venue: two.h }))[0]!.earningsPaise, 0);
+  assert.equal((await earningsOf(t.db, { venue: two.h }, new Date(t.now())))[0]!.earningsPaise, 0);
   const again = await cancel(two.b); // a retry: the same answer, nothing more sent
   assert.deepEqual([again.status, again.body.refundPaise], [200, r.body.refundPaise]);
   assert.equal((await t.db.select().from(refunds).where(eq(refunds.paymentId, two.p.id))).length, 1);
@@ -970,4 +1283,36 @@ test("slot pay: the venue's earnings and a venue payout; a player's cancel undoe
   const three = await paidSlot();
   t.tick(41 * MIN);
   assert.equal((await as(three.b)("POST", `/venues/${three.h}/holds/${three.claimId}/cancel`)).body.error, "cantCancel");
+});
+
+test("venueEarningsOf: slot money waits 3 days after the slot ends; a player's cancel undoes the whole sale", async () => {
+  const one = await paidSlot();
+  const earned = (await venueEarningsOf(t.db, one.h, t.now())).earningsPaise;
+  t.tick(one.start + HOUR + DAY - t.now()); // played a day ago
+  const day = await venueEarningsOf(t.db, one.h, t.now());
+  assert.deepEqual([day.waitingPaise, day.availablePaise], [earned, 0]);
+  t.tick(3 * DAY); // played 4 days ago
+  const four = await venueEarningsOf(t.db, one.h, t.now());
+  assert.deepEqual([four.waitingPaise, four.availablePaise], [0, earned]);
+  assert.equal(four.availablePaise, (await earningsOf(t.db, { venue: one.h }, new Date(t.now())))[0]!.availablePaise);
+
+  const two = await paidSlot();
+  assert.equal((await as(two.b)("POST", `/venues/${two.h}/holds/${two.claimId}/cancel`)).status, 200);
+  const v = await venueEarningsOf(t.db, two.h, t.now());
+  assert.deepEqual([v.bookings, v.refundedPaise, v.commissionPaise, v.includedPaise, v.earningsPaise, v.waitingPaise], [1, 50000, 0, 0, 0, 0]);
+});
+
+test("venue payout: refunded in full after the ask, marking it paid is refused as short", async () => {
+  const boss = await join();
+  await give(boss, "money");
+  const one = await paidSlot();
+  await account(one.h);
+  t.tick(one.start + HOUR + 3 * DAY + MIN - t.now());
+  const all = (await venueEarningsOf(t.db, one.h, t.now())).availablePaise;
+  assert.ok(all > 0);
+  const ask = await as(one.a)("POST", `/hosts/${one.h}/payouts`, { amountPaise: all });
+  assert.equal(ask.status, 201, JSON.stringify(ask.body));
+  assert.equal((await as(boss)("POST", `/galaxy/money/payments/${one.p.id}/refund`, { amountPaise: one.p.amountPaise, reason: "Venue closed" })).status, 201);
+  const short = await as(boss)("POST", `/galaxy/money/payouts/${ask.body.id}/paid`, { utr: "UTR000000000201" });
+  assert.deepEqual([short.status, short.body.error], [409, "short"]);
 });

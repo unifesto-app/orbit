@@ -10,7 +10,8 @@
 //   host's cost and the buyer gets the whole price (decision 13). Amounts round half up to the paisa.
 // - A bank account (holder, 9 to 18 digits and an IFSC, or a UPI ID) starts Checking for 72 hours; staff check it by
 //   hand, with no penny drop.
-// ponytail: the server works all of this out, with the plan frozen per sale, once the money API lands.
+// The server works all of this out again, with the plan frozen per sale (GET /hosts/:id/money); these draw forms and
+// check them before they go.
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -62,12 +63,20 @@ export function bankFrom(f: BankForm, hostName: string, now: number): { bank: Ba
   if (upi) {
     const [name, handle] = upi.split('@');
     return /^[\w.-]{2,}@[a-z0-9]{2,}$/i.test(upi)
-      ? { bank: { bank: `UPI · ${handle}`, last4: name.slice(-4), holder: holder || hostName, state: 'checking', until } }
+      ? { bank: { bank: `UPI · ${handle}`, last4: name.slice(name.length > 4 ? -4 : -1), holder: holder || hostName, state: 'checking', until } }
       : { why: 'A UPI ID reads like name@bank.' };
   }
   if (holder.length > 1 && /^\d{9,18}$/.test(account) && /^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc))
     return { bank: { bank: BANKS[ifsc.slice(0, 4)] ?? 'Your bank', last4: account.slice(-4), holder, state: 'checking', until } };
   return { why: 'Add the holder’s name, an account number of 9 to 18 digits and an 11-character IFSC, or a UPI ID.' };
+}
+
+/** PUT /hosts/:id/payout-account's body from a form bankFrom passed: the holder, account and IFSC, or the UPI ID. */
+export function bankBody(f: BankForm) {
+  const holder = (f.holder ?? '').trim();
+  const upi = (f.upi ?? '').trim();
+  if (upi) return holder ? { holder, upi } : { upi };
+  return { holder, account: (f.account ?? '').replace(/\s/g, ''), ifsc: (f.ifsc ?? '').toUpperCase().replace(/\s/g, '') };
 }
 
 /** Rupees typed for a payout ("1,000.50") in paise, or undefined: digits with at most 2 after the point. */

@@ -112,6 +112,14 @@ const WORDS: Partial<Record<NoticeKind, (d: Data) => Words>> = {
   }),
   payoutPaid: (d) => ({ subject: "Your payout is on its way", line: `${formatPrice(Number(d.amountPaise) || 0)} was sent to your bank account. UTR ${str(d.utr)}.` }),
   payoutCancelled: (d) => ({ subject: "A payout was cancelled", line: `${formatPrice(Number(d.amountPaise) || 0)}. Reason: ${str(d.reason)}.` }),
+  bankChanged: (d) => ({
+    subject: `Where Orbit pays ${str(d.hostName)} changed`,
+    line: "Orbit checks the new account before paying to it. If none of your Admins changed it, write to Orbit at once.",
+  }),
+  bankChecked: (d) =>
+    d.state === "verified"
+      ? { subject: "Your bank account is verified", line: `Orbit pays ${str(d.hostName)}’s payouts to it.` }
+      : { subject: "Orbit couldn’t verify your bank account", line: `Reason: ${str(d.reason)}. Replace it in the app to be paid.` },
   feeChange: (d) => ({
     subject: `${str(d.hostName)}’s fee plan changed`,
     line: `${d.plan === "5+0" ? "5% from the buyer, no commission" : "3% from the buyer and 2% commission"}, ${d.feeIncluded ? "with the fee included in your prices" : "with the fee on top of your prices"}. It applies to sales from now on.`,
@@ -178,6 +186,8 @@ export const VARS: Partial<Record<NoticeKind, Record<string, Var>>> = {
   refundSent: { amountPaise: [49900, rupees] },
   payoutPaid: { amountPaise: [1250000, rupees], utr: ["HDFCN52026112612345"] },
   payoutCancelled: { amountPaise: [1250000, rupees], ...R },
+  bankChanged: H,
+  bankChecked: { ...H, state: ["verified"], ...R },
   feeChange: { ...H, plan: ["5+0"], feeIncluded: [false] },
   slotReleased: { ...H, start: [SOON, dayTime] },
   slotConfirmed: { ...H, station: ["5-a-side"], start: [SOON, dayTime], code: ["K7QX2M4P"] },
@@ -211,6 +221,7 @@ const BRANCHES: Partial<Record<NoticeKind, readonly Channel[]>> = {
   providerFailing: ALL,
   soldOutWhilePaying: ALL, // the line follows the reason
   feeChange: ALL, // the line follows the plan and where the fee sits
+  bankChecked: ALL, // verified or not
   orbitNews: ALL, // a broadcast's words are its own title and text
   orbitNotice: ALL,
 };

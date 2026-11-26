@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { bankFrom, paiseFrom, percent, rupees, twoPart } from './money.ts';
+import { bankBody, bankFrom, paiseFrom, percent, rupees, twoPart } from './money.ts';
 
 const HOUR = 3_600_000;
 const IST = 330 * 60_000;
@@ -64,4 +64,10 @@ test('every paisa is accounted for: fee + commission + earnings + refund back = 
           const t = twoPart(price, plan, feeIncluded, refunded);
           assert.equal(t.fee + t.commission + t.earnings + t.refunded, t.buyerPays, `${price} ${plan} ${feeIncluded} ${refunded}`);
         }
+});
+
+test("the account's body for the API: spaces out, the IFSC in capitals; a UPI ID goes alone, with a name only if typed", () => {
+  assert.deepEqual(bankBody({ holder: ' Riya Kapoor ', account: '1234 5678 9012', ifsc: 'hdfc 0001234' }), { holder: 'Riya Kapoor', account: '123456789012', ifsc: 'HDFC0001234' });
+  assert.deepEqual(bankBody({ upi: ' riya@okhdfc ' }), { upi: 'riya@okhdfc' });
+  assert.deepEqual(bankBody({ holder: 'Riya', upi: 'riya@okhdfc' }), { holder: 'Riya', upi: 'riya@okhdfc' });
 });

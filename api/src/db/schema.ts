@@ -1098,7 +1098,7 @@ export const refunds = pgTable(
 );
 
 // Bank transfers to hosts, by hand, each with its UTR once paid (6 to 40 characters, stored upper case, never reused).
-// `eventId` null: a venue's slot money (one pot per venue).
+// `eventId` null: a Venue's slot money, asked for as one (X4). `askedBy`: who asked, a host Admin (`fromHost`) or staff.
 export const payouts = pgTable(
   "payouts",
   {
@@ -1109,6 +1109,8 @@ export const payouts = pgTable(
     status: text("status", { enum: ["requested", "paid", "cancelled"] }).notNull().default("requested"),
     utr: text("utr").unique(),
     reason: text("reason"),
+    askedBy: uuid("asked_by").references(() => users.id),
+    fromHost: boolean("from_host").notNull().default(false),
     by: uuid("by").notNull().references(() => users.id), // who last changed it
     at: at("at").notNull(),
     createdAt: at("created_at").notNull(),
@@ -1119,6 +1121,37 @@ export const payouts = pgTable(
     check("payouts_status", sql`${t.status} in ('requested', 'paid', 'cancelled')`),
     index().on(t.eventId),
     index().on(t.hostId),
+    index().on(t.hostId, t.createdAt),
+  ],
+);
+
+// Where Orbit pays a host (Money flow, bank account): an account number and IFSC, or a UPI ID. It starts `checking`;
+// staff check it by hand in Galaxy (no penny drop) and verify or reject it; a replacement starts checking again. The
+// full number and UPI ID are for Galaxy's Money holders alone: never logged, never sent to the host apps, which see the
+// bank's name and the last 4.
+export const payoutAccounts = pgTable(
+  "payout_accounts",
+  {
+    hostId: uuid("host_id")
+      .primaryKey()
+      .references(() => hosts.id),
+    kind: text("kind", { enum: ["bank", "upi"] }).notNull(),
+    holder: text("holder").notNull(),
+    accountNumber: text("account_number"),
+    ifsc: text("ifsc"),
+    upi: text("upi"),
+    bankName: text("bank_name").notNull(),
+    last4: text("last4").notNull(),
+    state: text("state", { enum: ["checking", "verified", "rejected"] }).notNull().default("checking"),
+    reason: text("reason"), // staff's why, on a rejection
+    checkedBy: uuid("checked_by").references(() => users.id),
+    checkedAt: at("checked_at"),
+    createdAt: at("created_at").notNull(),
+    updatedAt: at("updated_at").notNull(),
+  },
+  (t) => [
+    check("payout_accounts_kind", sql`(${t.kind} = 'bank' and ${t.accountNumber} is not null and ${t.ifsc} is not null and ${t.upi} is null) or (${t.kind} = 'upi' and ${t.upi} is not null and ${t.accountNumber} is null and ${t.ifsc} is null)`),
+    check("payout_accounts_state", sql`${t.state} in ('checking', 'verified', 'rejected')`),
   ],
 );
 
