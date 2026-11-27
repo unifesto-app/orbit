@@ -131,14 +131,19 @@ test("removal and leaving", async () => {
   assert.deepEqual((await me(c)).teams, []);
 });
 
-test("staff: owner's grants start after 24 h; others' need a third holder", async () => {
+test("staff: owner's grants start at once, Staff told; others' need a third holder", async () => {
   const owner = await join(), x = await join(), y = await join(), z = await join();
   await makeOwner(owner);
   const g = await as(owner)("POST", "/galaxy/staff/grants", { userId: x.me.id, features: ["staff", "people"], reason: "for the team" });
   assert.equal(g.status, 201);
-  assert.equal((await me(x)).staff, null);
-  t.tick(DAY + 1);
+  assert.deepEqual(g.body.map((r: { status: string }) => r.status), ["active", "active"]);
   assert.deepEqual((await me(x)).staff.features.sort(), ["people", "staff"]);
+  assert.ok(t.notices.some((n) => n.kind === "staffGrantAdded" && (n.to as { userId: string }).userId === owner.me.id));
+  // Another holder of Staff is told too.
+  const w = await join(), v = await join();
+  await give(w, "staff");
+  assert.equal((await as(owner)("POST", "/galaxy/staff/grants", { userId: v.me.id, features: ["platform"], reason: "for the team" })).status, 201);
+  assert.ok(t.notices.some((n) => n.kind === "staffGrantAdded" && (n.to as { userId: string }).userId === w.me.id && (n.data as { userId: string }).userId === v.me.id));
 
   // x (Staff) gives z a feature: waits for a confirm
   const gz = await as(x)("POST", "/galaxy/staff/grants", { userId: z.me.id, features: ["hosts"], reason: "for the team" });
@@ -258,7 +263,6 @@ test("people: detail hides views, and staff access unless the viewer holds Staff
 
   const g = await as(owner)("POST", "/galaxy/staff/grants", { userId: target.me.id, features: ["hosts"], reason: "for the team" });
   assert.equal(g.status, 201);
-  t.tick(DAY + 1);
   const full = await as(both)("GET", `/galaxy/people/${target.me.id}`);
   assert.ok(Array.isArray(full.body.staff));
   assert.ok(full.body.staff.includes("hosts"));

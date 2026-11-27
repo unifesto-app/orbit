@@ -15,7 +15,7 @@ export const metadata: Metadata = { title: "Broadcasts" };
 export default function BroadcastsPage() {
   return (
     <div className={ui.page}>
-      <NotificationsHeader current="broadcasts" description="A message from Orbit to a segment. A second person with Platform confirms each one before it goes." />
+      <NotificationsHeader current="broadcasts" description="A message from Orbit to a segment. A second person with Platform confirms each one before it goes, or the author when no one else holds Platform." />
       <Suspense fallback={null}>
         <Body />
       </Suspense>
@@ -70,7 +70,7 @@ async function Body() {
                     {b.sent} of {b.audienceCount}
                   </td>
                   <td>{b.author.name ?? "–"}</td>
-                  <td>{b.confirmer ? (b.confirmer.name ?? "–") : b.autoSent ? "Sent after the 24 h wait" : b.autoAt ? `By itself, ${time(b.autoAt)}` : "–"}</td>
+                  <td>{b.confirmer ? (b.confirmer.name ?? "–") : b.autoSent ? "Sent after the 24 h wait" : "–"}</td>
                   <td>{time(b.createdAt)}</td>
                 </tr>
               ))}
