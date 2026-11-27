@@ -11,7 +11,7 @@
 import { type Me, ROOM_LINE_MAX, ROOM_REACH_MAX, type RoomCard, type RoomMember, type RoomView } from '@orbit/contract';
 import { useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { Alert, Image, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { past as history } from '../../account/data';
@@ -19,7 +19,6 @@ import { Chips, Field, Pill } from '../../account/kit';
 import { Photo } from '../../account/profile';
 import type { Result } from '../../api';
 import { dayLabel } from '../../booking';
-import { markOf } from '../../hosts';
 import { meetups } from '../../kinds';
 import type { Person } from '../../events';
 import { useLoad } from '../../load';
@@ -314,11 +313,7 @@ function LiveMember({
   const action = actionOf(m.ask);
   return (
     <View style={styles.row}>
-      {m.photo ? (
-        <Image source={{ uri: m.photo }} style={styles.photo} accessibilityIgnoresInvertColors />
-      ) : (
-        <Monogram mark={markOf({ id: m.id, name: m.name })} size={PHOTO} round />
-      )}
+      <Photo me={m} size={PHOTO} />
       <View style={styles.grow}>
         <View style={styles.named}>
           <Text style={[styles.name, styles.shrink]} numberOfLines={1}>
@@ -367,7 +362,6 @@ const styles = StyleSheet.create({
   leave: { marginHorizontal: 20, marginTop: SECTION },
   // The real room's (R3).
   others: { marginTop: 16 },
-  photo: { width: PHOTO, height: PHOTO, borderRadius: PHOTO / 2 },
   named: { flexDirection: 'row', alignItems: 'center', gap: space.small },
   shrink: { flexShrink: 1 },
   pills: { flexDirection: 'row', flexWrap: 'wrap', gap: space.small, marginTop: space.small },
