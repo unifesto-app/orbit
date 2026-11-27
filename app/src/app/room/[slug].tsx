@@ -150,7 +150,7 @@ function LiveRoom({ eventId }: { eventId: string }) {
     if (await act('Couldn’t save your card', () => rooms.putCard(eventId, card))) setEditing(false);
   };
   const block = (m: RoomMember) =>
-    Alert.alert(`Block ${m.name}?`, 'You won’t see each other in any room on Orbit again, and any connection between you ends.', [
+    Alert.alert(`Block ${m.name}?`, 'You won’t see each other in any room on Orbit again. If you’re connected, you both lose how to reach each other, and any asks between you go.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Block', style: 'destructive', onPress: () => void act('Couldn’t block them', () => rooms.block(eventId, m.id)) },
     ]);
