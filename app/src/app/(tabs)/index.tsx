@@ -526,7 +526,7 @@ function Thanks({ event: e, host, top }: { event: Event; host: Host; top: number
       title={title}
       text={`Loved it? Let ${host.name} know.`}
       then={loved ? { mine: 'Loved it', reply: `${host.name} will hear.` } : undefined}
-      answers={[loved ? { label: 'Take it back', onPress: () => loveIt(e.id, false) } : { label: 'Loved it', onPress: () => loveIt(e.id, true) }]}
+      answers={[loved ? { label: 'Take it back', onPress: () => loveIt(e, false) } : { label: 'Loved it', onPress: () => loveIt(e, true) }]}
     />
   );
 }

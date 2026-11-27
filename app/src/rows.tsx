@@ -25,10 +25,10 @@ import { BarGlass, DARK_TINT, Glass } from './glass';
 import { Icon, type IconName } from './icons';
 import { Media, type MediaItem } from './media';
 import { acts, fromPricePaise, perHour, venues } from './kinds';
-import type { Event, Host } from './events';
+import { type Event, eventsApi, type Host, toHost } from './events';
 import { hosts, now as mockNow } from './mock';
 import { showNote } from './note';
-import { followsNow, needsAccount, setFollowing, setLoved, tapSave, useFollowing, useLoved, useSaved, useViewer } from './session';
+import { api, followsNow, lovedNow, needsAccount, real, setFollowing, setLoved, tapSave, useFollowing, useLoved, useSaved, useViewer } from './session';
 import { usePromoted } from './content';
 import { eventLabel } from './labels';
 import { OrbitSays } from './orbitSays';
@@ -420,30 +420,41 @@ export function SaveButton({ event: e, bar = false, dark = false }: { event: Pic
 }
 
 // Loved it, or taking it back; signed out, sign in first. After a love, one tap follows the acts on the bill you don't
-// follow yet (Performer 10: the ticket offers Follow for each act), as a note at the bottom.
-export function loveIt(eventId: string, on: boolean) {
+// follow yet (Performer 10: the ticket offers Follow for each act), as a note at the bottom. A real event's acts come
+// with its full read; from a card (a History row) it's read once, on the tap. A mock event's are in src/kinds.ts.
+export function loveIt(e: Pick<Event, 'id' | 'slug' | 'acts'>, on: boolean) {
   needsAccount(() => {
-    setLoved(eventId, on);
-    const unfollowed = on ? (acts[eventId] ?? []).filter((id) => !followsNow().includes(id)) : [];
-    const names = unfollowed.map((id) => hosts.find((h) => h.id === id)?.name).filter(Boolean);
-    if (names.length) {
-      showNote({
-        text: `Loved it. Follow ${names.length > 2 ? `${names.slice(0, 2).join(', ')} and ${names.length - 2} more` : names.join(' and ')}?`,
-        action: { label: 'Follow', run: () => unfollowed.forEach((id) => setFollowing(id, true)) },
-        ms: 6000,
-      });
-    }
+    setLoved(e.id, on);
+    if (on) void offerFollow(e);
   });
+}
+async function offerFollow(e: Pick<Event, 'id' | 'slug' | 'acts'>) {
+  let list: readonly Pick<Host, 'id' | 'name'>[] | undefined = e.acts;
+  if (!list && real(e.id)) {
+    const r = await eventsApi(api).event(e.slug);
+    list = r.ok ? r.data.acts.map(toHost) : []; // ponytail: offline or gone, no offer; the love itself is already saved
+    if (!lovedNow().includes(e.id)) return; // taken back while it read
+  }
+  list ??= (acts[e.id] ?? []).map((id) => hosts.find((h) => h.id === id)).filter((h) => !!h);
+  const unfollowed = list.filter((h) => !followsNow().includes(h.id));
+  const names = unfollowed.map((h) => h.name);
+  if (names.length) {
+    showNote({
+      text: `Loved it. Follow ${names.length > 2 ? `${names.slice(0, 2).join(', ')} and ${names.length - 2} more` : names.join(' and ')}?`,
+      action: { label: 'Follow', run: () => unfollowed.forEach((h) => setFollowing(h.id, true)) },
+      ms: 6000,
+    });
+  }
 }
 
 // "Loved it", the heart, on an event you went to, once it's over (owner, 19 Nov 2026: "replace the love with loved
 // it"): on its History row and in place of Save on its page. A tap says you loved it, red; another takes it back.
 // Signed out, it asks to sign in first. `dark` as SaveButton's.
-export function LoveButton({ event: e, bar = false, dark = false }: { event: Pick<Event, 'id' | 'title'>; bar?: boolean; dark?: boolean }) {
+export function LoveButton({ event: e, bar = false, dark = false }: { event: Pick<Event, 'id' | 'slug' | 'title' | 'acts'>; bar?: boolean; dark?: boolean }) {
   const loved = useLoved(e.id);
   return (
     <Pressable
-      onPress={() => loveIt(e.id, !loved)}
+      onPress={() => loveIt(e, !loved)}
       style={bar ? undefined : styles.rowCircle}
       hitSlop={bar ? 4 : 0}
       accessibilityRole="button"
