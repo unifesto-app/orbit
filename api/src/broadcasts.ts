@@ -1,4 +1,4 @@
-import { and, count, desc, eq, gt, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, gt, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { Hono } from "hono";
 import { type Broadcast, BroadcastSegment, type Broadcasts, CancelBroadcast, NewBroadcast } from "@orbit/contract";
@@ -172,7 +172,8 @@ export function broadcastsRoutes({ db, secret, notify, now = Date.now }: Deps) {
         .set({ status, confirmedBy: actor, autoAt: null })
         .where(and(eq(broadcasts.id, id), eq(broadcasts.status, "waiting")))
         .returning();
-      if (moved) await tx.insert(auditLog).values({ actorId: actor, action: "notifications.broadcastConfirm", data: { id, status }, at });
+      const own = b.createdBy === actor ? { own: true } : {};
+      if (moved) await tx.insert(auditLog).values({ actorId: actor, action: "notifications.broadcastConfirm", data: { id, status, ...own }, at });
       return moved;
     });
     if (!done) return fail(c, 409, "notWaiting", `This broadcast is ${b.status}, so there's nothing to confirm.`);
@@ -211,6 +212,18 @@ export function broadcastsRoutes({ db, secret, notify, now = Date.now }: Deps) {
   });
 
   return app;
+}
+
+// Someone who may now confirm (a Platform grant started, or a holder's suspension lifted) hears of every broadcast still
+// waiting that someone else wrote, or one written while its author was alone would wait unseen. Nothing if they don't
+// hold Platform; the notice key is the broadcast, so a second call tells no one twice.
+export async function tellWaiting(db: Db, notify: Notify, userId: string, at: Date) {
+  if (!(await holdersOf(db, "platform", at)).includes(userId)) return;
+  const rows = await db
+    .select()
+    .from(broadcasts)
+    .where(and(eq(broadcasts.status, "waiting"), ne(broadcasts.createdBy, userId)));
+  for (const b of rows) await tell(notify, [userId], "broadcastWaiting", { title: b.content.title, audienceCount: b.audienceCount }, b.id);
 }
 
 // The minute tick's broadcast step.

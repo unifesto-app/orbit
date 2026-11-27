@@ -12,7 +12,7 @@ import { channelNames, segmentName, STATUS, TYPES } from "../shared";
 
 // "Goes to 1,240 people by push and email"; the inbox always gets it.
 const preview = (b: Broadcast) =>
-  `Goes to ${b.audienceCount.toLocaleString("en-IN")} people ${b.channels.length ? `by ${b.channels.join(" and ")}` : "in their inbox only"}`;
+  `Goes to ${b.audienceCount.toLocaleString("en-IN")} ${b.audienceCount === 1 ? "person" : "people"} ${b.channels.length ? `by ${b.channels.join(" and ")}` : "in their inbox only"}`;
 
 // One broadcast: its wording and audience, Confirm for a second Platform holder (the author only while no one else holds
 // Platform: the API says so in canConfirm), Cancel while it is waiting, scheduled or part sent, and how far it has got

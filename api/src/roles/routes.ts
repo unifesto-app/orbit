@@ -7,6 +7,7 @@ import { auditLog, hosts, hostSlugs, sessions, staffGrants, teamRoles, users } f
 import { contactOf, type Env, fail, invalid, isUuid, type Notify, listPage, parse, signedIn, taken } from "../http.ts";
 import { activeFeatures, adminsOf, changeable, holdersOf, masked, holdIfUnanswered, liftHostsOf, person, type StaffEnv, requireFeature, teamOf as teamOf_, tell } from "./access.ts";
 import { slugFor } from "../slugs.ts";
+import { tellWaiting } from "../broadcasts.ts";
 import { acceptRule, addRule, confirmRule, confirmSeatRule, endRule, endSeatRule, expired, holds, INVITE_DAYS, suspendRule, waiting } from "./rules.ts";
 
 // Hosts and their teams, and Galaxy's staff and People tools (Orbit flows: Roles, Hosts and Galaxy).
@@ -317,6 +318,7 @@ export function rolesRoutes({ db, store, notify, secret, now = Date.now }: Deps)
         return rows;
       });
       await say(await holders("staff"), "staffGrantAdded", { userId: target.id, features: b.features, reason: b.reason, by: c.var.actor.id, startsAt: ok.startsAt?.toISOString() ?? null, grants: made.map((g) => g.id) });
+      if (ok.startsAt) await tellWaiting(db, notify, target.id, at());
       return c.json(made.map((g) => ({ id: g.id, feature: g.feature, status: g.startsAt ? "active" : "waitingConfirm" })), 201);
     } catch (e) {
       if (taken(e)) return fail(c, 409, "hasFeature", "They already have, or are waiting for, one of those features.");
@@ -343,6 +345,7 @@ export function rolesRoutes({ db, store, notify, secret, now = Date.now }: Deps)
     });
     if (!done) return refuse(c, "notWaiting");
     await say(await holders("staff"), "staffGrantStarted", { userId: g.userId, feature: g.feature, reason: b.reason, by: c.var.actor.id });
+    await tellWaiting(db, notify, g.userId, at());
     return c.json({ id: g.id, status: "active" });
   });
 
@@ -523,6 +526,7 @@ export function rolesRoutes({ db, store, notify, secret, now = Date.now }: Deps)
       await audit(tx, { actorId: c.var.actor.id, action: "people.lift", targetUser: target.id, reason: b.reason });
     });
     await notify({ to: { userId: target.id }, kind: "accountLifted", data: {} });
+    await tellWaiting(db, notify, target.id, at());
     await say(await holders("people"), "staffRiskyAction", { action: "people.lift", userId: target.id, reason: b.reason, by: c.var.actor.id });
     return c.json({ id: target.id, suspended: false });
   });

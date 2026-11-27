@@ -107,6 +107,9 @@ test("Galaxy's request routes are for holders of Hosts only, never on their own 
   await t.db.update(users).set({ platformOwner: true }).where(eq(users.id, boss.me.id));
   const mine = (await as(boss)("POST", "/event-requests", { host, event })).body;
   assert.equal((await as(boss)("POST", `/galaxy/event-requests/${mine.id}/decline`, R)).status, 200);
+  const mine2 = (await as(boss)("POST", "/event-requests", { host, event })).body;
+  const approved = await as(boss)("POST", `/galaxy/event-requests/${mine2.id}/approve`, R);
+  assert.deepEqual([approved.status, approved.body.status], [200, "approved"]);
   await t.db.update(users).set({ platformOwner: false }).where(eq(users.id, boss.me.id));
 });
 

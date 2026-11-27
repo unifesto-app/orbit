@@ -625,6 +625,7 @@ test("the platform owner acts on their own host", async () => {
   const h = await start(boss, "Owner's Own");
   assert.equal((await as(boss)("POST", `/galaxy/hosts/${h.id}/suspend`, R)).status, 200);
   assert.equal((await as(boss)("POST", `/galaxy/hosts/${h.id}/lift`, R)).status, 200);
+  await t.db.update(users).set({ platformOwner: false }).where(eq(users.id, boss.me.id));
 });
 
 test("staff on a parent's team can't detach or move its club", async () => {

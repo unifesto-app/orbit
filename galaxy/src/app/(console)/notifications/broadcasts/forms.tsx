@@ -108,7 +108,7 @@ export function ComposeForm() {
         </button>
         {counted && s.count !== undefined && !pending && <span role="status">Reaches {s.count.toLocaleString("en-IN")} people</span>}
         <button name="intent" value="save" className={`${ui.btn} ${ui.primary}`} disabled={pending || !counted || s.count === undefined}>
-          Save for a second person
+          Save
         </button>
       </div>
     </form>

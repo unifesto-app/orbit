@@ -77,6 +77,27 @@ test("one Platform holder: the author confirms their own; nothing goes by itself
   assert.equal((await inbox(a)).length, 1);
   const shown = await as(st)("GET", `${B}/${r.body.id}`);
   assert.deepEqual([shown.body.autoSent, shown.body.confirmer.id, shown.body.canConfirm], [false, st.me.id, false]);
+  const audits = await t.db.select().from(auditLog).where(eq(auditLog.action, "notifications.broadcastConfirm"));
+  assert.deepEqual(audits.find((a) => (a.data as { id: string }).id === r.body.id)?.data, { id: r.body.id, status: "sending", own: true });
+  await retireStaff();
+});
+
+test("written alone, then a new Platform holder: they're told it's waiting, once, and can confirm it", async () => {
+  goTo(12);
+  await retireStaff();
+  const boss = await join(), x = await join();
+  await t.db.update(users).set({ platformOwner: false }).where(eq(users.platformOwner, true));
+  await t.db.update(users).set({ platformOwner: true }).where(eq(users.id, boss.me.id));
+  const r = await as(boss)("POST", B, draft("Siddipet"));
+  assert.equal(r.body.canConfirm, true);
+  const told = () => t.notices.filter((n) => n.kind === "broadcastWaiting" && n.key === r.body.id && (n.to as { userId: string }).userId === x.me.id).length;
+  assert.equal(told(), 0);
+  assert.equal((await as(boss)("POST", "/galaxy/staff/grants", { userId: x.me.id, features: ["platform"], reason: "for the team" })).status, 201);
+  assert.equal(told(), 1);
+  assert.equal((await as(boss)("GET", `${B}/${r.body.id}`)).body.canConfirm, false);
+  assert.equal((await as(x)("POST", `${B}/${r.body.id}/confirm`)).status, 200);
+  await finish();
+  await t.db.update(users).set({ platformOwner: false }).where(eq(users.id, boss.me.id));
   await retireStaff();
 });
 

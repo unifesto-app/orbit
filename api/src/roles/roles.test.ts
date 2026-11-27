@@ -139,6 +139,11 @@ test("staff: owner's grants start at once, Staff told; others' need a third hold
   assert.deepEqual(g.body.map((r: { status: string }) => r.status), ["active", "active"]);
   assert.deepEqual((await me(x)).staff.features.sort(), ["people", "staff"]);
   assert.ok(t.notices.some((n) => n.kind === "staffGrantAdded" && (n.to as { userId: string }).userId === owner.me.id));
+  // Another holder of Staff is told too.
+  const w = await join(), v = await join();
+  await give(w, "staff");
+  assert.equal((await as(owner)("POST", "/galaxy/staff/grants", { userId: v.me.id, features: ["platform"], reason: "for the team" })).status, 201);
+  assert.ok(t.notices.some((n) => n.kind === "staffGrantAdded" && (n.to as { userId: string }).userId === w.me.id && (n.data as { userId: string }).userId === v.me.id));
 
   // x (Staff) gives z a feature: waits for a confirm
   const gz = await as(x)("POST", "/galaxy/staff/grants", { userId: z.me.id, features: ["hosts"], reason: "for the team" });
