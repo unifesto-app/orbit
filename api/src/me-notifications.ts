@@ -1,8 +1,9 @@
 import { and, count, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { Hono } from "hono";
-import { APPS, FollowNotify, INBOX_PAGE, type InboxApp, type InboxPage, InboxRead, type NoticeKind, NotificationSettingsBody, PushDevice, type InboxType } from "@orbit/contract";
+import { APPS, FollowNotify, INBOX_PAGE, type InboxApp, type InboxPage, type InboxPicture, InboxRead, type NoticeKind, NotificationSettingsBody, PushDevice, type InboxType } from "@orbit/contract";
 import type { Db } from "./db/index.ts";
-import { follows, inboxItems, notificationPrefs, pushDevices } from "./db/schema.ts";
+import { events, follows, hosts, inboxItems, notificationPrefs, pushDevices } from "./db/schema.ts";
+import { openable } from "./events/public.ts";
 import { fail, invalid, isUuid, parse, signedIn, type Env } from "./http.ts";
 import { settingsFor, switchDiffs } from "./notifications.ts";
 
@@ -34,6 +35,36 @@ export const saveSettings = (db: Db, u: { id: string; city: string | null }, b: 
     await tx.insert(notificationPrefs).values({ userId: u.id, ...set }).onConflictDoUpdate({ target: notificationPrefs.userId, set });
     return next;
   });
+
+// Each row's picture, from what it opens (rows don't store one): an event that still opens (as GET /public/events/:slug)
+// shows its poster, or its host without one; a host or venue (a venue's id is its host's) shows while public and live.
+// Anything else, or gone, is null: the orb.
+async function picturesOf(db: Db, opens: unknown[]): Promise<InboxPicture[]> {
+  const ids = (key: "event" | "host" | "venue") =>
+    opens.flatMap((o) => {
+      const id = (o as Record<string, unknown> | null)?.[key];
+      return typeof id === "string" && isUuid(id) ? [id] : [];
+    });
+  const eventIds = ids("event");
+  const hostIds = [...ids("host"), ...ids("venue")];
+  const evs = eventIds.length
+    ? await db
+        .select({ id: events.id, title: events.title, poster: events.poster, hid: hosts.id, hname: hosts.name, hlogo: hosts.logo, hvis: hosts.visibility })
+        .from(events)
+        .innerJoin(hosts, eq(hosts.id, events.hostId))
+        .where(and(inArray(events.id, eventIds), openable))
+    : [];
+  const hs = hostIds.length
+    ? await db.select({ id: hosts.id, name: hosts.name, logo: hosts.logo }).from(hosts).where(and(inArray(hosts.id, hostIds), eq(hosts.visibility, "public"), eq(hosts.status, "live")))
+    : [];
+  return opens.map((o) => {
+    const r = (o ?? {}) as Record<string, unknown>;
+    const e = evs.find((x) => x.id === r.event);
+    if (e) return e.poster ? { event: { id: e.id, title: e.title, poster: e.poster } } : e.hvis === "public" ? { host: { id: e.hid, name: e.hname, logo: e.hlogo } } : null;
+    const h = hs.find((x) => x.id === (r.host ?? r.venue));
+    return h ? { host: h } : null;
+  });
+}
 
 export function meNotificationsRoutes({ db, secret, now = Date.now }: Deps) {
   const app = new Hono<Env>();
@@ -77,15 +108,16 @@ export function meNotificationsRoutes({ db, secret, now = Date.now }: Deps) {
     const page = rows.slice(0, INBOX_PAGE);
     const [unread] = await db.select({ n: count() }).from(inboxItems).where(and(mine, isNull(inboxItems.readAt)));
     const last = page.at(-1);
+    const pictures = await picturesOf(db, page.map((r) => r.item.opens));
     const body: InboxPage = {
-      items: page.map(({ item: i }) => ({
+      items: page.map(({ item: i }, n) => ({
         id: i.id,
         at: i.createdAt.toISOString(),
         from: i.fromName,
         kind: i.kind as NoticeKind,
         type: i.type as InboxType,
         text: i.text,
-        picture: i.picture,
+        picture: pictures[n]!,
         opens: i.opens,
         read: !!i.readAt,
       })),

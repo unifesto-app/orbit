@@ -246,7 +246,10 @@ export const PushDevice = z.object({
 export type PushDevice = z.infer<typeof PushDevice>;
 
 // One inbox row, as the app's InboxItem (app/src/inbox.ts) but with the catalog's kind.
-export type InboxRow = { id: string; at: string; from: string; kind: NoticeKind; type: InboxType; text: string; picture: unknown; opens: unknown; read: boolean };
+// `picture`: what the row is about, read fresh with each page (me-notifications.ts): the event's 3:4 poster, else its
+// host; the host's logo (null draws its monogram); null when it's from Orbit or what it's about isn't public any more.
+export type InboxPicture = { event: { id: string; title: string; poster: string } } | { host: { id: string; name: string; logo: string | null } } | null;
+export type InboxRow = { id: string; at: string; from: string; kind: NoticeKind; type: InboxType; text: string; picture: InboxPicture; opens: unknown; read: boolean };
 export const INBOX_PAGE = 30;
 // Newest first; `next` is the cursor for the page after, null on the last. `unread`: that app's whole inbox.
 export type InboxPage = { items: InboxRow[]; unread: number; next: string | null };

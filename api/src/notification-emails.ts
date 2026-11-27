@@ -320,7 +320,7 @@ export function emailFor(kind: string, data: Data = {}, site = SITE, unsubscribe
 
 // `opens`: the app's Opens shape (app/src/inbox.ts), the catalog's target with its id from the data; null when the id
 // isn't there (the row then shows its whole text).
-// ponytail: `picture` stays null; real pictures (the event's poster, the host's logo) come with media on the rows.
+// The row's picture isn't stored: GET /me/inbox reads it from these ids each time (me-notifications.ts picturesOf).
 export function opensFor(kind: NoticeKind, data: Data = {}) {
   const to = KINDS[kind].opens;
   const id = (key: string) => (typeof data[key] === "string" && data[key] ? (data[key] as string) : null);

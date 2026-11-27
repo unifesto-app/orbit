@@ -47,9 +47,12 @@ test('toMessage: where it opens, and a bad opens or picture is nothing', () => {
     assert.equal(toMessage(row({ opens: bad }), none).href, null, JSON.stringify(bad));
   }
   assert.equal(opensOf({ to: 'slot', venue: 'v1', extra: 1 })?.to, 'slot');
-  assert.deepEqual(toMessage(row({ picture: { event: 'e1' } }), none).picture, { event: 'e1' });
-  assert.equal(toMessage(row({ picture: { event: 3 } }), none).picture, null);
-  assert.equal(toMessage(row({ picture: 'x' }), none).picture, null);
+  const event = { event: { id: 'e1', title: 'Open Mic', poster: 'https://x/p.jpg' } };
+  assert.deepEqual(toMessage(row({ picture: event }), none).picture, event);
+  assert.deepEqual(toMessage(row({ picture: { host: { id: 'h1', name: 'Club', logo: null } } }), none).picture, { host: { id: 'h1', name: 'Club', logo: null } });
+  // From an older or newer API: anything else is the orb.
+  for (const bad of [{ event: 'e1' }, { event: { id: 'e1', title: 'x', poster: null } }, { host: { id: 'h1' } }, 'x', 3])
+    assert.equal(toMessage(row({ picture: bad as never }), none).picture, null, JSON.stringify(bad));
   assert.equal(toMessage(row({ read: true }), none).unread, false);
 });
 
