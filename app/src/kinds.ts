@@ -11,7 +11,9 @@
 // Outside the docs, and the owner's to change: comedy's runtime, language and seating, a jam's style and what to bring,
 // and a fest's type.
 // ponytail: written here by hand; the host fills them in on the event once events reach the API.
-import { formatPrice } from '@orbit/contract';
+import { type EventDetails, formatPrice } from '@orbit/contract';
+
+import { indiaDay, indiaWhen } from './status.ts';
 
 /** Performer hosts on an event, in billing order (Discover 23: "with [act]", three names then "+N"). */
 export const acts: Record<string, readonly string[]> = {
@@ -27,11 +29,11 @@ export function withActs<T>(list: readonly T[], shown = 3): { names: T[]; more: 
   return { names: list.slice(0, shown), more: Math.max(list.length - shown, 0) };
 }
 
-export type Show = { runtime: string; language: string; age?: '18+' | '21+'; seating?: string };
-export type Jam = { style: string; bring: string; onSite?: string; runtime: string };
+export type Show = { runtime: string; language?: string; age?: '18+' | '21+'; seating?: string };
+export type Jam = { style?: string; bring?: string; onSite?: string; runtime: string };
 export type Hackathon = {
   team: [number, number]; // smallest and biggest team
-  teams: number; // how many have booked: a count, never names (Running hackathons 4)
+  teams: number | null; // how many have booked: a count, never names (Running hackathons 4)
   tracks: { name: string; brief: string }[];
   prizes: { place: string; prize: string }[];
   rounds: { name: string; when: string }[];
@@ -39,7 +41,7 @@ export type Hackathon = {
   winners?: { place: string; team: string; members: string; project: string; line: string }[]; // once results are out
 };
 export type Meetup = { inRoom: boolean };
-export type Fest = { type: string; days: string; highlights: string[]; oneClick: boolean };
+export type Fest = { type?: string; days: string; highlights: string[]; oneClick: boolean };
 
 export const shows: Record<string, Show> = {
   'open-mic-night': { runtime: 'About 2 hours', language: 'Hindi and English', age: '18+', seating: 'First come, first seated' },
@@ -101,6 +103,33 @@ export const hackathons: Record<string, Hackathon> = {
     ],
   },
 };
+
+/** How long it runs, from a real event's start and end, to the half hour: "About 2 hours", "About 45 minutes". */
+export function runtime(startsAt: string, endsAt: string): string {
+  const mins = Math.round((Date.parse(endsAt) - Date.parse(startsAt)) / 60_000);
+  if (mins < 60) return `About ${mins} minutes`;
+  const h = Math.round(mins / 30) / 2;
+  return `About ${h} hour${h === 1 ? '' : 's'}`;
+}
+
+/** A real fest's days in India time: "One day, 10:00 AM to 11:00 PM", or "3 days, Fri 27 Nov to Sun 29 Nov". */
+export function festDays(startsAt: string, endsAt: string): string {
+  const [from, to] = [indiaDay(startsAt), indiaDay(endsAt)];
+  if (from === to) return `One day, ${indiaWhen(startsAt).split(' · ')[1]} to ${indiaWhen(endsAt).split(' · ')[1]}`;
+  const day = (at: string) => Math.floor((Date.parse(at) + 330 * 60_000) / 86_400_000); // India's calendar day
+  const days = day(endsAt) - day(startsAt) + 1;
+  return `${days} days, ${from} to ${to}`;
+}
+
+/** A real hackathon's details in the mock's shape: empty lists for what's not filled in, no winners (not built yet). */
+export const hackathonOf = (d: EventDetails, teams: number | null): Omit<Hackathon, 'team'> & { team?: [number, number] } => ({
+  ...((d.teamMin ?? d.teamMax) !== undefined && { team: [d.teamMin ?? 1, d.teamMax ?? 10] as [number, number] }),
+  teams,
+  tracks: d.tracks ?? [],
+  prizes: d.prizes ?? [],
+  rounds: d.rounds ?? [],
+  criteria: d.criteria ?? [],
+});
 
 /** Team tickets' seats, by event and ticket type: a team ticket takes its team's places from the seats left. */
 export const teamSeats: Record<string, Record<string, number>> = {

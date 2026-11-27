@@ -289,6 +289,7 @@ export function removeUpiId(vpa: string) {
 }
 // Who you follow right now, outside a component (a tap's follow-up).
 export const followsNow = () => current?.follows ?? [];
+export const lovedNow = () => current?.loved ?? [];
 // "Loved it" on an event you went to (owner, 19 Nov 2026: "replace the love with loved it"; Booking doc: after the
 // show, only people scanned in). A tap turns it on or off.
 // ponytail: on this phone only, like follows; the API's Loved it (counting toward the performer or host) replaces it.

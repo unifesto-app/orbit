@@ -7,15 +7,16 @@ import { Fragment } from 'react';
 import { StyleSheet, Text } from 'react-native';
 
 import { Fact, FactCard } from './fact';
-import { acts, festItems, fests, hackathons, jams, meetups, shows, withActs } from './kinds';
+import { acts, festDays, festItems, fests, hackathonOf, hackathons, jams, meetups, runtime, shows, withActs } from './kinds';
 import type { Event } from './events';
 import { hosts } from './mock';
 import { SECTION, Section } from './rows';
 import { color, font } from './theme';
 
-// "with [act]" under "by [host]" (Discover 23): up to three names, each opening the act's page, then "+N".
-export function WithActs({ eventId }: { eventId: string }) {
-  const list = (acts[eventId] ?? []).map((id) => hosts.find((h) => h.id === id)).filter((h) => !!h);
+// "with [act]" under "by [host]" (Discover 23): up to three names, each opening the act's page, then "+N". A real
+// event's acts come with its read; a mock event's from src/kinds.ts.
+export function WithActs({ event: e }: { event: Pick<Event, 'id' | 'acts'> }) {
+  const list = e.acts ?? (acts[e.id] ?? []).map((id) => hosts.find((h) => h.id === id)).filter((h) => !!h);
   if (list.length === 0) return null;
   const { names, more } = withActs(list);
   return (
@@ -34,49 +35,72 @@ export function WithActs({ eventId }: { eventId: string }) {
   );
 }
 
-// Each a heading SECTION (40) below what's above, as the page's own sections.
+// Each a heading SECTION (40) below what's above, as the page's own sections. A real event's data is its `details`
+// (each kind's own keys); a mock event's is in src/kinds.ts. A real event's age, outside comedy's card, gets its own.
 export function KindSections({ event: e, past }: { event: Event; past: boolean }) {
+  return (
+    <>
+      <KindFacts event={e} past={past} />
+      {!!e.minAge && e.category !== 'comedy' && (
+        <>
+          <Section top={SECTION} title="Good to know" />
+          <FactCard>
+            <AgeFact age={`${e.minAge}+`} />
+          </FactCard>
+        </>
+      )}
+    </>
+  );
+}
+
+function KindFacts({ event: e, past }: { event: Event; past: boolean }) {
   switch (e.category) {
     case 'comedy':
-      return <ShowFacts eventId={e.id} />;
+      return <ShowFacts event={e} />;
     case 'jams':
-      return <JamFacts eventId={e.id} />;
+      return <JamFacts event={e} />;
     case 'hackathons':
-      return <HackathonFacts eventId={e.id} past={past} />;
+      return <HackathonFacts event={e} past={past} />;
     case 'meetups':
-      return <MeetupFacts eventId={e.id} />;
+      return <MeetupFacts event={e} />;
     case 'fests':
-      return <FestFacts eventId={e.id} />;
+      return <FestFacts event={e} />;
     default:
       return null;
   }
 }
 
-function ShowFacts({ eventId }: { eventId: string }) {
-  const s = shows[eventId];
+const AgeFact = ({ age }: { age: string }) => <Fact label="Age" value={`${age} only`} note="Bring a photo ID" />;
+
+function ShowFacts({ event: e }: { event: Event }) {
+  const d = e.details;
+  const s = d
+    ? { runtime: runtime(e.startsAt, e.endsAt!), language: d.language, seating: d.seating, age: e.minAge ? `${e.minAge}+` : undefined }
+    : shows[e.id];
   if (!s) return null;
   return (
     <>
       <Section top={SECTION} title="The show" />
       <FactCard>
         <Fact label="Runs" value={s.runtime} />
-        <Fact label="In" value={s.language} />
-        {s.age && <Fact label="Age" value={`${s.age} only`} note="Bring a photo ID" />}
+        {s.language && <Fact label="In" value={s.language} />}
+        {s.age && <AgeFact age={s.age} />}
         {s.seating && <Fact label="Seats" value={s.seating} />}
       </FactCard>
     </>
   );
 }
 
-function JamFacts({ eventId }: { eventId: string }) {
-  const j = jams[eventId];
+function JamFacts({ event: e }: { event: Event }) {
+  const d = e.details;
+  const j = d ? { style: d.style, bring: d.bring, onSite: d.onSite, runtime: runtime(e.startsAt, e.endsAt!) } : jams[e.id];
   if (!j) return null;
   return (
     <>
       <Section top={SECTION} title="The jam" />
       <FactCard>
-        <Fact label="Playing" value={j.style} />
-        <Fact label="Bring" value={j.bring} />
+        {j.style && <Fact label="Playing" value={j.style} />}
+        {j.bring && <Fact label="Bring" value={j.bring} />}
         {j.onSite && <Fact label="There already" value={j.onSite} />}
         <Fact label="Runs" value={j.runtime} />
       </FactCard>
@@ -87,10 +111,12 @@ function JamFacts({ eventId }: { eventId: string }) {
 // Before it: how teams and rounds work, the tracks, the prizes and how it's judged, with how many teams are in but never
 // who. Once results are out, the winners lead (Running hackathons 4, 5, 13). The event's judges and mentors show in its
 // people list (owner, 19 Nov 2026: "Keep them shown", over Running hackathons 11, which named judges to the host only).
-function HackathonFacts({ eventId, past }: { eventId: string; past: boolean }) {
-  const h = hackathons[eventId];
+// A real one shows only the cards it has something for, and no winners yet (not built).
+function HackathonFacts({ event: e, past }: { event: Event; past: boolean }) {
+  const h: ReturnType<typeof hackathonOf> | undefined = e.details ? hackathonOf(e.details, e.teams ?? null) : hackathons[e.id];
   if (!h) return null;
-  const [min, max] = h.team;
+  const count = h.teams === null ? undefined : past ? `${h.teams} teams took part` : `${h.teams} teams in so far`;
+  const size = h.team && (h.team[0] === h.team[1] ? `${h.team[0]} people` : `${h.team[0]} to ${h.team[1]} people`);
   return (
     <>
       {past && h.winners && (
@@ -103,31 +129,47 @@ function HackathonFacts({ eventId, past }: { eventId: string; past: boolean }) {
           </FactCard>
         </>
       )}
-      <Section top={SECTION} title="How it works" />
-      <FactCard>
-        <Fact label="Teams" value={`${min} to ${max} people`} note={past ? `${h.teams} teams took part` : `${h.teams} teams in so far`} />
-        {h.rounds.map((r, i) => (
-          <Fact key={r.name} label={`Round ${i + 1}`} value={r.name} note={r.when} />
-        ))}
-      </FactCard>
-      <Section top={SECTION} title="Tracks" />
-      <FactCard>
-        {h.tracks.map((t) => (
-          <Fact key={t.name} value={t.name} note={t.brief} />
-        ))}
-      </FactCard>
-      <Section top={SECTION} title="Prizes" />
-      <FactCard>
-        {h.prizes.map((p) => (
-          <Fact key={p.place} label={p.place} value={p.prize} />
-        ))}
-      </FactCard>
-      <Section top={SECTION} title="Judged on" />
-      <FactCard>
-        {h.criteria.map((c) => (
-          <Fact key={c.name} label={`${c.weight}%`} value={c.name} />
-        ))}
-      </FactCard>
+      {(size || count || h.rounds.length > 0) && (
+        <>
+          <Section top={SECTION} title="How it works" />
+          <FactCard>
+            {(size || count) && <Fact label="Teams" value={size ?? count!} note={size ? count : undefined} />}
+            {h.rounds.map((r, i) => (
+              <Fact key={`${i}-${r.name}`} label={`Round ${i + 1}`} value={r.name} note={r.when} />
+            ))}
+          </FactCard>
+        </>
+      )}
+      {h.tracks.length > 0 && (
+        <>
+          <Section top={SECTION} title="Tracks" />
+          <FactCard>
+            {h.tracks.map((t, i) => (
+              <Fact key={`${i}-${t.name}`} value={t.name} note={t.brief} />
+            ))}
+          </FactCard>
+        </>
+      )}
+      {h.prizes.length > 0 && (
+        <>
+          <Section top={SECTION} title="Prizes" />
+          <FactCard>
+            {h.prizes.map((p, i) => (
+              <Fact key={`${i}-${p.place}`} label={p.place} value={p.prize} />
+            ))}
+          </FactCard>
+        </>
+      )}
+      {h.criteria.length > 0 && (
+        <>
+          <Section top={SECTION} title="Judged on" />
+          <FactCard>
+            {h.criteria.map((c, i) => (
+              <Fact key={`${i}-${c.name}`} label={`${c.weight}%`} value={c.name} />
+            ))}
+          </FactCard>
+        </>
+      )}
     </>
   );
 }
@@ -135,8 +177,8 @@ function HackathonFacts({ eventId, past }: { eventId: string; past: boolean }) {
 // One line about the room (inRoom 15): no names or counts here. Once you were let in, the room opens from Orbit's Thanks
 // for coming, on Home and on the event page (inRoom 3: you tap to join; nobody's in it till they do); its Open the room
 // pill here moved into that bubble with the event page's Take 1 (19 Nov 2026).
-function MeetupFacts({ eventId }: { eventId: string }) {
-  if (!meetups[eventId]?.inRoom) return null;
+function MeetupFacts({ event: e }: { event: Event }) {
+  if (!(e.inRoom ?? meetups[e.id]?.inRoom)) return null;
   return (
     <>
       <Section top={SECTION} title="Meet people here" />
@@ -153,17 +195,21 @@ function MeetupFacts({ eventId }: { eventId: string }) {
 
 // A fest is one event on Home and Search: its kind, its days, what's on, one tap to book for the whole group (Booking
 // 13), then everything inside it by time, each opening its own sheet (src/app/fest/[fest]/[item].tsx).
-function FestFacts({ eventId }: { eventId: string }) {
-  const f = fests[eventId];
+// A real fest's kind and highlights are its details, its days from its start and end; its insides draw on the event page
+// (X14), and one-tap group booking isn't built for it yet.
+function FestFacts({ event: e }: { event: Event }) {
+  const d = e.details;
+  const f = d ? { type: d.festType, days: festDays(e.startsAt, e.endsAt!), highlights: d.highlights ?? [], oneClick: false } : fests[e.id];
   if (!f) return null;
+  const eventId = e.id;
   const items = festItems[eventId] ?? [];
   return (
     <>
       <Section top={SECTION} title="The fest" />
       <FactCard>
-        <Fact label="Kind of fest" value={f.type} />
+        {f.type && <Fact label="Kind of fest" value={f.type} />}
         <Fact label="When" value={f.days} />
-        <Fact label="What’s on" value={f.highlights.join('\n')} />
+        {f.highlights.length > 0 && <Fact label="What’s on" value={f.highlights.join('\n')} />}
         {f.oneClick && <Fact label="Booking" value="One tap books it" note="Bring up to 9 friends by name, 10 in all. One QR lets you all in." />}
       </FactCard>
       {items.length > 0 && (

@@ -1,7 +1,7 @@
 // Events and hosts as the screens draw them, and the public reads that fill them (Orbit API /public, Discover flow;
 // slice 1, 25 Nov 2026). The types moved here from src/mock.ts so the mock can go without touching a screen. Pure, so
 // events.test.ts runs it on Node; screens pass it `api` from session.ts.
-import type { CategorySlug, EventCard, EventPerson, HostCard, PlaceCard, PublicEvent, PublicFestItem, PublicPerson, WhenChip } from '@orbit/contract';
+import type { CategorySlug, EventCard, EventDetails, EventPerson, HostCard, PlaceCard, PublicEvent, PublicFestItem, PublicPerson, WhenChip } from '@orbit/contract';
 import type { ImageSourcePropType } from 'react-native';
 
 import type { Credit, Tier } from './detail';
@@ -53,6 +53,13 @@ export type Event = PlanEvent &
   interested?: number; // how many tapped I'm interested, as the page was read (a real event's only)
   lineup?: EventPerson[]; // a real event's people, in order, each with the role staff typed (orbit-pm X14)
   festItems?: PublicFestItem[]; // a real fest's insides, in order (X14); a mock fest's are in src/kinds.ts
+  // A real event's kind details (its category's keys), age, hackathon team count and acts, from its full read only; a
+  // mock event's are in src/kinds.ts. `inRoom` comes on cards too.
+  details?: EventDetails;
+  minAge?: 18 | 21 | null;
+  teams?: number | null;
+  acts?: Host[];
+  inRoom?: boolean;
 };
 
 // The terms every event's Terms & Conditions ends with. They follow the Booking and Money flows: one QR per booking
@@ -149,6 +156,9 @@ export function toEvent(c: EventCard | PublicEvent, near?: boolean): Event {
     people: [], // the mock's credits; a real event's people are `lineup`
     ...(full.people?.length && { lineup: full.people }),
     ...(full.festItems?.length && { festItems: full.festItems }),
+    ...(full.details && { details: full.details, minAge: full.minAge ?? null, teams: full.teams ?? null }),
+    ...(full.acts && { acts: full.acts.map(toHost) }),
+    inRoom: c.inRoom,
     ...(near !== undefined && { near }),
   };
 }
