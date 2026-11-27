@@ -357,6 +357,7 @@ export type EventCard = {
 export type PublicEvent = EventCard & {
   about: string | null; agenda: { at: string; item: string }[]; faq: { q: string; a: string }[]; terms: string[];
   vibes: string[]; interested: number; people: EventPerson[]; festItems: PublicFestItem[];
+  acts: HostCard[]; // in order, only hosts that are public and live
   details: EventDetails; minAge: 18 | 21 | null; teams: number | null;
 };
 

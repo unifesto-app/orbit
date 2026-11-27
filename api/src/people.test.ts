@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { and, eq } from "drizzle-orm";
 import sharp from "sharp";
 import { testApp } from "./testkit.ts";
-import { auditLog, eventPeople, events, festItems, hosts, staffGrants } from "./db/schema.ts";
+import { auditLog, eventActs, eventPeople, events, festItems, hosts, staffGrants } from "./db/schema.ts";
 
 // People on events and what's inside a fest (X14): Galaxy writes, the public reads.
 
@@ -65,6 +65,7 @@ test("Galaxy's person and lineup routes are for holders of Hosts only", async ()
     ["PATCH", `/galaxy/fest-items/${ZERO}`, { title: "X" }],
     ["DELETE", `/galaxy/fest-items/${ZERO}`],
     ["PUT", `/galaxy/events/${e.id}/fest-items/order`, { ids: [] }],
+    ["PUT", `/galaxy/events/${e.id}/acts`, { hostIds: [] }],
   ] as [string, string, unknown?][]) {
     assert.equal((await as(nobody)(m, path, body)).status, 404, path);
     assert.equal((await as(a)(m, path, body)).status, 404, path); // the host's own Admin isn't staff
@@ -240,4 +241,84 @@ test("the person sheet shows listed events only, the latest 12 past; fest items 
   assert.equal((await t.call("GET", `/public/events/${shown.slug}`)).body.festItems.length, 1);
   await t.db.update(events).set({ category: "comedy" }).where(eq(events.id, shown.id));
   assert.deepEqual((await t.call("GET", `/public/events/${shown.slug}`)).body.festItems, []);
+});
+
+test("acts: staff set them in order; a hidden act drops off the page but staff see it marked; logged", async () => {
+  const a = await join(), b = await join(), st = await staff();
+  const h = await start(a);
+  const e = await publish(a, h.id, "comedy");
+  const x = await start(b), y = await start(b);
+  const put = (ids: string[]) => as(st)("PUT", `/galaxy/events/${e.id}/acts`, { hostIds: ids });
+  const set = await put([y.id, x.id]);
+  assert.equal(set.status, 200);
+  assert.deepEqual(set.body.acts.map((r: any) => [r.hostId, r.shown]), [[y.id, true], [x.id, true]]);
+  let pub = (await t.call("GET", `/public/events/${e.slug}`)).body;
+  assert.deepEqual(pub.acts.map((r: any) => r.id), [y.id, x.id]);
+  assert.equal(pub.acts[0].slug, y.slug);
+
+  await t.db.update(hosts).set({ visibility: "private" }).where(eq(hosts.id, y.id));
+  pub = (await t.call("GET", `/public/events/${e.slug}`)).body;
+  assert.deepEqual(pub.acts.map((r: any) => r.id), [x.id]);
+  const staffSees = (await as(st)("GET", `/galaxy/events/${e.id}/lineup`)).body.acts;
+  assert.deepEqual(staffSees.map((r: any) => [r.hostId, r.shown]), [[y.id, false], [x.id, true]]);
+  // Lists carry no acts: the full read only.
+  const list = (await t.call("GET", "/public/events")).body;
+  assert.ok(!JSON.stringify(list).includes('"acts"'));
+
+  // An act on the list that has gone hidden doesn't block reordering; adding a hidden host, the event's own host, an
+  // unknown one or the same one twice is refused.
+  assert.equal((await put([x.id, y.id])).status, 200);
+  assert.equal((await put([x.id])).status, 200);
+  assert.equal((await put([y.id])).body.error, "actHidden");
+  assert.equal((await put([h.id])).body.error, "ownAct");
+  assert.equal((await put([ZERO])).body.error, "noHost");
+  assert.equal((await put([x.id, x.id])).status, 400);
+  // Staff on an act (added or already on) can't touch the list.
+  const mine = await start(st);
+  assert.equal((await put([mine.id])).status, 403);
+  await t.db.insert(eventActs).values({ eventId: e.id, hostId: mine.id, position: 2 });
+  assert.equal((await put([x.id])).status, 403);
+  await t.db.delete(eventActs).where(eq(eventActs.hostId, mine.id));
+  // Their own host's event.
+  const own = await publish(st, mine.id);
+  assert.equal((await as(st)("PUT", `/galaxy/events/${own.id}/acts`, { hostIds: [] })).status, 403);
+  assert.equal((await as(st)("PUT", `/galaxy/events/${ZERO}/acts`, { hostIds: [] })).status, 404);
+
+  assert.equal((await put([x.id])).status, 200);
+  const logs = await t.db.select().from(auditLog).where(and(eq(auditLog.action, "events.acts"), eq(auditLog.targetHost, h.id)));
+  assert.equal(logs.length, 4);
+  assert.equal(logs[1]!.actorId, st.me.id);
+  await t.db.delete(events).where(eq(events.id, e.id));
+  assert.equal((await t.db.select().from(eventActs).where(eq(eventActs.eventId, e.id))).length, 0);
+});
+
+test("acts: a host's Admins set them until the event starts; ten at most; their own host refused", async () => {
+  const a = await join(), other = await join();
+  const h = await start(a);
+  const e = await publish(a, h.id, "comedy");
+  const acts = [];
+  for (let i = 0; i < 11; i++) acts.push((await start(i % 2 ? other : await join())).id); // 5 hosts a day each
+  const put = (ids: string[], u = a, id = e.id) => as(u)("PUT", `/events/${id}/acts`, { hostIds: ids });
+
+  const ok = await put(acts.slice(0, 3).reverse());
+  assert.equal(ok.status, 200);
+  assert.deepEqual(ok.body.map((r: any) => r.hostId), acts.slice(0, 3).reverse());
+  assert.deepEqual((await as(a)("GET", `/events/${e.id}/acts`)).body.map((r: any) => r.hostId), acts.slice(0, 3).reverse());
+  assert.equal((await put(acts.slice(0, 10))).status, 200);
+  assert.equal((await put(acts)).status, 400); // the 11th
+  assert.equal((await put([h.id])).body.error, "ownAct");
+  assert.equal((await put([ZERO])).body.error, "noHost");
+  await t.db.update(hosts).set({ status: "paused" }).where(eq(hosts.id, acts[10]!));
+  assert.equal((await put([acts[10]!])).body.error, "actHidden");
+  // Not theirs, or no such event: 404.
+  assert.equal((await put([], other)).status, 404);
+  assert.equal((await as(other)("GET", `/events/${e.id}/acts`)).status, 404);
+  assert.equal((await put([], a, ZERO)).status, 404);
+  assert.equal((await t.call("PUT", `/events/${e.id}/acts`, { hostIds: [] })).status, 401);
+  // Started: locked.
+  await t.db.update(events).set({ startsAt: new Date(t.now() - HOUR) }).where(eq(events.id, e.id));
+  const late = await put([]);
+  assert.equal(late.status, 409);
+  assert.equal(late.body.error, "started");
+  assert.equal((await as(a)("GET", `/events/${e.id}/acts`)).body.length, 10);
 });

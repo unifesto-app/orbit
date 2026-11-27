@@ -321,6 +321,17 @@ export const eventPeople = pgTable(
   (t) => [primaryKey({ columns: [t.eventId, t.personId] }), index().on(t.personId), check("event_people_role_length", sql`char_length(${t.role}) between 1 and 30`)],
 );
 
+// The acts on an event (performers, speakers' outfits, bands): other hosts, shown in `position` order while public and live.
+export const eventActs = pgTable(
+  "event_acts",
+  {
+    eventId: uuid("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+    hostId: uuid("host_id").notNull().references(() => hosts.id, { onDelete: "cascade" }),
+    position: integer("position").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.eventId, t.hostId] }), index().on(t.hostId)],
+);
+
 // One thing inside a fest: a competition, a performance, a workshop or the food. It comes with the fest's booking.
 export const festItems = pgTable(
   "fest_items",

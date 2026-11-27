@@ -41,6 +41,17 @@ export const SetEventPeople = z.object({
 });
 export type SetEventPeople = z.input<typeof SetEventPeople>;
 
+export const MAX_EVENT_ACTS = 10;
+// PUT /galaxy/events/:id/acts and PUT /events/:id/acts: the event's acts (other hosts, public and live), the whole list
+// in the order the page shows it; each once. Any public live host but the event's own; nobody asks the act (staff remove).
+export const SetEventActs = z.object({
+  hostIds: z
+    .array(z.uuid())
+    .max(MAX_EVENT_ACTS)
+    .refine((a) => new Set(a).size === a.length, "Each act once"),
+});
+export type SetEventActs = z.input<typeof SetEventActs>;
+
 export const FEST_ITEM_KINDS = ["Competition", "Performance", "Workshop", "Food"] as const;
 export const FestItemKind = z.enum(FEST_ITEM_KINDS);
 export type FestItemKind = z.infer<typeof FestItemKind>;
@@ -92,5 +103,8 @@ export type PublicPerson = {
 // Galaxy
 export type StaffPerson = { id: string; name: string; headline: string; bio: string | null; links: PersonLink[]; createdAt: string; updatedAt: string };
 export type StaffFestItem = Omit<PublicFestItem, "act"> & { actHostId: string | null };
-// GET /galaxy/events/:id/lineup: the event's people (their full record and role) and its fest items, in order.
-export type StaffLineup = { people: (StaffPerson & { role: string })[]; festItems: StaffFestItem[] };
+// An act as its event's team and staff see it: `shown` is false while its host isn't public and live (the page drops it).
+// GET and PUT /events/:id/acts answer these, in order.
+export type EventAct = { hostId: string; name: string; slug: string; shown: boolean };
+// GET /galaxy/events/:id/lineup: the event's people (their full record and role), its fest items and its acts, in order.
+export type StaffLineup = { people: (StaffPerson & { role: string })[]; festItems: StaffFestItem[]; acts: EventAct[] };

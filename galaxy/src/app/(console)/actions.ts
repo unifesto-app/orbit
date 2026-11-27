@@ -214,6 +214,13 @@ export async function orderFestItems(_: Done, f: FormData) {
   const ids = list(f, "ids", isId);
   return ids ? run("PUT", `/galaxy/events/${path(f, "id")}/fest-items/order`, { ids }) : BROKEN;
 }
+// Acts: the whole list of host ids in order, with the one typed in (`add`) at the end.
+export async function setEventActs(_: Done, f: FormData) {
+  const hostIds = list(f, "hostIds", isId);
+  if (!hostIds) return BROKEN;
+  const add = text(f, "add");
+  return run("PUT", `/galaxy/events/${path(f, "id")}/acts`, { hostIds: add ? [...hostIds, add] : hostIds });
+}
 
 // ─── Staff ───
 export async function grantFeatures(_: Done, f: FormData) {

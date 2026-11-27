@@ -8,7 +8,7 @@ import { Act } from "../../act";
 import { cancelEvent, unpublishEvent } from "../../actions";
 import { time } from "../../requests/status";
 import { KindDetails } from "../details";
-import { FestItems, People } from "../lineup";
+import { Acts, FestItems, People } from "../lineup";
 import { Promote } from "../promote";
 import { EventBadge } from "../status";
 
@@ -110,6 +110,10 @@ async function Event({ params, searchParams }: Pick<PageProps<"/events/[id]">, "
         ) : (
           <Alert>{lineup.error.message}</Alert>
         )}
+      </Container>
+
+      <Container title="Acts" count={lineup.ok ? lineup.data.acts.length : undefined}>
+        {lineup.ok ? <Acts eventId={e.id} acts={lineup.data.acts} /> : <Alert>{lineup.error.message}</Alert>}
       </Container>
 
       {e.category === "fests" && (

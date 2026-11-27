@@ -1,11 +1,11 @@
 import { and, asc, count, desc, eq, gt, inArray, lte, sql } from "drizzle-orm";
 import { Hono, type Context } from "hono";
 import {
-  EditFestItem, EditPerson, type EventPerson, MAX_FEST_ITEMS, NewFestItem, NewPerson, OrderFestItems, type PublicFestItem, type PublicPerson, SetEventPeople,
-  type StaffFestItem, type StaffLineup, type StaffPerson,
+  EditFestItem, EditPerson, type EventAct, type EventPerson, type HostCard, MAX_FEST_ITEMS, NewFestItem, NewPerson, OrderFestItems, type PublicFestItem,
+  type PublicPerson, SetEventActs, SetEventPeople, type StaffFestItem, type StaffLineup, type StaffPerson,
 } from "@orbit/contract";
 import type { Db } from "./db/index.ts";
-import { auditLog, eventPeople, events, festItems, hosts, persons } from "./db/schema.ts";
+import { auditLog, eventActs, eventPeople, events, festItems, hosts, persons } from "./db/schema.ts";
 import { fail, invalid, isUuid, parse, signedIn, type Tx, unlinked } from "./http.ts";
 import { onHost, requireFeature, type StaffEnv } from "./roles/access.ts";
 import { cards } from "./events/public.ts";
@@ -28,27 +28,68 @@ const toStaffItem = (i: Item): StaffFestItem => ({
   id: i.id, title: i.title, kind: i.kind, when: i.when, where: i.where, about: i.about, team: i.team, prize: i.prize, actHostId: i.actHostId,
 });
 
-// The event page's people and fest items. Fest items only on a fest; an act's host only while it's public and live.
-export async function lineupOf(db: Db, eventId: string, category: string | null): Promise<{ people: EventPerson[]; festItems: PublicFestItem[] }> {
+type Host = typeof hosts.$inferSelect;
+const toHostCard = (h: Host): HostCard => ({ id: h.id, slug: h.slug, name: h.name, kind: h.kind, city: h.city, verified: !!h.verifiedAt, logo: h.logo });
+const shownHost = and(eq(hosts.visibility, "public"), eq(hosts.status, "live"));
+
+// The event's acts, in order, as its team and staff see them: hidden ones too, marked.
+export async function actsOf(db: Db | Tx, eventId: string): Promise<EventAct[]> {
+  const rows = await db
+    .select({ hostId: hosts.id, name: hosts.name, slug: hosts.slug, visibility: hosts.visibility, status: hosts.status })
+    .from(eventActs)
+    .innerJoin(hosts, eq(hosts.id, eventActs.hostId))
+    .where(eq(eventActs.eventId, eventId))
+    .orderBy(asc(eventActs.position));
+  return rows.map(({ visibility, status, ...a }) => ({ ...a, shown: visibility === "public" && status === "live" }));
+}
+
+// Acts about to be written: none the event's own host, and each new one on Orbit and public and live (so the page shows
+// it); one already on that has since gone hidden doesn't block reordering or removing others, as with fest items' acts.
+// Read outside the write's transaction; a host deleted since fails the insert's foreign key.
+export async function actsRefused(db: Db, c: Context, hostIds: string[], had: string[], eventHostId: string): Promise<Response | null> {
+  if (hostIds.includes(eventHostId)) return fail(c, 400, "ownAct", "An event's own host can't be one of its acts.");
+  const added = hostIds.filter((id) => !had.includes(id));
+  const found = added.length ? await db.select({ id: hosts.id, visibility: hosts.visibility, status: hosts.status }).from(hosts).where(inArray(hosts.id, added)) : [];
+  if (found.length !== added.length) return fail(c, 400, "noHost", "One of those hosts isn't on Orbit.");
+  if (found.some((h) => h.visibility !== "public" || h.status !== "live")) return fail(c, 409, "actHidden", "One of those hosts isn't public and live, so the page wouldn't show it. Pick another.");
+  return null;
+}
+
+export const actIds = async (db: Db, eventId: string) =>
+  (await db.select({ id: eventActs.hostId }).from(eventActs).where(eq(eventActs.eventId, eventId))).map((a) => a.id);
+
+// Replaces the event's acts with the list, in its order (the caller holds the event's lock).
+export async function writeActs(tx: Tx, eventId: string, hostIds: string[]) {
+  await tx.delete(eventActs).where(eq(eventActs.eventId, eventId));
+  if (hostIds.length) await tx.insert(eventActs).values(hostIds.map((hostId, position) => ({ eventId, hostId, position })));
+}
+
+// The event page's people, fest items and acts. Fest items only on a fest; an act (or a fest item's act) only while its
+// host is public and live.
+export async function lineupOf(db: Db, eventId: string, category: string | null): Promise<{ people: EventPerson[]; festItems: PublicFestItem[]; acts: HostCard[] }> {
   const people = await db
     .select({ id: persons.id, name: persons.name, headline: persons.headline, role: eventPeople.role })
     .from(eventPeople)
     .innerJoin(persons, eq(persons.id, eventPeople.personId))
     .where(eq(eventPeople.eventId, eventId))
     .orderBy(asc(eventPeople.position));
-  if (category !== "fests") return { people, festItems: [] };
+  const acts = (
+    await db.select({ h: hosts }).from(eventActs).innerJoin(hosts, and(eq(hosts.id, eventActs.hostId), shownHost)).where(eq(eventActs.eventId, eventId)).orderBy(asc(eventActs.position))
+  ).map((r) => toHostCard(r.h));
+  if (category !== "fests") return { people, festItems: [], acts };
   const rows = await db
     .select({ item: festItems, host: hosts })
     .from(festItems)
-    .leftJoin(hosts, and(eq(hosts.id, festItems.actHostId), eq(hosts.visibility, "public"), eq(hosts.status, "live")))
+    .leftJoin(hosts, and(eq(hosts.id, festItems.actHostId), shownHost))
     .where(eq(festItems.eventId, eventId))
     .orderBy(asc(festItems.position), asc(festItems.createdAt));
   return {
     people,
     festItems: rows.map(({ item, host: h }) => {
       const { actHostId: _, ...rest } = toStaffItem(item);
-      return { ...rest, act: h ? { id: h.id, slug: h.slug, name: h.name, kind: h.kind, city: h.city, verified: !!h.verifiedAt, logo: h.logo } : null };
+      return { ...rest, act: h ? toHostCard(h) : null };
     }),
+    acts,
   };
 }
 
@@ -171,7 +212,7 @@ export function peopleRoutes({ db, secret, now = Date.now }: Deps) {
       .where(eq(eventPeople.eventId, eventId))
       .orderBy(asc(eventPeople.position));
     const items = await db.select().from(festItems).where(eq(festItems.eventId, eventId)).orderBy(asc(festItems.position), asc(festItems.createdAt));
-    return { people: people.map((r) => ({ ...toStaffPerson(r.p), role: r.role })), festItems: items.map(toStaffItem) };
+    return { people: people.map((r) => ({ ...toStaffPerson(r.p), role: r.role })), festItems: items.map(toStaffItem), acts: await actsOf(db, eventId) };
   };
   const stale = (c: Context) => fail(c, 409, "stale", "This changed since you opened it. Reload and try again.");
 
@@ -203,6 +244,30 @@ export function peopleRoutes({ db, secret, now = Date.now }: Deps) {
       if (!done) return stale(c);
     } catch (err) {
       if (unlinked(err)) return fail(c, 400, "noPerson", "One of those people isn't in Galaxy any more. Reload and try again.");
+      throw err;
+    }
+    return c.json(await lineup(e.id));
+  });
+
+  // PUT /galaxy/events/:id/acts: replaces the whole list, in the order given, under the event's lock. Each act as the
+  // host's own PUT checks it, and none (added or taken off) a host the staff member is on.
+  app.put("/galaxy/events/:id/acts", auth, hostsOnly, async (c) => {
+    const b = await parse(c, SetEventActs);
+    if (!b) return invalid(c);
+    const e = await eventFor(c, c.req.param("id"));
+    if (e instanceof Response) return e;
+    const had = await actIds(db, e.id);
+    const no = await actsRefused(db, c, b.hostIds, had, e.hostId);
+    if (no) return no;
+    if (await onAny(c, [...had, ...b.hostIds])) return ownHost(c); // taking one off counts too
+    try {
+      await db.transaction(async (tx) => {
+        await tx.select({ id: events.id }).from(events).where(eq(events.id, e.id)).for("update");
+        await writeActs(tx, e.id, b.hostIds);
+        await log(tx, c, "events.acts", e.hostId, { eventId: e.id, hostIds: b.hostIds });
+      });
+    } catch (err) {
+      if (unlinked(err)) return fail(c, 400, "noHost", "One of those hosts isn't on Orbit.");
       throw err;
     }
     return c.json(await lineup(e.id));
