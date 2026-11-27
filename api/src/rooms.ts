@@ -232,7 +232,7 @@ export function roomsRoutes({ db, store, secret, notify, media, now = Date.now }
     if ((await store.incr(`roomAsk:${mine.userId}`, DAY)) > ROOM_ASKS_PER_DAY) return fail(c, 429, "tooMany", "You've asked a lot of people today. Try again tomorrow.");
     const pair = [mine.id, them.m.id].sort().join(":");
     const ts = at().toISOString();
-    // The row and its notice together, and no row while a block stands either way: a block landing mid-ask leaves nothing.
+    // The row and its notice together, and no row while a block stands either way. ponytail: a block committing while this transaction is still open can leave an orphan pending row (hidden by visible()) and one anonymous notice; take a pair advisory lock in both if that matters.
     const made = await db.transaction(async (tx) => {
       const free = sql`not exists (select 1 from user_blocks k where (k.blocker_id = ${mine.userId} and k.blocked_id = ${them.m.userId})
                                                            or (k.blocker_id = ${them.m.userId} and k.blocked_id = ${mine.userId}))`;
