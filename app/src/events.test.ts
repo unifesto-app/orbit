@@ -212,6 +212,13 @@ test('a place to play keeps its tile and area, and is near within 25 km only whe
   assert.deepEqual(found('ps5'), [h.id]);
   assert.deepEqual(found('turf'), ['turf']);
   assert.deepEqual(found('badminton madhapur'), ['turf']);
+  // The tile's word finds a place whose stations don't say it.
+  const consoles = toPlace({ ...p, id: 'consoles', stations: 'PC, PS5' });
+  const pitch = toPlace({ ...p, id: 'pitch', tile: 'sports', stations: 'Pitch 1' });
+  assert.equal(pitch.about, 'Sports · Pitch 1 · Madhapur');
+  const tiled = (q: string) => search({ q, free: false }, [], [consoles, pitch], Date.now()).hosts.map((x) => x.id);
+  assert.deepEqual(tiled('gaming'), ['consoles']);
+  assert.deepEqual(tiled('sports'), ['pitch']);
   const calls: string[] = [];
   const places = eventsApi({ call: async (m: string, path: string) => (calls.push(`${m} ${path}`), { ok: true as const, data: { places: [] } as never }) }).places;
   await places({ city: 'Pune' });

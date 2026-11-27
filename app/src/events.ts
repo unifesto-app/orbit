@@ -100,7 +100,7 @@ export function toHost(c: HostCard): Host {
 export const toPlace = (c: PlaceCard): Host & { tile: CategorySlug } => ({
   ...toHost(c),
   area: c.area,
-  about: `${c.stations} · ${c.area}`, // so typed search finds "turf" or "badminton" (src/search.ts)
+  about: `${c.tile === 'gaming' ? 'Gaming' : 'Sports'} · ${c.stations} · ${c.area}`, // so typed search finds "gaming", "turf" or "badminton" (src/search.ts)
   tile: c.tile,
   ...(c.distanceKm !== null && { near: c.distanceKm <= 25 }),
 });
