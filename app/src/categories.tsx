@@ -131,7 +131,7 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', gap: space.small },
   // Centred in the face below the drawing, since a category card has no button at the bottom.
   text: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingBottom: space.small },
-  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: color.accent },
+  dot: { width: 6, height: 6, borderCurve: 'continuous', borderRadius: 3, backgroundColor: color.accent },
   // Home's host card name, shrinking a little in the narrow row of four.
   name: { flexShrink: 1, fontFamily: font.title, fontSize: 14, color: color.text, textAlign: 'center' },
 });

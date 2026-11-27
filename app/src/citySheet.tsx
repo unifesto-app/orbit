@@ -125,7 +125,7 @@ const styles = StyleSheet.create({
   list: { marginTop: space.small },
   heading: { marginTop: space.big, marginBottom: space.small, marginHorizontal: 20, fontFamily: font.title, fontSize: 15, color: color.text },
   chips: { marginHorizontal: 20, flexDirection: 'row', flexWrap: 'wrap', gap: space.small },
-  chip: { height: 36, paddingHorizontal: 14, borderRadius: 18, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  chip: { height: 36, paddingHorizontal: 14, borderCurve: 'continuous', borderRadius: 18, flexDirection: 'row', alignItems: 'center', gap: 6 },
   chipText: { fontFamily: font.medium, fontSize: 14, color: color.text },
   letter: {
     paddingHorizontal: 20,
@@ -140,6 +140,6 @@ const styles = StyleSheet.create({
   rowName: { flexShrink: 0, fontFamily: font.medium, fontSize: 15, color: color.text },
   rowState: { flex: 1, minWidth: 0, fontFamily: font.text, fontSize: 13, color: color.secondary },
   // The chosen city: the accent goes on a dot, never on text.
-  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: color.accent },
+  dot: { width: 6, height: 6, borderCurve: 'continuous', borderRadius: 3, backgroundColor: color.accent },
   empty: { marginTop: space.big, marginHorizontal: 20, fontFamily: font.text, fontSize: 13, lineHeight: 18, color: color.secondary },
 });

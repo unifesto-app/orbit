@@ -71,6 +71,6 @@ const styles = StyleSheet.create({
   name: { fontFamily: font.title, fontSize: 17, lineHeight: 22, color: color.text },
   address: { marginTop: 2, fontFamily: font.text, fontSize: 14, lineHeight: 20, color: color.secondary },
   // A wide frosted pill, as Set location and Use my current location.
-  wide: { height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center' },
+  wide: { height: 50, borderCurve: 'continuous', borderRadius: 25, alignItems: 'center', justifyContent: 'center' },
   label: { fontFamily: font.title, fontSize: 15, color: color.text },
 });

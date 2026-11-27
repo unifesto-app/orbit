@@ -120,11 +120,11 @@ const styles = StyleSheet.create({
   top: { marginHorizontal: 20, alignItems: 'flex-start' },
   // A circle in a thin frosted rim (owner, 17 Nov 2026: "instead of squared profile use rounded one", then people's
   // photos too; it was a rounded square from 15 Nov's "use squares for 1:1 instead of circles"). Host logos stay square.
-  photoRim: { padding: rim, borderRadius: around(PHOTO / 2, rim) },
+  photoRim: { padding: rim, borderCurve: 'continuous', borderRadius: around(PHOTO / 2, rim) },
   name: { marginTop: 12, fontFamily: font.headline, fontSize: 26, lineHeight: 32, color: color.text },
   headline: { fontFamily: font.text, fontSize: 13, lineHeight: 18, color: color.secondary },
   row: { marginTop: 16, flexDirection: 'row', flexWrap: 'wrap', gap: space.small },
   bio: { marginTop: 16, fontFamily: font.text, fontSize: 15, lineHeight: 22, color: color.secondary },
-  link: { height: 32, paddingHorizontal: 12, borderRadius: 16, justifyContent: 'center' },
+  link: { height: 32, paddingHorizontal: 12, borderCurve: 'continuous', borderRadius: 16, justifyContent: 'center' },
   linkText: { fontFamily: font.title, fontSize: 13, color: color.text },
 });

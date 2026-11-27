@@ -98,10 +98,10 @@ const styles = StyleSheet.create({
   place: { position: 'absolute', left: 20, right: 20 },
   // A frosted pill like the ticket bar, darkened so its white text reads over anything; corners nest round its button.
   note: { minHeight: BUTTON + 2 * PAD, padding: PAD, flexDirection: 'row', alignItems: 'center', gap: space.small },
-  fill: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: BUTTON / 2 + PAD },
+  fill: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderCurve: 'continuous', borderRadius: BUTTON / 2 + PAD },
   shade: { backgroundColor: `${color.ground}80` },
   text: { flex: 1, paddingLeft: 12, fontFamily: font.medium, fontSize: 14, color: color.text },
-  button: { height: BUTTON, paddingHorizontal: 14, borderRadius: BUTTON / 2, justifyContent: 'center' },
+  button: { height: BUTTON, paddingHorizontal: 14, borderCurve: 'continuous', borderRadius: BUTTON / 2, justifyContent: 'center' },
   buttonText: { fontFamily: font.title, fontSize: 13, color: color.text },
-  close: { width: BUTTON, height: BUTTON, borderRadius: BUTTON / 2, alignItems: 'center', justifyContent: 'center' },
+  close: { width: BUTTON, height: BUTTON, borderCurve: 'continuous', borderRadius: BUTTON / 2, alignItems: 'center', justifyContent: 'center' },
 });

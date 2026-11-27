@@ -554,13 +554,13 @@ const styles = StyleSheet.create({
   ask: { gap: 6 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.small },
   // A field as Account's (Field in account/kit): a 44 frosted pill.
-  field: { marginTop: 2, height: 44, paddingHorizontal: 16, borderRadius: 22, justifyContent: 'center' },
+  field: { marginTop: 2, height: 44, paddingHorizontal: 16, borderCurve: 'continuous', borderRadius: 22, justifyContent: 'center' },
   fieldText: { height: '100%', fontFamily: font.text, fontSize: 15, color: color.text },
   check: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   // Round, as every control (never squared); Sage once ticked, an element.
-  box: { width: 24, height: 24, borderRadius: 12, borderWidth: 1.5, borderColor: stoneAt(0.32), alignItems: 'center', justifyContent: 'center' },
+  box: { width: 24, height: 24, borderCurve: 'continuous', borderRadius: 12, borderWidth: 1.5, borderColor: stoneAt(0.32), alignItems: 'center', justifyContent: 'center' },
   boxOn: { backgroundColor: color.accent, borderColor: color.accent },
-  radio: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, borderColor: stoneAt(0.32), alignItems: 'center', justifyContent: 'center' },
+  radio: { width: 22, height: 22, borderCurve: 'continuous', borderRadius: 11, borderWidth: 1.5, borderColor: stoneAt(0.32), alignItems: 'center', justifyContent: 'center' },
   radioOn: { borderColor: color.accent },
-  radioDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: color.accent },
+  radioDot: { width: 12, height: 12, borderCurve: 'continuous', borderRadius: 6, backgroundColor: color.accent },
 });

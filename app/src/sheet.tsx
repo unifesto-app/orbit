@@ -250,6 +250,6 @@ export const styles = StyleSheet.create({
   line: { fontFamily: font.text, fontSize: 13, lineHeight: 18, color: color.secondary },
   link: { color: color.text, textDecorationLine: 'underline' },
   pair: { marginHorizontal: 20, flexDirection: 'row', justifyContent: 'center', gap: space.small },
-  way: { height: WAY, borderRadius: WAY / 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: space.small },
+  way: { height: WAY, borderCurve: 'continuous', borderRadius: WAY / 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: space.small },
   wayText: { fontFamily: font.title, fontSize: 14, color: color.text },
 });

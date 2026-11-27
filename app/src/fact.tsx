@@ -45,7 +45,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 20,
     padding: PAD,
     gap: PAD,
-    borderRadius: around(radius.sm, PAD),
+    borderCurve: 'continuous', borderRadius: around(radius.sm, PAD),
     borderWidth: 1,
     borderColor: color.border,
     backgroundColor: color.card,

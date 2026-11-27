@@ -356,7 +356,7 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.7 },
   // Left, like the event page's head (Take 2, 19 Nov 2026; it was centred).
   head: { marginHorizontal: 20, alignItems: 'flex-start' },
-  logoRim: { padding: rim, borderRadius: around(radius.md, rim) },
+  logoRim: { padding: rim, borderCurve: 'continuous', borderRadius: around(radius.md, rim) },
   seated: { marginTop: -(LOGO / 2 + rim) },
   nameRow: { marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 6 },
   // The event title's size.
@@ -364,11 +364,11 @@ const styles = StyleSheet.create({
   meta: { fontFamily: font.text, fontSize: 13, lineHeight: 18, color: color.secondary },
   badges: { marginTop: space.small, flexDirection: 'row', alignItems: 'center', gap: space.small },
   // Wider than the cards' Follow, at View ticket's size (owner: fully round, "even follow and following").
-  follow: { height: 44, paddingHorizontal: 32, borderRadius: 22, justifyContent: 'center' },
+  follow: { height: 44, paddingHorizontal: 32, borderCurve: 'continuous', borderRadius: 22, justifyContent: 'center' },
   followText: { fontFamily: font.title, fontSize: 15, color: color.text },
   followingText: { color: color.secondary },
   followRow: { marginTop: 16, flexDirection: 'row', gap: space.small },
-  newEvents: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  newEvents: { width: 44, height: 44, borderCurve: 'continuous', borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   prose: { marginHorizontal: 20, fontFamily: font.text, fontSize: 15, lineHeight: 22, color: color.secondary },
   stations: { gap: space.big }, // a big gap between cards
   rule: { marginTop: space.small, fontSize: 13, lineHeight: 18 },

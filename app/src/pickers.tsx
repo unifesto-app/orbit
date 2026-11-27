@@ -88,18 +88,18 @@ export function Steps<K extends string>({ steps, at, onPick }: { steps: readonly
 }
 
 const styles = StyleSheet.create({
-  steps: { height: 40, borderRadius: 20, padding: STEPS_PAD, flexDirection: 'row' },
+  steps: { height: 40, borderCurve: 'continuous', borderRadius: 20, padding: STEPS_PAD, flexDirection: 'row' },
   // The tab bar's lighter pill for the open tab.
-  slide: { position: 'absolute', top: STEPS_PAD, bottom: STEPS_PAD, left: STEPS_PAD, borderRadius: 16, backgroundColor: stoneAt(0.16), borderWidth: StyleSheet.hairlineWidth, borderColor: stoneAt(0.24) },
+  slide: { position: 'absolute', top: STEPS_PAD, bottom: STEPS_PAD, left: STEPS_PAD, borderCurve: 'continuous', borderRadius: 16, backgroundColor: stoneAt(0.16), borderWidth: StyleSheet.hairlineWidth, borderColor: stoneAt(0.24) },
   step: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   stepText: { fontFamily: font.title, fontSize: 14, color: color.text },
   stepOff: { color: color.secondary },
-  chip: { height: 36, paddingHorizontal: 14, borderRadius: 18, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  chip: { height: 36, paddingHorizontal: 14, borderCurve: 'continuous', borderRadius: 18, flexDirection: 'row', alignItems: 'center', gap: 6 },
   chipText: { fontFamily: font.medium, fontSize: 14, color: color.text },
-  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: color.accent },
+  dot: { width: 6, height: 6, borderCurve: 'continuous', borderRadius: 3, backgroundColor: color.accent },
   off: { opacity: 0.35 },
   stepper: { flexDirection: 'row', alignItems: 'center', gap: space.small },
-  round: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  round: { width: 32, height: 32, borderCurve: 'continuous', borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   sign: { fontFamily: font.title, fontSize: 18, lineHeight: 22, color: color.text },
   value: { minWidth: 20, textAlign: 'center', fontFamily: font.title, fontSize: 15, color: color.text },
 });

@@ -225,7 +225,7 @@ function Price({ event: e, status }: { event: Event; status: Status }) {
 // `corner` 0 for a poster that runs to a card's edge, where the card's own corners round it.
 export function Poster({ media, width, label, corner = radius.sm }: { media: MediaItem; width: number; label: string; corner?: number }) {
   return (
-    <View style={[styles.poster, { width, borderRadius: corner }]}>
+    <View style={[styles.poster, { width, borderCurve: 'continuous', borderRadius: corner }]}>
       <Media media={media} label={`Poster for ${label}`} />
     </View>
   );
@@ -238,7 +238,7 @@ export function Poster({ media, width, label, corner = radius.sm }: { media: Med
 // one", then "round them too"); hosts' logos stay rounded squares.
 export function Monogram({ mark, size, round = false }: { mark: Pick<Host, 'initials' | 'bg' | 'fg'>; size: number; round?: boolean }) {
   return (
-    <View style={[styles.monogram, { width: size, height: size, borderRadius: round ? size / 2 : radius.md, backgroundColor: mark.bg }]}>
+    <View style={[styles.monogram, { width: size, height: size, borderCurve: 'continuous', borderRadius: round ? size / 2 : radius.md, backgroundColor: mark.bg }]}>
       <Text style={[styles.monogramText, { color: mark.fg, fontSize: Math.round(size * 0.34) }]}>{mark.initials}</Text>
     </View>
   );
@@ -280,7 +280,7 @@ export function SeatCard({
           square the rim's width bigger than it, clipped to the half above the card, with the square seated in it. */}
       {dome && (
         <View style={[styles.domeClip, { left, width: box, height: box / 2 }]}>
-          <Glass style={{ width: box, height: box, borderRadius: around(radius.md, rim) }} />
+          <Glass style={{ width: box, height: box, borderCurve: 'continuous', borderRadius: around(radius.md, rim) }} />
         </View>
       )}
       <View style={[styles.seat, { left: left + rim, top: rim }]}>{seat}</View>
@@ -703,7 +703,7 @@ export const Waiting = () => <View style={styles.missing} />;
 export function Verified({ size = 18 }: { size?: number }) {
   return (
     <View style={[styles.verified, { width: size, height: size }]} accessible accessibilityRole="image" accessibilityLabel="Verified">
-      <View style={[styles.verifiedDisc, { width: size / 2, height: size / 2, borderRadius: size / 4 }]} />
+      <View style={[styles.verifiedDisc, { width: size / 2, height: size / 2, borderCurve: 'continuous', borderRadius: size / 4 }]} />
       <Icon name="verified" size={size} color={color.accent} />
     </View>
   );
@@ -784,23 +784,23 @@ const styles = StyleSheet.create({
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   from: { fontFamily: font.medium, fontSize: 13, color: color.text },
   // Fully round, as every action pill (the 32pt small one).
-  smallPill: { height: 32, paddingHorizontal: 12, borderRadius: 16, justifyContent: 'center' },
+  smallPill: { height: 32, paddingHorizontal: 12, borderCurve: 'continuous', borderRadius: 16, justifyContent: 'center' },
   smallPillText: { fontFamily: font.title, fontSize: 13, color: color.text },
   mutedText: { color: color.secondary },
   meta: { fontFamily: font.text, fontSize: 13, color: color.secondary },
   small: { fontFamily: font.text, fontSize: 12, color: color.secondary },
   rowCircle: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   // Circles (owner, 15 Nov 2026: "circle for love and user profile"), the two exceptions to the one corner.
-  rowGlass: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  rowGlass: { width: 36, height: 36, borderCurve: 'continuous', borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   priceRow: { marginTop: 2, flexDirection: 'row', alignItems: 'baseline', gap: 10 },
   price: { fontFamily: font.price, fontSize: 15, color: color.text },
   poster: { overflow: 'hidden' },
   monogram: { alignItems: 'center', justifyContent: 'center' },
   monogramText: { fontFamily: font.headline },
-  statusDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: color.accent },
+  statusDot: { width: 6, height: 6, borderCurve: 'continuous', borderRadius: 3, backgroundColor: color.accent },
   statusSoon: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: color.accent },
   statusClosed: { backgroundColor: color.secondary },
-  tag: { minHeight: 22, paddingHorizontal: 8, paddingVertical: 1, borderRadius: radius.sm, backgroundColor: color.raised, justifyContent: 'center' },
+  tag: { minHeight: 22, paddingHorizontal: 8, paddingVertical: 1, borderCurve: 'continuous', borderRadius: radius.sm, backgroundColor: color.raised, justifyContent: 'center' },
   tagText: { fontFamily: font.medium, fontSize: 12, color: color.text },
   searchBox: {
     height: SEARCH_BOX,
@@ -808,11 +808,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.small,
-    borderRadius: SEARCH_BOX / 2, // a pill, like every button
+    borderCurve: 'continuous', borderRadius: SEARCH_BOX / 2, // a pill, like every button
   },
   searchInput: { flex: 1, height: '100%', fontFamily: font.text, fontSize: 15, color: color.text },
-  cardRim: { padding: rim, borderRadius: RIM },
-  seatFace: { borderRadius: FACE, backgroundColor: color.card, paddingHorizontal: space.small, alignItems: 'center', gap: 2 },
+  cardRim: { padding: rim, borderCurve: 'continuous', borderRadius: RIM },
+  seatFace: { borderCurve: 'continuous', borderRadius: FACE, backgroundColor: color.card, paddingHorizontal: space.small, alignItems: 'center', gap: 2 },
   wash: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, pointerEvents: 'none' },
   domeClip: { position: 'absolute', top: 0, overflow: 'hidden' },
   seat: { position: 'absolute' },
@@ -841,19 +841,19 @@ const styles = StyleSheet.create({
   saysLine: { marginLeft: 28 + space.small, marginBottom: 6 },
   saysRow: { flexDirection: 'row', alignItems: 'flex-end', gap: space.small },
   // 20 round with the 6 tail corner on the speaker's side, Charcoal (src/orbitSays.tsx).
-  theirs: { maxWidth: '80%', paddingVertical: 10, paddingHorizontal: 14, borderRadius: 20, borderBottomLeftRadius: 6, borderWidth: StyleSheet.hairlineWidth, backgroundColor: groundAt(0.6), borderColor: stoneAt(0.12) },
+  theirs: { maxWidth: '80%', paddingVertical: 10, paddingHorizontal: 14, borderCurve: 'continuous', borderRadius: 20, borderBottomLeftRadius: 6, borderWidth: StyleSheet.hairlineWidth, backgroundColor: groundAt(0.6), borderColor: stoneAt(0.12) },
   saysText: { fontFamily: font.text, fontSize: 16, lineHeight: 22, color: color.text },
   sheetHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   sheetTitle: { fontFamily: font.headline, fontSize: 20, color: color.text },
   sheetNote: { marginTop: 2, fontFamily: font.medium, fontSize: 14, color: color.secondary },
   menuScrim: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
-  menu: { position: 'absolute', right: 20, minWidth: 200, padding: space.small, borderRadius: FACE, overflow: 'hidden' },
-  menuFill: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: FACE },
+  menu: { position: 'absolute', right: 20, minWidth: 200, padding: space.small, borderCurve: 'continuous', borderRadius: FACE, overflow: 'hidden' },
+  menuFill: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderCurve: 'continuous', borderRadius: FACE },
   menuShade: { backgroundColor: `${color.ground}80` },
   menuItem: {
     height: 44,
     paddingHorizontal: 12,
-    borderRadius: radius.sm,
+    borderCurve: 'continuous', borderRadius: radius.sm,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -862,14 +862,14 @@ const styles = StyleSheet.create({
   menuItemPressed: { backgroundColor: stoneAt(0.08) },
   menuText: { fontFamily: font.medium, fontSize: 15, color: color.text },
   // A circle, as every icon-only button (owner, 15 Nov 2026: "never use squared buttons").
-  backGlass: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
-  closeGlass: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  backGlass: { width: 44, height: 44, borderCurve: 'continuous', borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  closeGlass: { width: 32, height: 32, borderCurve: 'continuous', borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   verified: { alignItems: 'center', justifyContent: 'center' },
   verifiedDisc: { position: 'absolute', backgroundColor: color.text },
   // Centred, with Home's notice type, as Search's empty state.
   missing: { flex: 1, justifyContent: 'center', paddingHorizontal: 20, gap: 4, backgroundColor: color.ground },
   missingTitle: { fontFamily: font.title, fontSize: 16, color: color.text, textAlign: 'center' },
   missingText: { fontFamily: font.text, fontSize: 14, lineHeight: 20, color: color.secondary, textAlign: 'center' },
-  wideButton: { marginTop: space.small, height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center' },
+  wideButton: { marginTop: space.small, height: 50, borderCurve: 'continuous', borderRadius: 25, alignItems: 'center', justifyContent: 'center' },
   buttonText: { fontFamily: font.title, fontSize: 14, color: color.text },
 });

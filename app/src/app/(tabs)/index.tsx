@@ -656,22 +656,22 @@ const styles = StyleSheet.create({
   header: { height: HEADER, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.small },
   // A capsule like the tab bar's, the bar's height (taller with big text); its words hug it, so it narrows when the city
   // folds away, and a long name ends in … before it reaches the profile.
-  place: { minHeight: HEADER, paddingVertical: 4, borderRadius: HEADER / 2, paddingLeft: 10, paddingRight: 16, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  place: { minHeight: HEADER, paddingVertical: 4, borderCurve: 'continuous', borderRadius: HEADER / 2, paddingLeft: 10, paddingRight: 16, flexDirection: 'row', alignItems: 'center', gap: 8 },
   shrink: { flexShrink: 1 },
   areaRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   area: { fontFamily: font.headline, fontSize: 15, color: color.text },
   city: { fontFamily: font.text, fontSize: 12, color: color.secondary },
   // A ring like the chat orb's round your own circle.
-  profileRim: { width: HEADER, height: HEADER, borderRadius: HEADER / 2, padding: 4 },
+  profileRim: { width: HEADER, height: HEADER, borderCurve: 'continuous', borderRadius: HEADER / 2, padding: 4 },
   bell: { marginLeft: 'auto' }, // beside the profile, the location keeping the rest
-  bellGlass: { width: HEADER, height: HEADER, borderRadius: HEADER / 2, alignItems: 'center', justifyContent: 'center' },
-  unread: { position: 'absolute', top: 6, right: 7, width: 10, height: 10, borderRadius: 5, backgroundColor: color.accent, borderWidth: 2, borderColor: color.ground },
-  round: { flex: 1, borderRadius: HEADER / 2 - 4, backgroundColor: color.fill, alignItems: 'center', justifyContent: 'center' },
+  bellGlass: { width: HEADER, height: HEADER, borderCurve: 'continuous', borderRadius: HEADER / 2, alignItems: 'center', justifyContent: 'center' },
+  unread: { position: 'absolute', top: 6, right: 7, width: 10, height: 10, borderCurve: 'continuous', borderRadius: 5, backgroundColor: color.accent, borderWidth: 2, borderColor: color.ground },
+  round: { flex: 1, borderCurve: 'continuous', borderRadius: HEADER / 2 - 4, backgroundColor: color.fill, alignItems: 'center', justifyContent: 'center' },
   initial: { fontFamily: font.headline, fontSize: 17, color: color.text },
 
   stackToggle: { alignSelf: 'center', marginTop: 10 },
   // Very small (owner, 15 Nov 2026); hitSlop keeps the tap target near 44px.
-  stackToggleGlass: { height: 24, paddingHorizontal: 10, borderRadius: 12, justifyContent: 'center' },
+  stackToggleGlass: { height: 24, paddingHorizontal: 10, borderCurve: 'continuous', borderRadius: 12, justifyContent: 'center' },
   stackToggleText: { fontFamily: font.title, fontSize: 11, color: color.text },
 
   ticketTitle: { fontFamily: font.title, fontSize: 15, lineHeight: 20, color: color.text },
@@ -680,8 +680,8 @@ const styles = StyleSheet.create({
 
   stack: { marginHorizontal: 20 },
   stackCard: { position: 'absolute', top: 0, left: 0, right: 0, transformOrigin: 'top' },
-  stackVeil: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: RIM, backgroundColor: color.ground, pointerEvents: 'none' },
-  ticketCard: { height: TICKET_FACE, flexDirection: 'row', borderRadius: FACE, backgroundColor: color.card, padding: CARD_INSET, gap: space.small },
+  stackVeil: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderCurve: 'continuous', borderRadius: RIM, backgroundColor: color.ground, pointerEvents: 'none' },
+  ticketCard: { height: TICKET_FACE, flexDirection: 'row', borderCurve: 'continuous', borderRadius: FACE, backgroundColor: color.card, padding: CARD_INSET, gap: space.small },
   ticketText: { justifyContent: 'space-between' },
   ticketFoot: { flexDirection: 'row', alignItems: 'center', gap: space.small },
   feed: { marginHorizontal: 20, gap: 20 },
@@ -690,7 +690,7 @@ const styles = StyleSheet.create({
   feedRow: { flexDirection: 'row', alignItems: 'center', gap: 20 },
   feedText: { gap: 3 },
   // The logo's 6 corner plus a 2 ring of the page, 6 over the poster's bottom right.
-  logoOnPoster: { position: 'absolute', right: -6, bottom: -6, padding: 2, borderRadius: around(radius.md, 2), backgroundColor: color.ground },
+  logoOnPoster: { position: 'absolute', right: -6, bottom: -6, padding: 2, borderCurve: 'continuous', borderRadius: around(radius.md, 2), backgroundColor: color.ground },
   feedHost: { fontFamily: font.medium, fontSize: 12, color: color.secondary },
   feedTitle: { fontFamily: font.title, fontSize: 15, lineHeight: 20, color: color.text },
   feedWhen: { fontFamily: font.text, fontSize: 13, color: color.secondary },
@@ -700,23 +700,23 @@ const styles = StyleSheet.create({
   hostCardAbout: { fontFamily: font.text, fontSize: 11, color: color.secondary, textAlign: 'center' },
   // Fully round, like every action pill (owner: "even follow and following").
   followTap: { marginTop: 'auto', marginBottom: space.small },
-  followSmall: { height: 32, paddingHorizontal: 16, borderRadius: 16, justifyContent: 'center' },
+  followSmall: { height: 32, paddingHorizontal: 16, borderCurve: 'continuous', borderRadius: 16, justifyContent: 'center' },
   followSmallText: { fontFamily: font.title, fontSize: 13, color: color.text },
   followingText: { color: color.secondary },
 
 
 
   grid: { marginHorizontal: 20, flexDirection: 'row', flexWrap: 'wrap', columnGap: space.big, rowGap: space.big },
-  cardRim: { padding: FRAME, borderRadius: RIM },
-  gridRim: { padding: FRAME, borderRadius: RIM },
-  gridCard: { borderRadius: FACE, backgroundColor: color.card, overflow: 'hidden' },
+  cardRim: { padding: FRAME, borderCurve: 'continuous', borderRadius: RIM },
+  gridRim: { padding: FRAME, borderCurve: 'continuous', borderRadius: RIM },
+  gridCard: { borderCurve: 'continuous', borderRadius: FACE, backgroundColor: color.card, overflow: 'hidden' },
   gridBody: { padding: CARD_INSET, gap: 2 }, // padded on its own; the 2px is line spacing within the text
   // 40 above, as a section; the poster card's own padding (a poster card keeps 8, not the text cards' 16).
   ad: { marginTop: 40, marginHorizontal: 20 },
   // The words over the promoted poster, a text card's 16 in from its edges.
   adOver: { position: 'absolute', left: 0, right: 0, bottom: 0, padding: TEXT_PAD, gap: 4 },
   adHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  adMark: { height: 22, paddingHorizontal: 8, borderRadius: 11, justifyContent: 'center' },
+  adMark: { height: 22, paddingHorizontal: 8, borderCurve: 'continuous', borderRadius: 11, justifyContent: 'center' },
   adMarkText: { fontFamily: font.medium, fontSize: 11, color: color.text },
   adTitle: { fontFamily: font.title, fontSize: 18, lineHeight: 23, color: color.text },
   adMeta: { flexShrink: 1, fontFamily: font.text, fontSize: 13, color: stoneAt(0.8) },
@@ -725,8 +725,8 @@ const styles = StyleSheet.create({
   gridPrice: { fontFamily: font.price, fontSize: 13, color: color.text },
   // Fully round (owner: "rounded view ticket and view events and book ticket"). Pills are the exception to nested
   // corners: the card around them keeps its 14px face rather than growing to fit a pill.
-  button: { height: 44, paddingHorizontal: 18, borderRadius: 22, justifyContent: 'center' },
+  button: { height: 44, paddingHorizontal: 18, borderCurve: 'continuous', borderRadius: 22, justifyContent: 'center' },
   buttonText: { fontFamily: font.title, fontSize: 14, color: color.text },
-  buttonSmall: { height: 32, paddingHorizontal: 12, borderRadius: 16, justifyContent: 'center' },
+  buttonSmall: { height: 32, paddingHorizontal: 12, borderCurve: 'continuous', borderRadius: 16, justifyContent: 'center' },
   buttonSmallText: { fontFamily: font.title, fontSize: 13, color: color.text },
 });

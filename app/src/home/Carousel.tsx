@@ -279,7 +279,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    borderRadius: around(BOTTOM, rim),
+    borderCurve: 'continuous', borderRadius: around(BOTTOM, rim),
   },
   clip: {
     borderBottomLeftRadius: BOTTOM,
@@ -295,12 +295,12 @@ const styles = StyleSheet.create({
   pillGlass: {
     height: 34,
     paddingHorizontal: 14,
-    borderRadius: 17, // fully round (owner: "rounded view ticket and view events and book ticket")
+    borderCurve: 'continuous', borderRadius: 17, // fully round (owner: "rounded view ticket and view events and book ticket")
     justifyContent: 'center',
   },
   pillText: { fontFamily: font.title, fontSize: 13, color: color.text },
   // Centred on the pill's height (34): 24 tall, 5 lower.
-  mark: { position: 'absolute', left: 20, bottom: space.small + 5, height: 24, paddingHorizontal: 10, borderRadius: 12, justifyContent: 'center', pointerEvents: 'none' },
+  mark: { position: 'absolute', left: 20, bottom: space.small + 5, height: 24, paddingHorizontal: 10, borderCurve: 'continuous', borderRadius: 12, justifyContent: 'center', pointerEvents: 'none' },
   markText: { fontFamily: font.medium, fontSize: 11, color: color.text },
   dots: {
     marginTop: space.small,
@@ -312,13 +312,13 @@ const styles = StyleSheet.create({
   dot: {
     width: 6,
     height: 6,
-    borderRadius: 3,
+    borderCurve: 'continuous', borderRadius: 3,
     backgroundColor: stoneAt(0.3),
   },
   active: {
     width: 18,
     height: 6,
-    borderRadius: 3,
+    borderCurve: 'continuous', borderRadius: 3,
     backgroundColor: stoneAt(0.3),
     overflow: 'hidden',
   },

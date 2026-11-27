@@ -168,8 +168,16 @@ test('the phone’s UPI apps: ours first, in our order, then the rest', () => {
     { id: 'indwin.c3.shareapp', app: 'indwin.c3.shareapp', name: 'slice', icon: 'iVBOR' },
     { id: 'com.x.pay', app: 'com.x.pay', name: 'com.x.pay' },
   ]);
-  const iosMore = [{ appName: { appName: 'Kotak811', shortcode: 'kotakbank' } }, { appName: 'Jupiter Money' }];
+  // As an iPhone reported them (27 Nov 2026): the shortcode under appPackageName.
+  const iosMore = [
+    { appName: { appName: 'Google Pay', appPackageName: 'google_pay' } },
+    { appName: { appName: 'Slice', appPackageName: 'slice' } },
+    { appName: { appName: 'Kotak811', appPackageName: 'kotakbank' } },
+    { appName: 'Jupiter Money' },
+  ];
   assert.deepEqual(upiOnPhone(iosMore, 'ios'), [
+    { id: 'gpay', app: 'google_pay', name: 'Google Pay' },
+    { id: 'slice', app: 'slice', name: 'Slice' },
     { id: 'kotakbank', app: 'kotakbank', name: 'Kotak811' },
   ]); // a bare name we don't list has no shortcode to open it by, so it's left out
   assert.equal(payName({ kind: 'upiApp', id: 'indwin.c3.shareapp', name: 'slice' }), 'slice');

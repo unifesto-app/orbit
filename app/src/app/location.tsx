@@ -63,9 +63,9 @@ export default function LocationScreen() {
 const styles = StyleSheet.create({
   grow: { flex: 1, minWidth: 0 },
   // The Settings pill in the blocked note (the sheet's own close is an X, CloseButton in src/rows.tsx).
-  close: { height: 32, paddingHorizontal: 12, borderRadius: 16, justifyContent: 'center' },
+  close: { height: 32, paddingHorizontal: 12, borderCurve: 'continuous', borderRadius: 16, justifyContent: 'center' },
   closeText: { fontFamily: font.title, fontSize: 13, color: color.text },
-  current: { marginTop: space.small, marginHorizontal: 20, height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center' },
+  current: { marginTop: space.small, marginHorizontal: 20, height: 50, borderCurve: 'continuous', borderRadius: 25, alignItems: 'center', justifyContent: 'center' },
   currentText: { fontFamily: font.title, fontSize: 15, color: color.text },
   note: { marginTop: space.small, marginHorizontal: 20, flexDirection: 'row', alignItems: 'center', gap: space.small },
   noteText: { fontFamily: font.text, fontSize: 13, lineHeight: 18, color: color.secondary },

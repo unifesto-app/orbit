@@ -6,14 +6,14 @@
 import { type ComponentProps, useEffect, useState } from 'react';
 import { Alert, Image, type ImageSourcePropType, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { Field, Group, Pill, Row, TONE } from './account/kit';
+import { Field, Group, Pill, Row } from './account/kit';
 import { installedUpi, phoneIcon } from './checkout';
-import { Icon } from './icons';
+import { Icon, type IconName } from './icons';
 import { cleanVpa, handleHints, isVpa, vpaApp, type OnPhone, payKey, SHOWN, UPI_APPS, type UpiId, verifyUpiId, WALLETS, type PayWith } from './pay';
 import { Chip } from './pickers';
 import { Tag } from './rows';
 import { addUpiId, removeUpiId, setPayWith, usePayWith, useUpiIds } from './session';
-import { color, font, radius } from './theme';
+import { color, font, space } from './theme';
 
 // Each one's real logo (owner, 19 Nov 2026: "just i need real logos"), shipped in the app so it's sharp and offline:
 // their App Store icons (Freecharge's and Airtel's from Play, without the "BIZ" and festive lights; Amazon Pay its own
@@ -64,10 +64,18 @@ function logoOf(id: string): ImageSourcePropType | undefined {
  * cta"): its logo, Apple Pay's mark, or for a card, a UPI ID or nothing chosen yet, the glyph. */
 export function PayMark({ pay }: { pay?: PayWith }) {
   const id = pay?.kind === 'upiApp' ? pay.id : pay?.kind === 'wallet' ? pay.code : pay?.kind === 'vpa' ? vpaApp(pay.vpa) : undefined;
-  const logo = id ? logoOf(id) : undefined;
-  if (logo) return <Image source={logo} style={styles.logo} resizeMode="contain" accessibilityIgnoresInvertColors />;
   if (pay?.kind === 'applePay') return <Image source={require('../assets/pay/applepay.png')} style={styles.applePay} resizeMode="contain" accessibilityIgnoresInvertColors />;
-  return <Icon name={pay?.kind === 'vpa' ? 'vpa' : pay?.kind === 'card' ? 'card' : pay?.kind === 'upiApp' ? 'upi' : 'wallet'} size={22} color={color.text} />;
+  return <CardMark logo={id ? logoOf(id) : undefined} glyph={pay?.kind === 'vpa' ? 'vpa' : pay?.kind === 'card' ? 'card' : pay?.kind === 'upiApp' ? 'upi' : 'wallet'} />;
+}
+
+/** Every way to pay as a small white card the Apple Pay mark's size (owner, 27 Nov 2026: "all icons same like apple
+ * pay icon, card kind"): the logo on it, else the glyph in black. */
+function CardMark({ logo, glyph }: { logo?: ImageSourcePropType; glyph: IconName }) {
+  return (
+    <View style={styles.card}>
+      {logo ? <Image source={logo} style={styles.logo} resizeMode="contain" accessibilityIgnoresInvertColors /> : <Icon name={glyph} size={GLYPH} color={INK} />}
+    </View>
+  );
 }
 
 /** A UPI ID's app logo, by its handle, in the glyph's place; none (so the row keeps its @) for a bank's own handle. */
@@ -78,14 +86,13 @@ function vpaLogo(vpa: string) {
 // In the field as you type: the app's logo once the handle names one, else the @.
 const fieldMark = (vpa: string) => vpaLogo(vpa) ?? <Icon name="vpa" size={22} color={color.secondary} />;
 
-/** A row led by its logo in the glyph's place: 26 wide, the glyph's 22 plus its 4, so labels line up, with the corner
- * a phone gives an app icon. `icon` stays on the element only for Group's hairline indent. */
-function PayRow({ id, ...row }: ComponentProps<typeof Row> & { id: string }) {
-  const logo = logoOf(id);
-  if (!logo) return <Row {...row} />;
-  const mark = <Image source={logo} style={styles.logo} resizeMode="contain" accessibilityIgnoresInvertColors />;
-  return <Row {...row} icon={undefined} lead={mark} />;
+/** A row led by its card: the logo for `id` (if any) or `glyph`. Groups of these set `indent={INDENT}`. */
+function PayRow({ id, glyph, ...row }: Omit<ComponentProps<typeof Row>, 'icon' | 'lead'> & { id?: string; glyph: IconName }) {
+  return <Row {...row} lead={<CardMark logo={id ? logoOf(id) : undefined} glyph={glyph} />} />;
 }
+
+/** "Kotak811 UPI", not "BoB World UPI UPI" (owner, 27 Nov 2026: "add UPI beside the app names"). */
+const withUpi = (name: string) => (/\bUPI$/i.test(name) ? name : `${name} UPI`);
 
 // Adding a UPI ID (owner, 19 Nov 2026: "allow upi id verify and add"): type it, Verify asks Razorpay whose it is, and
 // Add keeps it once a name comes back. Editing it after a check asks again. Only what a UPI ID can hold is typed (no
@@ -189,26 +196,25 @@ export function PayChoices({ onPicked }: { onPicked?: () => void }) {
 
   return (
     <>
-      <Group title="UPI apps">
+      <Group title="UPI apps" indent={INDENT}>
         {apps.map((a) => (
           // One we don't list (Kotak811, slice…) keeps the UPI glyph and its name, which Pay with shows too.
-          <PayRow key={a.id} id={a.id} icon="upi" label={a.name} right={def({ kind: 'upiApp', id: a.id })} onPress={() => choose({ kind: 'upiApp', id: a.id, name: a.name })} />
+          <PayRow key={a.id} id={a.id} glyph="upi" label={withUpi(a.name)} right={def({ kind: 'upiApp', id: a.id })} onPress={() => choose({ kind: 'upiApp', id: a.id, name: a.name })} />
         ))}
         {/* None of ours on this phone: plain UPI too, which opens checkout on UPI to pick an app there. */}
-        {!known.some((a) => UPI_APPS.some((u) => u.id === a.id)) && <Row icon="upi" label="UPI" right={def({ kind: 'upiApp', id: 'upi' })} onPress={() => choose({ kind: 'upiApp', id: 'upi' })} />}
+        {!known.some((a) => UPI_APPS.some((u) => u.id === a.id)) && <PayRow glyph="upi" label="UPI" right={def({ kind: 'upiApp', id: 'upi' })} onPress={() => choose({ kind: 'upiApp', id: 'upi' })} />}
         {folded && <Row label={`Show ${known.length - SHOWN} more UPI apps`} chevron onPress={() => setAllApps(true)} />}
       </Group>
 
       {/* Paying to a typed UPI ID is iPhone-only: NPCI ended it on 28 Feb 2026 except in iOS apps and mobile web
           (Unifesto's CAN_TYPE_UPI_ID); Android pays through the UPI apps above. */}
       {Platform.OS === 'ios' && (
-        <Group title="UPI ID">
+        <Group title="UPI ID" indent={INDENT}>
           {upiIds.map((u) => (
-            <Row
+            <PayRow
               key={u.vpa}
-              icon="vpa"
-              tone={TONE.cyan}
-              lead={vpaLogo(u.vpa)}
+              id={vpaApp(u.vpa)}
+              glyph="vpa"
               label={u.vpa}
               note={u.name || undefined}
               right={
@@ -229,18 +235,18 @@ export function PayChoices({ onPicked }: { onPicked?: () => void }) {
               }}
             />
           ) : (
-            <Row icon="vpa" tone={TONE.cyan} label={upiIds.length ? 'Add another UPI ID' : 'Add a UPI ID'} chevron onPress={() => setAdding(true)} />
+            <PayRow glyph="vpa" label={upiIds.length ? 'Add another UPI ID' : 'Add a UPI ID'} chevron onPress={() => setAdding(true)} />
           )}
         </Group>
       )}
 
-      <Group title="Card">
-        <Row icon="card" tone={TONE.mint} label="Credit or debit card" right={def({ kind: 'card' })} onPress={() => choose({ kind: 'card' })} />
+      <Group title="Card" indent={INDENT}>
+        <PayRow glyph="card" label="Credit or debit card" right={def({ kind: 'card' })} onPress={() => choose({ kind: 'card' })} />
       </Group>
 
-      <Group title="Wallets">
+      <Group title="Wallets" indent={INDENT}>
         {WALLETS.map((w) => (
-          <PayRow key={w.code} id={w.code} icon="wallet" label={w.name} right={def({ kind: 'wallet', code: w.code })} onPress={() => choose({ kind: 'wallet', code: w.code })} />
+          <PayRow key={w.code} id={w.code} glyph="wallet" label={w.name} right={def({ kind: 'wallet', code: w.code })} onPress={() => choose({ kind: 'wallet', code: w.code })} />
         ))}
       </Group>
 
@@ -259,9 +265,14 @@ export function PayChoices({ onPicked }: { onPicked?: () => void }) {
 // A bundled image takes its file's size unless the style gives both sides, so the Apple Pay mark gets both: as tall as
 // the other logos (its HIG's floor), as wide as its own artwork's proportions (the SVG's 165.52 x 105.97).
 const MARK = 26;
+const CARD = Math.round((MARK * 165.52107) / 105.9651); // the Apple Pay mark's width at MARK tall: 41
+const INDENT = CARD + 12; // hairlines start where the labels do (kit's ICON_GAP)
+const GLYPH = 16;
+const INK = '#000'; // on the white card, as the Apple Pay mark's own black
 const styles = StyleSheet.create({
-  logo: { width: MARK, height: MARK, borderRadius: radius.sm },
-  applePay: { width: Math.round((MARK * 165.52107) / 105.9651), height: MARK },
+  card: { width: CARD, height: MARK, marginRight: 12 - space.small, borderCurve: 'continuous', borderRadius: 3, borderWidth: (MARK * 3) / 96, borderColor: INK, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+  logo: { width: 18, height: 18, borderCurve: 'continuous', borderRadius: 4 },
+  applePay: { width: CARD, height: MARK, marginRight: 12 - space.small },
   add: { gap: 8 },
   hints: { gap: 8 },
   say: { fontFamily: font.text, fontSize: 13, lineHeight: 18, color: color.secondary },

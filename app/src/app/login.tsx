@@ -413,10 +413,10 @@ const styles = {
   ...sheet,
   ...StyleSheet.create({
   // A card like Account's: 1px rim, 16 inside.
-  accountRim: { marginHorizontal: 20, padding: 1, borderRadius: RIM },
-  accountFace: { borderRadius: RIM - 1, backgroundColor: color.card, padding: 16, gap: 2, alignItems: 'center' },
+  accountRim: { marginHorizontal: 20, padding: 1, borderCurve: 'continuous', borderRadius: RIM },
+  accountFace: { borderCurve: 'continuous', borderRadius: RIM - 1, backgroundColor: color.card, padding: 16, gap: 2, alignItems: 'center' },
   accountName: { fontFamily: font.headline, fontSize: 20, lineHeight: 26, color: color.text },
-  photoRim: { padding: 1, borderRadius: PHOTO / 2 + 1, marginBottom: 10 }, // Account's 1px rim round a photo
+  photoRim: { padding: 1, borderCurve: 'continuous', borderRadius: PHOTO / 2 + 1, marginBottom: 10 }, // Account's 1px rim round a photo
   // Google's G, 18 wide, in a row icon's 22 box and its gap to the label, so every label starts in one line.
   googleBox: { width: 22, marginRight: 4, alignItems: 'center' },
   }),

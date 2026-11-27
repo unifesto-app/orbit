@@ -22,9 +22,9 @@ const SLOT = 44; // the pill's place: View profile on Account, Edit profile on t
 // Your photo, a circle in Account's 1px frosted rim (owner, 17 Nov 2026: "instead of squared profile use rounded one"),
 // or your initials until there's one.
 export function Photo({ me, size }: { me: Pick<Account, 'id' | 'name' | 'photo'>; size: number }) {
-  const round = { width: size, height: size, borderRadius: size / 2 };
+  const round = { width: size, height: size, borderCurve: 'continuous', borderRadius: size / 2 } as const;
   return (
-    <Glass style={{ padding: EDGE, borderRadius: around(size / 2, EDGE) }}>
+    <Glass style={{ padding: EDGE, borderCurve: 'continuous', borderRadius: around(size / 2, EDGE) }}>
       {me.photo ? (
         <Image source={{ uri: me.photo }} style={[round, styles.photo]} accessibilityIgnoresInvertColors />
       ) : (

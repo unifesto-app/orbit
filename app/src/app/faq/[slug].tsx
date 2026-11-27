@@ -34,7 +34,7 @@ const styles = StyleSheet.create({
   list: { gap: space.big },
   pair: { gap: space.small },
   // Yours: 20 round with the 6 tail corner on your side, lighter than the host's (src/orbitSays.tsx).
-  bubble: { maxWidth: '80%', paddingVertical: 10, paddingHorizontal: 14, borderRadius: 20, borderWidth: StyleSheet.hairlineWidth },
+  bubble: { maxWidth: '80%', paddingVertical: 10, paddingHorizontal: 14, borderCurve: 'continuous', borderRadius: 20, borderWidth: StyleSheet.hairlineWidth },
   mine: { alignSelf: 'flex-end', borderBottomRightRadius: 6, backgroundColor: stoneAt(0.14), borderColor: stoneAt(0.24) },
   text: { fontFamily: font.text, fontSize: 16, lineHeight: 22, color: color.text },
 });

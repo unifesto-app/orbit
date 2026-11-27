@@ -250,8 +250,8 @@ const styles = StyleSheet.create({
   event: { marginTop: space.small },
   afterNews: { marginTop: space.big },
   gate: { marginTop: space.small, alignItems: 'center' },
-  qrRim: { padding: EDGE, borderRadius: RIM },
-  plate: { padding: PAD, borderRadius: PLATE, backgroundColor: '#FFFFFF' },
+  qrRim: { padding: EDGE, borderCurve: 'continuous', borderRadius: RIM },
+  plate: { padding: PAD, borderCurve: 'continuous', borderRadius: PLATE, backgroundColor: '#FFFFFF' },
   admits: { marginTop: 16, fontFamily: font.title, fontSize: 15, color: color.text },
   // The code in two halves, spaced out so it reads aloud cleanly.
   code: { marginTop: 4, fontFamily: font.price, fontSize: 20, letterSpacing: 3, color: color.text },

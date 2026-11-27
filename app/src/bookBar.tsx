@@ -91,8 +91,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: space.small,
   },
-  ticketGlass: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: BUTTON / 2 + BAR_PAD },
-  ticketShade: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: BUTTON / 2 + BAR_PAD, backgroundColor: `${color.ground}80` },
+  ticketGlass: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderCurve: 'continuous', borderRadius: BUTTON / 2 + BAR_PAD },
+  ticketShade: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderCurve: 'continuous', borderRadius: BUTTON / 2 + BAR_PAD, backgroundColor: `${color.ground}80` },
   // In from the pill's round end, so the price sits clear of the curve.
   ticketText: { paddingLeft: 12 },
   payPick: { paddingLeft: space.small, flexDirection: 'row', alignItems: 'center', gap: 10 },
@@ -103,6 +103,6 @@ const styles = StyleSheet.create({
   from: { fontFamily: font.text, fontSize: 13, color: color.secondary },
   small: { fontFamily: font.text, fontSize: 12, color: color.secondary },
   // View ticket's size (owner: "rounded view ticket and view events and book ticket").
-  button: { height: BUTTON, paddingHorizontal: 24, borderRadius: BUTTON / 2, justifyContent: 'center' },
+  button: { height: BUTTON, paddingHorizontal: 24, borderCurve: 'continuous', borderRadius: BUTTON / 2, justifyContent: 'center' },
   buttonText: { fontFamily: font.title, fontSize: 15, color: color.text },
 });

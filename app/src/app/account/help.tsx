@@ -98,10 +98,10 @@ export default function Help() {
 
 const FACE = around(radius.sm, PAD); // the card padding every Account card has
 const styles = StyleSheet.create({
-  rim: { marginHorizontal: 20, padding: EDGE, borderRadius: around(FACE, EDGE) },
+  rim: { marginHorizontal: 20, padding: EDGE, borderCurve: 'continuous', borderRadius: around(FACE, EDGE) },
   box: {
     minHeight: 120,
-    borderRadius: FACE,
+    borderCurve: 'continuous', borderRadius: FACE,
     backgroundColor: color.card,
     padding: PAD,
     fontFamily: font.text,

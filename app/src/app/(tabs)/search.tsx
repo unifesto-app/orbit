@@ -448,19 +448,19 @@ const styles = StyleSheet.create({
   chips: { marginTop: 16, marginHorizontal: 20, flexDirection: 'row', justifyContent: 'center', gap: space.small, pointerEvents: 'box-none' },
   pickedRow: { marginTop: space.small },
   // The tab bar's shape: a capsule with 4 round its pill.
-  capsule: { height: CHIP, padding: 4, borderRadius: CHIP / 2, flexDirection: 'row' },
-  slider: { position: 'absolute', top: 4, bottom: 4, borderRadius: CHIP / 2 - 4, backgroundColor: stoneAt(0.14), borderWidth: StyleSheet.hairlineWidth, borderColor: stoneAt(0.24) },
+  capsule: { height: CHIP, padding: 4, borderCurve: 'continuous', borderRadius: CHIP / 2, flexDirection: 'row' },
+  slider: { position: 'absolute', top: 4, bottom: 4, borderCurve: 'continuous', borderRadius: CHIP / 2 - 4, backgroundColor: stoneAt(0.14), borderWidth: StyleSheet.hairlineWidth, borderColor: stoneAt(0.24) },
   segment: { justifyContent: 'center' },
   shrink: { flexShrink: 1 },
   // A hairline always, clear when off, so turning Free on doesn't change its width.
-  freeIn: { paddingHorizontal: 10, borderRadius: CHIP / 2 - 4, borderWidth: StyleSheet.hairlineWidth, borderColor: 'transparent' },
+  freeIn: { paddingHorizontal: 10, borderCurve: 'continuous', borderRadius: CHIP / 2 - 4, borderWidth: StyleSheet.hairlineWidth, borderColor: 'transparent' },
   on: { backgroundColor: stoneAt(0.14), borderColor: stoneAt(0.24) },
   glow: { position: 'absolute', top: 0, left: 0, right: 0, height: GLOW, overflow: 'hidden', pointerEvents: 'none' },
   orbField: { position: 'absolute', opacity: 0.45 },
   // The small button's size, so the four fit on one line on a 390pt phone.
-  chip: { height: 32, paddingHorizontal: 12, borderRadius: 16, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  chip: { height: 32, paddingHorizontal: 12, borderCurve: 'continuous', borderRadius: 16, flexDirection: 'row', alignItems: 'center', gap: 6 },
   chipText: { fontFamily: font.price, fontSize: 13, color: color.text }, // DM Sans 600, as the tab bar's labels
-  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: color.accent },
+  dot: { width: 6, height: 6, borderCurve: 'continuous', borderRadius: 3, backgroundColor: color.accent },
 
   hosts: { marginHorizontal: 20, gap: 20 }, // as Home's rows
   more: { alignItems: 'center' },

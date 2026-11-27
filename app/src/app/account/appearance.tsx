@@ -84,7 +84,7 @@ export default function Appearance() {
 
 const styles = StyleSheet.create({
   // The pick, as on Search's chips: the accent on a dot, never on text.
-  dot: { width: 8, height: 8, borderRadius: 4, marginRight: 4, backgroundColor: color.accent },
+  dot: { width: 8, height: 8, borderCurve: 'continuous', borderRadius: 4, marginRight: 4, backgroundColor: color.accent },
   // The icon as the home screen rounds it, with the card's outline so the Charcoal ones keep their edge.
   thumb: { width: 40, height: 40, borderRadius: 9, borderCurve: 'continuous', borderWidth: 1, borderColor: color.border, marginRight: 4 },
 });

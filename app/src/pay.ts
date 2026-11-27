@@ -264,8 +264,10 @@ export const refundWord = (s: MyRefund['status']) => (s === 'processed' ? 'Refun
 // icon: Android's own icon (PNG, base64) for an app we have no logo for; iOS gives none.
 export type OnPhone = { id: string; app: string; name: string; icon?: string };
 
-/** What Custom UI reports per app. iOS wraps the SDK's { appName, shortcode } in appName. */
-export type FoundUpiApp = { appName?: string | { appName?: string; shortcode?: string }; packageName?: string; iconBase64?: string };
+/** What Custom UI reports per app. iOS wraps the SDK's app in appName, its shortcode as appPackageName (seen on an
+ * iPhone, 27 Nov 2026: { appName: 'Kotak811', appPackageName: 'kotakbank', appLogo, appIconBase64: '' }). */
+type IosUpiApp = { appName?: string; appPackageName?: string; shortcode?: string };
+export type FoundUpiApp = { appName?: string | IosUpiApp; packageName?: string; iconBase64?: string };
 
 /** Every UPI app this phone has, as Zomato lists them (owner, 27 Nov 2026: "kotak811 and slice too"): the ones we
  * list first, in our order and with our names, then the rest as the phone names them (Custom UI's list, matched by
@@ -279,8 +281,9 @@ export function upiOnPhone(found: readonly FoundUpiApp[], os: string): OnPhone[]
       if (f.packageName) seen.set(f.packageName, { app: f.packageName, name: name || f.packageName, icon: f.iconBase64 || undefined });
       continue;
     }
-    const code = ios?.shortcode || name.toLowerCase().replace(/\s/g, '');
-    if (code) seen.set(code, { app: ios?.shortcode ?? '', name: name || code });
+    const short = ios?.appPackageName || ios?.shortcode || '';
+    const code = short || name.toLowerCase().replace(/\s/g, '');
+    if (code) seen.set(code, { app: short, name: name || code });
   }
   const ours = UPI_APPS.flatMap((a) => {
     const key = os === 'ios' ? a.ios.find((c) => seen.has(c)) : seen.has(a.android) ? a.android : undefined;

@@ -139,9 +139,9 @@ export function OrbitAdStrip({
 const styles = StyleSheet.create({
   place: { marginTop: 40, marginHorizontal: 20 },
   pressed: { opacity: 0.7 },
-  rim: { padding: rim, borderRadius: around(FACE, rim) },
+  rim: { padding: rim, borderCurve: 'continuous', borderRadius: around(FACE, rim) },
   // The words keep clear of the orbits on the right.
-  strip: { borderRadius: FACE, overflow: 'hidden', paddingHorizontal: PAD, justifyContent: 'center' },
+  strip: { borderCurve: 'continuous', borderRadius: FACE, overflow: 'hidden', paddingHorizontal: PAD, justifyContent: 'center' },
   text: { maxWidth: '64%', gap: 1 },
   kicker: { fontFamily: font.medium, fontSize: 11, lineHeight: 14, opacity: 0.75 },
   title: { fontFamily: font.title, fontSize: 16, lineHeight: 20 },

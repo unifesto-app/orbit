@@ -429,15 +429,15 @@ export const styles = StyleSheet.create({
   title: { marginHorizontal: 20, fontFamily: font.headline, fontSize: 24, lineHeight: 30, color: color.text },
 
   panel: { justifyContent: 'center' },
-  panelGlass: { position: 'absolute', top: -STRETCH, left: 0, right: 0, bottom: 0, borderRadius: RIM },
+  panelGlass: { position: 'absolute', top: -STRETCH, left: 0, right: 0, bottom: 0, borderCurve: 'continuous', borderRadius: RIM },
   panelGlow: { position: 'absolute', left: 0, right: 0, bottom: 0 },
 
-  rim: { marginHorizontal: 20, padding: EDGE, borderRadius: RIM },
+  rim: { marginHorizontal: 20, padding: EDGE, borderCurve: 'continuous', borderRadius: RIM },
   bare: { marginHorizontal: 20 },
   spaced: { marginTop: space.big },
   flush: { marginHorizontal: 0 },
-  pickDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: color.accent }, // a pick is an accent dot, never accent text
-  face: { borderRadius: FACE, backgroundColor: color.card, padding: PAD },
+  pickDot: { width: 8, height: 8, borderCurve: 'continuous', borderRadius: 4, backgroundColor: color.accent }, // a pick is an accent dot, never accent text
+  face: { borderCurve: 'continuous', borderRadius: FACE, backgroundColor: color.card, padding: PAD },
   outline: { borderWidth: 1, borderColor: color.border }, // a bare group has no rim
   // Inside the card's padding on both sides (owner: "right side make it full hairline", then "dont use full hairline").
   hairline: { height: StyleSheet.hairlineWidth, marginVertical: PAD / 2, backgroundColor: stoneAt(0.12) },
@@ -450,9 +450,9 @@ export const styles = StyleSheet.create({
   note: { fontFamily: font.text, fontSize: 13, lineHeight: 18, color: color.secondary },
   value: { maxWidth: '50%', fontFamily: font.text, fontSize: 14, color: color.secondary },
 
-  normal: { height: 44, paddingHorizontal: 18, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
-  small: { height: 32, paddingHorizontal: 12, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
-  wide: { height: 50, borderRadius: 25, justifyContent: 'center', alignItems: 'center' },
+  normal: { height: 44, paddingHorizontal: 18, borderCurve: 'continuous', borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
+  small: { height: 32, paddingHorizontal: 12, borderCurve: 'continuous', borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
+  wide: { height: 50, borderCurve: 'continuous', borderRadius: 25, justifyContent: 'center', alignItems: 'center' },
   wideWrap: { marginHorizontal: 20 },
   pillText: { fontFamily: font.title, fontSize: 14, color: color.text },
   smallText: { fontFamily: font.title, fontSize: 13, color: color.text },
@@ -460,26 +460,26 @@ export const styles = StyleSheet.create({
   disabled: { opacity: 0.4 },
 
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.small },
-  chip: { height: 32, paddingHorizontal: 12, borderRadius: 16, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  chip: { height: 32, paddingHorizontal: 12, borderCurve: 'continuous', borderRadius: 16, flexDirection: 'row', alignItems: 'center', gap: 6 },
   chipText: { fontFamily: font.medium, fontSize: 13, color: color.text },
-  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: color.accent },
+  dot: { width: 6, height: 6, borderCurve: 'continuous', borderRadius: 3, backgroundColor: color.accent },
 
   field: { gap: 6 },
   fieldLabel: { fontFamily: font.medium, fontSize: 12, color: color.secondary },
-  input: { height: 44, paddingHorizontal: 16, borderRadius: 22, justifyContent: 'center' },
+  input: { height: 44, paddingHorizontal: 16, borderCurve: 'continuous', borderRadius: 22, justifyContent: 'center' },
   inputText: { fontFamily: font.text, fontSize: 15, color: color.text, height: '100%' },
   prefixed: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   prefix: { paddingRight: 12, borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: stoneAt(0.24), fontFamily: font.medium, fontSize: 15, lineHeight: 20, color: color.text },
   // A few lines (a note, a reason): the card's corner, since a pill can't grow taller.
-  area: { height: undefined, minHeight: 96, paddingVertical: 12, borderRadius: RIM, justifyContent: 'flex-start' },
+  area: { height: undefined, minHeight: 96, paddingVertical: 12, borderCurve: 'continuous', borderRadius: RIM, justifyContent: 'flex-start' },
   areaText: { height: undefined, lineHeight: 21, textAlignVertical: 'top' },
 
   code: { gap: space.small + 4 },
   cells: { marginHorizontal: 20, flexDirection: 'row', justifyContent: 'center', gap: space.small },
-  cell: { flex: 1, maxWidth: CELL, height: 56, borderRadius: CELL / 2, alignItems: 'center', justifyContent: 'center' }, // narrower on a narrow screen
+  cell: { flex: 1, maxWidth: CELL, height: 56, borderCurve: 'continuous', borderRadius: CELL / 2, alignItems: 'center', justifyContent: 'center' }, // narrower on a narrow screen
   cellText: { fontFamily: font.price, fontSize: 24, color: color.text },
-  cellOn: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: CELL / 2, borderWidth: 1.5, borderColor: color.accent }, // the next digit: an element, so the accent
-  caret: { width: 2, height: 24, borderRadius: 1, backgroundColor: color.text },
+  cellOn: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderCurve: 'continuous', borderRadius: CELL / 2, borderWidth: 1.5, borderColor: color.accent }, // the next digit: an element, so the accent
+  caret: { width: 2, height: 24, borderCurve: 'continuous', borderRadius: 1, backgroundColor: color.text },
   codeInput: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, color: 'transparent', fontSize: 1 }, // over the cells: taps, autofill and paste land here
   codePair: { marginHorizontal: 20, flexDirection: 'row', justifyContent: 'center', gap: space.small },
 

@@ -225,17 +225,17 @@ function OrbNudge({ tab, bottom, hidden }: { tab: string; bottom: number; hidden
       style={[styles.nudge, { bottom: bottom + BAR + 2, opacity: fade, transform: [{ translateY: fade.interpolate({ inputRange: [0, 1], outputRange: [6, 0] }) }] }]}
       accessibilityLiveRegion="polite"
     >
-      <Pressable onPress={() => router.push('/chat')} accessibilityRole="button" accessibilityHint="Opens the chat" style={[styles.shade, { borderRadius: NUDGE_ROUND }]}>
+      <Pressable onPress={() => router.push('/chat')} accessibilityRole="button" accessibilityHint="Opens the chat" style={[styles.shade, { borderCurve: 'continuous', borderRadius: NUDGE_ROUND }]}>
         <Glass tint={LIGHT} style={styles.nudgeBubble}>
           <Text style={styles.nudgeText}>{text}</Text>
-          <View style={[styles.rim, styles.rimLight, { borderRadius: NUDGE_ROUND }]} pointerEvents="none" />
+          <View style={[styles.rim, styles.rimLight, { borderCurve: 'continuous', borderRadius: NUDGE_ROUND }]} pointerEvents="none" />
         </Glass>
       </Pressable>
       {/* Two glass dots, smaller toward the orb, pointing the bubble at it, centred over it. */}
       {[9, 5].map((d) => (
-        <View key={d} style={[styles.shade, { borderRadius: d / 2, marginRight: BAR / 2 - d / 2 }]}>
-          <Glass tint={LIGHT} style={[styles.nudgeDot, { width: d, height: d, borderRadius: d / 2 }]}>
-            <View style={[styles.rim, styles.rimLight, { borderRadius: d / 2 }]} pointerEvents="none" />
+        <View key={d} style={[styles.shade, { borderCurve: 'continuous', borderRadius: d / 2, marginRight: BAR / 2 - d / 2 }]}>
+          <Glass tint={LIGHT} style={[styles.nudgeDot, { width: d, height: d, borderCurve: 'continuous', borderRadius: d / 2 }]}>
+            <View style={[styles.rim, styles.rimLight, { borderCurve: 'continuous', borderRadius: d / 2 }]} pointerEvents="none" />
           </Glass>
         </View>
       ))}
@@ -261,7 +261,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: SIDE,
     height: BAR,
-    borderRadius: BAR / 2,
+    borderCurve: 'continuous', borderRadius: BAR / 2,
     padding: PAD,
     flexDirection: 'row',
     overflow: 'hidden',
@@ -269,8 +269,8 @@ const styles = StyleSheet.create({
   wide: { right: SIDE + BAR + GAP },
   small: { width: BAR },
   hidden: { display: 'none' },
-  tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: (BAR - 2 * PAD) / 2 },
-  pill: { backgroundColor: stoneAt(0.14), borderWidth: StyleSheet.hairlineWidth, borderColor: stoneAt(0.24), borderRadius: (BAR - 2 * PAD) / 2 },
+  tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderCurve: 'continuous', borderRadius: (BAR - 2 * PAD) / 2 },
+  pill: { backgroundColor: stoneAt(0.14), borderWidth: StyleSheet.hairlineWidth, borderColor: stoneAt(0.24), borderCurve: 'continuous', borderRadius: (BAR - 2 * PAD) / 2 },
   slider: { position: 'absolute', left: PAD, top: PAD, bottom: PAD },
   icon: { width: 20, height: 20 },
   plain: { width: 20, height: 20, tintColor: color.text },
@@ -287,12 +287,12 @@ const styles = StyleSheet.create({
   // see-through glass needs no solid fill (a plain shadow on a see-through view is redrawn pixel by pixel, and React
   // Native warns). Its blur is twice the old shadowRadius 14: iOS halves it.
   shade: { boxShadow: [{ offsetX: 0, offsetY: 6, blurRadius: 28, color: alpha(role.shadow, 0.7) }] },
-  nudgeBubble: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: NUDGE_ROUND },
+  nudgeBubble: { paddingVertical: 10, paddingHorizontal: 14, borderCurve: 'continuous', borderRadius: NUDGE_ROUND },
   nudgeDot: { overflow: 'hidden' },
   // The glass's rim: Liquid Glass draws no border of its own.
   rim: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderWidth: StyleSheet.hairlineWidth, borderColor: stoneAt(0.28) },
   nudgeText: { fontFamily: font.medium, fontSize: 14, lineHeight: 19, color: color.ground },
   rimLight: { borderColor: color.text }, // a bright edge on the light glass
-  ring: { width: BAR, height: BAR, borderRadius: BAR / 2, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  disc: { width: DISC, height: DISC, borderRadius: DISC / 2 },
+  ring: { width: BAR, height: BAR, borderCurve: 'continuous', borderRadius: BAR / 2, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  disc: { width: DISC, height: DISC, borderCurve: 'continuous', borderRadius: DISC / 2 },
 });

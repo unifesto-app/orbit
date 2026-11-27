@@ -148,6 +148,6 @@ const styles = StyleSheet.create({
   readText: { color: stoneAt(0.82) },
   time: { fontFamily: font.text, fontSize: 12, lineHeight: 16, color: color.secondary },
   side: { width: 12, alignItems: 'center' },
-  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: color.accent }, // unread: a dot, never accent text
-  orb: { width: PICTURE, height: PICTURE, borderRadius: PICTURE / 2 },
+  dot: { width: 8, height: 8, borderCurve: 'continuous', borderRadius: 4, backgroundColor: color.accent }, // unread: a dot, never accent text
+  orb: { width: PICTURE, height: PICTURE, borderCurve: 'continuous', borderRadius: PICTURE / 2 },
 });
