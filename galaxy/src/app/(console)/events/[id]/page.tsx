@@ -7,6 +7,7 @@ import { Alert, Container, PageHeader, Pairs, ui } from "../../../ui";
 import { Act } from "../../act";
 import { cancelEvent, unpublishEvent } from "../../actions";
 import { time } from "../../requests/status";
+import { KindDetails } from "../details";
 import { FestItems, People } from "../lineup";
 import { Promote } from "../promote";
 import { EventBadge } from "../status";
@@ -15,7 +16,8 @@ import { EventBadge } from "../status";
 // draft while nobody has booked; Cancel cancels its bookings (not until it has ended). Both tell the host's Admins the
 // reason; ticket holders aren't told yet (H13.5). Promote puts it in App content's Promoted list (needs Platform too),
 // and Unpromote shows whenever it's there, whatever the status. The API refuses staff an event of a host they're on.
-// People (who's on its page, with roles, in order) and, on a fest, Inside the fest are edited here too (X14).
+// People (who's on its page, with roles, in order) and, on a fest, Inside the fest are edited here too (X14), and so are
+// its kind details (what its category's page shows, inRoom and the age).
 export const metadata: Metadata = { title: "Event" };
 
 const rupees = (paise: number) => (paise === 0 ? "Free" : `₹${(paise / 100).toLocaleString("en-IN")}`);
@@ -69,6 +71,10 @@ async function Event({ params, searchParams }: Pick<PageProps<"/events/[id]">, "
             ["About", e.about],
           ]}
         />
+      </Container>
+
+      <Container title="Kind details">
+        <KindDetails event={e} />
       </Container>
 
       <Container title="Tickets" count={tickets.length}>

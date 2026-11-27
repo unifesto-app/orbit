@@ -1,6 +1,6 @@
 import { and, asc, count, desc, eq, sql, type SQL } from "drizzle-orm";
 import { Hono, type Context } from "hono";
-import { CancelEvent, EventStatus, StaffReason, type StaffEvent, type StaffEvents } from "@orbit/contract";
+import { CancelEvent, EditEventDetails, EventStatus, StaffReason, type StaffEvent, type StaffEvents } from "@orbit/contract";
 import type { Db } from "../db/index.ts";
 import { auditLog, bookings, events, hosts, ticketTypes } from "../db/schema.ts";
 import { seatsTaken } from "../bookings.ts";
@@ -128,6 +128,24 @@ export function galaxyEventsRoutes({ db, notify, secret, razorpay: rz, now = Dat
     });
     if (res.status === 200) sendBack(db, rz, notify, back, now);
     return res;
+  });
+
+  // PATCH /galaxy/events/:id/details: what the category's page shows, the meetup's inRoom switch (start lock or not:
+  // staff fix what hosts can't) and the age. Page content, so no reason and nobody told; the audit row keeps what was sent.
+  app.patch("/galaxy/events/:id/details", auth, hostsOnly, async (c) => {
+    const b = await parse(c, EditEventDetails);
+    if (!b) return invalid(c);
+    const id = c.req.param("id");
+    const [found] = isUuid(id) ? await db.select({ hostId: events.hostId }).from(events).where(eq(events.id, id)) : [];
+    if (!found) return nothing(c);
+    if (await onHost(db, found.hostId, c.var.user, now())) return ownHost(c);
+    const row = await db.transaction(async (tx) => {
+      const [row] = await tx.update(events).set({ ...b, updatedAt: at() }).where(eq(events.id, id)).returning();
+      await tx.insert(auditLog).values({ actorId: c.var.actor.id, action: "events.details", targetHost: row!.hostId, data: { eventId: id, ...b }, at: at() });
+      return row!;
+    });
+    const [h] = await db.select({ visibility: hosts.visibility }).from(hosts).where(eq(hosts.id, row.hostId));
+    return c.json(toTeamEvent(row, h!.visibility));
   });
 
   return app;

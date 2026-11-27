@@ -281,6 +281,13 @@
       "when": 1795719435499,
       "tag": "0040_ask_log",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1795783079034,
+      "tag": "0041_event_details",
+      "breakpoints": true
     }
   ]
 }

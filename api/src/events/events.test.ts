@@ -426,7 +426,7 @@ test("a team event carries exactly its documented keys", async () => {
   const h = await start(a);
   const keys = [
     "id", "hostId", "slug", "status", "visibility", "title", "category", "startsAt", "endsAt", "timezone", "place", "online", "onlineLink",
-    "about", "agenda", "faq", "terms", "vibes", "poster", "wide", "wideEdge", "tone", "publishedAt", "cancelledAt", "cancelReason", "saved", "createdAt", "updatedAt",
+    "about", "agenda", "faq", "terms", "vibes", "details", "inRoom", "minAge", "poster", "wide", "wideEdge", "tone", "publishedAt", "cancelledAt", "cancelReason", "saved", "createdAt", "updatedAt",
   ].sort();
   const made = await as(a)("POST", `/hosts/${h.id}/events`, { title: "Keys" });
   assert.deepEqual(Object.keys(made.body).sort(), keys);
@@ -434,4 +434,27 @@ test("a team event carries exactly its documented keys", async () => {
   assert.deepEqual(Object.keys((await as(a)("PATCH", `/events/${made.body.id}`, { title: "Keys 2" })).body).sort(), keys);
   const rowKeys = ["id", "slug", "status", "visibility", "title", "category", "startsAt", "endsAt", "timezone", "area", "city", "online", "sold", "checkedIn"].sort();
   assert.deepEqual(Object.keys((await as(a)("GET", `/hosts/${h.id}/events`)).body.drafts[0]).sort(), rowKeys);
+});
+
+test("kind details, inRoom and age round-trip; once it has started, the host can't flip inRoom", async () => {
+  const a = await join();
+  const h = await start(a);
+  const e = await draft(a, h.id);
+  const details = { teamMin: 2, teamMax: 4, tracks: [{ name: "AI", brief: "Build with models" }], criteria: [{ name: "Idea", weight: 100 }] };
+  const r = await as(a)("PATCH", `/events/${e.id}`, { category: "hackathons", details, inRoom: true, minAge: 18 });
+  assert.equal(r.status, 200);
+  assert.deepEqual([r.body.details, r.body.inRoom, r.body.minAge], [details, true, 18]);
+  const got = TeamEvent.parse((await as(a)("GET", `/events/${e.id}`)).body);
+  assert.deepEqual([got.details, got.inRoom, got.minAge], [details, true, 18]);
+  assert.equal((await as(a)("PATCH", `/events/${e.id}`, { minAge: 16 })).status, 400);
+  assert.equal((await as(a)("PATCH", `/events/${e.id}`, { details: { teamMin: 5, teamMax: 4 } })).status, 400);
+  assert.equal((await as(a)("PATCH", `/events/${e.id}`, { minAge: null })).body.minAge, null);
+
+  await seed(e.id, { status: "published", category: "meetups", startsAt: ago(HOUR), endsAt: ahead(HOUR) });
+  const no = await as(a)("PATCH", `/events/${e.id}`, { inRoom: false });
+  assert.equal(no.status, 409);
+  assert.equal(no.body.error, "started");
+  assert.equal((await as(a)("PATCH", `/events/${e.id}`, { inRoom: true, title: "Same switch" })).status, 200); // unchanged is fine
+  await seed(e.id, { startsAt: ahead(HOUR), endsAt: ahead(2 * HOUR) });
+  assert.equal((await as(a)("PATCH", `/events/${e.id}`, { inRoom: false })).body.inRoom, false);
 });

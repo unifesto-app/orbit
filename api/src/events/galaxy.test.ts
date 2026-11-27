@@ -152,3 +152,47 @@ test("a host's Admins pick its fee plan; 3% + 2% until they do", async () => {
   assert.equal((await as(a)("PATCH", `/hosts/${h.id}`, { feePlan: "4+1" })).status, 400);
   assert.equal((await as(out)("PATCH", `/hosts/${h.id}`, { feePlan: "3+2" })).status, 404);
 });
+
+test("kind details read publicly by category; staff edit them in Galaxy, logged, never on their own host", async () => {
+  const a = await join(), b = await join(), st = await staff(), nobody = await join();
+  const e = await publish(a, (await start(a)).id);
+  const body = { details: { language: "Hindi", teamMin: 2 }, inRoom: true, minAge: 21 };
+  const path = `/galaxy/events/${e.id}/details`;
+  assert.equal((await as(nobody)("PATCH", path, body)).status, 404);
+  assert.equal((await as(a)("PATCH", path, body)).status, 404); // the host's own Admin isn't staff
+  assert.equal((await t.call("PATCH", path, body)).status, 401);
+  assert.equal((await as(st)("PATCH", path, {})).status, 400);
+  assert.equal((await as(st)("PATCH", `/galaxy/events/${crypto.randomUUID()}/details`, body)).status, 404);
+  const r = await as(st)("PATCH", path, body);
+  assert.equal(r.status, 200);
+  assert.deepEqual([r.body.details, r.body.inRoom, r.body.minAge], [body.details, true, 21]);
+  const [log] = await t.db.select().from(auditLog).where(eq(auditLog.action, "events.details"));
+  assert.equal(log!.actorId, st.me.id);
+  assert.deepEqual(log!.data, { eventId: e.id, ...body });
+
+  // A comedy show: its own keys only, no room, no teams.
+  const pub = await t.call("GET", `/public/events/${e.slug}`);
+  assert.deepEqual([pub.body.details, pub.body.inRoom, pub.body.minAge, pub.body.teams], [{ language: "Hindi" }, false, 21, null]);
+  assert.equal((await t.call("GET", "/public/discover")).body.elsewhere.find((x: any) => x.id === e.id).inRoom, false);
+  // A hackathon counts its confirmed bookings as teams; a meetup shows its room.
+  assert.equal((await as(b)("POST", `/events/${e.id}/book`, { ticketTypeId: e.tier, quantity: 1 })).status, 201);
+  await as(a)("PATCH", `/events/${e.id}`, { category: "hackathons" });
+  const hack = (await t.call("GET", `/public/events/${e.slug}`)).body;
+  assert.deepEqual([hack.details, hack.teams], [{ teamMin: 2 }, 1]);
+  await as(a)("PATCH", `/events/${e.id}`, { category: "meetups" });
+  assert.equal((await t.call("GET", `/public/events/${e.slug}`)).body.inRoom, true);
+  assert.equal((await as(b)("GET", "/me/tickets")).body.upcoming[0].event.inRoom, true); // the ticket's card carries it
+
+  // Started: the host is locked out of the switch, staff aren't.
+  t.tick(DAY + HOUR);
+  assert.equal((await as(a)("PATCH", `/events/${e.id}`, { inRoom: false })).body.error, "started");
+  assert.equal((await as(st)("PATCH", path, { inRoom: false })).body.inRoom, false);
+
+  // A draft stays 404 publicly; staff on the host never edit it.
+  const own = await start(st);
+  const mine = (await as(st)("POST", `/hosts/${own.id}/events`, { title: "Draft" })).body as { id: string; slug: string };
+  assert.equal((await t.call("GET", `/public/events/${mine.slug}`)).status, 404);
+  const refused = await as(st)("PATCH", `/galaxy/events/${mine.id}/details`, body);
+  assert.equal(refused.status, 403);
+  assert.equal(refused.body.error, "ownHost");
+});

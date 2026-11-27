@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { categories } from "./categories.ts";
-import { EditEvent, EditTicketType, EventCategory, EventRow, EventSlug, HostEvents, NewEvent, NewTicketType, Place, span, TeamEvent, TicketTypeFields } from "./events.ts";
+import { detailsFor, EditEvent, EditEventDetails, EditTicketType, EventDetails, formatLines, parseLines, EventCategory, EventRow, EventSlug, HostEvents, NewEvent, NewTicketType, Place, span, TeamEvent, TicketTypeFields } from "./events.ts";
 
 type S = { safeParse: (v: unknown) => { success: boolean } };
 const ok = (s: S, v: unknown) => assert.equal(s.safeParse(v).success, true, JSON.stringify(v));
@@ -151,7 +151,7 @@ const id = "3f2b8c1e-5a4d-4e6f-9a7b-1c2d3e4f5a6b";
 const iso = "2026-12-01T12:00:00.000Z";
 const eventRow = { id, slug: "night-k3f9ab", status: "draft", visibility: "public", title: "Night", category: null, startsAt: null, endsAt: null, timezone: "Asia/Kolkata", area: null, city: null, online: false, sold: 0, checkedIn: 0 };
 const teamEvent = {
-  ...eventRow, hostId: id, place: null, onlineLink: null, about: null, agenda: [], faq: [], terms: [], vibes: [],
+  ...eventRow, hostId: id, place: null, onlineLink: null, about: null, agenda: [], faq: [], terms: [], vibes: [], details: {}, inRoom: false, minAge: null,
   poster: null, wide: null, wideEdge: null, tone: null, publishedAt: null, cancelledAt: null, cancelReason: null, saved: null, createdAt: iso, updatedAt: iso,
 };
 
@@ -180,4 +180,37 @@ test("span: today, week and the weekend in India time", () => {
   assert.deepEqual(span("weekend", sat0 - 1), [sat0, mon0]);
   assert.deepEqual(span("today", ist("2026-12-03T12:00:00")), [ist("2026-12-03T12:00:00"), ist("2026-12-04T00:00:00")]);
   assert.deepEqual(span("week", sun10), [sun10, sun10 + 7 * day]);
+});
+
+test("EventDetails: team sizes in order, weights adding to 100, lists capped", () => {
+  ok(EventDetails, {});
+  ok(EventDetails, { teamMin: 2, teamMax: 4 });
+  ok(EventDetails, { teamMin: 3, teamMax: 3 });
+  bad(EventDetails, { teamMin: 5, teamMax: 4 });
+  for (const n of [0, 11, 2.5]) bad(EventDetails, { teamMin: n });
+  ok(EventDetails, { criteria: [{ name: "Idea", weight: 60 }, { name: "Build", weight: 40 }] });
+  bad(EventDetails, { criteria: [{ name: "Idea", weight: 60 }, { name: "Build", weight: 30 }] });
+  ok(EventDetails, { criteria: [] });
+  bad(EventDetails, { rounds: [1, 2, 3, 4].map((i) => ({ name: `R${i}`, when: "Day 1" })) });
+  bad(EventDetails, { highlights: Array(7).fill("x") });
+  bad(EventDetails, { festType: "Rave" });
+  ok(EventDetails, { festType: "Music festival", highlights: ["Bands"] });
+  ok(EditEvent, { inRoom: true, minAge: 18, details: { language: "Hindi" } });
+  bad(EditEvent, { minAge: 16 });
+  ok(EditEventDetails, { minAge: null });
+  bad(EditEventDetails, {});
+});
+
+test("detailsFor keeps only the category's keys", () => {
+  const all: EventDetails = { language: "Hindi", style: "Blues", teamMin: 1, festType: "Food festival", highlights: ["Food"] };
+  assert.deepEqual(detailsFor("comedy", all), { language: "Hindi" });
+  assert.deepEqual(detailsFor("fests", all), { festType: "Food festival", highlights: ["Food"] });
+  assert.deepEqual(detailsFor("meetups", all), {});
+  assert.deepEqual(detailsFor(null, all), {});
+});
+
+test("parseLines and formatLines go both ways", () => {
+  const rows: [string, string][] = [["AI", "Build with models"], ["Open", "Anything | at all"]];
+  assert.deepEqual(parseLines(formatLines(rows)), rows);
+  assert.deepEqual(parseLines("  Idea |40 \n\n Build\n"), [["Idea", "40"], ["Build", ""]]);
 });

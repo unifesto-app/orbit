@@ -50,6 +50,7 @@ export const toTeamEvent = (e: Event, host: HostVisibility, saved: number | null
   startsAt: iso(e.startsAt), endsAt: iso(e.endsAt), timezone: e.timezone,
   place: e.venue === null ? null : { venue: e.venue, address: e.address!, area: e.area!, city: e.city!, lat: e.lat, lng: e.lng, placeId: e.placeId },
   online: e.online, onlineLink: e.onlineLink, about: e.about, agenda: e.agenda, faq: e.faq, terms: e.terms, vibes: e.vibes,
+  details: e.details, inRoom: e.inRoom, minAge: e.minAge,
   poster: e.poster, wide: e.wide, wideEdge: e.wideEdge, tone: toneOf(e),
   publishedAt: iso(e.publishedAt), cancelledAt: iso(e.cancelledAt), cancelReason: e.cancelReason, saved,
   createdAt: e.createdAt.toISOString(), updatedAt: e.updatedAt.toISOString(),
@@ -265,6 +266,9 @@ export function eventsRoutes({ db, notify, secret, media, razorpay: rz, now = Da
         if (b.faq !== undefined) set.faq = b.faq;
         if (b.terms !== undefined) set.terms = b.terms;
         if (b.vibes !== undefined) set.vibes = b.vibes;
+        if (b.details !== undefined) set.details = b.details;
+        if (b.inRoom !== undefined) set.inRoom = b.inRoom;
+        if (b.minAge !== undefined) set.minAge = b.minAge;
         const [row] = await tx.update(events).set(set).where(eq(events.id, cur!.id)).returning();
         return { row: row!, host: host!.visibility };
       });
@@ -278,6 +282,7 @@ export function eventsRoutes({ db, notify, secret, media, razorpay: rz, now = Da
       if (done.error === "cancelled") return fail(c, 409, "cancelled", "A cancelled event can't be edited.");
       if (done.error === "ended") return fail(c, 409, "ended", "This event has ended, so its date and place are locked.");
       if (done.error === "endLocked") return fail(c, 409, "endLocked", "People have bought tickets for this event, so it can't end earlier. You can move the end later.");
+      if (done.error === "started") return fail(c, 409, "started", "This event has started, so whether guests can meet in the app is locked.");
       if (done.error === "endsBeforeStart") return fail(c, 400, "endsBeforeStart", "The event must end after it starts.");
       return fail(c, 400, "linkOnly", "This host is private, so its events are link-only.");
     } catch (e) {

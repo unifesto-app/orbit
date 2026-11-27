@@ -5,7 +5,7 @@ import type { EditEvent, EventStatus, EventVisibility, Place } from "@orbit/cont
 type Timed = { status: EventStatus; endsAt: Date | null };
 // The columns an edit may be compared with.
 type Stored = Timed & {
-  category?: string | null;
+  category?: string | null; inRoom?: boolean;
   startsAt: Date | null; timezone: string; online: boolean; onlineLink: string | null;
   venue: string | null; address: string | null; area: string | null; city: string | null; lat: number | null; lng: number | null; placeId: string | null;
 };
@@ -24,10 +24,12 @@ const moved = (e: Stored, p: EditEvent) =>
 
 // Everything stays editable until the event is cancelled (Hosts flow). Once a published event has ended, its date, place
 // and online details can't change; its text can. A draft never locks. A published event's end can't be moved into the
-// past by an edit (that would lock it by mistake): "End now" is the way to finish early.
-export function editRule(event: Stored, patch: EditEvent, now: number): { ok: true } | { ok: false; error: "cancelled" | "ended" | "endInPast" | "needed" } {
+// past by an edit (that would lock it by mistake): "End now" is the way to finish early. Once it has started, the host
+// can't turn inRoom on or off (guests may already be meeting); staff can, in Galaxy.
+export function editRule(event: Stored, patch: EditEvent, now: number): { ok: true } | { ok: false; error: "cancelled" | "ended" | "endInPast" | "needed" | "started" } {
   if (event.status === "cancelled") return { ok: false, error: "cancelled" };
   if (event.status === "draft") return { ok: true };
+  if ("inRoom" in patch && patch.inRoom !== event.inRoom && event.startsAt !== null && event.startsAt.getTime() <= now) return { ok: false, error: "started" };
   const ended = event.endsAt !== null && event.endsAt.getTime() <= now;
   if (ended && moved(event, patch)) return { ok: false, error: "ended" };
   const end = "endsAt" in patch ? instant(patch.endsAt) : null;
