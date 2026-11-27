@@ -5,9 +5,11 @@
 // emailed. No Your hosts switches while the app has no Console: host messages open Console, so they stay out of the app
 // (the default shown with the inbox prototype, 19 Nov 2026; src/app/inbox.tsx); they come back with a home for hosts.
 // The Push switch follows the phone (src/push.tsx): never asked, turning it on brings up the phone's prompt; refused
-// there, it opens the phone's settings, the only way back (doc: "it opens the phone's settings when push is blocked").
+// there, it opens Orbit's push-off sheet, whose Open Settings is the only way back (doc: "it opens the phone's settings
+// when push is blocked").
 // The settings are the API's (GET /me/notification-settings, its defaults: quiet hours on, near only with a city); each
 // switch is sent alone as it's flipped, and flips back with a note if the API says no.
+import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 
@@ -16,7 +18,7 @@ import type { NotificationSettings } from '@orbit/contract';
 import { Group, Note, Page, Row, Toggle } from '../../account/kit';
 import { showNote } from '../../note';
 import { noticesApi, patchFor, type SettingKey, valueOf, withValue } from '../../notices';
-import { askPushFromSettings, openPushSettings, pushStatus, type PushStatus } from '../../push';
+import { askPushFromSettings, pushStatus, type PushStatus } from '../../push';
 import { api } from '../../session';
 
 const PUSH = [
@@ -87,7 +89,8 @@ export default function Notifications() {
     <Page title="Notifications">
       <Group>
         {phone === 'blocked' ? (
-          <Row label="Push" value="Off in phone settings" chevron onPress={openPushSettings} />
+          // Orbit's sheet first, saying only the phone can turn it back on (src/app/allow.tsx; owner, 27 Nov 2026).
+          <Row label="Push" value="Off in phone settings" chevron onPress={() => router.push({ pathname: '/allow', params: { kind: 'push-off' } })} />
         ) : (
           <Row label="Push" right={<Toggle label="Push" value={phone !== 'ask' && is('push')} onChange={push} />} />
         )}
