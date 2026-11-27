@@ -89,7 +89,7 @@ export const changeable = (h: typeof hosts.$inferSelect) => h.status === "live" 
 // Admin could shield a host from staff by inviting one of them, then withdrawing it or letting it lapse; and one they
 // accepted that was never confirmed stops counting when it lapses, since they can't leave a place that never started.
 // The platform owner is never locked out.
-export const onHost = async (db: Db, hostId: string, u: User, now: number) => {
+export const onHost = async (db: Db | Tx, hostId: string, u: User, now: number) => {
   if (u.platformOwner) return false;
   const mine = [u.phoneVerifiedAt && u.phone, u.emailVerifiedAt && u.email].filter((x): x is string => !!x);
   const [seat] = await db

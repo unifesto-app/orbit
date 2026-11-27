@@ -1,11 +1,11 @@
 import { and, asc, count, desc, eq, gt, inArray, lte, sql } from "drizzle-orm";
 import { Hono, type Context } from "hono";
 import {
-  EditFestItem, EditPerson, type EventPerson, MAX_FEST_ITEMS, NewFestItem, NewPerson, OrderFestItems, type PublicFestItem, type PublicPerson, SetEventPeople,
-  type StaffFestItem, type StaffLineup, type StaffPerson,
+  EditFestItem, EditPerson, type EventAct, type EventPerson, type TeamAct, type HostCard, MAX_FEST_ITEMS, NewFestItem, NewPerson, OrderFestItems, type PublicFestItem,
+  type PublicPerson, SetEventActs, SetEventPeople, type StaffFestItem, type StaffLineup, type StaffPerson,
 } from "@orbit/contract";
 import type { Db } from "./db/index.ts";
-import { auditLog, eventPeople, events, festItems, hosts, persons } from "./db/schema.ts";
+import { auditLog, eventActs, eventPeople, events, festItems, hosts, persons, users } from "./db/schema.ts";
 import { fail, invalid, isUuid, parse, signedIn, type Tx, unlinked } from "./http.ts";
 import { onHost, requireFeature, type StaffEnv } from "./roles/access.ts";
 import { cards } from "./events/public.ts";
@@ -28,27 +28,80 @@ const toStaffItem = (i: Item): StaffFestItem => ({
   id: i.id, title: i.title, kind: i.kind, when: i.when, where: i.where, about: i.about, team: i.team, prize: i.prize, actHostId: i.actHostId,
 });
 
-// The event page's people and fest items. Fest items only on a fest; an act's host only while it's public and live.
-export async function lineupOf(db: Db, eventId: string, category: string | null): Promise<{ people: EventPerson[]; festItems: PublicFestItem[] }> {
+type Host = typeof hosts.$inferSelect;
+const toHostCard = (h: Host): HostCard => ({ id: h.id, slug: h.slug, name: h.name, kind: h.kind, city: h.city, verified: !!h.verifiedAt, logo: h.logo });
+const shownHost = and(eq(hosts.visibility, "public"), eq(hosts.status, "live"));
+
+// The event's acts, in order, as staff see them: hidden ones too, marked, with who added each.
+export async function actsOf(db: Db | Tx, eventId: string): Promise<EventAct[]> {
+  const rows = await db
+    .select({ a: eventActs, name: hosts.name, slug: hosts.slug, visibility: hosts.visibility, status: hosts.status, by: users.name })
+    .from(eventActs)
+    .innerJoin(hosts, eq(hosts.id, eventActs.hostId))
+    .leftJoin(users, eq(users.id, eventActs.addedBy))
+    .where(eq(eventActs.eventId, eventId))
+    .orderBy(asc(eventActs.position));
+  return rows.map((r) => ({
+    hostId: r.a.hostId, name: r.name, slug: r.slug, shown: r.visibility === "public" && r.status === "live",
+    addedBy: r.a.addedBy ? { id: r.a.addedBy, name: r.by } : null, addedAt: r.a.addedAt.toISOString(),
+  }));
+}
+// As the event's team sees them: a hidden act is only its id.
+export const toTeamAct = (a: EventAct): TeamAct => (a.shown ? { hostId: a.hostId, shown: true, name: a.name, slug: a.slug } : { hostId: a.hostId, shown: false });
+
+// Replaces the event's acts with `b.hostIds`, in order; the caller holds the event's lock. Refused when the list now
+// isn't the one the page showed (stale), when `guard` says no (given what's on now), on the event's own host, and on a
+// new act that isn't on Orbit or isn't public and live. An act already on that has since gone hidden doesn't block
+// reordering or removing others, as with fest items' acts. A kept act keeps who added it and when. Answers the list before.
+export async function setActs(
+  tx: Tx, c: Context, e: { id: string; hostId: string }, b: { shown: string[]; hostIds: string[] }, by: string, at: Date,
+  guard?: (had: string[]) => Promise<Response | null>,
+): Promise<Response | string[]> {
+  const had = await tx.select().from(eventActs).where(eq(eventActs.eventId, e.id)).orderBy(asc(eventActs.position));
+  const ids = had.map((a) => a.hostId);
+  if (JSON.stringify(ids) !== JSON.stringify(b.shown)) return fail(c, 409, "stale", "This changed since you opened it. Reload and try again.");
+  const no = await guard?.(ids);
+  if (no) return no;
+  if (b.hostIds.includes(e.hostId)) return fail(c, 400, "ownAct", "An event's own host can't be one of its acts.");
+  const added = b.hostIds.filter((id) => !ids.includes(id));
+  const found = added.length ? await tx.select({ visibility: hosts.visibility, status: hosts.status }).from(hosts).where(inArray(hosts.id, added)) : [];
+  if (found.length !== added.length) return fail(c, 400, "noHost", "One of those hosts isn't on Orbit.");
+  if (found.some((h) => h.visibility !== "public" || h.status !== "live")) return fail(c, 409, "actHidden", "One of those hosts isn't public and live, so the page wouldn't show it. Pick another.");
+  // Kept rows only move, so their added_by isn't checked again (that would lock the adders' user rows).
+  const gone = ids.filter((id) => !b.hostIds.includes(id));
+  if (gone.length) await tx.delete(eventActs).where(and(eq(eventActs.eventId, e.id), inArray(eventActs.hostId, gone)));
+  for (const [position, hostId] of b.hostIds.entries())
+    if (ids.includes(hostId)) await tx.update(eventActs).set({ position }).where(and(eq(eventActs.eventId, e.id), eq(eventActs.hostId, hostId)));
+  if (added.length) await tx.insert(eventActs).values(added.map((hostId) => ({ eventId: e.id, hostId, position: b.hostIds.indexOf(hostId), addedBy: by, addedAt: at })));
+  return ids;
+}
+
+// The event page's people, fest items and acts. Fest items only on a fest; an act (or a fest item's act) only while its
+// host is public and live.
+export async function lineupOf(db: Db, eventId: string, category: string | null): Promise<{ people: EventPerson[]; festItems: PublicFestItem[]; acts: HostCard[] }> {
   const people = await db
     .select({ id: persons.id, name: persons.name, headline: persons.headline, role: eventPeople.role })
     .from(eventPeople)
     .innerJoin(persons, eq(persons.id, eventPeople.personId))
     .where(eq(eventPeople.eventId, eventId))
     .orderBy(asc(eventPeople.position));
-  if (category !== "fests") return { people, festItems: [] };
+  const acts = (
+    await db.select({ h: hosts }).from(eventActs).innerJoin(hosts, and(eq(hosts.id, eventActs.hostId), shownHost)).where(eq(eventActs.eventId, eventId)).orderBy(asc(eventActs.position))
+  ).map((r) => toHostCard(r.h));
+  if (category !== "fests") return { people, festItems: [], acts };
   const rows = await db
     .select({ item: festItems, host: hosts })
     .from(festItems)
-    .leftJoin(hosts, and(eq(hosts.id, festItems.actHostId), eq(hosts.visibility, "public"), eq(hosts.status, "live")))
+    .leftJoin(hosts, and(eq(hosts.id, festItems.actHostId), shownHost))
     .where(eq(festItems.eventId, eventId))
     .orderBy(asc(festItems.position), asc(festItems.createdAt));
   return {
     people,
     festItems: rows.map(({ item, host: h }) => {
       const { actHostId: _, ...rest } = toStaffItem(item);
-      return { ...rest, act: h ? { id: h.id, slug: h.slug, name: h.name, kind: h.kind, city: h.city, verified: !!h.verifiedAt, logo: h.logo } : null };
+      return { ...rest, act: h ? toHostCard(h) : null };
     }),
+    acts,
   };
 }
 
@@ -95,8 +148,8 @@ export function peopleRoutes({ db, secret, now = Date.now }: Deps) {
   const log = (tx: Db | Tx, c: Context<StaffEnv>, action: string, targetHost: string | null, data: object) =>
     tx.insert(auditLog).values({ actorId: c.var.actor.id, action, targetHost, data, at: at() });
   // Staff never act on a host they're on (Roles flow): any of these.
-  const onAny = async (c: Context<StaffEnv>, hostIds: string[]) => {
-    for (const h of new Set(hostIds)) if (await onHost(db, h, c.var.user, now())) return true;
+  const onAny = async (c: Context<StaffEnv>, hostIds: string[], q: Db | Tx = db) => {
+    for (const h of new Set(hostIds)) if (await onHost(q, h, c.var.user, now())) return true;
     return false;
   };
 
@@ -171,7 +224,7 @@ export function peopleRoutes({ db, secret, now = Date.now }: Deps) {
       .where(eq(eventPeople.eventId, eventId))
       .orderBy(asc(eventPeople.position));
     const items = await db.select().from(festItems).where(eq(festItems.eventId, eventId)).orderBy(asc(festItems.position), asc(festItems.createdAt));
-    return { people: people.map((r) => ({ ...toStaffPerson(r.p), role: r.role })), festItems: items.map(toStaffItem) };
+    return { people: people.map((r) => ({ ...toStaffPerson(r.p), role: r.role })), festItems: items.map(toStaffItem), acts: await actsOf(db, eventId) };
   };
   const stale = (c: Context) => fail(c, 409, "stale", "This changed since you opened it. Reload and try again.");
 
@@ -203,6 +256,30 @@ export function peopleRoutes({ db, secret, now = Date.now }: Deps) {
       if (!done) return stale(c);
     } catch (err) {
       if (unlinked(err)) return fail(c, 400, "noPerson", "One of those people isn't in Galaxy any more. Reload and try again.");
+      throw err;
+    }
+    return c.json(await lineup(e.id));
+  });
+
+  // PUT /galaxy/events/:id/acts: replaces the whole list, in the order given, under the event's lock. Each act as the
+  // host's own PUT checks it (but before or after the start, or cancelled: staff take acts off any time), and none
+  // (added or taken off) a host the staff member is on.
+  app.put("/galaxy/events/:id/acts", auth, hostsOnly, async (c) => {
+    const b = await parse(c, SetEventActs);
+    if (!b) return invalid(c);
+    const e = await eventFor(c, c.req.param("id"));
+    if (e instanceof Response) return e;
+    try {
+      const done = await db.transaction(async (tx) => {
+        await tx.select({ id: events.id }).from(events).where(eq(events.id, e.id)).for("update");
+        const from = await setActs(tx, c, e, b, c.var.user.id, at(), async (had) => ((await onAny(c, [...had, ...b.hostIds], tx)) ? ownHost(c) : null));
+        if (from instanceof Response) return from;
+        await log(tx, c, "events.acts", e.hostId, { eventId: e.id, from, to: b.hostIds });
+        return null;
+      });
+      if (done) return done;
+    } catch (err) {
+      if (unlinked(err)) return fail(c, 400, "noHost", "One of those hosts isn't on Orbit.");
       throw err;
     }
     return c.json(await lineup(e.id));

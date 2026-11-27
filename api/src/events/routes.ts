@@ -3,15 +3,16 @@ import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import {
   CancelEvent, EditEvent, EditTicketType, type EventRow, type HostEvents, NewEvent, NewTicketType, PHOTO_MAX_BYTES, type PosterSaved, type PublishMissing,
-  type TeamEvent, type TicketType, type WideSaved,
+  SetEventActs, type TeamEvent, type TicketType, type WideSaved,
 } from "@orbit/contract";
 import type { Db } from "../db/index.ts";
 import { bookings, events, eventSlugs, follows, hosts, payments, teamRoles, ticketTypes } from "../db/schema.ts";
 import { seatsTaken } from "../bookings.ts";
-import { fail, invalid, isUuid, type Notify, parse, signedIn, taken, type Env } from "../http.ts";
+import { fail, invalid, isUuid, type Notify, parse, signedIn, taken, type Env, unlinked } from "../http.ts";
 import { contentImage, drop, linkOf, type Media, newKey } from "../media.ts";
 import type { Razorpay } from "../payments/razorpay.ts";
 import { refundPaid, sendRefund } from "../payments/routes.ts";
+import { actsOf, setActs, toTeamAct } from "../people.ts";
 import { changeable, teamOf } from "../roles/access.ts";
 import { savedCount } from "../saves.ts";
 import { slugFor } from "../slugs.ts";
@@ -554,6 +555,38 @@ export function eventsRoutes({ db, notify, secret, media, razorpay: rz, now = Da
       return null;
     });
     return done ?? c.body(null, 204);
+  });
+
+  // ---------- Acts: other hosts on the event (A1) ----------
+
+  // GET /events/:id/acts: in order, hidden ones marked (`shown` false: the page drops them).
+  app.get("/events/:id/acts", auth, async (c) => {
+    const got = await adminOfEvent(c.req.param("id"), c.var.user.id);
+    return got ? c.json((await actsOf(db, got.event.id)).map(toTeamAct)) : nothing(c);
+  });
+
+  // PUT /events/:id/acts: the whole list, in order, until the event starts. Any public live host but this one; the act
+  // isn't asked (staff take one off in Galaxy).
+  app.put("/events/:id/acts", auth, async (c) => {
+    const b = await parse(c, SetEventActs);
+    if (!b) return invalid(c);
+    const got = await adminOfEvent(c.req.param("id"), c.var.user.id);
+    if (!got) return nothing(c);
+    if (!changeable(got.host)) return closed(c);
+    try {
+      // ponytail: PUT /galaxy/hosts/:id/parent locks hosts for update in id order; one racing this can rarely deadlock
+      // (Postgres aborts one with 40P01, a 500; saving again works). Add a retry if it's ever seen.
+      const done = await locked(c, got, async (tx, _host, cur) => {
+        if (cur.status === "cancelled") return fail(c, 409, "cancelled", "A cancelled event can't be edited.");
+        if (cur.startsAt && cur.startsAt.getTime() <= now()) return fail(c, 409, "started", "This event has started, so its acts are locked.");
+        const from = await setActs(tx, c, cur, b, c.var.user.id, at());
+        return from instanceof Response ? from : actsOf(tx, cur.id);
+      });
+      return done instanceof Response ? done : c.json(done.map(toTeamAct));
+    } catch (e) {
+      if (unlinked(e)) return fail(c, 400, "noHost", "One of those hosts isn't on Orbit.");
+      throw e;
+    }
   });
 
   return app;

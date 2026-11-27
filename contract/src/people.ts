@@ -29,17 +29,33 @@ export type NewPerson = z.input<typeof NewPerson>;
 export const EditPerson = PersonFields.partial().refine((b) => Object.keys(b).length > 0, "Change at least one thing");
 export type EditPerson = z.input<typeof EditPerson>;
 
+// An id in a list the API compares in JS: lowercased, as Postgres prints them, so "each once" and the checks hold.
+const ListId = z.uuid().transform((s) => s.toLowerCase());
+
 export const MAX_EVENT_PEOPLE = 50;
 // PUT /galaxy/events/:id/people: the whole list in the order the page shows it; each person once. `shown`: the people
 // and roles the page showed, in order, so a change made since (a role too) is refused (409 stale) rather than overwritten.
 export const SetEventPeople = z.object({
-  shown: z.array(z.object({ personId: z.uuid(), role: z.string().max(30) })).max(MAX_EVENT_PEOPLE),
+  shown: z.array(z.object({ personId: ListId, role: z.string().max(30) })).max(MAX_EVENT_PEOPLE),
   people: z
-    .array(z.object({ personId: z.uuid(), role: Text(1, 30) }))
+    .array(z.object({ personId: ListId, role: Text(1, 30) }))
     .max(MAX_EVENT_PEOPLE)
     .refine((a) => new Set(a.map((p) => p.personId)).size === a.length, "Each person once"),
 });
 export type SetEventPeople = z.input<typeof SetEventPeople>;
+
+export const MAX_EVENT_ACTS = 10;
+// PUT /galaxy/events/:id/acts and PUT /events/:id/acts: the event's acts (other hosts, public and live), the whole list
+// in the order the page shows it; each once. Any public live host but the event's own; nobody asks the act (staff remove).
+// `shown`: the acts the page showed, in order, so a change made since is refused (409 stale) rather than overwritten.
+export const SetEventActs = z.object({
+  shown: z.array(ListId).max(MAX_EVENT_ACTS),
+  hostIds: z
+    .array(ListId)
+    .max(MAX_EVENT_ACTS)
+    .refine((a) => new Set(a).size === a.length, "Each act once"),
+});
+export type SetEventActs = z.input<typeof SetEventActs>;
 
 export const FEST_ITEM_KINDS = ["Competition", "Performance", "Workshop", "Food"] as const;
 export const FestItemKind = z.enum(FEST_ITEM_KINDS);
@@ -69,7 +85,7 @@ export const MAX_FEST_ITEMS = 100;
 // PUT /galaxy/events/:id/fest-items/order: every item's id, each once, in the new order.
 export const OrderFestItems = z.object({
   ids: z
-    .array(z.uuid())
+    .array(ListId)
     .max(MAX_FEST_ITEMS)
     .refine((a) => new Set(a).size === a.length, "Each item once"),
 });
@@ -92,5 +108,9 @@ export type PublicPerson = {
 // Galaxy
 export type StaffPerson = { id: string; name: string; headline: string; bio: string | null; links: PersonLink[]; createdAt: string; updatedAt: string };
 export type StaffFestItem = Omit<PublicFestItem, "act"> & { actHostId: string | null };
-// GET /galaxy/events/:id/lineup: the event's people (their full record and role) and its fest items, in order.
-export type StaffLineup = { people: (StaffPerson & { role: string })[]; festItems: StaffFestItem[] };
+// An act as staff see it: `shown` is false while its host isn't public and live (the page drops it); who added it and when.
+export type EventAct = { hostId: string; name: string; slug: string; shown: boolean; addedBy: { id: string; name: string | null } | null; addedAt: string };
+// GET and PUT /events/:id/acts, in order: a hidden act's host is only its id to the event's team.
+export type TeamAct = { hostId: string; shown: true; name: string; slug: string } | { hostId: string; shown: false };
+// GET /galaxy/events/:id/lineup: the event's people (their full record and role), its fest items and its acts, in order.
+export type StaffLineup = { people: (StaffPerson & { role: string })[]; festItems: StaffFestItem[]; acts: EventAct[] };

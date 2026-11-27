@@ -1,9 +1,9 @@
 "use client";
 
-import { FEST_ITEM_KINDS, type StaffFestItem, type StaffLineup, type StaffPerson } from "@orbit/contract";
+import { type EventAct, FEST_ITEM_KINDS, MAX_EVENT_ACTS, type StaffFestItem, type StaffLineup, type StaffPerson } from "@orbit/contract";
 import { type ReactNode, useActionState } from "react";
 import { ui } from "../../ui";
-import { addEventPerson, addFestItem, type Done, deleteFestItem, editFestItem, editPerson, orderFestItems, setEventPeople } from "../actions";
+import { addEventPerson, addFestItem, type Done, deleteFestItem, editFestItem, editPerson, orderFestItems, setEventActs, setEventPeople } from "../actions";
 import styles from "../act.module.css";
 
 // An event's People and Inside the fest (X14): the lists in order, each row with Up, Down and Remove, and a form to add.
@@ -200,6 +200,54 @@ export function FestItems({ eventId, items }: { eventId: string; items: StaffFes
           <ItemFields />
         </Post>
       </details>
+    </div>
+  );
+}
+
+// An event's acts (A1): other hosts, in order. "Hidden" when the host isn't public and live, so the page drops it.
+export function Acts({ eventId, acts }: { eventId: string; acts: EventAct[] }) {
+  const ids = acts.map((a) => a.hostId);
+  const set = (next: string[]) => ({ id: eventId, shown: JSON.stringify(ids), hostIds: JSON.stringify(next) });
+  return (
+    <div className={ui.page}>
+      {acts.length === 0 ? (
+        <p className={ui.secondary}>No acts on this event yet.</p>
+      ) : (
+        <table className={ui.table}>
+          <thead>
+            <tr>
+              <th>Host</th>
+              <th>Link</th>
+              <th>On the page</th>
+              <th>Added by</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {acts.map((a, i) => (
+              <tr key={a.hostId}>
+                <td>{a.name}</td>
+                <td>{a.slug}</td>
+                <td>{a.shown ? "Shown" : "Hidden"}</td>
+                <td>{a.addedBy ? (a.addedBy.name ?? "No name") : "Gone"}</td>
+                <td>
+                  {i > 0 && <Post inline action={setEventActs} hidden={set(moved(ids, i, -1))} label="Up" />}
+                  {i < acts.length - 1 && <Post inline action={setEventActs} hidden={set(moved(ids, i, 1))} label="Down" />}
+                  <Post inline action={setEventActs} hidden={set(ids.filter((_, j) => j !== i))} label="Remove" />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {acts.length < MAX_EVENT_ACTS && (
+        <details>
+          <summary className={ui.btn}>Add an act</summary>
+          <Post action={setEventActs} hidden={set(ids)} label="Add">
+            <Field label="The act's host id (public and live, not this event's host)" name="add" max={36} />
+          </Post>
+        </details>
+      )}
     </div>
   );
 }
