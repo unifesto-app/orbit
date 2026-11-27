@@ -84,6 +84,8 @@ test('details: a category switch alone sends no details; the kept key shows for 
   assert.deepEqual(bodyOf({ ...dw, category: 'hackathons' }, dw), { category: 'hackathons' });
   assert.deepEqual(detailsOf({ ...dw, category: 'hackathons' }), { teamMin: 2 });
   assert.deepEqual(detailsOf({ ...dw, category: null }), {});
+  assert.deepEqual(bodyOf({ ...dw, category: 'jams', style: 'Blues' }, dw), { category: 'jams', details: { style: 'Blues' } });
+  assert.deepEqual(bodyOf({ ...dw, language: '', seating: '' }, dw), { details: {} });
 });
 
 test('details: hackathon lines parse; weights not adding to 100, or min over max, are refused in words', () => {
@@ -100,6 +102,7 @@ test('details: hackathon lines parse; weights not adding to 100, or min over max
   assert.equal(detailsProblem(off), 'The weights must add up to 100');
   assert.ok(!saveable({ ...h, criteria: 'Idea | lots' }, dw));
   assert.ok(!saveable({ ...h, teamMin: 'two' }, dw));
+  assert.equal(detailsProblem({ ...h, teamMin: 'two' }), 'Check the smallest team (1 to 10).');
   const big = { ...h, teamMin: '5' };
   assert.ok(!saveable(big, dw));
   assert.equal(detailsProblem(big), "The smallest team can't be bigger than the biggest");

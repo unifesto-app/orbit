@@ -217,7 +217,7 @@ function Editor({ id }: { id: string }) {
       {!locked && (
         <>
           <Section title="Details · optional" />
-          <Details f={f} put={put} started={started} />
+          <Details f={f} put={put} started={started && !draft} />
           {problem && <Note live>{problem}</Note>}
         </>
       )}
@@ -391,7 +391,13 @@ function Acts({ id, ownHostId, readOnly }: { id: string; ownHostId: string; read
       clearTimeout(wait);
     };
   }, [term, readOnly]);
-  if (!loaded) return load.error ? <Note>{load.error.message}</Note> : null;
+  if (!loaded)
+    return load.error ? (
+      <>
+        <Note>{load.error.message}</Note>
+        <Pill label="Try again" onPress={load.reload} />
+      </>
+    ) : null;
   const results = found?.q === term && term.length >= 2 ? pickable(found.hosts, list, ownHostId) : [];
   const change = (next: TeamAct[]) => {
     setEdit(next);
@@ -410,6 +416,7 @@ function Acts({ id, ownHostId, readOnly }: { id: string; ownHostId: string; read
       setSaved(null);
       setEdit(null);
       load.reload();
+      return setError('Someone changed the acts since you opened them. Here’s the latest; make your changes again.');
     }
     setError(r.error.message);
   };
@@ -425,9 +432,9 @@ function Acts({ id, ownHostId, readOnly }: { id: string; ownHostId: string; read
               right={
                 !readOnly && (
                   <>
-                    {i > 0 && <Pill label="Up" onPress={busy ? undefined : () => change(moveAct(list, i, -1))} />}
-                    {i < list.length - 1 && <Pill label="Down" onPress={busy ? undefined : () => change(moveAct(list, i, 1))} />}
-                    <Pill label="Remove" onPress={busy ? undefined : () => change(removeAct(list, i))} />
+                    {i > 0 && <Pill label="Up" spoken={`Move ${actName(a)} up`} onPress={busy ? undefined : () => change(moveAct(list, i, -1))} />}
+                    {i < list.length - 1 && <Pill label="Down" spoken={`Move ${actName(a)} down`} onPress={busy ? undefined : () => change(moveAct(list, i, 1))} />}
+                    <Pill label="Remove" spoken={`Remove ${actName(a)}`} onPress={busy ? undefined : () => change(removeAct(list, i))} />
                   </>
                 )
               }
@@ -446,7 +453,7 @@ function Acts({ id, ownHostId, readOnly }: { id: string; ownHostId: string; read
       {!readOnly && list.length < MAX_EVENT_ACTS && results.length > 0 && (
         <Card>
           {results.map((h) => (
-            <Row key={h.id} label={h.name} note={[h.kind, h.city].filter(Boolean).join(' · ') || undefined} onPress={() => change(addAct(list, h, ownHostId))} plain spoken={`Add ${h.name}`} />
+            <Row key={h.id} label={h.name} note={[h.kind, h.city].filter(Boolean).join(' · ') || undefined} onPress={busy ? undefined : () => change(addAct(list, h, ownHostId))} plain spoken={`Add ${h.name}`} />
           ))}
         </Card>
       )}
