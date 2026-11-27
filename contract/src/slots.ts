@@ -159,8 +159,9 @@ export const PublicSlots = z.object({
 export type PublicSlots = z.infer<typeof PublicSlots>;
 
 // GET /public/places?lat&lng: every public, live Venue host with a live station, nearest first with a point (else by
-// name). `tile`: gaming when every live station is gaming, else sports. `distanceKm` only when a point was given.
-export type PlaceCard = HostCard & { tile: StationTile; area: string; distanceKm: number | null };
+// name). `tile`: gaming when every live station is gaming, else sports. `stations`: its live station names, A to Z,
+// comma-joined (what Search matches "turf" or "badminton" on). `distanceKm` only when a point was given.
+export type PlaceCard = HostCard & { tile: StationTile; area: string; stations: string; distanceKm: number | null };
 
 // Galaxy's Slot holds: live holds (staff can release one) and the freed-slot alerts of the last 7 days.
 export type StaffSlotHold = { id: string; hostId: string; venue: string; station: string; person: string | null; start: string; count: number; holdEndsAt: string; minutesLeft: number };

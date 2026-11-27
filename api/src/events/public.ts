@@ -208,7 +208,7 @@ export function publicEventsRoutes({ db, now = Date.now }: Deps) {
     const rows = await db
       .select({
         id: hosts.id, slug: hosts.slug, name: hosts.name, kind: hosts.kind, city: hosts.city, verifiedAt: hosts.verifiedAt, logo: hosts.logo,
-        area: venues.area, gaming: sql<boolean>`bool_and(${stations.tile} = 'gaming')`, dist,
+        area: venues.area, gaming: sql<boolean>`bool_and(${stations.tile} = 'gaming')`, names: sql<string>`string_agg(distinct ${stations.name}, ', ' order by ${stations.name})`, dist,
       })
       .from(venues)
       .innerJoin(hosts, eq(hosts.id, venues.hostId))
@@ -219,7 +219,7 @@ export function publicEventsRoutes({ db, now = Date.now }: Deps) {
       .limit(PLACES_CAP); // ponytail: capped at 100; page when there are more
     const places = rows.map((r): PlaceCard => ({
       id: r.id, slug: r.slug, name: r.name, kind: r.kind, city: r.city, verified: !!r.verifiedAt, logo: r.logo,
-      tile: r.gaming ? "gaming" : "sports", area: r.area, distanceKm: km(r.dist),
+      tile: r.gaming ? "gaming" : "sports", area: r.area, stations: r.names, distanceKm: km(r.dist),
     }));
     return c.json({ places });
   });
