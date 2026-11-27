@@ -49,6 +49,10 @@ function payDirect(ui: NonNullable<ReturnType<typeof customUi>>, payload: object
 }
 
 let asked: Promise<OnPhone[] | null> | null = null;
+let onPhone: OnPhone[] | null = null; // the answer, once in, for what can't wait on it (the pay bar's mark)
+
+/** The phone's own icon for a UPI app we have no logo for (Android only), once installedUpi has answered. */
+export const phoneIcon = (id: string) => onPhone?.find((a) => a.id === id)?.icon;
 
 /** This phone's UPI apps we know, asked once per launch; null = can't tell (older build, no answer in 4s), so every
  * app shows and Pay uses the sheet. Not through the library's getAppsWhichSupportUPI: when it answers it drops every
@@ -58,6 +62,7 @@ export function installedUpi(): Promise<OnPhone[] | null> {
   asked ??= new Promise<OnPhone[] | null>((resolve) => {
     const done = (apps: OnPhone[] | null) => {
       clearTimeout(timer);
+      onPhone = apps;
       sub.remove();
       resolve(apps); // null stays for this launch: Pay mustn't wait 4s on every tap
     };

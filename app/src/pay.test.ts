@@ -146,24 +146,38 @@ test('every UPI app has its own Android package and iOS shortcode', () => {
   assert.equal(new Set(UPI_APPS.flatMap((a) => a.ios)).size, UPI_APPS.flatMap((a) => a.ios).length);
 });
 
-test('the phone’s UPI apps map to ours, in our order', () => {
+test('the phone’s UPI apps: ours first, in our order, then the rest', () => {
   const android = [{ appName: 'PhonePe', packageName: 'com.phonepe.app' }, { appName: 'Slice', packageName: 'indwin.c3.shareapp' }, { appName: 'GPay', packageName: 'com.google.android.apps.nbu.paisa.user' }];
   assert.deepEqual(upiOnPhone(android, 'android'), [
-    { id: 'gpay', app: 'com.google.android.apps.nbu.paisa.user' },
-    { id: 'phonepe', app: 'com.phonepe.app' },
+    { id: 'gpay', app: 'com.google.android.apps.nbu.paisa.user', name: 'Google Pay' },
+    { id: 'phonepe', app: 'com.phonepe.app', name: 'PhonePe' },
+    { id: 'indwin.c3.shareapp', app: 'indwin.c3.shareapp', name: 'Slice' },
   ]);
   // iOS: the SDK's { appName, shortcode }, or a bare name.
   const ios = [{ appName: { appName: 'PhonePe', shortcode: 'phonepe' } }, { appName: 'Google Pay' }, { appName: 'super.money' }];
   assert.deepEqual(upiOnPhone(ios, 'ios'), [
-    { id: 'gpay', app: 'google_pay' },
-    { id: 'phonepe', app: 'phonepe' },
-    { id: 'supermoney', app: 'super' },
+    { id: 'gpay', app: 'google_pay', name: 'Google Pay' },
+    { id: 'phonepe', app: 'phonepe', name: 'PhonePe' },
+    { id: 'supermoney', app: 'super', name: 'super.money' },
   ]);
   assert.deepEqual(upiOnPhone([], 'ios'), []);
+  // Apps we don't list show too, after ours, as the phone names them (Zomato lists Kotak811 and slice).
+  const more = [{ appName: 'slice', packageName: 'indwin.c3.shareapp', iconBase64: 'iVBOR' }, { appName: 'PhonePe', packageName: 'com.phonepe.app' }, { packageName: 'com.x.pay' }];
+  assert.deepEqual(upiOnPhone(more, 'android'), [
+    { id: 'phonepe', app: 'com.phonepe.app', name: 'PhonePe' },
+    { id: 'indwin.c3.shareapp', app: 'indwin.c3.shareapp', name: 'slice', icon: 'iVBOR' },
+    { id: 'com.x.pay', app: 'com.x.pay', name: 'com.x.pay' },
+  ]);
+  const iosMore = [{ appName: { appName: 'Kotak811', shortcode: 'kotakbank' } }, { appName: 'Jupiter Money' }];
+  assert.deepEqual(upiOnPhone(iosMore, 'ios'), [
+    { id: 'kotakbank', app: 'kotakbank', name: 'Kotak811' },
+  ]); // a bare name we don't list has no shortcode to open it by, so it's left out
+  assert.equal(payName({ kind: 'upiApp', id: 'indwin.c3.shareapp', name: 'slice' }), 'slice');
+  assert.equal(payName({ kind: 'upiApp', id: 'mobikwik', name: 'Mobikwik' }), 'Mobikwik'); // a wallet logo, not one of ours
 });
 
 test('a picked UPI app on this phone pays without the sheet', () => {
-  const onPhone = [{ id: 'phonepe', app: 'com.phonepe.app' }];
+  const onPhone = [{ id: 'phonepe', app: 'com.phonepe.app', name: 'PhonePe' }];
   const o = { key: 'rzp_k', order_id: 'order_1', amount: 49900, description: 'Gig', email: 'a@b.in', contact: '+919999999999' };
   assert.deepEqual(directOf({ kind: 'upiApp', id: 'phonepe' }, onPhone, o), {
     key_id: 'rzp_k', order_id: 'order_1', amount: '49900', currency: 'INR', description: 'Gig', email: 'a@b.in', contact: '+919999999999',

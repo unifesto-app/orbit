@@ -12,7 +12,7 @@ import type { MyPayment, MyRefund, PayOrder, Verified } from '@orbit/contract';
 import type { makeApi, Result } from './api.ts';
 
 export type PayWith =
-  | { kind: 'upiApp'; id: string }
+  | { kind: 'upiApp'; id: string; name?: string } // name: an app we don't list, as the phone names it
   | { kind: 'vpa'; vpa: string }
   | { kind: 'card' }
   | { kind: 'wallet'; code: string }
@@ -128,7 +128,7 @@ export function payKey(p: PayWith): string {
 export function payName(p: PayWith): string {
   switch (p.kind) {
     case 'upiApp':
-      return UPI_APPS.find((a) => a.id === p.id)?.name ?? 'UPI';
+      return UPI_APPS.find((a) => a.id === p.id)?.name ?? p.name ?? 'UPI';
     case 'vpa':
       return p.vpa.trim();
     case 'card':
@@ -259,29 +259,39 @@ export const refundWord = (s: MyRefund['status']) => (s === 'processed' ? 'Refun
 // Paying a UPI app without the sheet (owner, 27 Nov 2026: "Zomato-style direct"), as Unifesto does (mobile/src/lib/pay.ts):
 // Razorpay's Custom UI lists the phone's UPI apps and opens the picked one. src/checkout.ts is the native half.
 
-/** A UPI app on this phone: our id, and the id Razorpay's Custom UI opens it by. */
-export type OnPhone = { id: string; app: string };
+/** A UPI app on this phone: our id (or, for one we don't list, the phone's own), the id Razorpay's Custom UI opens it
+ * by, and its name. */
+// icon: Android's own icon (PNG, base64) for an app we have no logo for; iOS gives none.
+export type OnPhone = { id: string; app: string; name: string; icon?: string };
 
 /** What Custom UI reports per app. iOS wraps the SDK's { appName, shortcode } in appName. */
-export type FoundUpiApp = { appName?: string | { appName?: string; shortcode?: string }; packageName?: string };
+export type FoundUpiApp = { appName?: string | { appName?: string; shortcode?: string }; packageName?: string; iconBase64?: string };
 
-/** The phone's UPI apps we know, in our order (Custom UI's list, matched by Android package or iOS shortcode). */
+/** Every UPI app this phone has, as Zomato lists them (owner, 27 Nov 2026: "kotak811 and slice too"): the ones we
+ * list first, in our order and with our names, then the rest as the phone names them (Custom UI's list, matched by
+ * Android package or iOS shortcode). */
 export function upiOnPhone(found: readonly FoundUpiApp[], os: string): OnPhone[] {
-  const ids = new Map<string, string>(); // how the phone named it -> the id Custom UI takes back
+  const seen = new Map<string, { app: string; name: string; icon?: string }>(); // how the phone keys it -> the id Custom UI takes back
   for (const f of found) {
+    const ios = typeof f.appName === 'object' ? f.appName : undefined;
+    const name = ((typeof f.appName === 'string' ? f.appName : ios?.appName) ?? '').trim();
     if (os !== 'ios') {
-      if (f.packageName) ids.set(f.packageName, f.packageName);
+      if (f.packageName) seen.set(f.packageName, { app: f.packageName, name: name || f.packageName, icon: f.iconBase64 || undefined });
       continue;
     }
-    const ios = typeof f.appName === 'object' ? f.appName : undefined;
-    const name = (typeof f.appName === 'string' ? f.appName : ios?.appName) ?? '';
     const code = ios?.shortcode || name.toLowerCase().replace(/\s/g, '');
-    if (code) ids.set(code, ios?.shortcode ?? '');
+    if (code) seen.set(code, { app: ios?.shortcode ?? '', name: name || code });
   }
-  return UPI_APPS.flatMap((a) => {
-    const seen = os === 'ios' ? a.ios.find((c) => ids.has(c)) : ids.has(a.android) ? a.android : undefined;
-    return seen === undefined ? [] : [{ id: a.id, app: ids.get(seen) || a.ios[0] }];
+  const ours = UPI_APPS.flatMap((a) => {
+    const key = os === 'ios' ? a.ios.find((c) => seen.has(c)) : seen.has(a.android) ? a.android : undefined;
+    if (key === undefined) return [];
+    const app = seen.get(key)!.app || a.ios[0];
+    seen.delete(key);
+    return [{ id: a.id, app, name: a.name }];
   });
+  // A bare iOS name (no shortcode) can still match ours above, but one we don't list has no id we can trust to open it.
+  const rest = [...seen].filter(([, f]) => f.app).map(([key, f]) => ({ id: key, app: f.app, name: f.name, ...(f.icon ? { icon: f.icon } : {}) }));
+  return [...ours, ...rest];
 }
 
 /** Custom UI's options for paying the picked UPI app straight away, or null for the sheet: not a UPI app, not on

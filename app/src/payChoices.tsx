@@ -7,9 +7,9 @@ import { type ComponentProps, useEffect, useState } from 'react';
 import { Alert, Image, type ImageSourcePropType, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { Field, Group, Pill, Row, TONE } from './account/kit';
-import { installedUpi } from './checkout';
+import { installedUpi, phoneIcon } from './checkout';
 import { Icon } from './icons';
-import { cleanVpa, handleHints, isVpa, vpaApp, payKey, SHOWN, UPI_APPS, type UpiId, verifyUpiId, WALLETS, type PayWith } from './pay';
+import { cleanVpa, handleHints, isVpa, vpaApp, type OnPhone, payKey, SHOWN, UPI_APPS, type UpiId, verifyUpiId, WALLETS, type PayWith } from './pay';
 import { Chip } from './pickers';
 import { Tag } from './rows';
 import { addUpiId, removeUpiId, setPayWith, usePayWith, useUpiIds } from './session';
@@ -35,13 +35,39 @@ const LOGO: Record<LogoId, ImageSourcePropType> = {
   airtelmoney: require('../assets/pay/airtelmoney.jpg'),
 };
 
+// UPI apps we don't list, by the shortcode Razorpay's iOS SDK reports them under (App Store icons): iOS gives no icons.
+const MORE_LOGO: Record<string, ImageSourcePropType> = {
+  bobupi: require('../assets/pay/bobupi.jpg'),
+  fampay: require('../assets/pay/fampay.jpg'),
+  indusmobile: require('../assets/pay/indusmobile.jpg'),
+  jupiter: require('../assets/pay/jupiter.jpg'),
+  kiwi: require('../assets/pay/kiwi.jpg'),
+  kotakbank: require('../assets/pay/kotakbank.jpg'),
+  myjio: require('../assets/pay/myjio.jpg'),
+  omnicard: require('../assets/pay/omnicard.jpg'),
+  popclubapp: require('../assets/pay/popclubapp.jpg'),
+  sbiyono: require('../assets/pay/sbiyono.jpg'),
+  shriramone: require('../assets/pay/shriramone.jpg'),
+  slice: require('../assets/pay/slice.jpg'),
+  whatsapp: require('../assets/pay/whatsapp.jpg'),
+};
+
+/** Our logo for an app or wallet, else a bundled one for an unlisted iOS app, else the phone's own icon (Android). */
+function logoOf(id: string): ImageSourcePropType | undefined {
+  if (id in LOGO) return LOGO[id as LogoId];
+  if (Object.hasOwn(MORE_LOGO, id)) return MORE_LOGO[id];
+  const icon = phoneIcon(id)?.replace(/\s/g, '');
+  return icon ? { uri: icon.startsWith('data:') ? icon : `data:image/png;base64,${icon}` } : undefined;
+}
+
 /** The way you pay as the pay bar shows it beside "Pay with …" (Unifesto's pay bar, owner 19 Nov 2026: "move paywith to
  * cta"): its logo, Apple Pay's mark, or for a card, a UPI ID or nothing chosen yet, the glyph. */
 export function PayMark({ pay }: { pay?: PayWith }) {
   const id = pay?.kind === 'upiApp' ? pay.id : pay?.kind === 'wallet' ? pay.code : pay?.kind === 'vpa' ? vpaApp(pay.vpa) : undefined;
-  if (id && id in LOGO) return <Image source={LOGO[id as LogoId]} style={styles.logo} resizeMode="contain" accessibilityIgnoresInvertColors />;
+  const logo = id ? logoOf(id) : undefined;
+  if (logo) return <Image source={logo} style={styles.logo} resizeMode="contain" accessibilityIgnoresInvertColors />;
   if (pay?.kind === 'applePay') return <Image source={require('../assets/pay/applepay.png')} style={styles.applePay} resizeMode="contain" accessibilityIgnoresInvertColors />;
-  return <Icon name={pay?.kind === 'vpa' ? 'vpa' : pay?.kind === 'card' ? 'card' : 'wallet'} size={22} color={color.text} />;
+  return <Icon name={pay?.kind === 'vpa' ? 'vpa' : pay?.kind === 'card' ? 'card' : pay?.kind === 'upiApp' ? 'upi' : 'wallet'} size={22} color={color.text} />;
 }
 
 /** A UPI ID's app logo, by its handle, in the glyph's place; none (so the row keeps its @) for a bank's own handle. */
@@ -54,8 +80,10 @@ const fieldMark = (vpa: string) => vpaLogo(vpa) ?? <Icon name="vpa" size={22} co
 
 /** A row led by its logo in the glyph's place: 26 wide, the glyph's 22 plus its 4, so labels line up, with the corner
  * a phone gives an app icon. `icon` stays on the element only for Group's hairline indent. */
-function PayRow({ id, ...row }: ComponentProps<typeof Row> & { id: LogoId }) {
-  const mark = <Image source={LOGO[id]} style={styles.logo} resizeMode="contain" accessibilityIgnoresInvertColors />;
+function PayRow({ id, ...row }: ComponentProps<typeof Row> & { id: string }) {
+  const logo = logoOf(id);
+  if (!logo) return <Row {...row} />;
+  const mark = <Image source={logo} style={styles.logo} resizeMode="contain" accessibilityIgnoresInvertColors />;
   return <Row {...row} icon={undefined} lead={mark} />;
 }
 
@@ -132,10 +160,10 @@ export function PayChoices({ onPicked }: { onPicked?: () => void }) {
   const [allApps, setAllApps] = useState(false);
   const [adding, setAdding] = useState(false);
   // Only the UPI apps this phone has (owner, 27 Nov 2026); every one until Razorpay answers, or if it can't.
-  const [onPhone, setOnPhone] = useState<string[] | null>(null);
+  const [onPhone, setOnPhone] = useState<OnPhone[] | null>(null);
   useEffect(() => {
     let live = true;
-    installedUpi().then((a) => live && a && setOnPhone(a.map((x) => x.id)));
+    installedUpi().then((a) => live && a && setOnPhone(a));
     return () => {
       live = false;
     };
@@ -154,17 +182,18 @@ export function PayChoices({ onPicked }: { onPicked?: () => void }) {
       { text: 'Cancel', style: 'cancel' },
       { text: 'Remove', style: 'destructive', onPress: () => removeUpiId(u.vpa) },
     ]);
-  const known = onPhone ? UPI_APPS.filter((a) => onPhone.includes(a.id)) : UPI_APPS;
+  const known: readonly { id: string; name: string }[] = onPhone ?? UPI_APPS;
   const apps = allApps ? known : known.slice(0, SHOWN);
 
   return (
     <>
       <Group title="UPI apps">
         {apps.map((a) => (
-          <PayRow key={a.id} id={a.id} icon="upi" label={a.name} right={def({ kind: 'upiApp', id: a.id })} onPress={() => choose({ kind: 'upiApp', id: a.id })} />
+          // One we don't list (Kotak811, slice…) keeps the UPI glyph and its name, which Pay with shows too.
+          <PayRow key={a.id} id={a.id} icon="upi" label={a.name} right={def({ kind: 'upiApp', id: a.id })} onPress={() => choose({ kind: 'upiApp', id: a.id, name: a.name })} />
         ))}
-        {/* None we know on this phone: plain UPI, which opens checkout on UPI to pick an app there. */}
-        {!known.length && <Row icon="upi" label="UPI" right={def({ kind: 'upiApp', id: 'upi' })} onPress={() => choose({ kind: 'upiApp', id: 'upi' })} />}
+        {/* None of ours on this phone: plain UPI too, which opens checkout on UPI to pick an app there. */}
+        {!known.some((a) => UPI_APPS.some((u) => u.id === a.id)) && <Row icon="upi" label="UPI" right={def({ kind: 'upiApp', id: 'upi' })} onPress={() => choose({ kind: 'upiApp', id: 'upi' })} />}
         {!allApps && known.length > SHOWN && <Row label={`Show ${known.length - SHOWN} more UPI apps`} chevron onPress={() => setAllApps(true)} />}
       </Group>
 
