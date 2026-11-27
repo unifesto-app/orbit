@@ -18,14 +18,14 @@ import { DARK_TINT, Glass } from '../../glass';
 import { planHome, type Viewer } from '../../home/layout';
 import { Icon } from '../../icons';
 import { useAds, useFeatured, useOffered, usePromoted } from '../../content';
-import { type Event, eventsApi, type Host, hostsOf, toEvent, whereOf } from '../../events';
+import { type Event, eventsApi, type Host, hostsOf, toEvent, toPlace, whereOf } from '../../events';
 import { useLoad } from '../../load';
 import { hosts as mockHosts } from '../../mock';
 import { useUnread } from '../../inboxStore';
 import { OrbitAdStrip } from '../../orbitAd';
 import { OrbitSays } from '../../orbitSays';
 import { refreshPlace, usePlace } from '../../place';
-import { meetups, tileFor } from '../../kinds';
+import { meetups } from '../../kinds';
 import { promoteOne } from '../../labels';
 import { EventRow, Failed, HostRow, isPromoted, loveIt, Monogram, Poster, SEAT, SeatCard, Section, StatusLine, Waiting } from '../../rows';
 import { bookAction, eventStatus } from '../../status';
@@ -96,12 +96,11 @@ export default function Home() {
     ...(page.data ? [...page.data.near.map((c) => toEvent(c, true)), ...page.data.elsewhere.map((c) => toEvent(c, false))] : []),
     ...extra.map((c) => toEvent(c, false)),
   ];
-  // The hosts of those events, and the mock's places to play.
-  // ponytail: Places to play stay on the mock venue hosts (with tileFor) until slots reach the API (P17).
+  // The hosts of those events, and the places to play (GET /public/places), each once.
   const apiHosts = hostsOf(listed);
-  // Their nearness the old way (Hyderabad only), since the API doesn't know them.
-  const hyderabad = v.place?.area === 'Hyderabad' || v.place?.city === 'Hyderabad';
-  const hosts = [...apiHosts, ...mockHosts.filter((h) => tileFor(h.id)).map((h) => ({ ...h, near: hyderabad }))];
+  const placeList = useLoad(JSON.stringify(where), () => eventsApi(api).places(where), { keep: true });
+  const places = (placeList.data?.places ?? []).map(toPlace);
+  const hosts = [...apiHosts.filter((h) => !places.some((p) => p.id === h.id)), ...places];
   const ticketHosts = hostsOf([...extra, ...went]);
   const hostOf = (id: string) => (apiHosts.find((h) => h.id === id) ?? ticketHosts.find((h) => h.id === id) ?? mockHosts.find((h) => h.id === id)) as Host;
   // Staff's picks from Galaxy's App content (src/content.ts): the events marked Promoted, the carousel's featured
@@ -110,7 +109,7 @@ export default function Home() {
   const featured = useFeatured();
   const ads = useAds('home');
   const boosted = (e: Event) => isPromoted(e, hostOf(e.hostId), promoted, now);
-  const plan = planHome(v, events, hosts.map((h) => ({ ...h, tile: tileFor(h.id) })), now, boosted, featured);
+  const plan = planHome(v, events, hosts, now, boosted, featured);
   const ticketOf = (id: string) => v.tickets?.find((t) => t.eventId === id);
 
   const headerTop = insets.top + 4;

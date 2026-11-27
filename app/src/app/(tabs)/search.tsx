@@ -25,14 +25,13 @@ import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import { DARK_TINT, Glass } from '../../glass';
 import { useAds, useContent, usePromoted } from '../../content';
-import { type Event, eventsApi, type Host, hostsOf, toEvent, toHost, whereOf } from '../../events';
+import { type Event, eventsApi, type Host, hostsOf, toEvent, toHost, toPlace, whereOf } from '../../events';
 import { useLoad } from '../../load';
 import { hosts as mockHosts } from '../../mock';
 import { usePlace } from '../../place';
 import { OrbitAdStrip } from '../../orbitAd';
 import { askOrbit, OrbitSays } from '../../orbitSays';
 import { CategoryGrid } from '../../categories';
-import { tileFor } from '../../kinds';
 import { isNewHost, promoteOne } from '../../labels';
 import { EventRow, Failed, HostRow, isPromoted, labelOf, SEARCH_BOX, SearchBox, Waiting } from '../../rows';
 import { countLine, firstUnseen, MAX_QUERY, search, WHEN, type When } from '../../search';
@@ -73,15 +72,16 @@ export default function Search() {
     ? [...(discover.data?.near ?? []), ...(discover.data?.elsewhere ?? [])].sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt))
     : (searched.data?.events ?? []);
   const events = cards.map((c) => toEvent(c));
-  // Places to play sit under their tile: turfs and courts in Sports, gaming cafés in Gaming.
-  // ponytail: the mock venue hosts stay as the places to play until slots reach the API (P17); `search` finds them.
-  const findable = mockHosts.filter((h) => tileFor(h.id)).map((h) => ({ ...h, tile: tileFor(h.id) }));
+  // Places to play (GET /public/places) sit under their tile: turfs and courts in Sports, gaming cafés in Gaming; `search`
+  // finds them by what's typed.
+  const placeList = useLoad(JSON.stringify(where), () => eventsApi(api).places(where), { keep: true });
+  const findable = (placeList.data?.places ?? []).map(toPlace);
   const apiHosts = hostsOf(cards);
   const hostOf = (id: string) => (apiHosts.find((h) => h.id === id) ?? mockHosts.find((h) => h.id === id)) as Host;
   // Hosts the API found by what you typed, then the places to play that match.
   const result = {
     events,
-    hosts: [...(browsing ? [] : (searched.data?.hosts ?? []).map(toHost)), ...search(filters, [], findable, now).hosts],
+    hosts: [...new Map([...(browsing ? [] : (searched.data?.hosts ?? []).map(toHost)), ...search(filters, [], findable, now).hosts].map((h) => [h.id, h])).values()],
   };
   // One promoted event leads what's found (Boost), only if it matched; nothing is added.
   const found = { ...result, events: promoteOne(result.events, (e) => isPromoted(e, hostOf(e.hostId), promoted, now)) };

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { When } from "./events.ts";
+import { type HostCard, When } from "./events.ts";
 import { Text } from "./text.ts";
 
 // Play (Orbit flows: Play): a Venue's address and weekly hours, its stations and the claims on them, as the API sends
@@ -157,6 +157,11 @@ export const PublicSlots = z.object({
   stations: z.array(StationRow.extend({ free: z.array(z.object({ at: z.string(), free: z.number() })) })),
 });
 export type PublicSlots = z.infer<typeof PublicSlots>;
+
+// GET /public/places?lat&lng: every public, live Venue host with a live station, nearest first with a point (else by
+// name). `tile`: gaming when every live station is gaming, else sports. `stations`: its live station names, A to Z,
+// comma-joined (what Search matches "turf" or "badminton" on). `distanceKm` only when a point was given.
+export type PlaceCard = HostCard & { tile: StationTile; area: string; stations: string; distanceKm: number | null };
 
 // Galaxy's Slot holds: live holds (staff can release one) and the freed-slot alerts of the last 7 days.
 export type StaffSlotHold = { id: string; hostId: string; venue: string; station: string; person: string | null; start: string; count: number; holdEndsAt: string; minutesLeft: number };
