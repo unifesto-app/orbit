@@ -15,7 +15,7 @@ import { refundPaid, sendRefund } from "../payments/routes.ts";
 import { changeable, teamOf } from "../roles/access.ts";
 import { savedCount } from "../saves.ts";
 import { slugFor } from "../slugs.ts";
-import { editRule, effectiveVisibility, placeColumns, stageOf, timesRule, visibilityRule } from "./rules.ts";
+import { editRule, effectiveVisibility, kindColumns, placeColumns, stageOf, timesRule, visibilityRule } from "./rules.ts";
 
 // Events a host's team makes and edits: drafts, the host's list, and the team's read (Orbit flows: Hosts and Discover).
 // Publishing, cancelling (H5.3), ticket types (H5.4) and the poster come with Discover slice 1.
@@ -266,8 +266,7 @@ export function eventsRoutes({ db, notify, secret, media, razorpay: rz, now = Da
         if (b.faq !== undefined) set.faq = b.faq;
         if (b.terms !== undefined) set.terms = b.terms;
         if (b.vibes !== undefined) set.vibes = b.vibes;
-        if (b.details !== undefined) set.details = b.details;
-        if (b.inRoom !== undefined) set.inRoom = b.inRoom;
+        Object.assign(set, kindColumns(cur!, b));
         if (b.minAge !== undefined) set.minAge = b.minAge;
         const [row] = await tx.update(events).set(set).where(eq(events.id, cur!.id)).returning();
         return { row: row!, host: host!.visibility };

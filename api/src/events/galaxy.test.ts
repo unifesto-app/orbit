@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { and, eq } from "drizzle-orm";
 import sharp from "sharp";
 import { testApp } from "../testkit.ts";
-import { auditLog, bookings, staffGrants } from "../db/schema.ts";
+import { auditLog, bookings, events, staffGrants } from "../db/schema.ts";
 
 // Galaxy's Events (X1): the list, one event, unpublish and cancel; and the host's fee plan.
 
@@ -155,43 +155,64 @@ test("a host's Admins pick its fee plan; 3% + 2% until they do", async () => {
 
 test("kind details read publicly by category; staff edit them in Galaxy, logged, never on their own host", async () => {
   const a = await join(), b = await join(), st = await staff(), nobody = await join();
-  const e = await publish(a, (await start(a)).id);
+  const h = await start(a);
+  const e = await publish(a, h.id);
   const body = { details: { language: "Hindi", teamMin: 2 }, inRoom: true, minAge: 21 };
   const path = `/galaxy/events/${e.id}/details`;
   assert.equal((await as(nobody)("PATCH", path, body)).status, 404);
   assert.equal((await as(a)("PATCH", path, body)).status, 404); // the host's own Admin isn't staff
   assert.equal((await t.call("PATCH", path, body)).status, 401);
-  assert.equal((await as(st)("PATCH", path, {})).status, 400);
+  // Staff without Hosts are refused too.
+  const other = await join();
+  await t.db.insert(staffGrants).values({ userId: other.me.id, feature: "people", addedBy: other.me.id, addedAt: new Date(t.now() - 2 * DAY), startsAt: new Date(t.now() - DAY) });
+  assert.equal((await as(other)("PATCH", path, body)).status, 404);
+  for (const bad of [{}, { minAge: 16 }, { details: { criteria: [{ name: "Idea", weight: 50 }] } }]) assert.equal((await as(st)("PATCH", path, bad)).status, 400);
   assert.equal((await as(st)("PATCH", `/galaxy/events/${crypto.randomUUID()}/details`, body)).status, 404);
+  // A comedy show keeps comedy's keys only, and no room.
   const r = await as(st)("PATCH", path, body);
   assert.equal(r.status, 200);
-  assert.deepEqual([r.body.details, r.body.inRoom, r.body.minAge], [body.details, true, 21]);
+  assert.deepEqual([r.body.details, r.body.inRoom, r.body.minAge], [{ language: "Hindi" }, false, 21]);
   const [log] = await t.db.select().from(auditLog).where(eq(auditLog.action, "events.details"));
   assert.equal(log!.actorId, st.me.id);
   assert.deepEqual(log!.data, { eventId: e.id, ...body });
 
-  // A comedy show: its own keys only, no room, no teams.
+  // A save for the category it's in now keeps another category's keys, whatever a stale form thought it was.
+  await as(a)("PATCH", `/events/${e.id}`, { category: "jams" });
+  const jams = await as(st)("PATCH", path, { details: { style: "Blues", language: "English" } });
+  assert.deepEqual(jams.body.details, { language: "Hindi", style: "Blues" });
   const pub = await t.call("GET", `/public/events/${e.slug}`);
-  assert.deepEqual([pub.body.details, pub.body.inRoom, pub.body.minAge, pub.body.teams], [{ language: "Hindi" }, false, 21, null]);
+  assert.deepEqual([pub.body.details, pub.body.inRoom, pub.body.minAge, pub.body.teams], [{ style: "Blues" }, false, 21, null]);
+  // A stored switch on a non-meetup never shows on a card.
+  await t.db.update(events).set({ inRoom: true }).where(eq(events.id, e.id));
   assert.equal((await t.call("GET", "/public/discover")).body.elsewhere.find((x: any) => x.id === e.id).inRoom, false);
+  assert.equal((await t.call("GET", "/public/search?q=open+mic")).body.events.find((x: any) => x.id === e.id).inRoom, false);
+  assert.equal((await t.call("GET", `/public/events/${e.slug}`)).body.inRoom, false);
   // A hackathon counts its confirmed bookings as teams; a meetup shows its room.
   assert.equal((await as(b)("POST", `/events/${e.id}/book`, { ticketTypeId: e.tier, quantity: 1 })).status, 201);
-  await as(a)("PATCH", `/events/${e.id}`, { category: "hackathons" });
+  await as(a)("PATCH", `/events/${e.id}`, { category: "hackathons", details: { teamMin: 2 } });
   const hack = (await t.call("GET", `/public/events/${e.slug}`)).body;
   assert.deepEqual([hack.details, hack.teams], [{ teamMin: 2 }, 1]);
-  await as(a)("PATCH", `/events/${e.id}`, { category: "meetups" });
+  await as(a)("PATCH", `/events/${e.id}`, { category: "meetups", inRoom: true });
   assert.equal((await t.call("GET", `/public/events/${e.slug}`)).body.inRoom, true);
   assert.equal((await as(b)("GET", "/me/tickets")).body.upcoming[0].event.inRoom, true); // the ticket's card carries it
 
-  // Started: the host is locked out of the switch, staff aren't.
+  // Started: the host can't flip the room, by the switch or by leaving meetups; staff can.
   t.tick(DAY + HOUR);
   assert.equal((await as(a)("PATCH", `/events/${e.id}`, { inRoom: false })).body.error, "started");
+  assert.equal((await as(a)("PATCH", `/events/${e.id}`, { category: "comedy" })).body.error, "started");
   assert.equal((await as(st)("PATCH", path, { inRoom: false })).body.inRoom, false);
 
-  // A draft stays 404 publicly; staff on the host never edit it.
+  // A draft's details and age never show on a public path; staff on the host never edit it.
+  const d = (await as(a)("POST", `/hosts/${h.id}/events`, { title: "Zebra draft" })).body as { id: string; slug: string };
+  await as(a)("PATCH", `/events/${d.id}`, { category: "comedy", startsAt: iso(2 * DAY), endsAt: iso(2 * DAY + HOUR), place, details: { language: "Klingon" }, minAge: 18 });
+  assert.equal((await t.call("GET", `/public/events/${d.slug}`)).status, 404);
+  const hostSlug = (await as(a)("GET", `/hosts/${h.id}`)).body.slug;
+  for (const p of ["/public/discover", "/public/search?q=zebra", "/public/search?category=comedy", `/public/hosts/${hostSlug}/events`]) {
+    const got = await t.call("GET", p);
+    assert.ok(!JSON.stringify(got.body).includes("Klingon") && !JSON.stringify(got.body).includes(d.id), p);
+  }
   const own = await start(st);
-  const mine = (await as(st)("POST", `/hosts/${own.id}/events`, { title: "Draft" })).body as { id: string; slug: string };
-  assert.equal((await t.call("GET", `/public/events/${mine.slug}`)).status, 404);
+  const mine = (await as(st)("POST", `/hosts/${own.id}/events`, { title: "Draft" })).body as { id: string };
   const refused = await as(st)("PATCH", `/galaxy/events/${mine.id}/details`, body);
   assert.equal(refused.status, 403);
   assert.equal(refused.body.error, "ownHost");

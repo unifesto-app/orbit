@@ -250,7 +250,7 @@ export const events = pgTable(
     check("events_point_both_or_neither", sql`(${t.lat} is null) = (${t.lng} is null)`),
     check("events_point_needs_venue", sql`${t.lat} is null or ${t.venue} is not null`),
     check("events_min_age", sql`${t.minAge} in (18, 21)`),
-        check("events_point_in_india", sql`${t.lat} is null or (${t.lat} between 6 and 37.5 and ${t.lng} between 68 and 97.5)`),
+    check("events_point_in_india", sql`${t.lat} is null or (${t.lat} between 6 and 37.5 and ${t.lng} between 68 and 97.5)`),
     index().on(t.hostId, t.startsAt), // a host's events
     index().on(t.status, t.startsAt), // discover lists
     index().on(t.status, t.endsAt), // "upcoming" is until the end

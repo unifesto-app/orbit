@@ -1,4 +1,4 @@
-import type { EditEvent, EventStatus, EventVisibility, Place } from "@orbit/contract";
+import { type CategorySlug, DETAIL_KEYS, detailsFor, type EditEvent, type EventDetails, type EventStatus, type EventVisibility, type Place } from "@orbit/contract";
 
 // The Hosts and Discover flows' rules for events as pure functions: routes load the rows and apply the answer.
 
@@ -29,7 +29,9 @@ const moved = (e: Stored, p: EditEvent) =>
 export function editRule(event: Stored, patch: EditEvent, now: number): { ok: true } | { ok: false; error: "cancelled" | "ended" | "endInPast" | "needed" | "started" } {
   if (event.status === "cancelled") return { ok: false, error: "cancelled" };
   if (event.status === "draft") return { ok: true };
-  if ("inRoom" in patch && patch.inRoom !== event.inRoom && event.startsAt !== null && event.startsAt.getTime() <= now) return { ok: false, error: "started" };
+  // ponytail: moving startsAt later in the same patch (or an earlier one) reopens the switch; rescheduling means it hasn't started.
+  const room = event.category === "meetups" && !!event.inRoom;
+  if (roomAfter(event, patch) !== room && event.startsAt !== null && event.startsAt.getTime() <= now) return { ok: false, error: "started" };
   const ended = event.endsAt !== null && event.endsAt.getTime() <= now;
   if (ended && moved(event, patch)) return { ok: false, error: "ended" };
   const end = "endsAt" in patch ? instant(patch.endsAt) : null;
@@ -41,6 +43,25 @@ export function editRule(event: Stored, patch: EditEvent, now: number): { ok: tr
   const link = "onlineLink" in patch ? patch.onlineLink : event.onlineLink;
   if (!hasPlace && !(online && link)) return { ok: false, error: "needed" };
   return { ok: true };
+}
+
+type Kind = { category?: string | null; inRoom?: boolean };
+// The category an edit leaves the event in: the patch's (null included), else the stored one.
+const categoryAfter = (e: Kind, p: Kind) => (p.category !== undefined ? p.category : (e.category ?? null));
+// Whether guests can meet in the app after the edit: only ever on a meetup.
+const roomAfter = (e: Kind, p: Kind) => categoryAfter(e, p) === "meetups" && (p.inRoom ?? e.inRoom ?? false);
+
+// The details and inRoom an edit writes (PATCH /events/:id and Galaxy's alike), from the category the event ends up in,
+// never one a form sent: that category's keys are replaced by the sent ones, every other category's are kept; with no
+// category yet nothing changes. inRoom is stored true only on a meetup.
+export function kindColumns(e: Kind & { details: EventDetails; inRoom: boolean }, p: Kind & { details?: EventDetails }) {
+  const category = categoryAfter(e, p);
+  const keys: readonly string[] = DETAIL_KEYS[category as CategorySlug] ?? [];
+  const details =
+    p.details === undefined || !category
+      ? e.details
+      : { ...Object.fromEntries(Object.entries(e.details).filter(([k]) => !keys.includes(k))), ...detailsFor(category, p.details) };
+  return { details, inRoom: roomAfter(e, p) };
 }
 
 // The contract checks start and end only when both come in one request; this checks them as they'd be stored.
