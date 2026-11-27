@@ -2,7 +2,7 @@ import type { Broadcast, BroadcastStatus } from "@orbit/contract";
 
 // Broadcasts' words, shared by the list and a broadcast's page.
 export const STATUS: Record<BroadcastStatus, [string, "success" | "info" | "warning" | "error" | "neutral"]> = {
-  waiting: ["Waiting for a second person", "warning"],
+  waiting: ["Waiting for confirm", "warning"],
   scheduled: ["Scheduled", "info"],
   sending: ["Sending", "info"],
   sent: ["Sent", "success"],
