@@ -3,6 +3,7 @@
 import { refresh } from "next/cache";
 import type { ContentAdmin } from "@orbit/contract";
 import { galaxy } from "../../api";
+import { detailsOf } from "../../details";
 
 // Galaxy's risky actions (Roles flow): each carries a written reason the other side sees, and the API writes the change,
 // its audit row and the email to that feature's holders together. Each answers with the API's message when it says no.
@@ -128,6 +129,18 @@ export async function promoteEvent(_: Done, f: FormData) {
   const list = r.data.content.promoted.filter((p) => p.href !== href);
   if (on && list.length >= 10) return { error: "Promoted holds 10 events. Take one out in App content first." };
   return run("PUT", "/galaxy/app-content/promoted", { value: on ? [...list, { href }] : list, at: r.data.saved.promoted?.at ?? null });
+}
+
+// Kind details: the category's boxes, saved whole; inRoom only on a meetup, where the box is shown. No reason: page
+// content, logged without telling anyone.
+export async function setEventDetails(_: Done, f: FormData) {
+  const category = text(f, "category");
+  const age = text(f, "minAge");
+  return run("PATCH", `/galaxy/events/${path(f, "id")}/details`, {
+    details: detailsOf(category, (k) => text(f, k)),
+    minAge: age ? Number(age) : null,
+    ...(category === "meetups" ? { inRoom: f.get("inRoom") === "on" } : {}),
+  });
 }
 
 // ─── An event's people and what's inside a fest (X14) ───

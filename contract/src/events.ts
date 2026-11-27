@@ -72,6 +72,75 @@ export type FaqItem = z.infer<typeof FaqItem>;
 // The host's own terms, shown above Orbit's defaults.
 const Terms = z.array(Text(1, 500)).max(20);
 
+// ---------- Kind details: what a category's page shows beyond the basics (kind details plan) ----------
+
+/** The kinds of fest a host can pick (outside the docs: the owner's to change). */
+export const FEST_TYPES = ["College cultural fest", "College tech fest", "Music festival", "Food festival", "Sports fest", "Community fest"] as const;
+
+// One flat object, every key optional: a category reads only its own keys (DETAIL_KEYS), so one stored for another
+// category is kept but never shown. Hackathon fields are descriptive: nothing enforces team size or judging yet.
+export const EventDetails = z
+  .object({
+    language: Text(1, 60), // comedy: "Hindi and English"
+    seating: Text(1, 120),
+    style: Text(1, 120), // jams: what's played
+    bring: Text(1, 120),
+    onSite: Text(1, 120), // what's there already
+    teamMin: z.number().int().min(1).max(10),
+    teamMax: z.number().int().min(1).max(10),
+    tracks: z.array(z.object({ name: Text(1, 60), brief: Text(1, 200) })).max(8),
+    prizes: z.array(z.object({ place: Text(1, 30), prize: Text(1, 120) })).max(10),
+    rounds: z.array(z.object({ name: Text(1, 60), when: Text(1, 60) })).max(3),
+    criteria: z.array(z.object({ name: Text(1, 60), weight: z.number().int().min(1).max(100) })).max(8),
+    festType: z.enum(FEST_TYPES),
+    highlights: z.array(Text(1, 120)).max(6),
+  })
+  .partial()
+  .refine((d) => d.teamMin === undefined || d.teamMax === undefined || d.teamMin <= d.teamMax, { message: "The smallest team can't be bigger than the biggest", path: ["teamMax"] })
+  .refine((d) => !d.criteria?.length || d.criteria.reduce((n, c) => n + c.weight, 0) === 100, { message: "The weights must add up to 100", path: ["criteria"] });
+export type EventDetails = z.infer<typeof EventDetails>;
+
+// Which keys each category shows; a category not listed shows none.
+export const DETAIL_KEYS: Partial<Record<CategorySlug, readonly (keyof EventDetails)[]>> = {
+  comedy: ["language", "seating"],
+  jams: ["style", "bring", "onSite"],
+  hackathons: ["teamMin", "teamMax", "tracks", "prizes", "rounds", "criteria"],
+  fests: ["festType", "highlights"],
+};
+
+/** Only the category's own keys of what's stored. */
+export function detailsFor(category: string | null, details: EventDetails): EventDetails {
+  const keys = DETAIL_KEYS[category as CategorySlug] ?? [];
+  return Object.fromEntries(keys.filter((k) => details[k] !== undefined).map((k) => [k, details[k]]));
+}
+
+/** "Name | brief" lines as pairs, split at the first bar; blank lines dropped, a line with no bar has an empty second. */
+export const parseLines = (text: string): [string, string][] =>
+  text
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((l) => {
+      const at = l.indexOf("|");
+      return at < 0 ? [l, ""] : [l.slice(0, at).trim(), l.slice(at + 1).trim()];
+    });
+export const formatLines = (rows: [string, string | number][]) => rows.map(([a, b]) => `${a} | ${b}`).join("\n");
+
+// Shown on the page only, any category (not checked at booking yet).
+export const MinAge = z.union([z.literal(18), z.literal(21)]);
+const kindFields = {
+  details: EventDetails,
+  inRoom: z.boolean(), // meetups only: checked-in guests can meet in the app
+  minAge: MinAge.nullable(),
+};
+
+// PATCH /galaxy/events/:id/details: staff set the same three, any time.
+export const EditEventDetails = z
+  .object(kindFields)
+  .partial()
+  .refine((b) => Object.keys(b).length > 0, "Change at least one thing");
+export type EditEventDetails = z.infer<typeof EditEventDetails>;
+
 const endsAfterStart = (b: { startsAt?: string | null; endsAt?: string | null }) => !b.startsAt || !b.endsAt || Date.parse(b.endsAt) > Date.parse(b.startsAt);
 
 // POST /hosts/:id/events: a draft starts from its name (Hosts flow).
@@ -106,6 +175,7 @@ export const EditEvent = z
       .array(Text(1, 24))
       .max(6)
       .transform((v) => v.filter((t, i) => v.findIndex((u) => u.toLowerCase() === t.toLowerCase()) === i)),
+    ...kindFields, // a host can't change inRoom once it has started (api/src/events/rules.ts)
   })
   .partial()
   .refine((b) => Object.keys(b).length > 0, "Change at least one thing")
@@ -146,6 +216,9 @@ export const TeamEvent = z.object({
   faq: z.array(z.object({ q: z.string(), a: z.string() })),
   terms: z.array(z.string()),
   vibes: z.array(z.string()),
+  details: EventDetails, // as stored, every key: the team's editor shows the category's own
+  inRoom: z.boolean(),
+  minAge: MinAge.nullable(),
   poster: z.string().nullable(), // the 3:4 link
   wide: z.string().nullable(), // the optional 4:3 link
   wideEdge: z.string().nullable(), // the 4:3's top row, #rrggbb
@@ -276,12 +349,15 @@ export type EventCard = {
   online: boolean; poster: string | null; wide: string | null; wideEdge: string | null; tone: string | null;
   pricePaise: number | null; // the lowest tier price; null with no tiers
   tiers: TierCard[]; host: HostCard; distanceKm: number | null; // only when a point was given
+  inRoom: boolean; // a meetup whose checked-in guests can meet in the app; false on any other category
 };
 // `interested`: how many people tapped I'm interested (deleted and suspended accounts left out); `vibes`: its tags;
-// `people`: who's on it, in order; `festItems`: what's inside a fest, empty for any other category (orbit-pm X14).
+// `people`: who's on it, in order; `festItems`: what's inside a fest, empty for any other category (orbit-pm X14);
+// `details`: its category's keys only; `teams`: confirmed bookings on a hackathon, null on any other category.
 export type PublicEvent = EventCard & {
   about: string | null; agenda: { at: string; item: string }[]; faq: { q: string; a: string }[]; terms: string[];
   vibes: string[]; interested: number; people: EventPerson[]; festItems: PublicFestItem[];
+  details: EventDetails; minAge: 18 | 21 | null; teams: number | null;
 };
 
 // ---------- Search's When chips (Discover decisions 7 and 8), shared by the app and the API ----------

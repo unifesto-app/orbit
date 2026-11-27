@@ -134,8 +134,7 @@ export const meetups: Record<string, Meetup> = {
   'design-critique-18-nov': { inRoom: true },
 };
 
-/** The kinds of fest a host can pick (outside the docs: the owner's to change). */
-export const FEST_TYPES = ['College cultural fest', 'College tech fest', 'Music festival', 'Food festival', 'Sports fest', 'Community fest'] as const;
+export { FEST_TYPES } from '@orbit/contract'; // the kinds of fest a host can pick
 export const fests: Record<string, Fest> = {
   'udaan-cultural-fest': {
     type: 'College cultural fest',

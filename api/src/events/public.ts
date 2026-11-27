@@ -1,9 +1,9 @@
 import { type AnyColumn, and, asc, count, desc, eq, gt, inArray, lt, lte, ne, or, sql, type SQL } from "drizzle-orm";
 import { Hono, type Context } from "hono";
 import { z } from "zod";
-import { categories, EventCategory, EventSlug, HostSlug, type EventCard, type HostCard, MAX_QUERY, type PlaceCard, span, type PublicEvent, type TierCard, WHEN } from "@orbit/contract";
+import { categories, detailsFor, EventCategory, EventSlug, HostSlug, type EventCard, type HostCard, MAX_QUERY, type PlaceCard, span, type PublicEvent, type TierCard, WHEN } from "@orbit/contract";
 import type { Db } from "../db/index.ts";
-import { eventInterests, events, eventSlugs, hosts, hostSlugs, stations, ticketTypes, users, venues } from "../db/schema.ts";
+import { bookings, eventInterests, events, eventSlugs, hosts, hostSlugs, stations, ticketTypes, users, venues } from "../db/schema.ts";
 import { seatsTaken } from "../bookings.ts";
 import { fail, invalid } from "../http.ts";
 import { effectiveVisibility } from "./rules.ts";
@@ -40,9 +40,9 @@ const base = {
   id: events.id, slug: events.slug, title: events.title, category: events.category, startsAt: events.startsAt, endsAt: events.endsAt, timezone: events.timezone,
   publishedAt: events.publishedAt, status: events.status, visibility: events.visibility, venue: events.venue, address: events.address, area: events.area,
   city: events.city, lat: events.lat, lng: events.lng, online: events.online, poster: events.poster, wide: events.wide, wideEdge: events.wideEdge,
-  posterTone: events.posterTone, wideTone: events.wideTone,
+  posterTone: events.posterTone, wideTone: events.wideTone, inRoom: events.inRoom,
 };
-const long = { about: events.about, agenda: events.agenda, faq: events.faq, terms: events.terms, vibes: events.vibes };
+const long = { about: events.about, agenda: events.agenda, faq: events.faq, terms: events.terms, vibes: events.vibes, details: events.details, minAge: events.minAge };
 
 // Kilometres from the point to the event (or a venue), by the haversine formula (no PostGIS); null where it has no coordinates.
 const distance = (p: Point, lat: AnyColumn = events.lat, lng: AnyColumn = events.lng) =>
@@ -76,8 +76,10 @@ export async function cards(db: Db, q: { where: SQL | undefined; order: SQL[]; l
       place: r.venue === null ? null : { venue: r.venue, address: r.address!, area: r.area!, city: r.city!, lat: r.lat, lng: r.lng },
       online: r.online, poster: r.poster, wide: r.wide, wideEdge: r.wideEdge, tone: r.wideTone ?? r.posterTone,
       pricePaise: mine.length ? Math.min(...mine.map((t) => t.pricePaise)) : null, tiers: mine, host,
-      distanceKm: km(r.dist),
-      ...(q.full ? { about: r.about ?? null, agenda: r.agenda ?? [], faq: r.faq ?? [], terms: r.terms ?? [], vibes: r.vibes ?? [] } : {}),
+      distanceKm: km(r.dist), inRoom: r.category === "meetups" && r.inRoom, // a stored switch shows on meetups only
+      ...(q.full
+        ? { about: r.about ?? null, agenda: r.agenda ?? [], faq: r.faq ?? [], terms: r.terms ?? [], vibes: r.vibes ?? [], details: detailsFor(r.category, r.details ?? {}), minAge: r.minAge ?? null }
+        : {}),
     };
   });
 }
@@ -121,7 +123,9 @@ export function publicEventsRoutes({ db, now = Date.now }: Deps) {
       .from(eventInterests)
       .innerJoin(users, eq(users.id, eventInterests.userId))
       .where(and(eq(eventInterests.eventId, found.id), sql`${users.deletedAt} is null`, sql`not (${users.suspendedAt} is not null and (${users.suspendedUntil} is null or ${users.suspendedUntil} > ${stamp}::timestamptz))`));
-    return c.json({ ...event, interested: n!.n, ...(await lineupOf(db, found.id, event!.category)) } as PublicEvent);
+    // Teams on a hackathon: each confirmed booking is one team, a count and never names (Running hackathons 4).
+    const [teams] = event!.category === "hackathons" ? await db.select({ n: count() }).from(bookings).where(and(eq(bookings.eventId, found.id), eq(bookings.status, "confirmed"))) : [];
+    return c.json({ ...event, interested: n!.n, teams: teams?.n ?? null, ...(await lineupOf(db, found.id, event!.category)) } as PublicEvent);
   });
 
   // GET /public/events/:slug/calendar.ics: Add to calendar in the app. Published events whose page opens only; any slug

@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { type AnyPgColumn, bigint, boolean, check, date, doublePrecision, foreignKey, index, integer, jsonb, pgTable, primaryKey, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
-import type { AgendaItem, AutoMessages, BroadcastChannel, BroadcastSegment, FaqItem, PersonLink, RequestEvent, RequestHost, Week } from "@orbit/contract";
+import type { AgendaItem, AutoMessages, BroadcastChannel, BroadcastSegment, EventDetails, FaqItem, PersonLink, RequestEvent, RequestHost, Week } from "@orbit/contract";
 
 // The User flow's tables (Orbit flows: User). Migrated people keep their Unifesto ids, so `id` takes any UUID.
 // Phone and email are the ways in by code; Google and Apple live in `identities`, passkeys in `passkeys`.
@@ -235,6 +235,11 @@ export const events = pgTable(
     cancelReason: text("cancel_reason"), // the host's reason, which every ticket holder gets
     // The host's switches for the automatic reminders to ticket holders (notifications PR 10).
     autoMessages: jsonb("auto_messages").$type<AutoMessages>().notNull().default({ tomorrow: true, startingSoon: true, thanks: true }),
+    // What the category's page shows beyond the basics (@orbit/contract's EventDetails, checked there only), the meetup
+    // switch letting checked-in guests meet in the app, and an age shown on the page (not checked at booking yet).
+    details: jsonb("details").$type<EventDetails>().notNull().default({}),
+    inRoom: boolean("in_room").notNull().default(false),
+    minAge: integer("min_age").$type<18 | 21>(),
     createdAt: at("created_at").notNull().defaultNow(),
     updatedAt: at("updated_at").notNull().defaultNow(),
   },
@@ -244,6 +249,7 @@ export const events = pgTable(
     check("events_place_all_or_nothing", sql`(${t.venue} is null) = (${t.address} is null) and (${t.venue} is null) = (${t.area} is null) and (${t.venue} is null) = (${t.city} is null)`),
     check("events_point_both_or_neither", sql`(${t.lat} is null) = (${t.lng} is null)`),
     check("events_point_needs_venue", sql`${t.lat} is null or ${t.venue} is not null`),
+    check("events_min_age", sql`${t.minAge} in (18, 21)`),
     check("events_point_in_india", sql`${t.lat} is null or (${t.lat} between 6 and 37.5 and ${t.lng} between 68 and 97.5)`),
     index().on(t.hostId, t.startsAt), // a host's events
     index().on(t.status, t.startsAt), // discover lists
