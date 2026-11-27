@@ -1053,6 +1053,37 @@ test("the public read: a bad day is 400, every step still ahead, no people", asy
   }
 });
 
+test("places to play: public, live venues with a live station, tiled and nearest first", async () => {
+  const w = await world();
+  const { t, as, admin, A, B, C } = w;
+  try {
+    const listed = async (q = "") => (await t.call("GET", `/public/places${q}`)).body.places as any[];
+    await w.setup(A, w.everyDay([11, 26]));
+    // Set up but no stations yet: not a place.
+    assert.deepEqual(await listed(), []);
+    await w.station(A, w.pc());
+    await as(admin)("PUT", `/venues/${B}`, { address: "2 Road", area: "Gachibowli", lat: 17.45, lng: 78.35, deskPhone: "+914012345678", week: w.everyDay([6, 24]) });
+    const turf = await w.station(B, { name: "Turf", unit: "pitch", count: 1, pricePaise: 80000, tile: "sports" });
+    await w.station(B, w.pc(2, "Lounge PC")); // gaming and sports together read as sports
+    const all = await listed();
+    assert.deepEqual(all.map((p) => [p.name, p.tile, p.area, p.distanceKm]), [["Pixel Lounge", "gaming", "Madhapur", null], ["Turf Park", "sports", "Gachibowli", null]]);
+    assert.deepEqual(Object.keys(all[0]).sort(), ["area", "city", "distanceKm", "id", "kind", "logo", "name", "slug", "tile", "verified"]);
+    // With a point: nearest first, with its distance.
+    const near = await listed("?lat=17.46&lng=78.34");
+    assert.deepEqual(near.map((p) => p.name), ["Turf Park", "Pixel Lounge"]);
+    assert.ok(near[0].distanceKm < near[1].distanceKm && near[0].distanceKm < 2);
+    assert.equal((await t.call("GET", "/public/places?lat=17.4")).status, 400);
+    // Archiving B's turf leaves it gaming; a host that isn't public and live is left out.
+    assert.equal((await as(admin)("PATCH", `/venues/${B}/stations/${turf.id}`, { archived: true })).status, 200);
+    assert.equal((await listed()).find((p) => p.id === B).tile, "gaming");
+    await t.db.update(hosts).set({ visibility: "private" }).where(eq(hosts.id, A));
+    assert.deepEqual((await listed()).map((p) => p.id), [B]);
+    assert.ok(!(await listed()).some((p) => p.id === C));
+  } finally {
+    await t.close();
+  }
+});
+
 test("deleting an account drops its alerts, lapses its holds and releases its upcoming slot bookings", async () => {
   const w = await world();
   const { t, as, booker, booker2, A } = w;

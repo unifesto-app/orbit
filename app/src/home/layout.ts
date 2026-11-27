@@ -31,7 +31,7 @@ export type Viewer = {
 };
 // `near`: discover's call (within 25 km, or online), which wins over the area list when it's there.
 export type PlanEvent = { id: string; slug?: string; endsAt?: string; hostId: string; area: string; startsAt: string; announced: string; category?: string; wide?: unknown; near?: boolean };
-// tile: a place to play's. `near`: set by the screen for the mock venues, which the API doesn't know yet.
+// tile: a place to play's. `near`: a place to play's distance from GET /public/places (src/events.ts toPlace).
 export type PlanHost = { id: string; slug?: string; area: string; joined: string; banner?: unknown; tile?: string; near?: boolean };
 // `custom`: Orbit's own image slide from Galaxy's App content (owner, 19 Nov 2026: "also add custom ads in carousel").
 export type Slide<E, H> = { kind: 'event'; event: E } | { kind: 'host'; host: H } | { kind: 'custom'; custom: Featured };

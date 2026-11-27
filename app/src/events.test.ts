@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import type { EventCard, TierCard } from '@orbit/contract';
 
 import { isKnown } from './account/seen.ts';
-import { eventsApi, hostsOf, toEvent, toHost, whereOf } from './events.ts';
+import { eventsApi, hostsOf, toEvent, toHost, toPlace, whereOf } from './events.ts';
 import { eventStatus } from './status.ts';
 
 const host = { id: '3f2b8c1e-9a4d-4e2f-8b6a-1c2d3e4f5a6b', slug: 'punchline', name: 'Punchline Collective', kind: 'comedy-group', city: 'Hyderabad', verified: true, logo: null };
@@ -194,4 +194,19 @@ test('a public event brings its people and fest items; a card has neither', () =
   assert.equal(none.lineup, undefined);
   assert.equal(none.festItems, undefined);
   assert.equal(toEvent(card()).lineup, undefined);
+});
+
+test('a place to play keeps its tile and area, and is near within 25 km only when the API measured it', async () => {
+  const p = { ...host, kind: 'venue', tile: 'gaming' as const, area: 'Madhapur', distanceKm: 3.2 };
+  const h = toPlace(p);
+  assert.equal(h.tile, 'gaming');
+  assert.equal(h.area, 'Madhapur');
+  assert.equal(h.near, true);
+  assert.equal(toPlace({ ...p, distanceKm: 40 }).near, false);
+  assert.equal(toPlace({ ...p, distanceKm: null }).near, undefined);
+  const calls: string[] = [];
+  const places = eventsApi({ call: async (m: string, path: string) => (calls.push(`${m} ${path}`), { ok: true as const, data: { places: [] } as never }) }).places;
+  await places({ city: 'Pune' });
+  await places({ lat: 17.4, lng: 78.4, city: 'Hyderabad' });
+  assert.deepEqual(calls, ['GET /public/places', 'GET /public/places?lat=17.4&lng=78.4']);
 });

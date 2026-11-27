@@ -144,8 +144,9 @@ export function StatusLine({ event: e, status: st }: { event: Event; status: Sta
 export function HostRow({ host }: { host: Host }) {
   const venue = venues[host.id];
   const following = useViewer().follows.includes(host.id);
-  const action = venue
-    ? { label: 'Book', run: () => router.push(`/slot/${host.id}`) }
+  const place = !!venue || !!host.tile; // a mock venue, or a real place to play (GET /public/places)
+  const action = place
+    ? { label: 'Book', run: () => router.push({ pathname: '/slot/[venue]', params: { venue: host.id, name: host.name } }) }
     : { label: following ? 'Following' : 'Follow', run: () => setFollowing(host.id, !following) };
   return (
     <View style={styles.hostRow}>
@@ -163,7 +164,7 @@ export function HostRow({ host }: { host: Host }) {
       </Pressable>
       <Pressable onPress={() => needsAccount(action.run)} accessibilityRole="button" accessibilityLabel={`${action.label}, ${host.name}`} hitSlop={6}>
         <Glass style={styles.smallPill}>
-          <Text style={[styles.smallPillText, following && !venue && styles.mutedText]}>{action.label}</Text>
+          <Text style={[styles.smallPillText, following && !place && styles.mutedText]}>{action.label}</Text>
         </Glass>
       </Pressable>
     </View>

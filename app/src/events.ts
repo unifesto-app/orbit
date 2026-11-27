@@ -1,7 +1,7 @@
 // Events and hosts as the screens draw them, and the public reads that fill them (Orbit API /public, Discover flow;
 // slice 1, 25 Nov 2026). The types moved here from src/mock.ts so the mock can go without touching a screen. Pure, so
 // events.test.ts runs it on Node; screens pass it `api` from session.ts.
-import type { CategorySlug, EventCard, EventPerson, HostCard, PublicEvent, PublicFestItem, PublicPerson, WhenChip } from '@orbit/contract';
+import type { CategorySlug, EventCard, EventPerson, HostCard, PlaceCard, PublicEvent, PublicFestItem, PublicPerson, WhenChip } from '@orbit/contract';
 import type { ImageSourcePropType } from 'react-native';
 
 import type { Credit, Tier } from './detail';
@@ -95,6 +95,16 @@ export function toHost(c: HostCard): Host {
   };
 }
 
+// A place to play (GET /public/places) as a host: its tile and area from the API; near within 25 km like discover's,
+// or left to the area list with no point.
+export const toPlace = (c: PlaceCard): Host & { tile: CategorySlug } => ({
+  ...toHost(c),
+  area: c.area,
+  about: `${kindLabel(c.kind)} · ${c.area}`,
+  tile: c.tile,
+  ...(c.distanceKm !== null && { near: c.distanceKm <= 25 }),
+});
+
 // An agenda slot's time in India: "7:30 PM" on a one-day event, "Sat 9:00 AM" when it spans days.
 const slot = (at: string, sameDay: boolean) => indiaWhen(at).replace(sameDay ? /^.* · / : /^(\w+) \d+ \w+ · /, sameDay ? '' : '$1 ');
 const every = <T>(xs: readonly T[], has: (x: T) => boolean) => xs.length > 0 && xs.every(has);
@@ -182,6 +192,7 @@ export function eventsApi(api: Api) {
         (d) => d.events,
       ),
     event: (slug: string) => keep(api.call<PublicEvent>('GET', `/public/events/${encodeURIComponent(slug)}`), (d) => [d]),
+    places: (w: Where) => api.call<{ places: PlaceCard[] }>('GET', `/public/places${query({ lat: w.lat, lng: w.lng })}`),
     person: (id: string) => api.call<PublicPerson>('GET', `/public/people/${encodeURIComponent(id)}`),
     hostEvents: (slug: string) =>
       keep(api.call<{ upcoming: EventCard[]; past: EventCard[] }>('GET', `/public/hosts/${encodeURIComponent(slug)}/events`), (d) => [...d.upcoming, ...d.past]),

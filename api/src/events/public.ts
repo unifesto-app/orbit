@@ -1,9 +1,9 @@
-import { and, asc, count, desc, eq, gt, inArray, lt, lte, ne, or, sql, type SQL } from "drizzle-orm";
+import { type AnyColumn, and, asc, count, desc, eq, gt, inArray, lt, lte, ne, or, sql, type SQL } from "drizzle-orm";
 import { Hono, type Context } from "hono";
 import { z } from "zod";
-import { categories, EventCategory, EventSlug, HostSlug, type EventCard, type HostCard, MAX_QUERY, span, type PublicEvent, type TierCard, WHEN } from "@orbit/contract";
+import { categories, EventCategory, EventSlug, HostSlug, type EventCard, type HostCard, MAX_QUERY, type PlaceCard, span, type PublicEvent, type TierCard, WHEN } from "@orbit/contract";
 import type { Db } from "../db/index.ts";
-import { eventInterests, events, eventSlugs, hosts, hostSlugs, ticketTypes, users } from "../db/schema.ts";
+import { eventInterests, events, eventSlugs, hosts, hostSlugs, stations, ticketTypes, users, venues } from "../db/schema.ts";
 import { seatsTaken } from "../bookings.ts";
 import { fail, invalid } from "../http.ts";
 import { effectiveVisibility } from "./rules.ts";
@@ -19,6 +19,7 @@ const NEAR_KM = 25; // Discover D6
 const NEAR_CAP = 100;
 const SEARCH_EVENTS = 50;
 const SEARCH_HOSTS = 20;
+const PLACES_CAP = 100;
 const PAST_SHOWN = 12;
 const nothing = (c: Context) => fail(c, 404, "notFound", "There's nothing here.");
 // Postgres refuses a NUL in text, so one in a query is a refusal, never a 500.
@@ -43,11 +44,12 @@ const base = {
 };
 const long = { about: events.about, agenda: events.agenda, faq: events.faq, terms: events.terms, vibes: events.vibes };
 
-// Kilometres from the point to the event, by the haversine formula (no PostGIS); null where the event has no coordinates.
-const distance = (p: Point) =>
+// Kilometres from the point to the event (or a venue), by the haversine formula (no PostGIS); null where it has no coordinates.
+const distance = (p: Point, lat: AnyColumn = events.lat, lng: AnyColumn = events.lng) =>
   p
-    ? sql<number | null>`case when ${events.lat} is null then null else 2 * 6371 * asin(least(1, sqrt(power(sin(radians(${events.lat} - ${p.lat}::float8) / 2), 2) + cos(radians(${p.lat}::float8)) * cos(radians(${events.lat})) * power(sin(radians(${events.lng} - ${p.lng}::float8) / 2), 2)))) end`
+    ? sql<number | null>`case when ${lat} is null then null else 2 * 6371 * asin(least(1, sqrt(power(sin(radians(${lat} - ${p.lat}::float8) / 2), 2) + cos(radians(${p.lat}::float8)) * cos(radians(${lat})) * power(sin(radians(${lng} - ${p.lng}::float8) / 2), 2)))) end`
     : sql<null>`null`;
+const km = (d: unknown) => (d === null || d === undefined ? null : Math.round(Number(d) * 10) / 10);
 
 // The one builder behind all four reads: a card select with its host, then every event's tiers in one more query.
 export async function cards(db: Db, q: { where: SQL | undefined; order: SQL[]; limit?: number; at?: Point; full?: boolean }): Promise<EventCard[]> {
@@ -74,7 +76,7 @@ export async function cards(db: Db, q: { where: SQL | undefined; order: SQL[]; l
       place: r.venue === null ? null : { venue: r.venue, address: r.address!, area: r.area!, city: r.city!, lat: r.lat, lng: r.lng },
       online: r.online, poster: r.poster, wide: r.wide, wideEdge: r.wideEdge, tone: r.wideTone ?? r.posterTone,
       pricePaise: mine.length ? Math.min(...mine.map((t) => t.pricePaise)) : null, tiers: mine, host,
-      distanceKm: r.dist === null || r.dist === undefined ? null : Math.round(Number(r.dist) * 10) / 10,
+      distanceKm: km(r.dist),
       ...(q.full ? { about: r.about ?? null, agenda: r.agenda ?? [], faq: r.faq ?? [], terms: r.terms ?? [], vibes: r.vibes ?? [] } : {}),
     };
   });
@@ -194,6 +196,32 @@ export function publicEventsRoutes({ db, now = Date.now }: Deps) {
           .limit(SEARCH_HOSTS)
       : [];
     return c.json({ events: found, hosts: foundHosts.map((h): HostCard => ({ id: h.id, slug: h.slug, name: h.name, kind: h.kind, city: h.city, verified: !!h.verifiedAt, logo: h.logo })) });
+  });
+
+  // GET /public/places?lat&lng: places to play (Play). A public, live Venue host (as /public/venues/:hostId/slots reads it)
+  // with a venue row and at least one live station; nearest first with a point, else by name.
+  app.get("/public/places", async (c) => {
+    const w = Where.safeParse(c.req.query());
+    if (!w.success) return invalid(c);
+    const p = pointOf(w.data);
+    const dist = distance(p, venues.lat, venues.lng);
+    const rows = await db
+      .select({
+        id: hosts.id, slug: hosts.slug, name: hosts.name, kind: hosts.kind, city: hosts.city, verifiedAt: hosts.verifiedAt, logo: hosts.logo,
+        area: venues.area, gaming: sql<boolean>`bool_and(${stations.tile} = 'gaming')`, dist,
+      })
+      .from(venues)
+      .innerJoin(hosts, eq(hosts.id, venues.hostId))
+      .innerJoin(stations, and(eq(stations.hostId, venues.hostId), sql`${stations.archivedAt} is null`))
+      .where(and(visible, eq(hosts.kind, "venue")))
+      .groupBy(hosts.id, venues.hostId)
+      .orderBy(...(p ? [asc(dist)] : []), asc(hosts.name), asc(hosts.id))
+      .limit(PLACES_CAP); // ponytail: capped at 100; page when there are more
+    const places = rows.map((r): PlaceCard => ({
+      id: r.id, slug: r.slug, name: r.name, kind: r.kind, city: r.city, verified: !!r.verifiedAt, logo: r.logo,
+      tile: r.gaming ? "gaming" : "sports", area: r.area, distanceKm: km(r.dist),
+    }));
+    return c.json({ places });
   });
 
   // GET /public/hosts/:slug/events: every upcoming listed event soonest first, then the latest 12 that have ended (not
