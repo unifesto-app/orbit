@@ -1,7 +1,7 @@
 // inRoom on the Orbit API (api/src/rooms.ts, contract/src/rooms.ts; R3, 27 Nov 2026): a real meetup's room, its join
 // card, asks to connect and blocks. Pure, so rooms.test.ts runs it on Node; the room screen (src/app/room/[slug].tsx)
 // draws it. Name and photo are the account's; the card is only a line and one to three ways to reach you.
-import { type RoomAsk, type RoomCard, type RoomMember, type RoomState, type RoomView, ROOM_LINE_MAX, ROOM_REACH_MAX } from '@orbit/contract';
+import { type RoomAsk, RoomCard, type RoomMember, type RoomState, type RoomView, ROOM_LINE_MAX, ROOM_REACH_MAX } from '@orbit/contract';
 
 import type { makeApi } from './api.ts';
 
@@ -39,7 +39,9 @@ export function cardOf(line: string, rows: readonly ReachRow[]): { card: RoomCar
   if (reach.some((r) => !r.label || !r.value)) return { error: 'Give each way to reach you a label and what to reach you on.' };
   if (reach.some((r) => r.label.length > LABEL_MAX)) return { error: `Keep each label to ${LABEL_MAX} characters.` };
   if (reach.some((r) => r.value.length > VALUE_MAX)) return { error: `Keep each way to reach you to ${VALUE_MAX} characters.` };
-  return { card: { line: l, reach } };
+  // Last, the contract's own check: it also refuses a NUL or a broken character (half an emoji), which Postgres can't store.
+  const ok = RoomCard.safeParse({ line: l, reach });
+  return ok.success ? { card: ok.data } : { error: `${ok.error.issues[0]?.message ?? 'Check your card'}.` };
 }
 
 // A reach row's label: Phone or Email from a chip, or any label typed after Other.

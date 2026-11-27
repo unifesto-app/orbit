@@ -77,3 +77,9 @@ test('pickChip: Other keeps a label typed under it; a label typed as "Phone" sta
   assert.equal(rowChip({ label: 'Phone', value: '', chip: 'Other' }), 'Other');
   assert.equal(rowChip({ label: 'Phone', value: '' }), 'Phone');
 });
+
+test('cardOf: a NUL or a lone surrogate is refused, as the API would', () => {
+  assert.deepEqual(cardOf('hi\u0000', [{ label: 'Phone', value: '1' }]), { error: 'Remove the NUL character.' });
+  assert.deepEqual(cardOf('hi', [{ label: 'Phone', value: 'x\uD83D' }]), { error: 'Remove the broken character.' });
+  assert.ok('card' in cardOf('hi 👋', [{ label: 'Phone', value: '1' }]));
+});
