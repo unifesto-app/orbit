@@ -57,6 +57,8 @@ const config: ExpoConfig = {
     ['expo-image-picker', { photosPermission: `${v.name} uses your photos for event posters.`, microphonePermission: false }],
   ],
   owner: 'unifesto-app',
+  // One EAS project for every variant; its remote build numbers are kept per bundle id (eas.json autoIncrement).
+  extra: { eas: { projectId: '172dbc1f-e98f-40fa-96cc-7380626c25e2' } },
 };
 
 // Xcode's build phases re-read this config (expo-constants, the Release bundle) and source ios/.xcode.env first, so
