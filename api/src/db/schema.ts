@@ -1338,6 +1338,7 @@ export const roomAsks = pgTable(
     check("room_asks_status", sql`${t.status} in ('pending', 'accepted', 'declined')`),
     uniqueIndex("room_asks_one_per_pair").on(sql`least(${t.fromMember}, ${t.toMember})`, sql`greatest(${t.fromMember}, ${t.toMember})`),
     index().on(t.eventId),
+    index().on(t.fromMember),
     index().on(t.toMember),
   ],
 );

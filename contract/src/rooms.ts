@@ -28,7 +28,8 @@ export const ROOM_STATES = ["door", "out", "in", "closed", "removed", "barred"] 
 export type RoomState = (typeof ROOM_STATES)[number];
 
 // Between me and a member: none; asked (I asked; stays "asked" if they decline); incoming (they asked, I haven't
-// answered); declined (they asked and I said no); connected (accepted either way: reach shows).
+// answered); declined (they asked and I said no; asking them now turns it round, waiting on their yes); connected
+// (accepted either way: reach shows).
 export type RoomAsk = "none" | "asked" | "incoming" | "declined" | "connected";
 
 // Never a user id, phone or email: `id` is the member's id in this room; contacts only in `reach`, once connected.

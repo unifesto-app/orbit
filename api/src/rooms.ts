@@ -83,8 +83,17 @@ export function roomsRoutes({ db, store, secret, notify, media, now = Date.now }
     return { state: mine && !mine.leftAt ? "in" : "door", mine };
   };
 
-  // The members `me` can see: in the room, let in now, not suspended, deleted or barred, no block either way. Once the
-  // room has closed (`closed`): only those `me` connected with, still not deleted or blocked, with no live checks, since
+  // Who can show at all: a card staff haven't removed, of an account not deleted, suspended or barred.
+  const shown = () =>
+    and(
+      isNull(roomMembers.removedAt),
+      isNull(users.deletedAt),
+      isNull(users.inRoomBarredAt),
+      sql`not (${users.suspendedAt} is not null and (${users.suspendedUntil} is null or ${users.suspendedUntil} > ${at().toISOString()}::timestamptz))`,
+    );
+
+  // The members `me` can see: shown, in the room, let in now, no block either way. Once the room has closed (`closed`):
+  // only those `me` connected with, still shown and not blocked, but with no check of leaving or of the booking, since
   // the event is long over (owner default 3: contacts stay readable, no purge).
   const visible = (room: Room, me: Member, only?: string, closed = false) =>
     db
@@ -101,19 +110,13 @@ export function roomsRoutes({ db, store, secret, notify, media, now = Date.now }
           eq(roomMembers.eventId, room.id),
           only ? eq(roomMembers.id, only) : undefined,
           ne(roomMembers.userId, me.userId),
-          isNull(users.deletedAt),
+          shown(),
           ...(closed
             ? [
                 sql`exists (select 1 from room_asks q where q.status = 'accepted'
                               and ((q.from_member = ${me.id} and q.to_member = ${roomMembers.id}) or (q.from_member = ${roomMembers.id} and q.to_member = ${me.id})))`,
               ]
-            : [
-                isNull(roomMembers.leftAt),
-                isNull(roomMembers.removedAt),
-                isNull(users.inRoomBarredAt),
-                sql`not (${users.suspendedAt} is not null and (${users.suspendedUntil} is null or ${users.suspendedUntil} > ${at().toISOString()}::timestamptz))`,
-                letIn(roomMembers.userId, room.id),
-              ]),
+            : [isNull(roomMembers.leftAt), letIn(roomMembers.userId, room.id)]),
           sql`not exists (select 1 from user_blocks k where (k.blocker_id = ${me.userId} and k.blocked_id = ${roomMembers.userId})
                                                      or (k.blocker_id = ${roomMembers.userId} and k.blocked_id = ${me.userId}))`,
         ),
@@ -125,13 +128,18 @@ export function roomsRoutes({ db, store, secret, notify, media, now = Date.now }
   const pairAsk = async (a: string, b: string) =>
     (await db.select().from(roomAsks).where(or(and(eq(roomAsks.fromMember, a), eq(roomAsks.toMember, b)), and(eq(roomAsks.fromMember, b), eq(roomAsks.toMember, a)))))[0];
 
-  // The photo goes through /media/rooms/:memberId: the stored link names the account.
+  // The photo goes through /media/rooms/:memberId/:name (the stored link names the account), pinned to the upload, and
+  // only while that route would serve it: not for a card that has left (seen in a closed room).
+  const photoOf = (s: Seen) => {
+    const name = media && s.photo?.startsWith(`${media.url}/`) ? s.photo.split("/").pop() : undefined;
+    return name && !s.m.leftAt ? `${media!.url}/rooms/${s.m.id}/${name}` : null;
+  };
   const toMember = (s: Seen, a: Ask | undefined, me: string): RoomMember => {
     const ask = askOf(a, me);
     return {
       id: s.m.id,
       name: s.name ?? "Orbit guest",
-      photo: s.photo && media ? `${media.url}/rooms/${s.m.id}` : null,
+      photo: photoOf(s),
       line: s.m.line,
       host: s.host,
       ask,
@@ -190,7 +198,8 @@ export function roomsRoutes({ db, store, secret, notify, media, now = Date.now }
     return c.json(await viewOf(room, c.var.user));
   });
 
-  // DELETE /me/rooms/:eventId: leave. Asks waiting on either side go; connections stay.
+  // DELETE /me/rooms/:eventId: leave. Asks waiting on me go; the ones I sent stay, unanswerable while I'm away
+  // (accepting needs the asker in the room), and connections stay.
   app.delete("/me/rooms/:eventId", auth, async (c) => {
     const room = await roomOf(c.req.param("eventId"));
     if (!room) return nothing(c);
@@ -200,13 +209,15 @@ export function roomsRoutes({ db, store, secret, notify, media, now = Date.now }
         .set({ leftAt: at() })
         .where(and(eq(roomMembers.eventId, room.id), eq(roomMembers.userId, c.var.user.id), isNull(roomMembers.leftAt), isNull(roomMembers.removedAt)))
         .returning({ id: roomMembers.id });
-      if (left) await tx.delete(roomAsks).where(and(eq(roomAsks.status, "pending"), or(eq(roomAsks.fromMember, left.id), eq(roomAsks.toMember, left.id))));
+      if (left) await tx.delete(roomAsks).where(and(eq(roomAsks.status, "pending"), eq(roomAsks.toMember, left.id)));
     });
     return c.body(null, 204);
   });
 
   // POST /me/rooms/:eventId/asks {memberId}: ask to connect. Asking again, or asking someone who asked first, answers
-  // with the pair's one ask; a declined one stays "asked" and nobody is told again.
+  // with the pair's one ask; a declined one stays "asked" and nobody is told again. Someone who declined may ask after
+  // all: the ask turns round, waiting on the first asker's yes. The notice is keyed by the pair and its recipient, so
+  // nobody hears of the same pair asking twice.
   app.post("/me/rooms/:eventId/asks", auth, async (c) => {
     const b = await parse(c, RoomAskBody);
     if (!b) return invalid(c);
@@ -216,16 +227,29 @@ export function roomsRoutes({ db, store, secret, notify, media, now = Date.now }
     const [them] = await visible(room, mine, b.memberId);
     if (!them) return nothing(c);
     const have = await pairAsk(mine.id, them.m.id);
-    if (have) return c.json(toMember(them, have, mine.id));
+    const turn = have?.status === "declined" && have.toMember === mine.id;
+    if (have && !turn) return c.json(toMember(them, have, mine.id));
     if ((await store.incr(`roomAsk:${mine.userId}`, DAY)) > ROOM_ASKS_PER_DAY) return fail(c, 429, "tooMany", "You've asked a lot of people today. Try again tomorrow.");
-    const [made] = await db
-      .insert(roomAsks)
-      .values({ eventId: room.id, fromMember: mine.id, toMember: them.m.id, createdAt: at(), updatedAt: at() })
-      .onConflictDoNothing()
-      .returning();
-    if (!made) return c.json(toMember(them, await pairAsk(mine.id, them.m.id), mine.id)); // asked at the same moment
-    await notify({ to: { userId: them.m.userId }, kind: "inRoomAsk", data: { eventId: room.id, title: room.title }, key: made.id });
-    return c.json(toMember(them, made, mine.id), 201);
+    const pair = [mine.id, them.m.id].sort().join(":");
+    const ts = at().toISOString();
+    // The row and its notice together, and no row while a block stands either way: a block landing mid-ask leaves nothing.
+    const made = await db.transaction(async (tx) => {
+      const free = sql`not exists (select 1 from user_blocks k where (k.blocker_id = ${mine.userId} and k.blocked_id = ${them.m.userId})
+                                                           or (k.blocker_id = ${them.m.userId} and k.blocked_id = ${mine.userId}))`;
+      const [row] = (await tx.execute(
+        turn
+          ? sql`update room_asks set from_member = ${mine.id}, to_member = ${them.m.id}, status = 'pending', updated_at = ${ts}::timestamptz
+                where id = ${have!.id} and status = 'declined' and to_member = ${mine.id} and ${free} returning id`
+          : sql`insert into room_asks (event_id, from_member, to_member, status, created_at, updated_at)
+                select ${room.id}, ${mine.id}, ${them.m.id}, 'pending', ${ts}::timestamptz, ${ts}::timestamptz where ${free}
+                on conflict do nothing returning id`,
+      )) as unknown as { id: string }[];
+      if (row) await notify({ to: { userId: them.m.userId }, kind: "inRoomAsk", data: { eventId: room.id, title: room.title }, key: pair }, tx);
+      return row;
+    });
+    const got = await pairAsk(mine.id, them.m.id); // ours, or one asked at the same moment
+    if (!got) return nothing(c); // blocked meanwhile
+    return c.json(toMember(them, got, mine.id), made ? 201 : 200);
   });
 
   // POST /me/rooms/:eventId/asks/:askId/accept | decline: the one asked, while it waits. Accepting swaps the reach and
@@ -250,14 +274,19 @@ export function roomsRoutes({ db, store, secret, notify, media, now = Date.now }
     });
 
   // POST /me/rooms/:eventId/members/:memberId/block: hidden from each other in every room, for good (Support can lift
-  // it), and every ask between the two goes.
+  // it), and every ask between the two goes. From the door, inside or after the close: anyone I share an ask with, or
+  // anyone I can see while I'm in. Never once removed or barred.
   app.post("/me/rooms/:eventId/members/:memberId/block", auth, async (c) => {
-    const r = await inside(c);
-    if (r instanceof Response) return r;
+    const room = await roomOf(c.req.param("eventId"));
+    if (!room) return nothing(c);
+    const { state, mine } = await standing(room, c.var.user);
+    if (state !== "door" && state !== "in" && state !== "closed") return fail(c, 403, state, REFUSED[state]);
     const memberId = c.req.param("memberId");
-    const [them] = isUuid(memberId) ? await visible(r.room, r.mine, memberId) : [];
-    if (!them) return nothing(c);
-    const me = r.mine.userId, other = them.m.userId;
+    const [them] =
+      mine && isUuid(memberId) ? await db.select().from(roomMembers).where(and(eq(roomMembers.id, memberId), eq(roomMembers.eventId, room.id), ne(roomMembers.userId, mine.userId))) : [];
+    const ok = them && ((await pairAsk(mine!.id, them.id)) || (state === "in" && (await visible(room, mine!, them.id)).length));
+    if (!ok) return nothing(c);
+    const me = mine!.userId, other = them.userId;
     await db.transaction(async (tx) => {
       await tx.insert(userBlocks).values({ blockerId: me, blockedId: other, createdAt: at() }).onConflictDoNothing();
       await dropAsksBetween(tx, me, other);
@@ -265,19 +294,21 @@ export function roomsRoutes({ db, store, secret, notify, media, now = Date.now }
     return c.body(null, 204);
   });
 
-  // GET /media/rooms/:memberId: a member's photo, while their card is up. The link holds the member id, not the account.
+  // GET /media/rooms/:memberId/:name: a member's photo, while their card is up and shown (photoOf). The link holds the
+  // member id, not the account, and the upload's own name, so a changed photo ends every old link. Registered before
+  // media.ts's /media/:kind/:owner/:name (app.ts), which has the same shape; that one never serves "rooms".
   // ponytail: anyone with the link sees the photo, as with every /media link; no check of who's asking.
-  app.get("/media/rooms/:memberId", async (c) => {
-    const id = c.req.param("memberId");
+  app.get("/media/rooms/:memberId/:name", async (c) => {
+    const { memberId: id, name } = c.req.param();
     const [r] =
-      media && isUuid(id)
+      media && isUuid(id) && /^[\w-]{22}\.webp$/.test(name)
         ? await db
             .select({ photo: users.photo })
             .from(roomMembers)
             .innerJoin(users, eq(users.id, roomMembers.userId))
-            .where(and(eq(roomMembers.id, id), isNull(roomMembers.leftAt), isNull(roomMembers.removedAt), isNull(users.deletedAt)))
+            .where(and(eq(roomMembers.id, id), isNull(roomMembers.leftAt), shown()))
         : [];
-    const key = media && r?.photo?.startsWith(`${media.url}/`) ? r.photo.slice(media.url.length + 1) : null;
+    const key = media && r?.photo?.startsWith(`${media.url}/`) && r.photo.endsWith(`/${name}`) ? r.photo.slice(media.url.length + 1) : null;
     const file = key ? await media!.files.get(key) : null;
     if (!file) return nothing(c);
     return c.body(file.bytes as Uint8Array<ArrayBuffer>, 200, { "content-type": file.type, "cache-control": "private, max-age=3600", "x-content-type-options": "nosniff" });
@@ -409,8 +440,8 @@ export function roomsRoutes({ db, store, secret, notify, media, now = Date.now }
     return done ? c.json({ id: m.userId }) : fail(c, 409, "barred", "They're already barred from rooms.");
   });
 
-  // POST /galaxy/rooms/unbar/:userId {reason}: from their People page. A bar isn't tied to one host, so the only refusal
-  // is lifting one's own.
+  // POST /galaxy/rooms/unbar/:userId {reason}: from their People page. Refused for one's own bar, and for staff on the
+  // host whose room the latest bar came from.
   app.post("/galaxy/rooms/unbar/:userId", auth, queues, async (c) => {
     const b = await parse(c, RoomStaffReason);
     if (!b) return invalid(c);
@@ -419,6 +450,14 @@ export function roomsRoutes({ db, store, secret, notify, media, now = Date.now }
     if (!u) return nothing(c);
     const actor = c.var.actor.id;
     if (u.id === actor) return fail(c, 403, "self", "Ask another staff member to lift your own bar.");
+    // The bar came from a room of some host: staff on that host don't lift it.
+    const [last] = await db
+      .select({ hostId: auditLog.targetHost })
+      .from(auditLog)
+      .where(and(eq(auditLog.targetUser, u.id), eq(auditLog.action, "rooms.bar")))
+      .orderBy(desc(auditLog.at))
+      .limit(1);
+    if (last?.hostId && (await onHost(db, last.hostId, c.var.user, now()))) return ownHost(c);
     const holders = await holdersOf(db, "queues", at());
     const done = await db.transaction(async (tx) => {
       const [lifted] = await tx.update(users).set({ inRoomBarredAt: null, inRoomBarredBy: null }).where(and(eq(users.id, u.id), isNotNull(users.inRoomBarredAt))).returning({ id: users.id });

@@ -1,5 +1,5 @@
 {
-  "id": "3bb1813c-c798-471f-8a3f-66836eb952a5",
+  "id": "7817bf40-2cb3-499e-8485-ddb865ec269b",
   "prevId": "916765c2-b3b5-42f9-ada6-4b9aa9a49b7a",
   "version": "7",
   "dialect": "postgresql",
@@ -5762,6 +5762,21 @@
           "columns": [
             {
               "expression": "event_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "room_asks_from_member_index": {
+          "name": "room_asks_from_member_index",
+          "columns": [
+            {
+              "expression": "from_member",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

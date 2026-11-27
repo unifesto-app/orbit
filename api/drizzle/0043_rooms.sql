@@ -45,6 +45,7 @@ ALTER TABLE "user_blocks" ADD CONSTRAINT "user_blocks_blocker_id_users_id_fk" FO
 ALTER TABLE "user_blocks" ADD CONSTRAINT "user_blocks_blocked_id_users_id_fk" FOREIGN KEY ("blocked_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "room_asks_one_per_pair" ON "room_asks" USING btree (least("from_member", "to_member"),greatest("from_member", "to_member"));--> statement-breakpoint
 CREATE INDEX "room_asks_event_id_index" ON "room_asks" USING btree ("event_id");--> statement-breakpoint
+CREATE INDEX "room_asks_from_member_index" ON "room_asks" USING btree ("from_member");--> statement-breakpoint
 CREATE INDEX "room_asks_to_member_index" ON "room_asks" USING btree ("to_member");--> statement-breakpoint
 CREATE INDEX "room_members_user_id_index" ON "room_members" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "user_blocks_blocked_id_index" ON "user_blocks" USING btree ("blocked_id");--> statement-breakpoint
