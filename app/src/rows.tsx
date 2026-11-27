@@ -319,7 +319,7 @@ export function SearchBox({ style, tint, ...input }: Omit<TextInputProps, 'style
 export function FaceWash({ tint, opacity = 0.75, corner = FACE }: { tint: string; opacity?: number; corner?: number }) {
   const id = useId().replace(/[^a-zA-Z0-9]/g, '');
   return (
-    <View style={styles.wash}>
+    <View style={[styles.wash, { borderCurve: 'continuous', borderRadius: corner, overflow: 'hidden' }]}>
       <Svg width="100%" height="100%">
         <Defs>
           <RadialGradient id={id} cx="0.5" cy="1" r="0.9">
@@ -327,7 +327,7 @@ export function FaceWash({ tint, opacity = 0.75, corner = FACE }: { tint: string
             <Stop offset={1} stopColor={tint} stopOpacity={0} />
           </RadialGradient>
         </Defs>
-        <Rect width="100%" height="100%" rx={corner} fill={`url(#${id})`} />
+        <Rect width="100%" height="100%" fill={`url(#${id})`} />
       </Svg>
     </View>
   );

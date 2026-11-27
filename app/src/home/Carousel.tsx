@@ -282,6 +282,7 @@ const styles = StyleSheet.create({
     borderCurve: 'continuous', borderRadius: around(BOTTOM, rim),
   },
   clip: {
+    borderCurve: 'continuous',
     borderBottomLeftRadius: BOTTOM,
     borderBottomRightRadius: BOTTOM,
     overflow: 'hidden',
