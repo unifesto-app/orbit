@@ -379,8 +379,8 @@ test("Galaxy: person reports show the person and the room; open count per person
   const aq = (await report(a, e, qe.member)).body.id as string;
   assert.equal((await as(q2)("GET", `/galaxy/reports/${aq}`)).status, 404);
   const mine = await as(q2)("POST", `/galaxy/reports/${aq}/resolve`, {});
-  assert.equal(mine.status, 403);
-  assert.equal(mine.body.error, "self");
+  assert.equal(mine.status, 404);
+  assert.equal(mine.body.error, "notFound");
   assert.ok(!((await as(q2)("GET", "/galaxy/reports")).body.reports as any[]).some((r) => r.id === aq));
   assert.equal((await as(q)("GET", `/galaxy/reports/${aq}`)).status, 200);
 

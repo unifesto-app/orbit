@@ -22,7 +22,6 @@ const LIST_MAX = 200;
 const nothing = (c: Context) => fail(c, 404, "notFound", "There's nothing here.");
 const ownHost = (c: Context) =>
   fail(c, 403, "ownHost", "Staff never act on a host they're on, invited to or left in the last 30 days. Ask another staff member with this access.");
-const self = (c: Context) => fail(c, 403, "self", "Ask another staff member to deal with a report about you.");
 type Row = typeof reports.$inferSelect;
 
 // Open reports on the same subject as this row, itself included while it's open: the same person, in any room; or the
@@ -170,7 +169,7 @@ export function reportsRoutes({ db, store, secret, now = Date.now }: Deps) {
       const actor = c.var.actor.id;
       const [x] = await joined().where(eq(reports.id, id));
       if (!x) return nothing(c);
-      if (x.r.subjectUserId === c.var.user.id) return self(c);
+      if (x.r.subjectUserId === c.var.user.id) return nothing(c); // as on read: no hint that a report about them exists
       if (await onHost(db, hostOf(x), c.var.user, now())) return ownHost(c);
       const done = await db.transaction(async (tx) => {
         const [r] = await tx.select().from(reports).where(eq(reports.id, id)).for("update");
