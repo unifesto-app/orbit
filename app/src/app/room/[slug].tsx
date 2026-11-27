@@ -124,7 +124,9 @@ function Member({ eventId, person: p }: { eventId: string; person: Person }) {
 function LiveRoom({ eventId }: { eventId: string }) {
   const insets = useSafeAreaInsets();
   const me = useSession()?.me;
-  const room = useLoad(me ? `room|${me.id}|${eventId}` : null, () => roomsApi(api).get(eventId));
+  // A failure comes back as a fresh object each time (the API hands out shared OFFLINE / BROKEN ones), so every read that
+  // lands changes `room` and `seen` below lets go of busy, even after two failures alike.
+  const room = useLoad(me ? `room|${me.id}|${eventId}` : null, () => roomsApi(api).get(eventId).then((r) => (r.ok ? r : { ...r, error: { ...r.error } })));
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
   // Busy from the tap until the room is read again, so a second tap can't answer the same ask twice.
@@ -292,7 +294,11 @@ function CardForm({
       ))}
       {rows.length < ROOM_REACH_MAX && <Pill label="Add a way to reach you" size="small" onPress={() => setRows([...rows, { label: 'Phone', value: '' }])} />}
       <Text style={styles.meta}>Only people you connect with see how to reach you.</Text>
-      {error && <Text style={styles.error}>{error}</Text>}
+      {error && (
+        <Text style={styles.error} accessibilityRole="alert">
+          {error}
+        </Text>
+      )}
       <Pill label={busy ? 'Saving…' : submit} size="wide" disabled={busy} onPress={send} />
       {onCancel && <Pill label="Cancel" size="wide" muted disabled={busy} onPress={onCancel} />}
     </View>
@@ -372,5 +378,5 @@ const styles = StyleSheet.create({
   reach: { marginTop: 2, fontFamily: font.text, fontSize: 13, lineHeight: 18, color: color.text },
   form: { marginHorizontal: 20, marginTop: space.big, gap: 16 },
   reachRow: { gap: space.small },
-  error: { fontFamily: font.text, fontSize: 13, lineHeight: 18, color: color.text },
+  error: { fontFamily: font.title, fontSize: 13, lineHeight: 18, color: color.text },
 });
