@@ -7,7 +7,9 @@
 // The 3:4 poster (publishing needs it) and the optional 4:3 are picked from the library, cropped there, and sent to
 // PUT /events/:id/poster and /wide, which refuse a wrong shape in words; the event is read again after, so Publish's fixes
 // clear. A new event gets them once its draft is made, as it has no id before.
-import { categories, FEE_PLANS, type FeePlan, type HostPage, PHOTO_MAX_BYTES, type TeamEvent, type TicketType } from '@orbit/contract';
+// Details · optional are the picked category's own fields (src/launch/editor.ts), plus the age line for any; With · optional
+// lists the other hosts on the event (src/launch/acts.ts), sent whole by Save acts and locked once it starts.
+import { categories, type EventCard, FEE_PLANS, type FeePlan, FEST_TYPES, type HostCard, type HostPage, MAX_EVENT_ACTS, PHOTO_MAX_BYTES, type TeamAct, type TeamEvent, type TicketType } from '@orbit/contract';
 import { Glass } from '@orbit/mobile/glass';
 import { useLoad } from '@orbit/mobile/load';
 import { color, radius, space } from '@orbit/mobile/theme';
@@ -15,10 +17,11 @@ import { File } from 'expo-file-system';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useRef, useState } from 'react';
-import { Alert, Image, Platform, Text, TextInput, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Alert, Image, Platform, Switch, Text, TextInput, View } from 'react-native';
 
-import { bodyOf, centreCrop, fixesOf, type Form, formOf, LASTS, lastsLabel, paiseOf, placeHalf, priceLabel, saveable } from '../launch/editor';
+import { actName, actsBody, actsChanged, addAct, moveAct, pickable, removeAct } from '../launch/acts';
+import { bodyOf, centreCrop, detailsProblem, fixesOf, type Form, formOf, LASTS, lastsLabel, paiseOf, placeHalf, priceLabel, saveable } from '../launch/editor';
 import { useHost } from '../launch/host';
 import { whenLabel } from '../launch/request';
 import { Card, Field, Note, Pill, Row, Section, Wide } from '../launch/ui';
@@ -83,6 +86,8 @@ function Editor({ id }: { id: string }) {
   const draft = e.status === 'draft';
   const locked = e.status === 'cancelled';
   const ended = !!e.endsAt && Date.parse(e.endsAt) <= Date.now();
+  const started = !!e.startsAt && Date.parse(e.startsAt) <= Date.now();
+  const problem = detailsProblem(f);
 
   // Sends what changed, if anything; false on a refusal. What's typed while it's out stays.
   const save = async () => {
@@ -209,6 +214,13 @@ function Editor({ id }: { id: string }) {
           </Label>
         </View>
       )}
+      {!locked && (
+        <>
+          <Section title="Details · optional" />
+          <Details f={f} put={put} started={started && !draft} />
+          {problem && <Note live>{problem}</Note>}
+        </>
+      )}
 
       <Section title="Poster" />
       <Picture id={id} shape="poster" link={e.poster} locked={locked} onDone={pictures} />
@@ -218,6 +230,9 @@ function Editor({ id }: { id: string }) {
       <Section title="Tickets" />
       <Tickets id={id} list={tickets.data ?? []} published={e.status === 'published'} locked={locked} onChange={tickets.reload} />
       {tickets.error && <Note>{tickets.error.message}</Note>}
+
+      <Section title="With · optional" />
+      <Acts id={id} ownHostId={e.hostId} readOnly={locked || started} />
 
       {page.data && (
         <>
@@ -262,6 +277,194 @@ function Editor({ id }: { id: string }) {
         />
       )}
     </Frame>
+  );
+}
+
+// The picked category's own details, then the age line any event can have. Lists are typed one row per line, "A | B".
+function Details({ f, put, started }: { f: Form; put: (p: Partial<Form>) => void; started: boolean }) {
+  return (
+    <View style={s.fields}>
+      {f.category === 'comedy' && (
+        <>
+          <Field label="Language" value={f.language} onChangeText={(language) => put({ language })} placeholder="Hindi and English" maxLength={60} />
+          <Field label="Seating" value={f.seating} onChangeText={(seating) => put({ seating })} placeholder="Floor cushions up front, chairs behind" maxLength={120} />
+        </>
+      )}
+      {f.category === 'jams' && (
+        <>
+          <Field label="Playing" value={f.style} onChangeText={(style) => put({ style })} placeholder="Acoustic, Bollywood and indie" maxLength={120} />
+          <Field label="Bring" value={f.bring} onChangeText={(bring) => put({ bring })} placeholder="Your own instrument" maxLength={120} />
+          <Field label="There already" value={f.onSite} onChangeText={(onSite) => put({ onSite })} placeholder="A cajon, two guitars and a mic" maxLength={120} />
+        </>
+      )}
+      {f.category === 'hackathons' && (
+        <>
+          <View style={styles.buttons}>
+            <View style={styles.grow}>
+              <Field label="Smallest team" value={f.teamMin} onChangeText={(teamMin) => put({ teamMin })} placeholder="1" keyboardType="number-pad" maxLength={2} />
+            </View>
+            <View style={styles.grow}>
+              <Field label="Biggest team" value={f.teamMax} onChangeText={(teamMax) => put({ teamMax })} placeholder="4" keyboardType="number-pad" maxLength={2} />
+            </View>
+          </View>
+          <Lines label="Tracks" value={f.tracks} onChange={(tracks) => put({ tracks })} placeholder={'AI | Build with open models\nFintech | Payments for small shops'} />
+          <Lines label="Prizes" value={f.prizes} onChange={(prizes) => put({ prizes })} placeholder={'First | ₹50,000\nSecond | ₹25,000'} />
+          <Lines label="Rounds" value={f.rounds} onChange={(rounds) => put({ rounds })} placeholder={'Ideas | Sat 10 AM\nFinals | Sun 4 PM'} />
+          <Lines label="Judged on · weights add up to 100" value={f.criteria} onChange={(criteria) => put({ criteria })} placeholder={'Idea | 40\nBuild | 60'} />
+        </>
+      )}
+      {f.category === 'meetups' && (
+        <View>
+          <View style={styles.toggle}>
+            <Text style={s.opensText}>Let checked-in guests meet</Text>
+            <Switch value={f.inRoom} onValueChange={(inRoom) => put({ inRoom })} disabled={started} accessibilityLabel="Let checked-in guests meet" />
+          </View>
+          <Text style={s.k}>{started ? 'Guests who’ve checked in can see each other in the app. It can’t change once the event starts.' : 'Guests who’ve checked in can see each other in the app.'}</Text>
+        </View>
+      )}
+      {f.category === 'fests' && (
+        <>
+          <Label text="Kind of fest">
+            <View style={s.chips} accessibilityRole="radiogroup" accessibilityLabel="Kind of fest">
+              {FEST_TYPES.map((t) => (
+                <Chip key={t} label={t} on={f.festType === t} onPress={() => put({ festType: f.festType === t ? null : t })} />
+              ))}
+            </View>
+          </Label>
+          <Lines label="What’s on · one per line" value={f.highlights} onChange={(highlights) => put({ highlights })} placeholder={'Battle of the bands\nFood court'} />
+        </>
+      )}
+      <Label text="Age">
+        <View style={s.chips} accessibilityRole="radiogroup" accessibilityLabel="Age">
+          {([null, 18, 21] as const).map((a) => (
+            <Chip key={a ?? 0} label={a ? `${a}+` : 'None'} on={f.minAge === a} onPress={() => put({ minAge: a })} />
+          ))}
+        </View>
+      </Label>
+    </View>
+  );
+}
+
+// A few lines of text in a glass box, like About.
+function Lines({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (v: string) => void; placeholder: string }) {
+  return (
+    <Label text={label}>
+      <Glass style={s.area}>
+        <TextInput
+          accessibilityLabel={label}
+          value={value}
+          onChangeText={onChange}
+          placeholder={placeholder}
+          placeholderTextColor={color.secondary}
+          selectionColor={color.accent}
+          style={s.areaText}
+          multiline
+          maxLength={2000}
+        />
+      </Glass>
+    </Label>
+  );
+}
+
+// The other hosts on the event, in order: Up, Down and Remove, a search that adds one, and Save acts, which sends the
+// list whole with the one it started from. If someone changed it since (409 stale) it's read again and the edits go.
+function Acts({ id, ownHostId, readOnly }: { id: string; ownHostId: string; readOnly: boolean }) {
+  const load = useLoad<TeamAct[]>(`acts|${id}`, () => api.authed<TeamAct[]>('GET', `/events/${id}/acts`));
+  const [saved, setSaved] = useState<TeamAct[] | null>(null); // the PUT's answer, over the load
+  const [edit, setEdit] = useState<TeamAct[] | null>(null); // the list as changed; null while it isn't
+  const [q, setQ] = useState('');
+  const [found, setFound] = useState<{ q: string; hosts: HostCard[] } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const loaded = saved ?? load.data;
+  const list = edit ?? loaded ?? [];
+  const term = q.trim();
+  useEffect(() => {
+    if (readOnly || term.length < 2) return;
+    let live = true;
+    const wait = setTimeout(async () => {
+      const r = await api.call<{ events: EventCard[]; hosts: HostCard[] }>('GET', `/public/search?q=${encodeURIComponent(term)}`);
+      if (live) setFound({ q: term, hosts: r.ok ? r.data.hosts : [] });
+    }, 300);
+    return () => {
+      live = false;
+      clearTimeout(wait);
+    };
+  }, [term, readOnly]);
+  if (!loaded)
+    return load.error ? (
+      <>
+        <Note>{load.error.message}</Note>
+        <Pill label="Try again" onPress={load.reload} />
+      </>
+    ) : null;
+  const results = found?.q === term && term.length >= 2 ? pickable(found.hosts, list, ownHostId) : [];
+  const change = (next: TeamAct[]) => {
+    setEdit(next);
+    setError(null);
+  };
+  const save = async () => {
+    setBusy(true);
+    const r = await api.authed<TeamAct[]>('PUT', `/events/${id}/acts`, actsBody(loaded, list));
+    setBusy(false);
+    if (r.ok) {
+      setSaved(r.data);
+      setEdit(null);
+      return setError(null);
+    }
+    if (r.status === 409 && r.error.error === 'stale') {
+      setSaved(null);
+      setEdit(null);
+      load.reload();
+      return setError('Someone changed the acts since you opened them. Here’s the latest; make your changes again.');
+    }
+    setError(r.error.message);
+  };
+  return (
+    <>
+      {list.length > 0 ? (
+        <Card>
+          {list.map((a, i) => (
+            <Row
+              key={a.hostId}
+              label={actName(a)}
+              note={a.shown ? undefined : 'Not public on Orbit right now; only you see it here'}
+              right={
+                !readOnly && (
+                  <>
+                    {i > 0 && <Pill label="Up" spoken={`Move ${actName(a)} up`} onPress={busy ? undefined : () => change(moveAct(list, i, -1))} />}
+                    {i < list.length - 1 && <Pill label="Down" spoken={`Move ${actName(a)} down`} onPress={busy ? undefined : () => change(moveAct(list, i, 1))} />}
+                    <Pill label="Remove" spoken={`Remove ${actName(a)}`} onPress={busy ? undefined : () => change(removeAct(list, i))} />
+                  </>
+                )
+              }
+            />
+          ))}
+        </Card>
+      ) : (
+        <Note>No other hosts on this event.</Note>
+      )}
+      {readOnly && <Note>Acts are locked once the event starts.</Note>}
+      {!readOnly && list.length < MAX_EVENT_ACTS && (
+        <View style={s.fields}>
+          <Field label="Find a host on Orbit" value={q} onChangeText={setQ} placeholder="A name" autoCapitalize="none" autoCorrect={false} maxLength={80} />
+        </View>
+      )}
+      {!readOnly && list.length < MAX_EVENT_ACTS && results.length > 0 && (
+        <Card>
+          {results.map((h) => (
+            <Row key={h.id} label={h.name} note={[h.kind, h.city].filter(Boolean).join(' · ') || undefined} onPress={busy ? undefined : () => change(addAct(list, h, ownHostId))} plain spoken={`Add ${h.name}`} />
+          ))}
+        </Card>
+      )}
+      {!readOnly && list.length >= MAX_EVENT_ACTS && <Note>{`That’s ${MAX_EVENT_ACTS} acts, the most an event can have.`}</Note>}
+      {!readOnly && actsChanged(loaded, list) && (
+        <View style={s.fields}>
+          <Wide label={busy ? 'Saving…' : 'Save acts'} onPress={() => void save()} disabled={busy} />
+        </View>
+      )}
+      {error && <Note live>{error}</Note>}
+    </>
   );
 }
 
@@ -439,6 +642,8 @@ function Tickets({ id, list, published, locked, onChange }: { id: string; list: 
 
 const styles = {
   margin: { marginHorizontal: 20 },
+  grow: { flex: 1 },
+  toggle: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   buttons: { flexDirection: 'row', gap: space.small },
   picture: { marginHorizontal: 20, gap: 12 },
   // Both sides set: a bundled RN Image loses aspectRatio to the file's own height.

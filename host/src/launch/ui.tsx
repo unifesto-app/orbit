@@ -55,9 +55,9 @@ export function Tag({ text, live = false }: { text: string; live?: boolean }) {
 }
 
 /** Every button: frosted glass, a Stone label, fully round. Small is the 32pt pill on cards; `dark` floats over the page. */
-export function Pill({ label, onPress, dark = false }: { label: string; onPress?: () => void; dark?: boolean }) {
+export function Pill({ label, onPress, dark = false, spoken }: { label: string; onPress?: () => void; dark?: boolean; spoken?: string }) {
   return (
-    <Pressable onPress={onPress} disabled={!onPress} accessibilityRole="button" hitSlop={6} style={({ pressed }) => pressed && styles.pressed}>
+    <Pressable onPress={onPress} disabled={!onPress} accessibilityRole="button" accessibilityLabel={spoken} hitSlop={6} style={({ pressed }) => pressed && styles.pressed}>
       <Glass tint={dark ? DARK_TINT : undefined} style={styles.pill}>
         <Text style={styles.pillText}>{label}</Text>
       </Glass>

@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import { mediaRatio, type TeamEvent } from '@orbit/contract';
 
-import { bodyOf, centreCrop, fixesOf, formOf, lastsLabel, paiseOf, placeHalf, priceLabel, saveable } from './editor.ts';
+import { bodyOf, centreCrop, detailsOf, detailsProblem, fixesOf, formOf, lastsLabel, paiseOf, placeHalf, priceLabel, saveable } from './editor.ts';
 
 // A 90-minute event at a place found by search, with coordinates the form can't show.
 const e = {
@@ -66,4 +66,56 @@ test('centreCrop cuts the biggest centred 3:4 or 4:3 box, and leaves a right sha
   assert.equal(centreCrop(1201, 900, 'wide'), null);
   const c = centreCrop(1080, 1920, 'wide')!;
   assert.equal(mediaRatio(c.width, c.height), '4:3');
+});
+
+// Comedy, with a hackathon key kept from before a category switch.
+const d = { ...e, details: { language: 'Hindi', seating: 'Floor', teamMin: 2 }, inRoom: false, minAge: 18 } as unknown as TeamEvent;
+const dw = formOf(d);
+
+test('details: unchanged sends nothing; a comedy edit sends the comedy keys only; a cleared field drops its key', () => {
+  assert.deepEqual(bodyOf(dw, dw), {});
+  assert.equal(detailsProblem(dw), null);
+  assert.deepEqual(bodyOf({ ...dw, language: ' English ' }, dw), { details: { language: 'English', seating: 'Floor' } });
+  assert.deepEqual(bodyOf({ ...dw, seating: '  ' }, dw), { details: { language: 'Hindi' } });
+  assert.ok(saveable({ ...dw, seating: '' }, dw));
+});
+
+test('details: a category switch alone sends no details; the kept key shows for its own category', () => {
+  assert.deepEqual(bodyOf({ ...dw, category: 'hackathons' }, dw), { category: 'hackathons' });
+  assert.deepEqual(detailsOf({ ...dw, category: 'hackathons' }), { teamMin: 2 });
+  assert.deepEqual(detailsOf({ ...dw, category: null }), {});
+  assert.deepEqual(bodyOf({ ...dw, category: 'jams', style: 'Blues' }, dw), { category: 'jams', details: { style: 'Blues' } });
+  assert.deepEqual(bodyOf({ ...dw, language: '', seating: '' }, dw), { details: {} });
+});
+
+test('details: hackathon lines parse; weights not adding to 100, or min over max, are refused in words', () => {
+  const h = { ...dw, category: 'hackathons', teamMax: '4', tracks: 'AI | Build with models\n\n Web | Sites ', criteria: 'Idea | 40\nBuild | 60' };
+  assert.deepEqual(detailsOf(h), {
+    teamMin: 2,
+    teamMax: 4,
+    tracks: [{ name: 'AI', brief: 'Build with models' }, { name: 'Web', brief: 'Sites' }],
+    criteria: [{ name: 'Idea', weight: 40 }, { name: 'Build', weight: 60 }],
+  });
+  assert.ok(saveable(h, dw));
+  const off = { ...h, criteria: 'Idea | 40\nBuild | 50' };
+  assert.ok(!saveable(off, dw));
+  assert.equal(detailsProblem(off), 'The weights must add up to 100');
+  assert.ok(!saveable({ ...h, criteria: 'Idea | lots' }, dw));
+  assert.ok(!saveable({ ...h, teamMin: 'two' }, dw));
+  assert.equal(detailsProblem({ ...h, teamMin: 'two' }), 'Check the smallest team (1 to 10).');
+  const big = { ...h, teamMin: '5' };
+  assert.ok(!saveable(big, dw));
+  assert.equal(detailsProblem(big), "The smallest team can't be bigger than the biggest");
+});
+
+test('details: fests take a type and highlights, one per line', () => {
+  const f = { ...dw, category: 'fests', festType: 'Music festival' as const, highlights: ' Main stage \n\nFood court' };
+  assert.deepEqual(detailsOf(f), { festType: 'Music festival', highlights: ['Main stage', 'Food court'] });
+});
+
+test('inRoom goes only for meetups; minAge 18 to none is sent', () => {
+  assert.deepEqual(bodyOf({ ...dw, inRoom: true }, dw), {});
+  assert.deepEqual(bodyOf({ ...dw, category: 'meetups', inRoom: true }, dw), { category: 'meetups', inRoom: true });
+  assert.deepEqual(bodyOf({ ...dw, minAge: null }, dw), { minAge: null });
+  assert.ok(saveable({ ...dw, minAge: 21 }, dw));
 });
