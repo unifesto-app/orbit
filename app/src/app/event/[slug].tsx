@@ -326,7 +326,7 @@ function Interested({ event: e, live }: { event: Event; live: boolean }) {
 function Thanks({ event: e, host }: { event: Event; host: Host }) {
   const loved = useLoved(e.id);
   const title = `Thanks for coming to ${e.title}`;
-  if (meetups[e.id]?.inRoom) {
+  if (e.inRoom ?? meetups[e.id]?.inRoom) {
     return (
       <OrbitSays
         top={SECTION}

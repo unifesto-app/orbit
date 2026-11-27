@@ -510,7 +510,7 @@ function slideAction(e: Event, now: number) {
 function Thanks({ event: e, host, top }: { event: Event; host: Host; top: number }) {
   const loved = useLoved(e.id);
   const title = `Thanks for coming to ${e.title}`;
-  if (meetups[e.id]?.inRoom) {
+  if (e.inRoom ?? meetups[e.id]?.inRoom) {
     return (
       <OrbitSays
         top={top}
