@@ -456,6 +456,7 @@ export function rolesRoutes({ db, store, notify, secret, now = Date.now }: Deps)
       suspendedUntil: u.suspendedUntil?.toISOString() ?? null,
       suspensionReason: u.suspensionReason,
       deletionDue: u.deletionDueAt?.toISOString() ?? null,
+      roomBarredAt: u.inRoomBarredAt?.toISOString() ?? null, // barred from every inRoom (rooms.ts)
       owner: seesStaff ? u.platformOwner : null,
       staff,
       hosts: onHosts.map(({ ownerId, ...h }) => ({ ...h, owner: ownerId === u.id })),

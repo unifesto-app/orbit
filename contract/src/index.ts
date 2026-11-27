@@ -29,3 +29,4 @@ export * from "./ask.ts";
 export * from "./reports.ts";
 export * from "./people.ts";
 export * from "./support.ts";
+export * from "./rooms.ts";
