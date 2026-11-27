@@ -79,53 +79,52 @@ export const standing = async (db: Db, now: () => number, room: Room, u: User): 
   return { state: mine && !mine.leftAt ? "in" : "door", mine };
 };
 
-// Who can show at all: a card staff haven't removed, of an account not deleted, suspended or barred.
-const shown = (now: () => number) =>
-  and(
-    isNull(roomMembers.removedAt),
-    isNull(users.deletedAt),
-    isNull(users.inRoomBarredAt),
-    sql`not (${users.suspendedAt} is not null and (${users.suspendedUntil} is null or ${users.suspendedUntil} > ${new Date(now()).toISOString()}::timestamptz))`,
-  );
-
-// The members `me` can see: shown, in the room, let in now, no block either way. Once the room has closed (`closed`):
-// only those `me` connected with, still shown and not blocked, but with no check of leaving or of the booking, since
-// the event is long over (owner default 3: contacts stay readable, no purge).
-export const visible = (db: Db, now: () => number, room: Room, me: Member, only?: string, closed = false) =>
-  db
-    .select({
-      m: roomMembers,
-      name: users.name,
-      photo: users.photo,
-      host: sql<boolean>`exists (select 1 from team_roles t where t.host_id = ${room.hostId} and t.user_id = ${roomMembers.userId} and t.started_at is not null and t.ended_at is null)`,
-    })
-    .from(roomMembers)
-    .innerJoin(users, eq(users.id, roomMembers.userId))
-    .where(
-      and(
-        eq(roomMembers.eventId, room.id),
-        only ? eq(roomMembers.id, only) : undefined,
-        ne(roomMembers.userId, me.userId),
-        shown(now),
-        ...(closed
-          ? [
-              sql`exists (select 1 from room_asks q where q.status = 'accepted'
-                            and ((q.from_member = ${me.id} and q.to_member = ${roomMembers.id}) or (q.from_member = ${roomMembers.id} and q.to_member = ${me.id})))`,
-            ]
-          : [isNull(roomMembers.leftAt), letIn(roomMembers.userId, room.id)]),
-        sql`not exists (select 1 from user_blocks k where (k.blocker_id = ${me.userId} and k.blocked_id = ${roomMembers.userId})
-                                                   or (k.blocker_id = ${roomMembers.userId} and k.blocked_id = ${me.userId}))`,
-      ),
-    )
-    .orderBy(roomMembers.joinedAt, roomMembers.id);
-type Seen = Awaited<ReturnType<typeof visible>>[number];
-
 export function roomsRoutes({ db, store, secret, notify, media, now = Date.now }: Deps) {
   const app = new Hono<StaffEnv>();
   const auth = signedIn(db, secret, now);
   const queues = requireFeature(db, now, "queues");
   const at = () => new Date(now());
 
+  // Who can show at all: a card staff haven't removed, of an account not deleted, suspended or barred.
+  const shown = () =>
+    and(
+      isNull(roomMembers.removedAt),
+      isNull(users.deletedAt),
+      isNull(users.inRoomBarredAt),
+      sql`not (${users.suspendedAt} is not null and (${users.suspendedUntil} is null or ${users.suspendedUntil} > ${at().toISOString()}::timestamptz))`,
+    );
+
+  // The members `me` can see: shown, in the room, let in now, no block either way. Once the room has closed (`closed`):
+  // only those `me` connected with, still shown and not blocked, but with no check of leaving or of the booking, since
+  // the event is long over (owner default 3: contacts stay readable, no purge).
+  const visible = (room: Room, me: Member, only?: string, closed = false) =>
+    db
+      .select({
+        m: roomMembers,
+        name: users.name,
+        photo: users.photo,
+        host: sql<boolean>`exists (select 1 from team_roles t where t.host_id = ${room.hostId} and t.user_id = ${roomMembers.userId} and t.started_at is not null and t.ended_at is null)`,
+      })
+      .from(roomMembers)
+      .innerJoin(users, eq(users.id, roomMembers.userId))
+      .where(
+        and(
+          eq(roomMembers.eventId, room.id),
+          only ? eq(roomMembers.id, only) : undefined,
+          ne(roomMembers.userId, me.userId),
+          shown(),
+          ...(closed
+            ? [
+                sql`exists (select 1 from room_asks q where q.status = 'accepted'
+                              and ((q.from_member = ${me.id} and q.to_member = ${roomMembers.id}) or (q.from_member = ${roomMembers.id} and q.to_member = ${me.id})))`,
+              ]
+            : [isNull(roomMembers.leftAt), letIn(roomMembers.userId, room.id)]),
+          sql`not exists (select 1 from user_blocks k where (k.blocker_id = ${me.userId} and k.blocked_id = ${roomMembers.userId})
+                                                     or (k.blocker_id = ${roomMembers.userId} and k.blocked_id = ${me.userId}))`,
+        ),
+      )
+      .orderBy(roomMembers.joinedAt, roomMembers.id);
+  type Seen = Awaited<ReturnType<typeof visible>>[number];
 
   // The pair's ask, if any: one per pair, whoever asked.
   const pairAsk = async (a: string, b: string) =>
@@ -158,7 +157,7 @@ export function roomsRoutes({ db, store, secret, notify, media, now = Date.now }
     if ((state === "in" || state === "closed") && mine) {
       const asks = await db.select().from(roomAsks).where(and(eq(roomAsks.eventId, room.id), or(eq(roomAsks.fromMember, mine.id), eq(roomAsks.toMember, mine.id))));
       const byOther = new Map(asks.map((a) => [a.fromMember === mine.id ? a.toMember : a.fromMember, a]));
-      members = (await visible(db, now, room, mine, undefined, state === "closed")).map((s) => toMember(s, byOther.get(s.m.id), mine.id));
+      members = (await visible(room, mine, undefined, state === "closed")).map((s) => toMember(s, byOther.get(s.m.id), mine.id));
     }
     return {
       event: { id: room.id, slug: room.slug, title: room.title, startsAt: room.startsAt.toISOString(), endsAt: room.endsAt.toISOString() },
@@ -227,7 +226,7 @@ export function roomsRoutes({ db, store, secret, notify, media, now = Date.now }
     const r = await inside(c);
     if (r instanceof Response) return r;
     const { room, mine } = r;
-    const [them] = await visible(db, now, room, mine, b.memberId);
+    const [them] = await visible(room, mine, b.memberId);
     if (!them) return nothing(c);
     const have = await pairAsk(mine.id, them.m.id);
     const turn = have?.status === "declined" && have.toMember === mine.id;
@@ -264,7 +263,7 @@ export function roomsRoutes({ db, store, secret, notify, media, now = Date.now }
       const { room, mine } = r;
       const askId = c.req.param("askId");
       const [a] = isUuid(askId) ? await db.select().from(roomAsks).where(and(eq(roomAsks.id, askId), eq(roomAsks.eventId, room.id), eq(roomAsks.toMember, mine.id))) : [];
-      const [them] = a ? await visible(db, now, room, mine, a.fromMember) : [];
+      const [them] = a ? await visible(room, mine, a.fromMember) : [];
       if (!a || !them) return nothing(c);
       const [done] = await db
         .update(roomAsks)
@@ -287,7 +286,7 @@ export function roomsRoutes({ db, store, secret, notify, media, now = Date.now }
     const memberId = c.req.param("memberId");
     const [them] =
       mine && isUuid(memberId) ? await db.select().from(roomMembers).where(and(eq(roomMembers.id, memberId), eq(roomMembers.eventId, room.id), ne(roomMembers.userId, mine.userId))) : [];
-    const ok = them && ((await pairAsk(mine!.id, them.id)) || (state === "in" && (await visible(db, now, room, mine!, them.id)).length));
+    const ok = them && ((await pairAsk(mine!.id, them.id)) || (state === "in" && (await visible(room, mine!, them.id)).length));
     if (!ok) return nothing(c);
     const me = mine!.userId, other = them.userId;
     await db.transaction(async (tx) => {
@@ -309,7 +308,7 @@ export function roomsRoutes({ db, store, secret, notify, media, now = Date.now }
             .select({ photo: users.photo })
             .from(roomMembers)
             .innerJoin(users, eq(users.id, roomMembers.userId))
-            .where(and(eq(roomMembers.id, id), isNull(roomMembers.leftAt), shown(now)))
+            .where(and(eq(roomMembers.id, id), isNull(roomMembers.leftAt), shown()))
         : [];
     const key = media && r?.photo?.startsWith(`${media.url}/`) && r.photo.endsWith(`/${name}`) ? r.photo.slice(media.url.length + 1) : null;
     const file = key ? await media!.files.get(key) : null;

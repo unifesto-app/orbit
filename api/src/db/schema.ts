@@ -1271,11 +1271,11 @@ export const reports = pgTable(
     check("reports_status", sql`${t.status} in ('open', 'resolved', 'dismissed')`),
     check("reports_person_in_event", sql`${t.subjectUserId} is null or ${t.eventId} is not null`),
     index().on(t.status, t.createdAt),
-    // One open report per person per subject: a second is answered with the first. A person is one subject in every
-    // room; their room's event stays a subject of its own.
+    // One open report per person per subject: a second is answered with the first. A person is a subject per room
+    // they were reported from; their room's event stays a subject of its own.
     uniqueIndex("reports_one_open_event").on(t.userId, t.eventId).where(sql`${t.status} = 'open' and ${t.eventId} is not null and ${t.subjectUserId} is null`),
     uniqueIndex("reports_one_open_host").on(t.userId, t.hostId).where(sql`${t.status} = 'open' and ${t.hostId} is not null`),
-    uniqueIndex("reports_one_open_user").on(t.userId, t.subjectUserId).where(sql`${t.status} = 'open' and ${t.subjectUserId} is not null`),
+    uniqueIndex("reports_one_open_user").on(t.userId, t.eventId, t.subjectUserId).where(sql`${t.status} = 'open' and ${t.subjectUserId} is not null`),
     index().on(t.eventId),
     index().on(t.hostId),
     index().on(t.subjectUserId),

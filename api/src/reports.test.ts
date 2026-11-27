@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { eq } from "drizzle-orm";
 import sharp from "sharp";
 import { testApp } from "./testkit.ts";
-import { auditLog, bookings, events, staffGrants, ticketTypes, userBlocks, users } from "./db/schema.ts";
+import { auditLog, bookings, events, reports, staffGrants, ticketTypes, userBlocks, users } from "./db/schema.ts";
+import { runDeletions } from "./auth/deletion.ts";
 
 // Reports (X15): sending one, the Galaxy queue, and the event's calendar file. People in rooms (inRoom R2).
 
@@ -218,7 +219,7 @@ const guest = async (e: E, u?: P) => {
 type G = Awaited<ReturnType<typeof guest>>;
 const report = (u: P, e: E, memberId: string, reason = "offensive") => as(u)("POST", "/reports", { eventId: e.id, memberId, reason });
 
-test("report a person: someone the reporter sees in that room now, {id} only, one open per person", async () => {
+test("report a person: any other card in the reporter's room, {id} only, one open per person per room", async () => {
   const owner = await join(), q = await withFeature("queues");
   const e = await meetup(owner), other = await meetup(owner);
   const a = await guest(e), b = await guest(e), x = await guest(other);
@@ -241,52 +242,85 @@ test("report a person: someone the reporter sees in that room now, {id} only, on
   assert.notEqual(ev.body.id, one.body.id);
   assert.equal((await report(a, e, b.member)).body.id, one.body.id);
 
+  // The same person from another room is another report.
+  await guest(other, a);
+  const b2 = await guest(other, b);
+  const there = await report(a, other, b2.member);
+  assert.equal(there.status, 201);
+  assert.notEqual(there.body.id, one.body.id);
+
   // Decided, a new one may be sent.
   assert.equal((await as(q)("POST", `/galaxy/reports/${one.body.id}/dismiss`, {})).status, 200);
   const next = await report(a, e, b.member);
   assert.equal(next.status, 201);
   assert.notEqual(next.body.id, one.body.id);
 
-  // Another room's card, the other room, a made-up id: all the same 404, and the same body as a reporter who isn't in.
-  const missing = await report(b, e, crypto.randomUUID());
+  // Another room's card, a room the reporter isn't in, a made-up id, themselves: all the same 404, and the same body as
+  // a reporter who isn't in, or is let in with no card.
+  const c = await guest(e);
+  const missing = await report(c, e, crypto.randomUUID());
   assert.equal(missing.status, 404);
-  for (const r of [await report(b, e, x.member), await report(b, other, a.member), await report(b, other, x.member)]) assert.deepEqual(r, missing);
+  for (const r of [await report(c, e, x.member), await report(c, other, x.member), await report(c, e, c.member)]) assert.deepEqual(r, missing);
   const stranger = await join(), door = await join();
-  await book(door, e); // let in, no card yet
+  await book(door, e);
   for (const u of [stranger, door]) assert.deepEqual(await report(u, e, b.member), missing);
 });
 
-test("report a person: self, left, removed, blocked and barred are the same 404, for either side", async () => {
+test("report a person: left, removed, blocked and suspended people stay reportable; reporters out, removed or barred aren't", async () => {
   const owner = await join(), staff = await withFeature("queues");
   const e = await meetup(owner);
-  const a = await guest(e), left = await guest(e), removed = await guest(e), blocked = await guest(e), blocker = await guest(e), barred = await guest(e);
+  const a = await guest(e), left = await guest(e), removed = await guest(e), blocked = await guest(e), blocker = await guest(e), suspended = await guest(e), barred = await guest(e);
   const leaver = await guest(e), outed = await guest(e), ok = await guest(e);
   await as(left)("DELETE", `/me/rooms/${e.id}`);
   assert.equal((await t.call("POST", `/galaxy/rooms/${e.id}/members/${removed.member}/remove`, { reason: "Spam links" }, staff.access)).status, 200);
-  await t.db.insert(userBlocks).values({ blockerId: a.me.id, blockedId: blocked.me.id, createdAt: new Date() });
+  assert.equal((await as(a)("POST", `/me/rooms/${e.id}/members/${blocked.member}/block`)).status, 204); // block, then report
   await t.db.insert(userBlocks).values({ blockerId: blocker.me.id, blockedId: a.me.id, createdAt: new Date() });
-  await t.db.update(users).set({ inRoomBarredAt: new Date(t.now()) }).where(eq(users.id, barred.me.id));
-  const missing = await report(ok, e, crypto.randomUUID());
-  for (const m of [a, left, removed, blocked, blocker, barred]) assert.deepEqual(await report(a, e, m.member), missing);
-  // Reporters who left, were removed, are barred or are no longer let in.
+  await t.db.update(users).set({ suspendedAt: new Date(t.now()) }).where(eq(users.id, suspended.me.id));
+  for (const m of [left, removed, blocked, blocker, suspended]) assert.equal((await report(a, e, m.member)).status, 201);
+
+  // A reporter who left still can; one removed, barred or no longer let in can't.
   await as(leaver)("DELETE", `/me/rooms/${e.id}`);
+  assert.equal((await report(leaver, e, ok.member)).status, 201);
+  await t.db.update(users).set({ inRoomBarredAt: new Date(t.now()) }).where(eq(users.id, barred.me.id));
   await t.db.update(bookings).set({ status: "cancelled" }).where(eq(bookings.userId, outed.me.id));
-  for (const u of [leaver, removed, barred, outed]) assert.deepEqual(await report(u, e, ok.member), missing);
-  assert.equal((await report(ok, e, a.member)).status, 201);
+  const missing = await report(ok, e, crypto.randomUUID());
+  for (const u of [removed, barred, outed]) assert.deepEqual(await report(u, e, ok.member), missing);
 });
 
-test("report a person after the room closes: connections only", async () => {
+test("report a person after the room closes: any card there, by anyone with a card", async () => {
   const owner = await join();
   const e = await meetup(owner);
-  const a = await guest(e), b = await guest(e), c = await guest(e);
-  const askId = (await as(a)("POST", `/me/rooms/${e.id}/asks`, { memberId: b.member })).body.askId as string;
-  assert.equal((await as(b)("POST", `/me/rooms/${e.id}/asks/${askId}/accept`)).status, 200);
+  const a = await guest(e), b = await guest(e), c = await guest(e), stranger = await join();
+  await as(c)("DELETE", `/me/rooms/${e.id}`);
   await t.db.update(events).set({ startsAt: new Date(t.now() - 9 * DAY), endsAt: new Date(t.now() - 7 * DAY) }).where(eq(events.id, e.id));
   assert.equal((await as(a)("GET", `/me/rooms/${e.id}`)).body.state, "closed");
   assert.equal((await report(a, e, b.member)).status, 201);
-  assert.equal((await report(b, e, a.member)).status, 201);
-  assert.equal((await report(a, e, c.member)).status, 404);
-  assert.equal((await report(c, e, a.member)).status, 404);
+  assert.equal((await report(c, e, a.member)).status, 201);
+  assert.equal((await report(stranger, e, a.member)).status, 404);
+});
+
+test("report a person: no room, no report; a deleted account's card is gone", async () => {
+  const owner = await join();
+  const e = await meetup(owner), f = await meetup(owner);
+  const a = await guest(e), b = await guest(e), c = await guest(f), d = await guest(f);
+  await t.db.update(events).set({ status: "draft" }).where(eq(events.id, e.id));
+  assert.equal((await report(a, e, b.member)).status, 404);
+  await t.db.update(events).set({ inRoom: false }).where(eq(events.id, f.id));
+  assert.equal((await report(c, f, d.member)).status, 404);
+  await t.db.update(events).set({ inRoom: true }).where(eq(events.id, f.id));
+  await t.db.update(users).set({ deletionRequestedAt: new Date(t.now() - DAY), deletionDueAt: new Date(t.now() - 1) }).where(eq(users.id, d.me.id));
+  await runDeletions(t.db, t.notify, t.now());
+  assert.equal((await report(c, f, d.member)).status, 404);
+});
+
+test("two person reports at once: one row", async () => {
+  const owner = await join();
+  const e = await meetup(owner);
+  const a = await guest(e), b = await guest(e);
+  const [x, y] = await Promise.all([report(a, e, b.member, "spam"), report(a, e, b.member, "scam")]);
+  assert.deepEqual([x.status, y.status].sort(), [200, 201]);
+  assert.equal(x.body.id, y.body.id);
+  assert.equal((await t.db.select().from(reports).where(eq(reports.subjectUserId, b.me.id))).length, 1);
 });
 
 test("report a person: every try counts toward the 10 a day", async () => {
@@ -300,26 +334,33 @@ test("report a person: every try counts toward the 10 a day", async () => {
   assert.equal(many.body.error, "tooMany");
 });
 
-test("Galaxy: person reports show the person and the room; open count per person; never on one's own host", async () => {
+test("Galaxy: person reports show the person and the room; open count per person; never on one's own host or about oneself", async () => {
   const owner = await join(), q = await withFeature("queues"), q2 = await withFeature("queues");
-  const e = await meetup(owner);
+  const e = await meetup(owner), e2 = await meetup(owner);
   const a = await guest(e), b = await guest(e), c = await guest(e), d = await guest(e);
   const ab = (await report(a, e, b.member)).body.id as string;
   t.tick(1000);
   const cb = (await report(c, e, b.member)).body.id as string;
   const ad = (await report(a, e, d.member)).body.id as string;
   const ev = (await as(a)("POST", "/reports", { eventId: e.id, reason: "unsafe" })).body.id as string;
+  // b again, from another room: counted on b too.
+  await guest(e2, a);
+  const b2 = await guest(e2, b);
+  const ab2 = (await report(a, e2, b2.member)).body.id as string;
 
   const list = (await as(q)("GET", "/galaxy/reports")).body.reports as any[];
   const byId = new Map(list.map((r) => [r.id, r]));
-  const [lab, lcb, lad, lev] = [ab, cb, ad, ev].map((id) => byId.get(id));
+  const [lab, lcb, lad, lev, lab2] = [ab, cb, ad, ev, ab2].map((id) => byId.get(id));
   assert.equal(lab.subject.kind, "person");
   assert.equal(lab.subject.id, e.id);
-  assert.equal(lab.subject.name, `Founders Meetup ${k}`);
+  const [ee] = await t.db.select({ title: events.title }).from(events).where(eq(events.id, e.id));
+  assert.equal(lab.subject.name, ee!.title);
   const [bName] = await t.db.select({ name: users.name }).from(users).where(eq(users.id, b.me.id));
   assert.deepEqual(lab.subject.person, { userId: b.me.id, name: bName!.name, memberId: b.member, line: "Building a climbing gym app" });
-  assert.equal(lab.openOnSubject, 2);
-  assert.equal(lcb.openOnSubject, 2);
+  assert.equal(lab2.subject.person.memberId, b2.member);
+  assert.equal(lab.openOnSubject, 3);
+  assert.equal(lcb.openOnSubject, 3);
+  assert.equal(lab2.openOnSubject, 3);
   assert.equal(lad.openOnSubject, 1);
   assert.equal(lev.subject.kind, "event");
   assert.equal(lev.openOnSubject, 1); // the person reports in its room aren't on the event
@@ -328,10 +369,20 @@ test("Galaxy: person reports show the person and the room; open count per person
   assert.deepEqual(one.body.subject, lab.subject);
   const done = await as(q)("POST", `/galaxy/reports/${ab}/resolve`, { note: "Card removed" });
   assert.equal(done.body.status, "resolved");
-  assert.equal(done.body.openOnSubject, 1);
+  assert.equal(done.body.openOnSubject, 2);
   const [log] = await t.db.select().from(auditLog).where(eq(auditLog.actorId, q.me.id));
-  assert.equal(log!.targetUser, b.me.id);
+  assert.equal(log!.targetUser, null); // off b's People page
   assert.deepEqual(log!.data, { reportId: ab, eventId: e.id, subjectUserId: b.me.id });
+
+  // A report about a staff member: they never see or decide it; another does.
+  const qe = await guest(e, q2);
+  const aq = (await report(a, e, qe.member)).body.id as string;
+  assert.equal((await as(q2)("GET", `/galaxy/reports/${aq}`)).status, 404);
+  const mine = await as(q2)("POST", `/galaxy/reports/${aq}/resolve`, {});
+  assert.equal(mine.status, 403);
+  assert.equal(mine.body.error, "self");
+  assert.ok(!((await as(q2)("GET", "/galaxy/reports")).body.reports as any[]).some((r) => r.id === aq));
+  assert.equal((await as(q)("GET", `/galaxy/reports/${aq}`)).status, 200);
 
   // A room on q2's own host: q2 never sees or decides its reports; q does.
   const own = await meetup(q2);

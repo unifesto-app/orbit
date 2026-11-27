@@ -1,5 +1,5 @@
 {
-  "id": "1aad4624-40a8-4989-aae2-6cf1d18c2555",
+  "id": "559aa344-a5fe-48f2-a878-984223b33f9e",
   "prevId": "66fdbb3e-656b-4028-aa66-200d83bbc92e",
   "version": "7",
   "dialect": "postgresql",
@@ -5705,6 +5705,12 @@
           "columns": [
             {
               "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "event_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
