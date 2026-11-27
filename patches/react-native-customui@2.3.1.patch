@@ -1,0 +1,59 @@
+diff --git a/ios/RazorpayCustomui.h b/ios/RazorpayCustomui.h
+index 577cac2..aa427a4 100644
+--- a/ios/RazorpayCustomui.h
++++ b/ios/RazorpayCustomui.h
+@@ -6,7 +6,7 @@
+ //  Copyright © 2016 Razorpay. All rights reserved.
+ //
+ 
+-#import "RCTBridgeModule.h"
++#import <React/RCTBridgeModule.h>
+ 
+ @interface RazorpayCustomui : NSObject <RCTBridgeModule>
+ 
+diff --git a/ios/RazorpayEventEmitterCustom.h b/ios/RazorpayEventEmitterCustom.h
+index a20c17f..c7ec213 100644
+--- a/ios/RazorpayEventEmitterCustom.h
++++ b/ios/RazorpayEventEmitterCustom.h
+@@ -6,7 +6,7 @@
+ //  Copyright © 2016 Facebook. All rights reserved.
+ //
+ 
+-#import "RCTEventEmitter.h"
++#import <React/RCTEventEmitter.h>
+ 
+ @interface RazorpayEventEmitterCustom : RCTEventEmitter
+ 
+diff --git a/ios/RazorpayEventEmitterCustom.m b/ios/RazorpayEventEmitterCustom.m
+index 0d14f13..2851fb5 100644
+--- a/ios/RazorpayEventEmitterCustom.m
++++ b/ios/RazorpayEventEmitterCustom.m
+@@ -8,8 +8,8 @@
+ 
+ #import "RazorpayEventEmitterCustom.h"
+ 
+-#import "RCTBridge.h"
+-#import "RCTEventDispatcher.h"
++#import <React/RCTBridge.h>
++#import <React/RCTEventDispatcher.h>
+ 
+ 
+ NSString *const kPaymentErrorCustom = @"PAYMENT_ERROR";
+diff --git a/react-native-customui.podspec b/react-native-customui.podspec
+index bd3aa75..2265ed6 100644
+--- a/react-native-customui.podspec
++++ b/react-native-customui.podspec
+@@ -16,7 +16,12 @@ Pod::Spec.new do |s|
+   s.source       = { :git => "https://github.com/razorpay/react-native-customui.git", :tag => "v#{s.version}" }
+   s.source_files  = "ios/**/*.{h,m}"
+ 
+-  s.dependency 'React'
++  # Orbit: RN 0.88 ships React prebuilt; the bare 'React' pod no longer puts RCT* headers on the path.
++  if respond_to?(:install_modules_dependencies, true)
++    install_modules_dependencies(s)
++  else
++    s.dependency 'React-Core'
++  end
+   s.dependency 'razorpay-customui-pod', '~> 2.2.3'
+ #   s.vendored_frameworks = [
+ #   'pod/Razorpay.xcframework',
