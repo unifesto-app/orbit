@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { actionOf, cardOf, chipOf, keyboardOf, pickChip, roomSays, roomsApi, rowChip } from './rooms.ts';
+import { actionOf, cardOf, chipOf, hasRoom, keyboardOf, pickChip, roomSays, roomsApi, rowChip } from './rooms.ts';
 
 test('roomsApi: the room routes, all signed in', async () => {
   const got: string[] = [];
@@ -82,4 +82,20 @@ test('cardOf: a NUL or a lone surrogate is refused, as the API would', () => {
   assert.deepEqual(cardOf('hi\u0000', [{ label: 'Phone', value: '1' }]), { error: 'Remove the NUL character.' });
   assert.deepEqual(cardOf('hi', [{ label: 'Phone', value: 'x\uD83D' }]), { error: 'Remove the broken character.' });
   assert.ok('card' in cardOf('hi 👋', [{ label: 'Phone', value: '1' }]));
+});
+
+test('cardOf: the limits themselves pass; one over fails', () => {
+  const row = (label: string) => ({ label, value: 'v' });
+  assert.ok('card' in cardOf('x'.repeat(120), [row('L'.repeat(24)), row('Phone'), row('Email')]));
+  assert.ok('error' in cardOf('x'.repeat(121), [row('Phone')]));
+  assert.ok('error' in cardOf('hi', [row('L'.repeat(25))]));
+  assert.ok('error' in cardOf('hi', [row('a'), row('b'), row('c'), row('d')]));
+  assert.ok('card' in cardOf('hi', [row('Phone'), { label: ' ', value: ' ' }, row('Email'), row('x')])); // the blank row drops
+});
+
+test('hasRoom: the API decides for real events, the mock only when the API says nothing', () => {
+  assert.equal(hasRoom({ id: 'any', inRoom: true }), true);
+  assert.equal(hasRoom({ id: 'design-critique-night', inRoom: false }), false);
+  assert.equal(hasRoom({ id: 'design-critique-night' }), true);
+  assert.equal(hasRoom({ id: 'not-a-meetup' }), false);
 });

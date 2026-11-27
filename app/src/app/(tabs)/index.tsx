@@ -25,7 +25,7 @@ import { useUnread } from '../../inboxStore';
 import { OrbitAdStrip } from '../../orbitAd';
 import { OrbitSays } from '../../orbitSays';
 import { refreshPlace, usePlace } from '../../place';
-import { meetups } from '../../kinds';
+import { hasRoom } from '../../rooms';
 import { promoteOne } from '../../labels';
 import { EventRow, Failed, HostRow, isPromoted, loveIt, Monogram, Poster, SEAT, SeatCard, Section, StatusLine, Waiting } from '../../rows';
 import { bookAction, eventStatus } from '../../status';
@@ -510,7 +510,7 @@ function slideAction(e: Event, now: number) {
 function Thanks({ event: e, host, top }: { event: Event; host: Host; top: number }) {
   const loved = useLoved(e.id);
   const title = `Thanks for coming to ${e.title}`;
-  if (e.inRoom ?? meetups[e.id]?.inRoom) {
+  if (hasRoom(e)) {
     return (
       <OrbitSays
         top={top}

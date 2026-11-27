@@ -3,6 +3,8 @@
 // draws it. Name and photo are the account's; the card is only a line and one to three ways to reach you.
 import { type RoomAsk, RoomCard, type RoomMember, type RoomState, type RoomView, ROOM_LINE_MAX, ROOM_REACH_MAX } from '@orbit/contract';
 
+import { meetups } from './kinds.ts';
+
 import type { makeApi } from './api.ts';
 
 type Api = Pick<ReturnType<typeof makeApi>, 'authed'>;
@@ -85,3 +87,6 @@ export function roomSays(state: RoomState, connections = 0): string | null {
       return 'You can’t join rooms on Orbit.';
   }
 }
+
+/** Whether a meetup has a room: the API's inRoom on a real event, else the mock's (session rooms stay mock-only). */
+export const hasRoom = (e: { id: string; inRoom?: boolean }) => e.inRoom ?? meetups[e.id]?.inRoom ?? false;
