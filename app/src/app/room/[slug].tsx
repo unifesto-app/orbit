@@ -177,6 +177,10 @@ function LiveRoom({ eventId }: { eventId: string }) {
           <OrbitSays top={SECTION} text="Sign in to see the room." answers={[{ label: 'Sign in', onPress: () => needsAccount() }]} />
         ) : (
           <>
+            {/* A read after a tap failed: what's below may be out of date, so say so. */}
+            {room.error && (
+              <OrbitSays top={SECTION} text={`Couldn’t refresh the room, so this may be out of date. ${room.error.message}`} answers={[{ label: 'Try again', onPress: room.reload }]} />
+            )}
             {says && <OrbitSays top={SECTION} text={says} />}
             {v.state === 'door' && <CardForm me={me} card={v.me} submit="Join the room" busy={busy} onSubmit={putCard} />}
             {v.state === 'in' && v.me && (
