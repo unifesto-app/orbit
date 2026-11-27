@@ -5,7 +5,8 @@ import { connection } from "next/server";
 import { type ReactNode, Suspense } from "react";
 import { me, read } from "../../../../api";
 import { Alert, Badge, Container, day, FEATURE_NAMES, PageHeader, Pairs, phone, ui } from "../../../ui";
-import type { Person } from "../../actions";
+import { type Person, unbarFromRooms } from "../../actions";
+import { Act } from "../../act";
 import { HostStatus } from "../../hosts/status";
 import { PersonActions } from "../search";
 
@@ -21,6 +22,7 @@ type PersonFile = Person & {
   suspendedUntil: string | null;
   suspensionReason: string | null;
   deletionDue: string | null;
+  roomBarredAt: string | null;
   owner: boolean | null; // null, with staff, for viewers without Staff
   staff: StaffFeature[] | null;
   hosts: { id: string; slug: string; name: string; status: string; owner: boolean }[];
@@ -36,6 +38,9 @@ const DID: Record<string, string> = {
   "staff.grant": "Gave staff access",
   "staff.confirm": "Confirmed staff access",
   "staff.end": "Ended staff access",
+  "rooms.remove": "Removed a room card",
+  "rooms.bar": "Barred from rooms",
+  "rooms.unbar": "Lifted the bar from rooms",
 };
 
 const time = (iso: string) =>
@@ -79,6 +84,7 @@ async function User({ params }: Pick<PageProps<"/users/[id]">, "params">) {
             ["Gender", p.gender],
             ...(p.staff ? [["Staff access", p.owner ? "Platform owner" : p.staff.length ? p.staff.map((f) => FEATURE_NAMES[f]).join(", ") : "None"] as [string, string]] : []),
             ...(p.suspensionReason ? [["Suspended for", p.suspensionReason] as [string, string]] : []),
+            ...(p.roomBarredAt ? [["Rooms", <Badge key="r" tone="error">{`Barred from rooms since ${day(p.roomBarredAt)}`}</Badge>] as [string, ReactNode]] : []),
             ...(p.deletionDue ? [["Deletion", <Badge key="d" tone="warning">{`Deletes on ${day(p.deletionDue)} unless they keep the account`}</Badge>] as [string, ReactNode]] : []),
           ]}
         />
@@ -177,6 +183,7 @@ async function User({ params }: Pick<PageProps<"/users/[id]">, "params">) {
       {viewer.ok && viewer.data.id !== p.id && (
         <Container title="Actions">
           <PersonActions person={p} features={features} stack />
+          {p.roomBarredAt && features.includes("queues") && <Act label="Lift bar from rooms" action={unbarFromRooms} hidden={{ id: p.id }} who="Staff see this" />}
         </Container>
       )}
     </div>

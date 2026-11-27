@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { type AnyPgColumn, bigint, boolean, check, date, doublePrecision, foreignKey, index, integer, jsonb, pgTable, primaryKey, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
-import type { AgendaItem, AutoMessages, BroadcastChannel, BroadcastSegment, EventDetails, FaqItem, PersonLink, RequestEvent, RequestHost, Week } from "@orbit/contract";
+import type { AgendaItem, AutoMessages, BroadcastChannel, BroadcastSegment, EventDetails, FaqItem, PersonLink, RequestEvent, RequestHost, RoomReach, Week } from "@orbit/contract";
 
 // The User flow's tables (Orbit flows: User). Migrated people keep their Unifesto ids, so `id` takes any UUID.
 // Phone and email are the ways in by code; Google and Apple live in `identities`, passkeys in `passkeys`.
@@ -36,6 +36,9 @@ export const users = pgTable("users", {
   platformOwner: boolean("platform_owner").notNull().default(false),
   // The kinds of event they like (category slugs, GET/PUT /me/interests): null until picked or skipped, [] once skipped.
   interests: jsonb("interests").$type<string[]>(),
+  // Barred from every inRoom by staff (rooms.ts): can't join or be seen in any room until staff unbar them.
+  inRoomBarredAt: at("in_room_barred_at"),
+  inRoomBarredBy: uuid("in_room_barred_by").references((): AnyPgColumn => users.id),
   createdAt: at("created_at").notNull().defaultNow(),
   updatedAt: at("updated_at").notNull().defaultNow(),
 }, (t) => [uniqueIndex("users_one_platform_owner").on(t.platformOwner).where(sql`${t.platformOwner}`)]);
@@ -1292,4 +1295,61 @@ export const supportMessages = pgTable(
     createdAt: at("created_at").notNull(),
   },
   (t) => [check("support_messages_from", sql`${t.from} in ('person', 'staff')`), index().on(t.threadId, t.createdAt)],
+);
+
+// ---------- inRoom (rooms.ts): meetup guests who were let in meet in the app ----------
+
+// A guest's card in an event's room. Leaving sets left_at and joining again clears it; staff removal is for good.
+export const roomMembers = pgTable(
+  "room_members",
+  {
+    id: uuid("id").primaryKey().defaultRandom(), // the only id the app ever sees for a member
+    eventId: uuid("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").notNull().references(() => users.id),
+    line: text("line").notNull(),
+    reach: jsonb("reach").$type<RoomReach[]>().notNull(),
+    joinedAt: at("joined_at").notNull(),
+    leftAt: at("left_at"),
+    removedAt: at("removed_at"),
+    removedBy: uuid("removed_by").references(() => users.id),
+  },
+  (t) => [
+    unique("room_members_one_per_event").on(t.eventId, t.userId),
+    check("room_members_line", sql`char_length(${t.line}) between 1 and 120`),
+    check("room_members_reach", sql`jsonb_typeof(${t.reach}) = 'array' and jsonb_array_length(${t.reach}) between 1 and 3`),
+    index().on(t.userId),
+  ],
+);
+
+// An ask to connect between two members of a room: one per pair, whoever asked first.
+export const roomAsks = pgTable(
+  "room_asks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    eventId: uuid("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+    fromMember: uuid("from_member").notNull().references(() => roomMembers.id, { onDelete: "cascade" }),
+    toMember: uuid("to_member").notNull().references(() => roomMembers.id, { onDelete: "cascade" }),
+    status: text("status", { enum: ["pending", "accepted", "declined"] }).notNull().default("pending"),
+    createdAt: at("created_at").notNull(),
+    updatedAt: at("updated_at").notNull(),
+  },
+  (t) => [
+    check("room_asks_not_self", sql`${t.fromMember} <> ${t.toMember}`),
+    check("room_asks_status", sql`${t.status} in ('pending', 'accepted', 'declined')`),
+    uniqueIndex("room_asks_one_per_pair").on(sql`least(${t.fromMember}, ${t.toMember})`, sql`greatest(${t.fromMember}, ${t.toMember})`),
+    index().on(t.eventId),
+    index().on(t.fromMember),
+    index().on(t.toMember),
+  ],
+);
+
+// One person blocking another: global, both ways, in every room. Only Support lifts it.
+export const userBlocks = pgTable(
+  "user_blocks",
+  {
+    blockerId: uuid("blocker_id").notNull().references(() => users.id),
+    blockedId: uuid("blocked_id").notNull().references(() => users.id),
+    createdAt: at("created_at").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.blockerId, t.blockedId] }), index().on(t.blockedId), check("user_blocks_not_self", sql`${t.blockerId} <> ${t.blockedId}`)],
 );

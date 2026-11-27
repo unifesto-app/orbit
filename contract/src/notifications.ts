@@ -124,8 +124,8 @@ export const KINDS = {
   // Lands in the app it was asked from: a Venue's in Play Partner, the rest in Event Partner (`inboxApp`, by `kind`).
   // `name`, not hostName: the inbox row is from Orbit, not the host.
   eventRequestAnswered: k("account", "must", "PIE", "launch", "account", ["decision", "name", "reason", "kind"], "request"),
-  inRoomCardRemoved: acct("must", "PIE"),
-  inRoomBarred: acct("must", "PIE"),
+  inRoomCardRemoved: acct("must", "PIE", ["eventId", "title", "reason"]),
+  inRoomBarred: acct("must", "PIE", ["reason"]),
 
   // Booking and tickets
   bookingConfirmed: book("must", "PIE"),
@@ -159,9 +159,9 @@ export const KINDS = {
   eventCancelled: ev("must", "PIE", "announcement"),
   hostAnnouncement: ev("normal", "PIE", "announcement", ["eventId", "title", "hostName", "text"]),
   thanksForComing: ev("normal", "PIe", "thanks", ["eventId", "title", "hostName", "startsAt"]),
-  inRoomAsk: ev("normal", "PI", "inRoom"),
-  inRoomConnected: ev("normal", "PI", "inRoom"),
-  inRoomRemoved: ev("normal", "I", "inRoom"),
+  inRoomAsk: ev("normal", "PI", "inRoom", ["eventId", "title"]), // never email (Feature 3)
+  inRoomConnected: ev("normal", "PI", "inRoom", ["eventId", "title"]),
+  inRoomRemoved: ev("normal", "I", "inRoom", ["eventId", "title"]),
   hackRoundOpen: ev("normal", "PIe", "announcement"),
   hackDeadline: ev("normal", "PIe", "reminder"),
   hackEntry: ev("normal", "PIe", "announcement"),

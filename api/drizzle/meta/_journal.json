@@ -288,6 +288,13 @@
       "when": 1795783079034,
       "tag": "0041_event_details",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1795787649402,
+      "tag": "0042_rooms",
+      "breakpoints": true
     }
   ]
 }
