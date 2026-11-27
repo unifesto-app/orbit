@@ -1,0 +1,28 @@
+diff --git a/android/src/newarch/java/com/razorpay/rn/RazorpayModule.java b/android/src/newarch/java/com/razorpay/rn/RazorpayModule.java
+index 835fbcda90c82971c4d24000db307b2e17d9fd9b..88a1818dd7a2ecd30f234aca40609c1e6169d442 100644
+--- a/android/src/newarch/java/com/razorpay/rn/RazorpayModule.java
++++ b/android/src/newarch/java/com/razorpay/rn/RazorpayModule.java
+@@ -49,6 +49,9 @@ public class RazorpayModule extends NativeRazorpayCheckoutSpec implements Activi
+     }
+ 
+     public void onActivityResult(int requestCode, int resultCode, Intent data) {
++        // Orbit: react-native-customui shares request code 62442 and answers with 62443. That result is Custom UI's;
++        // handling it here would emit a bogus Razorpay::PAYMENT_ERROR that Custom UI's JS listener takes as its own.
++        if (resultCode == 62443) return;
+         Checkout.handleActivityResult(getCurrentActivity(), requestCode, resultCode, data, this, this);
+     }
+ 
+diff --git a/android/src/oldarch/java/com/razorpay/rn/RazorpayModule.java b/android/src/oldarch/java/com/razorpay/rn/RazorpayModule.java
+index 5edd7d0ee353d1a3b88ef06b41c2d1bb16edd7a4..7c805daac383f23b2538758ac12253fd793cd4a3 100644
+--- a/android/src/oldarch/java/com/razorpay/rn/RazorpayModule.java
++++ b/android/src/oldarch/java/com/razorpay/rn/RazorpayModule.java
+@@ -49,6 +49,9 @@ public class RazorpayModule extends ReactContextBaseJavaModule implements Activi
+     }
+ 
+     public void onActivityResult(int requestCode, int resultCode, Intent data) {
++        // Orbit: react-native-customui shares request code 62442 and answers with 62443. That result is Custom UI's;
++        // handling it here would emit a bogus Razorpay::PAYMENT_ERROR that Custom UI's JS listener takes as its own.
++        if (resultCode == 62443) return;
+         Checkout.handleActivityResult(getCurrentActivity(), requestCode, resultCode, data, this, this);
+     }
+ 

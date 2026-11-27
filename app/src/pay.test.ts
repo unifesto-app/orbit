@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import { readdirSync } from 'node:fs';
 
-import { checkoutCancelled, isVpa, orderNext, PAY_SAYS, paidNext, payKey, payLabel, payName, payReady, prefillOf, refundSays, refundWord, UPI_APPS, verifyUpiId, WALLETS } from './pay.ts';
+import { checkoutCancelled, cleanVpa, directFinal, directOf, upiOnPhone, handleHints, vpaApp, isVpa, orderNext, PAY_SAYS, paidNext, payKey, payLabel, payName, payReady, prefillOf, refundSays, refundWord, UPI_APPS, verifyUpiId, WALLETS } from './pay.ts';
 
 test('every UPI app and wallet has its logo file in assets/pay', () => {
   const have = new Set(readdirSync(new URL('../assets/pay', import.meta.url)).map((f) => f.replace(/\.\w+$/, '')));
@@ -17,6 +17,33 @@ test('a UPI ID is name@bank', () => {
   assert.equal(isVpa('ravi'), false);
   assert.equal(isVpa('r@ybl'), false); // the name needs two characters
   assert.equal(isVpa('ravi@1bank'), false); // the bank starts with a letter
+});
+
+test('a typed UPI ID keeps only what UPI allows', () => {
+  assert.equal(cleanVpa('Ravi.K_1-x@OkHdfcBank'), 'ravi.k_1-x@okhdfcbank');
+  assert.equal(cleanVpa('ra😀vi @ybl🎉'), 'ravi@ybl');
+  assert.equal(cleanVpa('ravi@ok.hdfc-bank'), 'ravi@okhdfcbank'); // the handle is letters and digits
+  assert.equal(cleanVpa('ravi@@ybl@x'), 'ravi@yblx'); // one @
+  assert.equal(cleanVpa('ravi'), 'ravi');
+});
+
+test('handle hints complete a typed name', () => {
+  assert.deepEqual(handleHints(''), []);
+  assert.deepEqual(handleHints('@'), []);
+  assert.equal(handleHints('ravi')[0], 'ravi@ybl');
+  assert.deepEqual(handleHints('ravi@ok'), ['ravi@okhdfcbank', 'ravi@oksbi', 'ravi@okicici', 'ravi@okaxis']);
+  assert.deepEqual(handleHints('ravi@ybl'), []); // typed in full
+});
+
+test('a UPI ID shows the app its handle belongs to', () => {
+  assert.equal(vpaApp('ravi@ybl'), 'phonepe');
+  assert.equal(vpaApp('ravi@OkHdfcBank'), 'gpay');
+  assert.equal(vpaApp('ravi@ptyes'), 'paytm');
+  assert.equal(vpaApp('ravi@apl'), 'amazonpay');
+  assert.equal(vpaApp('ravi@slc'), 'slice');
+  assert.equal(vpaApp('ravi@wahdfcbank'), 'whatsapp');
+  assert.equal(vpaApp('ravi@sbi'), undefined); // a bank's own: the @
+  assert.equal(vpaApp('ravi'), undefined);
 });
 
 test('the pay bar says what was picked, or asks', () => {
@@ -112,4 +139,57 @@ test('paying: what the sheet does with each answer', () => {
   assert.deepEqual(paidNext(no(502, 'paymentsDown'), 'failed'), { next: 'again', say: PAY_SAYS.unknown });
   assert.deepEqual(paidNext(no(429, 'tooMany'), 'dismissed'), { next: 'again', say: PAY_SAYS.unknown });
   assert.equal(refundSays(undefined), 'We couldn’t give you this ticket, so we’ve refunded you in full.');
+});
+
+test('every UPI app has its own Android package and iOS shortcode', () => {
+  assert.equal(new Set(UPI_APPS.map((a) => a.android)).size, UPI_APPS.length);
+  assert.equal(new Set(UPI_APPS.flatMap((a) => a.ios)).size, UPI_APPS.flatMap((a) => a.ios).length);
+});
+
+test('the phone’s UPI apps map to ours, in our order', () => {
+  const android = [{ appName: 'PhonePe', packageName: 'com.phonepe.app' }, { appName: 'Slice', packageName: 'indwin.c3.shareapp' }, { appName: 'GPay', packageName: 'com.google.android.apps.nbu.paisa.user' }];
+  assert.deepEqual(upiOnPhone(android, 'android'), [
+    { id: 'gpay', app: 'com.google.android.apps.nbu.paisa.user' },
+    { id: 'phonepe', app: 'com.phonepe.app' },
+  ]);
+  // iOS: the SDK's { appName, shortcode }, or a bare name.
+  const ios = [{ appName: { appName: 'PhonePe', shortcode: 'phonepe' } }, { appName: 'Google Pay' }, { appName: 'super.money' }];
+  assert.deepEqual(upiOnPhone(ios, 'ios'), [
+    { id: 'gpay', app: 'google_pay' },
+    { id: 'phonepe', app: 'phonepe' },
+    { id: 'supermoney', app: 'super' },
+  ]);
+  assert.deepEqual(upiOnPhone([], 'ios'), []);
+});
+
+test('a picked UPI app on this phone pays without the sheet', () => {
+  const onPhone = [{ id: 'phonepe', app: 'com.phonepe.app' }];
+  const o = { key: 'rzp_k', order_id: 'order_1', amount: 49900, description: 'Gig', email: 'a@b.in', contact: '+919999999999' };
+  assert.deepEqual(directOf({ kind: 'upiApp', id: 'phonepe' }, onPhone, o), {
+    key_id: 'rzp_k', order_id: 'order_1', amount: '49900', currency: 'INR', description: 'Gig', email: 'a@b.in', contact: '+919999999999',
+    method: 'upi', '_[flow]': 'intent', upi_app_package_name: 'com.phonepe.app',
+  });
+  // The sheet: not a UPI app, not on the phone, can't tell, or no email / phone.
+  assert.equal(directOf({ kind: 'card' }, onPhone, o), null);
+  assert.equal(directOf({ kind: 'vpa', vpa: 'ravi@ybl' }, onPhone, o), null);
+  assert.equal(directOf({ kind: 'upiApp', id: 'gpay' }, onPhone, o), null);
+  assert.equal(directOf({ kind: 'upiApp', id: 'upi' }, onPhone, o), null);
+  assert.equal(directOf({ kind: 'upiApp', id: 'phonepe' }, null, o), null);
+  assert.equal(directOf(undefined, onPhone, o), null);
+  assert.equal(directOf({ kind: 'upiApp', id: 'phonepe' }, onPhone, { ...o, email: '' }), null);
+  assert.equal(directOf({ kind: 'upiApp', id: 'phonepe' }, onPhone, { ...o, contact: undefined }), null);
+});
+
+test('once the UPI app may have opened, the sheet never opens too', () => {
+  assert.equal(directFinal({ description: 'anything' }, true, 'ios'), true);
+  assert.equal(directFinal({ description: 'User Cancelled Payment' }, false, 'ios'), true);
+  assert.equal(directFinal({ description: 'User pressed back button' }, false, 'ios'), true);
+  assert.equal(directFinal({ code: 1, description: 'Something went wrong' }, false, 'ios'), false);
+  assert.equal(directFinal(undefined, false, 'ios'), false);
+  // Android: only Custom UI's pre-submit errors let the sheet retry; anything else is final.
+  assert.equal(directFinal({ description: 'Failed to submit.' }, true, 'android'), false);
+  assert.equal(directFinal({ description: 'Unable to start the payment.' }, true, 'android'), false);
+  assert.equal(directFinal({ description: 'Payment failed' }, false, 'android'), true);
+  assert.equal(directFinal(undefined, false, 'android'), true);
+  assert.equal(checkoutCancelled({ code: 5, description: 'User pressed back button' }, 'android'), true);
 });

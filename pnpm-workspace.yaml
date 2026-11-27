@@ -11,6 +11,7 @@ packages:
 
 patchedDependencies:
   expo-modules-autolinking@58.1.0: patches/expo-modules-autolinking@58.1.0.patch
+  react-native-razorpay@3.0.0: patches/react-native-razorpay@3.0.0.patch
   react-native-reanimated@4.7.1: patches/react-native-reanimated@4.7.1.patch
 
 # Expo SDK 58 pins react-native-worklets to 0.13.0 (expo/bundledNativeModules.json). Without this, the

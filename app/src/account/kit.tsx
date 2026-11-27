@@ -195,7 +195,7 @@ export function Row({
 }) {
   const body = (
     <>
-      {icon && (
+      {icon && !lead && (
         <View style={styles.icon}>
           <Icon name={icon} size={ICON} color={tone} />
         </View>
@@ -300,14 +300,16 @@ export function Chips<T extends string>({ options, value, onChange }: { options:
 
 // A text field: its label, then a frosted pill like the search box (owner: "also squared search"). `prefix` is fixed text
 // before what's typed, behind a hairline, as +91 on the WhatsApp number (sign-in Take 1, owner, 25 Nov 2026).
-export function Field({ label, prefix, ...input }: TextInputProps & { label: string; prefix?: string }) {
+// `lead`: a mark before the text, as a UPI ID's app logo.
+export function Field({ label, prefix, lead, ...input }: TextInputProps & { label: string; prefix?: string; lead?: ReactNode }) {
   return (
     <View style={styles.field}>
       <Text style={styles.fieldLabel}>{label}</Text>
-      <Glass style={[styles.input, input.multiline && styles.area, !!prefix && styles.prefixed]}>
+      <Glass style={[styles.input, input.multiline && styles.area, (!!prefix || !!lead) && styles.prefixed]}>
         {!!prefix && <Text style={styles.prefix}>{prefix}</Text>}
+        {lead}
         <TextInput
-          style={[styles.inputText, input.multiline && styles.areaText, !!prefix && styles.grow]}
+          style={[styles.inputText, input.multiline && styles.areaText, (!!prefix || !!lead) && styles.grow]}
           placeholderTextColor={color.secondary}
           keyboardAppearance="dark"
           accessibilityLabel={label}

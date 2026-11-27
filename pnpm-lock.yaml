@@ -12,6 +12,9 @@ patchedDependencies:
   expo-modules-autolinking@58.1.0:
     hash: 4a5c7b312e6d3a835be5c5a93cdf9be88f6ee33653fe87e708b309373fac648b
     path: patches/expo-modules-autolinking@58.1.0.patch
+  react-native-razorpay@3.0.0:
+    hash: 1e9a6cb903efa4cf3813df70d22285430942d26cc52d13c9f5fc75424d76ebec
+    path: patches/react-native-razorpay@3.0.0.patch
   react-native-reanimated@4.7.1:
     hash: bb7480354568f5082c4957d8e94c2cba6d7499252c09fd16627fa2fe315b9187
     path: patches/react-native-reanimated@4.7.1.patch
@@ -170,12 +173,15 @@ importers:
       react-native:
         specifier: 0.88.1
         version: 0.88.1(@babel/core@7.29.13)(@react-native/metro-config@0.88.1(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.0)
+      react-native-customui:
+        specifier: 2.3.1
+        version: 2.3.1(react-native@0.88.1(@babel/core@7.29.13)(@react-native/metro-config@0.88.1(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.0))(react@19.3.0)
       react-native-passkey:
         specifier: 3.6.2
         version: 3.6.2(react-native@0.88.1(@babel/core@7.29.13)(@react-native/metro-config@0.88.1(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.0))(react@19.3.0)
       react-native-razorpay:
         specifier: ^3.0.0
-        version: 3.0.0(react-native@0.88.1(@babel/core@7.29.13)(@react-native/metro-config@0.88.1(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.0))(react@19.3.0)
+        version: 3.0.0(patch_hash=1e9a6cb903efa4cf3813df70d22285430942d26cc52d13c9f5fc75424d76ebec)(react-native@0.88.1(@babel/core@7.29.13)(@react-native/metro-config@0.88.1(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.0))(react@19.3.0)
       react-native-reanimated:
         specifier: ~4.7.1
         version: 4.7.1(patch_hash=bb7480354568f5082c4957d8e94c2cba6d7499252c09fd16627fa2fe315b9187)(react-native-worklets@0.13.0(@babel/core@7.29.13)(@react-native/metro-config@0.88.1(@babel/core@7.29.13))(react-native@0.88.1(@babel/core@7.29.13)(@react-native/metro-config@0.88.1(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.0))(react@19.3.0))(react-native@0.88.1(@babel/core@7.29.13)(@react-native/metro-config@0.88.1(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.0))(react@19.3.0)
@@ -218,7 +224,7 @@ importers:
         version: link:../tokens
       next:
         specifier: 16.4.6
-        version: 16.4.6(@babel/core@7.29.13)(@opentelemetry/api@1.10.0)(@types/node@20.19.43)(babel-plugin-react-compiler@1.0.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        version: 16.4.6(@opentelemetry/api@1.10.0)(@types/node@20.19.43)(babel-plugin-react-compiler@1.0.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       react:
         specifier: 19.3.0
         version: 19.3.0
@@ -268,7 +274,7 @@ importers:
         version: link:../tokens
       next:
         specifier: 16.4.6
-        version: 16.4.6(@babel/core@7.29.13)(@opentelemetry/api@1.10.0)(@types/node@20.19.43)(babel-plugin-react-compiler@1.0.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        version: 16.4.6(@opentelemetry/api@1.10.0)(@types/node@20.19.43)(babel-plugin-react-compiler@1.0.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       react:
         specifier: 19.3.0
         version: 19.3.0
@@ -427,7 +433,7 @@ importers:
         version: link:../tokens
       next:
         specifier: 16.4.6
-        version: 16.4.6(@babel/core@7.29.13)(@opentelemetry/api@1.10.0)(@types/node@20.19.43)(babel-plugin-react-compiler@1.0.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        version: 16.4.6(@opentelemetry/api@1.10.0)(@types/node@20.19.43)(babel-plugin-react-compiler@1.0.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       react:
         specifier: 19.3.0
         version: 19.3.0
@@ -5248,6 +5254,12 @@ packages:
 
   react-is@19.3.1:
     resolution: {integrity: sha512-RRieF6IyxQBkcK6pP8xOHprLTPW6QjRkbGdImtqNme+/hYVwCZkLQLdlZGOhUqXwkS9IEynaGvPJtv6XB/cz0Q==}
+
+  react-native-customui@2.3.1:
+    resolution: {integrity: sha512-Ip6nVjCQM1Ha82uZWtasIiwLiggL3ThqXgP5PqeWv4REhLrKa8KdKEFvXPXxY975j6eRgLZT3CPl2Y0PUA/9TQ==}
+    peerDependencies:
+      react: '>=16.8.0'
+      react-native: '>=0.66.0'
 
   react-native-drawer-layout@4.2.12:
     resolution: {integrity: sha512-qYmntEctkMSodN7pnC2llV21nswImLFPHJeT3PJXSJqZdU4jzDATR8iVi66sXkrtoOLJ2+EvXxgd7sMMpV4ViA==}
@@ -11161,7 +11173,7 @@ snapshots:
     dependencies:
       content-type: 2.1.0
 
-  next@16.4.6(@babel/core@7.29.13)(@opentelemetry/api@1.10.0)(@types/node@20.19.43)(babel-plugin-react-compiler@1.0.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0):
+  next@16.4.6(@opentelemetry/api@1.10.0)(@types/node@20.19.43)(babel-plugin-react-compiler@1.0.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0):
     dependencies:
       '@next/env': 16.4.6
       '@swc/helpers': 0.5.23
@@ -11170,7 +11182,7 @@ snapshots:
       postcss: 8.5.23
       react: 19.3.0
       react-dom: 19.3.0(react@19.3.0)
-      styled-jsx: 5.1.6(@babel/core@7.29.13)(react@19.3.0)
+      styled-jsx: 5.1.6(react@19.3.0)
     optionalDependencies:
       '@next/swc-darwin-arm64': 16.4.6
       '@next/swc-darwin-x64': 16.4.6
@@ -11481,6 +11493,14 @@ snapshots:
 
   react-is@19.3.1: {}
 
+  react-native-customui@2.3.1(react-native@0.88.1(@babel/core@7.29.13)(@react-native/metro-config@0.88.1(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.0))(react@19.3.0):
+    dependencies:
+      '@babel/core': 7.29.13
+      react: 19.3.0
+      react-native: 0.88.1(@babel/core@7.29.13)(@react-native/metro-config@0.88.1(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.0)
+    transitivePeerDependencies:
+      - supports-color
+
   react-native-drawer-layout@4.2.12(react-native-gesture-handler@3.5.0(react-native@0.88.1(@babel/core@7.29.13)(@react-native/metro-config@0.88.1(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.0))(react@19.3.0))(react-native-reanimated@4.7.1(patch_hash=bb7480354568f5082c4957d8e94c2cba6d7499252c09fd16627fa2fe315b9187)(react-native-worklets@0.13.0(@babel/core@7.29.13)(@react-native/metro-config@0.88.1(@babel/core@7.29.13))(react-native@0.88.1(@babel/core@7.29.13)(@react-native/metro-config@0.88.1(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.0))(react@19.3.0))(react-native@0.88.1(@babel/core@7.29.13)(@react-native/metro-config@0.88.1(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.0))(react@19.3.0))(react-native@0.88.1(@babel/core@7.29.13)(@react-native/metro-config@0.88.1(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.0))(react@19.3.0):
     dependencies:
       color: 4.2.3
@@ -11507,7 +11527,7 @@ snapshots:
       react: 19.3.0
       react-native: 0.88.1(@babel/core@7.29.13)(@react-native/metro-config@0.88.1(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.0)
 
-  react-native-razorpay@3.0.0(react-native@0.88.1(@babel/core@7.29.13)(@react-native/metro-config@0.88.1(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.0))(react@19.3.0):
+  react-native-razorpay@3.0.0(patch_hash=1e9a6cb903efa4cf3813df70d22285430942d26cc52d13c9f5fc75424d76ebec)(react-native@0.88.1(@babel/core@7.29.13)(@react-native/metro-config@0.88.1(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.0))(react@19.3.0):
     dependencies:
       react: 19.3.0
       react-native: 0.88.1(@babel/core@7.29.13)(@react-native/metro-config@0.88.1(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.0)
@@ -12049,12 +12069,10 @@ snapshots:
 
   structured-headers@0.4.1: {}
 
-  styled-jsx@5.1.6(@babel/core@7.29.13)(react@19.3.0):
+  styled-jsx@5.1.6(react@19.3.0):
     dependencies:
       client-only: 0.0.1
       react: 19.3.0
-    optionalDependencies:
-      '@babel/core': 7.29.13
 
   supports-color@5.5.0:
     dependencies:

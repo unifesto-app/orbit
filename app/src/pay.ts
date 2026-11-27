@@ -4,8 +4,8 @@
 // Apple Pay on iPhones; no netbanking (owner, 19 Nov 2026: "remove netbanking"). Every payment goes through Razorpay at
 // checkout (Booking doc, Paying); Orbit keeps no card or bank detail, only which way you like to pay and the UPI IDs you
 // added, on this phone (src/session.ts). Pure, so pay.test.ts runs it on Node.
-// ponytail: fixed lists until the API reads our Razorpay account's own (Unifesto's /v1/methods, cached) and the phone's
-// installed UPI apps (Razorpay's SDK finds them at checkout).
+// ponytail: fixed lists until the API reads our Razorpay account's own (Unifesto's /v1/methods, cached). The UPI apps
+// show only when this phone has them (upiOnPhone, from Razorpay's Custom UI).
 
 import type { MyPayment, MyRefund, PayOrder, Verified } from '@orbit/contract';
 
@@ -19,14 +19,17 @@ export type PayWith =
   | { kind: 'applePay' };
 
 export const UPI_APPS = [
-  { id: 'gpay', name: 'Google Pay' },
-  { id: 'phonepe', name: 'PhonePe' },
-  { id: 'paytm', name: 'Paytm' },
-  { id: 'bhim', name: 'BHIM' },
-  { id: 'cred', name: 'CRED' },
-  { id: 'amazonpay', name: 'Amazon Pay' },
-  { id: 'navi', name: 'Navi' },
-  { id: 'supermoney', name: 'super.money' },
+  // android: the package Razorpay's Custom UI opens it by; ios: the shortcode it opens it by, then other ids the iOS
+  // SDK may report for it (Razorpay's android table; iOS shortcodes from razorpay-customui-pod and Unifesto).
+  { id: 'gpay', name: 'Google Pay', android: 'com.google.android.apps.nbu.paisa.user', ios: ['google_pay', 'googlepay'] },
+  { id: 'phonepe', name: 'PhonePe', android: 'com.phonepe.app', ios: ['phonepe'] },
+  { id: 'paytm', name: 'Paytm', android: 'net.one97.paytm', ios: ['paytm'] },
+  { id: 'bhim', name: 'BHIM', android: 'in.org.npci.upiapp', ios: ['bhim'] },
+  { id: 'cred', name: 'CRED', android: 'com.dreamplug.androidapp', ios: ['cred'] },
+  { id: 'amazonpay', name: 'Amazon Pay', android: 'in.amazon.mShop.android.shopping', ios: ['amazonpay'] },
+  { id: 'navi', name: 'Navi', android: 'com.naviapp', ios: ['navi'] },
+  // ponytail: super.money's iOS shortcode is a guess (its scheme is "super"); the SDK's own report wins when it has one.
+  { id: 'supermoney', name: 'super.money', android: 'money.super.payments', ios: ['super', 'supermoney', 'super.money'] },
 ] as const;
 
 // Named as wallets: PhonePe and Amazon Pay are often UPI apps too (Unifesto's WALLET_NAMES).
@@ -43,6 +46,39 @@ export const SHOWN = 4;
 
 /** name@bank: a UPI ID worth sending to Razorpay, which checks it's real (Unifesto's isVpa). */
 export const isVpa = (v: string) => /^[\w.-]{2,256}@[a-zA-Z][a-zA-Z0-9]{1,63}$/.test(v.trim());
+
+/** What a UPI ID can hold, as typed: letters, digits, dot, hyphen and underscore before one @, letters and digits after
+ * it (the bank's handle). Anything else, emoji and spaces too, is dropped, and it's lower case (UPI ignores case). */
+export function cleanVpa(v: string): string {
+  const [name = '', ...rest] = v.toLowerCase().split('@');
+  const keepName = name.replace(/[^a-z0-9._-]/g, '');
+  return rest.length ? `${keepName}@${rest.join('').replace(/[^a-z0-9]/g, '')}` : keepName;
+}
+
+// The banks' handles people have most (owner, 27 Nov 2026: "bring some @___"): PhonePe, Google Pay's four, Paytm,
+// Amazon Pay and BHIM. Most-used first.
+export const UPI_HANDLES = ['ybl', 'okhdfcbank', 'oksbi', 'okicici', 'okaxis', 'paytm', 'ptyes', 'ibl', 'axl', 'apl', 'slc', 'upi'] as const;
+
+// Which app a handle belongs to (owner, 27 Nov 2026: "based on id extension display the logo of that app"): PhonePe's
+// ybl/ibl/axl, Google Pay's ok…, Paytm's paytm and pt…, Amazon Pay's apl/yapl/rapl, BHIM's upi, slice's slc, WhatsApp's wa…, and the
+// rest's own. A handle whose app has no logo in assets/pay shows the @.
+const HANDLE_APP: Record<string, string> = {
+  ybl: 'phonepe', ibl: 'phonepe', axl: 'phonepe', paytm: 'paytm', apl: 'amazonpay', yapl: 'amazonpay', rapl: 'amazonpay',
+  upi: 'bhim', slc: 'slice', waicici: 'whatsapp', waaxis: 'whatsapp', wahdfcbank: 'whatsapp', wasbi: 'whatsapp', axisb: 'cred', naviaxis: 'navi', superyes: 'supermoney', ikwik: 'mobikwik', freecharge: 'freecharge', airtel: 'airtelmoney',
+};
+/** The app (a logo id) a UPI ID's handle belongs to, or undefined for a bank's own (the @ glyph then). */
+export function vpaApp(vpa: string): string | undefined {
+  const handle = vpa.trim().toLowerCase().split('@')[1] ?? '';
+  return HANDLE_APP[handle] ?? (handle.startsWith('ok') ? 'gpay' : /^pt[a-z]+$/.test(handle) ? 'paytm' : undefined);
+}
+
+/** The handles to offer under the field once a name is typed: those starting with what's after the @, not one already
+ * typed in full. Tapping one completes the ID. */
+export function handleHints(v: string): string[] {
+  const [name, typed = ''] = v.split('@');
+  if (!name) return [];
+  return UPI_HANDLES.filter((h) => h.startsWith(typed) && h !== typed).map((h) => `${name}@${h}`);
+}
 
 /** A UPI ID you added, with the name Razorpay found on it. */
 export type UpiId = { vpa: string; name: string };
@@ -204,7 +240,7 @@ export function paidNext(r: Result<Verified>, closed?: 'dismissed' | 'failed'): 
  * either says "cancel" in its reason. Anything else is a failed payment. */
 export function checkoutCancelled(err: unknown, os: string): boolean {
   const e = (err ?? {}) as { code?: number; description?: string; reason?: string };
-  return e.code === (os === 'ios' ? 2 : 0) || /cancel/i.test(`${e.reason ?? ''} ${e.description ?? ''}`);
+  return e.code === (os === 'ios' ? 2 : 0) || /cancel|back button/i.test(`${e.reason ?? ''} ${e.description ?? ''}`);
 }
 
 /** The way you picked, as checkout's prefill: it opens on that method (Razorpay's prefill.method; a UPI ID filled in). */
@@ -219,3 +255,65 @@ export function prefillOf(p?: PayWith): { method?: 'upi' | 'card' | 'wallet'; vp
 
 /** A refund's status in the Booking doc's words. */
 export const refundWord = (s: MyRefund['status']) => (s === 'processed' ? 'Refunded' : s === 'failed' ? 'Refund failed, retrying' : 'Requested');
+
+// Paying a UPI app without the sheet (owner, 27 Nov 2026: "Zomato-style direct"), as Unifesto does (mobile/src/lib/pay.ts):
+// Razorpay's Custom UI lists the phone's UPI apps and opens the picked one. src/checkout.ts is the native half.
+
+/** A UPI app on this phone: our id, and the id Razorpay's Custom UI opens it by. */
+export type OnPhone = { id: string; app: string };
+
+/** What Custom UI reports per app. iOS wraps the SDK's { appName, shortcode } in appName. */
+export type FoundUpiApp = { appName?: string | { appName?: string; shortcode?: string }; packageName?: string };
+
+/** The phone's UPI apps we know, in our order (Custom UI's list, matched by Android package or iOS shortcode). */
+export function upiOnPhone(found: readonly FoundUpiApp[], os: string): OnPhone[] {
+  const ids = new Map<string, string>(); // how the phone named it -> the id Custom UI takes back
+  for (const f of found) {
+    if (os !== 'ios') {
+      if (f.packageName) ids.set(f.packageName, f.packageName);
+      continue;
+    }
+    const ios = typeof f.appName === 'object' ? f.appName : undefined;
+    const name = (typeof f.appName === 'string' ? f.appName : ios?.appName) ?? '';
+    const code = ios?.shortcode || name.toLowerCase().replace(/\s/g, '');
+    if (code) ids.set(code, ios?.shortcode ?? '');
+  }
+  return UPI_APPS.flatMap((a) => {
+    const seen = os === 'ios' ? a.ios.find((c) => ids.has(c)) : ids.has(a.android) ? a.android : undefined;
+    return seen === undefined ? [] : [{ id: a.id, app: ids.get(seen) || a.ios[0] }];
+  });
+}
+
+/** Custom UI's options for paying the picked UPI app straight away, or null for the sheet: not a UPI app, not on
+ * this phone (or can't tell), or no email or phone (Razorpay needs both outside the sheet; the sheet asks). */
+export function directOf(
+  p: PayWith | undefined,
+  onPhone: readonly OnPhone[] | null,
+  o: { key: string; order_id: string; amount: number; description?: string; email?: string; contact?: string },
+): Record<string, unknown> | null {
+  const app = p?.kind === 'upiApp' ? onPhone?.find((a) => a.id === p.id) : undefined;
+  if (!app || !o.email || !o.contact) return null;
+  return {
+    key_id: o.key,
+    order_id: o.order_id,
+    // Razorpay's sample sends paise as a string; the Android bridge turns numbers into doubles.
+    amount: String(o.amount),
+    currency: 'INR',
+    description: o.description,
+    email: o.email,
+    contact: o.contact,
+    method: 'upi',
+    '_[flow]': 'intent',
+    upi_app_package_name: app.app,
+  };
+}
+
+/** Whether Custom UI's error is the payer's answer (they went to the UPI app, or cancelled), so the sheet must not
+ * open too (it could charge twice). Anything else failed before an app opened: the sheet pays instead. */
+export function directFinal(err: unknown, left: boolean, os: string): boolean {
+  const d = (err as { description?: unknown } | null)?.description;
+  const text = typeof d === 'string' ? d : '';
+  // Android: Custom UI's own screen backgrounds the app before any UPI app opens, so only its pre-submit errors retry.
+  if (os !== 'ios') return !/^(Payment options not found|API key|Invalid payment options format|Failed to submit|Unable to start the payment)/.test(text);
+  return left || /User Cancelled Payment|back button/i.test(text);
+}

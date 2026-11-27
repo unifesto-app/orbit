@@ -36,7 +36,7 @@ import { type Event, eventsApi, toEvent } from '../../events';
 import { useLoad } from '../../load';
 import { events, now as mockNow } from '../../mock';
 import { checkoutCancelled, orderNext, PAY_SAYS, type PayDone, paidNext, payLabel, paymentsApi, payReady, prefillOf, RAZORPAY_KEY } from '../../pay';
-import { razorpay } from '../../checkout';
+import { openCheckout, razorpay } from '../../checkout';
 import { PayMark } from '../../payChoices';
 import { Chip, Stepper, Steps } from '../../pickers';
 import { Failed, NotFound, Sheet, SheetSays, Waiting } from '../../rows';
@@ -263,7 +263,7 @@ function Booking({ slug, e, live, now, reload }: { slug: string; e: Event; live?
         let paid;
         let closed: 'dismissed' | 'failed' | undefined;
         try {
-          paid = await rp.open({
+          paid = await openCheckout(rp, {
             key: o.keyId || RAZORPAY_KEY,
             order_id: o.orderId,
             amount: o.amountPaise,
@@ -272,7 +272,7 @@ function Booking({ slug, e, live, now, reload }: { slug: string; e: Event; live?
             description: e.title,
             prefill: { name: me?.name ?? undefined, email: me?.email ?? undefined, contact: me?.phone ?? undefined, ...prefillOf(pay) },
             theme: { color: color.accent },
-          });
+          }, pay);
         } catch (err) {
           closed = checkoutCancelled(err, Platform.OS) ? 'dismissed' : 'failed';
         }

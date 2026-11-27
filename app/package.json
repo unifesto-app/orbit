@@ -33,6 +33,7 @@
     "expo-web-browser": "~58.1.0",
     "react": "19.3.0",
     "react-native": "0.88.1",
+    "react-native-customui": "2.3.1",
     "react-native-passkey": "3.6.2",
     "react-native-razorpay": "^3.0.0",
     "react-native-reanimated": "~4.7.1",

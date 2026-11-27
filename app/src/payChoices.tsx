@@ -3,12 +3,14 @@
 // pick is the accent dot and stays on this phone (src/session.ts); lists and rules in src/pay.ts. Account › Payment
 // methods shows it to set the way you usually pay; at checkout, How to pay (src/app/pay.tsx) shows it and closes on a
 // pick or an added UPI ID. Titles only, no descriptions (owner, 15 Nov 2026); a UPI ID's holder name is its value.
-import { type ComponentProps, useState } from 'react';
-import { Alert, Image, type ImageSourcePropType, Platform, StyleSheet, Text, View } from 'react-native';
+import { type ComponentProps, useEffect, useState } from 'react';
+import { Alert, Image, type ImageSourcePropType, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { Field, Group, Pill, Row, TONE } from './account/kit';
+import { installedUpi } from './checkout';
 import { Icon } from './icons';
-import { isVpa, payKey, SHOWN, UPI_APPS, type UpiId, verifyUpiId, WALLETS, type PayWith } from './pay';
+import { cleanVpa, handleHints, isVpa, vpaApp, payKey, SHOWN, UPI_APPS, type UpiId, verifyUpiId, WALLETS, type PayWith } from './pay';
+import { Chip } from './pickers';
 import { Tag } from './rows';
 import { addUpiId, removeUpiId, setPayWith, usePayWith, useUpiIds } from './session';
 import { color, font, radius } from './theme';
@@ -36,11 +38,19 @@ const LOGO: Record<LogoId, ImageSourcePropType> = {
 /** The way you pay as the pay bar shows it beside "Pay with …" (Unifesto's pay bar, owner 19 Nov 2026: "move paywith to
  * cta"): its logo, Apple Pay's mark, or for a card, a UPI ID or nothing chosen yet, the glyph. */
 export function PayMark({ pay }: { pay?: PayWith }) {
-  const id = pay?.kind === 'upiApp' ? pay.id : pay?.kind === 'wallet' ? pay.code : undefined;
+  const id = pay?.kind === 'upiApp' ? pay.id : pay?.kind === 'wallet' ? pay.code : pay?.kind === 'vpa' ? vpaApp(pay.vpa) : undefined;
   if (id && id in LOGO) return <Image source={LOGO[id as LogoId]} style={styles.logo} resizeMode="contain" accessibilityIgnoresInvertColors />;
   if (pay?.kind === 'applePay') return <Image source={require('../assets/pay/applepay.png')} style={styles.applePay} resizeMode="contain" accessibilityIgnoresInvertColors />;
   return <Icon name={pay?.kind === 'vpa' ? 'vpa' : pay?.kind === 'card' ? 'card' : 'wallet'} size={22} color={color.text} />;
 }
+
+/** A UPI ID's app logo, by its handle, in the glyph's place; none (so the row keeps its @) for a bank's own handle. */
+function vpaLogo(vpa: string) {
+  const id = vpaApp(vpa);
+  return id && id in LOGO ? <Image source={LOGO[id as LogoId]} style={styles.logo} resizeMode="contain" accessibilityIgnoresInvertColors /> : undefined;
+}
+// In the field as you type: the app's logo once the handle names one, else the @.
+const fieldMark = (vpa: string) => vpaLogo(vpa) ?? <Icon name="vpa" size={22} color={color.secondary} />;
 
 /** A row led by its logo in the glyph's place: 26 wide, the glyph's 22 plus its 4, so labels line up, with the corner
  * a phone gives an app icon. `icon` stays on the element only for Group's hairline indent. */
@@ -50,12 +60,18 @@ function PayRow({ id, ...row }: ComponentProps<typeof Row> & { id: LogoId }) {
 }
 
 // Adding a UPI ID (owner, 19 Nov 2026: "allow upi id verify and add"): type it, Verify asks Razorpay whose it is, and
-// Add keeps it once a name comes back. Editing it after a check asks again.
+// Add keeps it once a name comes back. Editing it after a check asks again. Only what a UPI ID can hold is typed (no
+// emoji), and once a name is in, the common @handles sit under the field to finish it (owner, 27 Nov 2026).
 type Check = 'idle' | 'checking' | { name: string } | 'invalid' | 'unknown';
 function AddUpiId({ onAdded }: { onAdded: (u: UpiId) => void }) {
   const [vpa, setVpa] = useState('');
   const [check, setCheck] = useState<Check>('idle');
   const found = typeof check === 'object' ? check : null;
+  const type = (v: string) => {
+    setVpa(cleanVpa(v));
+    setCheck('idle');
+  };
+  const hints = found || check === 'checking' ? [] : handleHints(vpa);
   const verify = async () => {
     if (!isVpa(vpa) || check === 'checking') return;
     setCheck('checking');
@@ -76,11 +92,9 @@ function AddUpiId({ onAdded }: { onAdded: (u: UpiId) => void }) {
     <View style={styles.add}>
       <Field
         label="UPI ID"
+        lead={fieldMark(vpa)}
         value={vpa}
-        onChangeText={(v) => {
-          setVpa(v.trim());
-          setCheck('idle');
-        }}
+        onChangeText={type}
         placeholder="name@bank"
         autoCapitalize="none"
         autoCorrect={false}
@@ -91,6 +105,13 @@ function AddUpiId({ onAdded }: { onAdded: (u: UpiId) => void }) {
         onSubmitEditing={verify}
         maxLength={256}
       />
+      {hints.length > 0 && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.hints}>
+          {hints.map((h) => (
+            <Chip key={h} label={h.slice(h.indexOf('@'))} onPress={() => type(h)} />
+          ))}
+        </ScrollView>
+      )}
       {say && (
         <Text style={[styles.say, found && styles.found]} accessibilityLiveRegion="polite">
           {say}
@@ -110,6 +131,15 @@ export function PayChoices({ onPicked }: { onPicked?: () => void }) {
   const upiIds = useUpiIds();
   const [allApps, setAllApps] = useState(false);
   const [adding, setAdding] = useState(false);
+  // Only the UPI apps this phone has (owner, 27 Nov 2026); every one until Razorpay answers, or if it can't.
+  const [onPhone, setOnPhone] = useState<string[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    installedUpi().then((a) => live && a && setOnPhone(a.map((x) => x.id)));
+    return () => {
+      live = false;
+    };
+  }, []);
   const choose = (p: PayWith) => {
     setPayWith(p);
     onPicked?.();
@@ -124,7 +154,8 @@ export function PayChoices({ onPicked }: { onPicked?: () => void }) {
       { text: 'Cancel', style: 'cancel' },
       { text: 'Remove', style: 'destructive', onPress: () => removeUpiId(u.vpa) },
     ]);
-  const apps = allApps ? UPI_APPS : UPI_APPS.slice(0, SHOWN);
+  const known = onPhone ? UPI_APPS.filter((a) => onPhone.includes(a.id)) : UPI_APPS;
+  const apps = allApps ? known : known.slice(0, SHOWN);
 
   return (
     <>
@@ -132,7 +163,9 @@ export function PayChoices({ onPicked }: { onPicked?: () => void }) {
         {apps.map((a) => (
           <PayRow key={a.id} id={a.id} icon="upi" label={a.name} right={def({ kind: 'upiApp', id: a.id })} onPress={() => choose({ kind: 'upiApp', id: a.id })} />
         ))}
-        {!allApps && <Row label={`Show ${UPI_APPS.length - SHOWN} more UPI apps`} chevron onPress={() => setAllApps(true)} />}
+        {/* None we know on this phone: plain UPI, which opens checkout on UPI to pick an app there. */}
+        {!known.length && <Row icon="upi" label="UPI" right={def({ kind: 'upiApp', id: 'upi' })} onPress={() => choose({ kind: 'upiApp', id: 'upi' })} />}
+        {!allApps && known.length > SHOWN && <Row label={`Show ${known.length - SHOWN} more UPI apps`} chevron onPress={() => setAllApps(true)} />}
       </Group>
 
       {/* Paying to a typed UPI ID is iPhone-only: NPCI ended it on 28 Feb 2026 except in iOS apps and mobile web
@@ -144,6 +177,7 @@ export function PayChoices({ onPicked }: { onPicked?: () => void }) {
               key={u.vpa}
               icon="vpa"
               tone={TONE.cyan}
+              lead={vpaLogo(u.vpa)}
               label={u.vpa}
               note={u.name || undefined}
               right={
@@ -198,6 +232,7 @@ const styles = StyleSheet.create({
   logo: { width: MARK, height: MARK, borderRadius: radius.sm },
   applePay: { width: Math.round((MARK * 165.52107) / 105.9651), height: MARK },
   add: { gap: 8 },
+  hints: { gap: 8 },
   say: { fontFamily: font.text, fontSize: 13, lineHeight: 18, color: color.secondary },
   found: { color: color.text },
 });

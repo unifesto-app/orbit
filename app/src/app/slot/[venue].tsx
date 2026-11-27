@@ -21,7 +21,7 @@ import { hosts, now } from '../../mock';
 import { checkoutCancelled, PAY_SAYS, payLabel, paymentsApi, payReady, prefillOf, RAZORPAY_KEY } from '../../pay';
 import { PayMark } from '../../payChoices';
 import { Chip, Stepper, Steps } from '../../pickers';
-import { razorpay } from '../../checkout';
+import { openCheckout, razorpay } from '../../checkout';
 import { answerPush } from '../../push';
 import { Failed, NotFound, Sheet, SheetSays, Waiting } from '../../rows';
 import { api, needsAccount, real, usePayWith, useSession } from '../../session';
@@ -378,7 +378,7 @@ function LiveSlots({ id, name }: { id: string; name?: string }) {
       if (!rp) return say(PAY_SAYS.off);
       const c = await payForHold(api, id, held!.id, async (o) => {
         try {
-          const p = await rp.open({
+          const p = await openCheckout(rp, {
             key: o.keyId || RAZORPAY_KEY,
             order_id: o.orderId,
             amount: o.amountPaise,
@@ -387,7 +387,7 @@ function LiveSlots({ id, name }: { id: string; name?: string }) {
             description: line ?? name ?? 'Slot',
             prefill: { name: me?.name ?? undefined, email: me?.email ?? undefined, contact: me?.phone ?? undefined, ...prefillOf(pay) },
             theme: { color: color.accent },
-          });
+          }, pay);
           return { paid: { id: p.razorpay_payment_id, signature: p.razorpay_signature ?? '' } };
         } catch (err) {
           return { closed: checkoutCancelled(err, Platform.OS) ? 'dismissed' : 'failed' };
