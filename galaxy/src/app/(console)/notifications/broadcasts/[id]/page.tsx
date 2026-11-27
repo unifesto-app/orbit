@@ -38,7 +38,7 @@ async function Body({ params }: { params: Promise<{ id: string }> }) {
         <p>{b.text}</p>
         <Pairs
           pairs={[
-            ["Status", <Badge tone={STATUS[b.status][1]}>{STATUS[b.status][0]}</Badge>],
+            ["Status", <Badge key="status" tone={STATUS[b.status][1]}>{STATUS[b.status][0]}</Badge>],
             ["Type", TYPES[b.type]],
             ["To", segmentName(b.segment)],
             ["Channels", channelNames(b)],
