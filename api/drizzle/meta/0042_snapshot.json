@@ -1,5 +1,5 @@
 {
-  "id": "503ed5b0-b043-4b19-a941-af24d5af54f4",
+  "id": "58bca80f-9f59-406d-923b-e3fc79735c07",
   "prevId": "916765c2-b3b5-42f9-ada6-4b9aa9a49b7a",
   "version": "7",
   "dialect": "postgresql",
@@ -1476,6 +1476,19 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": true
+        },
+        "added_by": {
+          "name": "added_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "added_at": {
+          "name": "added_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
         }
       },
       "indexes": {
@@ -1520,6 +1533,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "event_acts_added_by_users_id_fk": {
+          "name": "event_acts_added_by_users_id_fk",
+          "tableFrom": "event_acts",
+          "tableTo": "users",
+          "columnsFrom": [
+            "added_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },

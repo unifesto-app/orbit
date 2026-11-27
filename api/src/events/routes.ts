@@ -12,7 +12,7 @@ import { fail, invalid, isUuid, type Notify, parse, signedIn, taken, type Env, u
 import { contentImage, drop, linkOf, type Media, newKey } from "../media.ts";
 import type { Razorpay } from "../payments/razorpay.ts";
 import { refundPaid, sendRefund } from "../payments/routes.ts";
-import { actIds, actsOf, actsRefused, writeActs } from "../people.ts";
+import { actsOf, setActs, toTeamAct } from "../people.ts";
 import { changeable, teamOf } from "../roles/access.ts";
 import { savedCount } from "../saves.ts";
 import { slugFor } from "../slugs.ts";
@@ -562,7 +562,7 @@ export function eventsRoutes({ db, notify, secret, media, razorpay: rz, now = Da
   // GET /events/:id/acts: in order, hidden ones marked (`shown` false: the page drops them).
   app.get("/events/:id/acts", auth, async (c) => {
     const got = await adminOfEvent(c.req.param("id"), c.var.user.id);
-    return got ? c.json(await actsOf(db, got.event.id)) : nothing(c);
+    return got ? c.json((await actsOf(db, got.event.id)).map(toTeamAct)) : nothing(c);
   });
 
   // PUT /events/:id/acts: the whole list, in order, until the event starts. Any public live host but this one; the act
@@ -573,16 +573,16 @@ export function eventsRoutes({ db, notify, secret, media, razorpay: rz, now = Da
     const got = await adminOfEvent(c.req.param("id"), c.var.user.id);
     if (!got) return nothing(c);
     if (!changeable(got.host)) return closed(c);
-    const no = await actsRefused(db, c, b.hostIds, await actIds(db, got.event.id), got.event.hostId);
-    if (no) return no;
     try {
+      // ponytail: PUT /galaxy/hosts/:id/parent locks hosts for update in id order; one racing this can rarely deadlock
+      // (Postgres aborts one with 40P01, a 500; saving again works). Add a retry if it's ever seen.
       const done = await locked(c, got, async (tx, _host, cur) => {
         if (cur.status === "cancelled") return fail(c, 409, "cancelled", "A cancelled event can't be edited.");
         if (cur.startsAt && cur.startsAt.getTime() <= now()) return fail(c, 409, "started", "This event has started, so its acts are locked.");
-        await writeActs(tx, cur.id, b.hostIds);
-        return actsOf(tx, cur.id);
+        const from = await setActs(tx, c, cur, b, c.var.user.id, at());
+        return from instanceof Response ? from : actsOf(tx, cur.id);
       });
-      return done instanceof Response ? done : c.json(done);
+      return done instanceof Response ? done : c.json(done.map(toTeamAct));
     } catch (e) {
       if (unlinked(e)) return fail(c, 400, "noHost", "One of those hosts isn't on Orbit.");
       throw e;

@@ -207,7 +207,7 @@ export function FestItems({ eventId, items }: { eventId: string; items: StaffFes
 // An event's acts (A1): other hosts, in order. "Hidden" when the host isn't public and live, so the page drops it.
 export function Acts({ eventId, acts }: { eventId: string; acts: EventAct[] }) {
   const ids = acts.map((a) => a.hostId);
-  const set = (next: string[]) => ({ id: eventId, hostIds: JSON.stringify(next) });
+  const set = (next: string[]) => ({ id: eventId, shown: JSON.stringify(ids), hostIds: JSON.stringify(next) });
   return (
     <div className={ui.page}>
       {acts.length === 0 ? (
@@ -219,6 +219,7 @@ export function Acts({ eventId, acts }: { eventId: string; acts: EventAct[] }) {
               <th>Host</th>
               <th>Link</th>
               <th>On the page</th>
+              <th>Added by</th>
               <th />
             </tr>
           </thead>
@@ -228,6 +229,7 @@ export function Acts({ eventId, acts }: { eventId: string; acts: EventAct[] }) {
                 <td>{a.name}</td>
                 <td>{a.slug}</td>
                 <td>{a.shown ? "Shown" : "Hidden"}</td>
+                <td>{a.addedBy ? (a.addedBy.name ?? "No name") : "Gone"}</td>
                 <td>
                   {i > 0 && <Post inline action={setEventActs} hidden={set(moved(ids, i, -1))} label="Up" />}
                   {i < acts.length - 1 && <Post inline action={setEventActs} hidden={set(moved(ids, i, 1))} label="Down" />}

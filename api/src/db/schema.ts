@@ -328,6 +328,9 @@ export const eventActs = pgTable(
     eventId: uuid("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
     hostId: uuid("host_id").notNull().references(() => hosts.id, { onDelete: "cascade" }),
     position: integer("position").notNull(),
+    // Who put the act on (a host's Admin or staff) and when; a reorder keeps both.
+    addedBy: uuid("added_by").references(() => users.id, { onDelete: "set null" }),
+    addedAt: at("added_at").notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.eventId, t.hostId] }), index().on(t.hostId)],
 );

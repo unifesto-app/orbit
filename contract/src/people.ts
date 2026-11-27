@@ -44,7 +44,9 @@ export type SetEventPeople = z.input<typeof SetEventPeople>;
 export const MAX_EVENT_ACTS = 10;
 // PUT /galaxy/events/:id/acts and PUT /events/:id/acts: the event's acts (other hosts, public and live), the whole list
 // in the order the page shows it; each once. Any public live host but the event's own; nobody asks the act (staff remove).
+// `shown`: the acts the page showed, in order, so a change made since is refused (409 stale) rather than overwritten.
 export const SetEventActs = z.object({
+  shown: z.array(z.uuid()).max(MAX_EVENT_ACTS),
   hostIds: z
     .array(z.uuid())
     .max(MAX_EVENT_ACTS)
@@ -103,8 +105,9 @@ export type PublicPerson = {
 // Galaxy
 export type StaffPerson = { id: string; name: string; headline: string; bio: string | null; links: PersonLink[]; createdAt: string; updatedAt: string };
 export type StaffFestItem = Omit<PublicFestItem, "act"> & { actHostId: string | null };
-// An act as its event's team and staff see it: `shown` is false while its host isn't public and live (the page drops it).
-// GET and PUT /events/:id/acts answer these, in order.
-export type EventAct = { hostId: string; name: string; slug: string; shown: boolean };
+// An act as staff see it: `shown` is false while its host isn't public and live (the page drops it); who added it and when.
+export type EventAct = { hostId: string; name: string; slug: string; shown: boolean; addedBy: { id: string; name: string | null } | null; addedAt: string };
+// GET and PUT /events/:id/acts, in order: a hidden act's host is only its id to the event's team.
+export type TeamAct = { hostId: string; shown: true; name: string; slug: string } | { hostId: string; shown: false };
 // GET /galaxy/events/:id/lineup: the event's people (their full record and role), its fest items and its acts, in order.
 export type StaffLineup = { people: (StaffPerson & { role: string })[]; festItems: StaffFestItem[]; acts: EventAct[] };
