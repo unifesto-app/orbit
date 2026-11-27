@@ -7,7 +7,7 @@
 import Storage from 'expo-sqlite/kv-store';
 import { useSyncExternalStore } from 'react';
 
-import { type Place, placeName } from './home/layout';
+import { locationStatusOf, type Place, placeName } from './home/layout';
 
 const KEY = 'orbit.place';
 
@@ -72,6 +72,13 @@ export async function locate({ ask = true } = {}) {
   if (!name) throw new Error('no place name');
   // The position rides along (rounded as above): the API's near is 25 km from it.
   return { ...name, lat: +latitude.toFixed(3), lng: +longitude.toFixed(3) };
+}
+
+// Where location stands for Orbit (locationStatusOf), read without ever showing the phone's prompt, so Orbit's own sheet
+// (src/app/allow.tsx) can come first. Loaded only when asked, as locate is.
+export async function locationStatus() {
+  const Location = await import('expo-location');
+  return locationStatusOf(await Location.getForegroundPermissionsAsync());
 }
 
 // The quiet refresh (the web's, once a launch here instead of once a visit; owner, 15 Nov 2026: "add the quiet location

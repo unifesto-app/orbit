@@ -110,6 +110,8 @@ function RootLayout() {
           <Stack.Screen name="legal" options={MODAL} />
           {/* The sign-in sheet (User flow), over whatever needed an account, so closing it lands back there. */}
           <Stack.Screen name="login" options={MODAL} />
+          {/* Orbit's word before the phone's location prompt, and when location or push is blocked (src/app/allow.tsx). */}
+          <Stack.Screen name="allow" options={MODAL} />
           {/* Sign-in and security's sheets: Confirm it's you before a change (and Change number or email), and Rename
               passkey. Google's return link, which Android hands to the router too, lands on an empty screen that leaves
               at once (src/app/google.tsx). */}
