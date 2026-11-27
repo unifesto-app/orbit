@@ -55,6 +55,18 @@ export async function dismissReport(_: Done, f: FormData) {
   return run("POST", `/galaxy/reports/${path(f, "id")}/dismiss`, { note: text(f, "reason") || undefined });
 }
 
+// ─── Rooms ───
+// Removing a card and barring tell the person why; lifting a bar is from their People page.
+export async function removeRoomCard(_: Done, f: FormData) {
+  return run("POST", `/galaxy/rooms/${path(f, "eventId")}/members/${path(f, "memberId")}/remove`, { reason: text(f, "reason") });
+}
+export async function barFromRooms(_: Done, f: FormData) {
+  return run("POST", `/galaxy/rooms/${path(f, "eventId")}/members/${path(f, "memberId")}/bar`, { reason: text(f, "reason") });
+}
+export async function unbarFromRooms(_: Done, f: FormData) {
+  return run("POST", `/galaxy/rooms/unbar/${path(f, "id")}`, { reason: text(f, "reason") });
+}
+
 // ─── Support ───
 // A reply reaches the person by push, inbox and email; close and reopen are logged.
 export async function replySupport(_: Done, f: FormData) {

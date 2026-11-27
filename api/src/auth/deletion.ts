@@ -1,7 +1,7 @@
 import { and, eq, gt, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import type { Db } from "../db/index.ts";
-import { activity, askLog, bookings, deliveries, eventInterests, eventRequests, events, follows, hosts, identities, inboxItems, listEvents, lists, notificationPrefs, passkeys, payments, reports, saves, supportThreads, pmActivity, sessions, slotAlerts, stationClaims, staffGrants, teamRoles, users } from "../db/schema.ts";
+import { activity, askLog, bookings, deliveries, eventInterests, eventRequests, events, follows, hosts, identities, inboxItems, listEvents, lists, notificationPrefs, passkeys, payments, reports, roomMembers, saves, supportThreads, pmActivity, sessions, slotAlerts, stationClaims, staffGrants, teamRoles, userBlocks, users } from "../db/schema.ts";
 import { refundPaid } from "../payments/routes.ts";
 import { type Env, fail, type Notify, signedIn } from "../http.ts";
 import { drop, type Media } from "../media.ts";
@@ -43,7 +43,7 @@ export async function blockersOf(db: Db | Tx, u: User, now: number): Promise<Blo
 
 // What the one screen lists (User flow): what goes, what is scrubbed, what stays.
 const WHAT = {
-  deleted: ["Sign-in methods and passkeys", "Sessions", "Roles on hosts and staff access", "Hosts you follow", "Photo", "Requests to host that weren't approved", "Messages to Orbit support and our replies"],
+  deleted: ["Sign-in methods and passkeys", "Sessions", "Roles on hosts and staff access", "Hosts you follow", "Photo", "Requests to host that weren't approved", "Messages to Orbit support and our replies", "Room cards, connections and blocks"],
   scrubbed: ["Name", "Phone", "Email", "Date of birth", "Gender", "City"],
   kept: ["Bookings, payments, refunds and payouts, with your details scrubbed, kept 8 years as books of account", "Reports you sent, without your notes"],
 };
@@ -148,6 +148,9 @@ export async function runDeletions(db: Db, notify: Notify, now: number, revokeAp
         await tx.delete(supportThreads).where(eq(supportThreads.userId, u.id)); // their support threads, messages and all
         await tx.delete(activity).where(eq(activity.userId, u.id)); // analytics rows go with the account (owner, 19 Nov 2026)
         await tx.delete(askLog).where(eq(askLog.userId, u.id)); // what they asked Ask Orbit
+        // Their room cards go, and with them (cascade) every ask to or from them; their blocks go both ways.
+        await tx.delete(roomMembers).where(eq(roomMembers.userId, u.id));
+        await tx.delete(userBlocks).where(or(eq(userBlocks.blockerId, u.id), eq(userBlocks.blockedId, u.id)));
         // Their inbox goes; deliveries rows stay until the 180-day cleanup, as the log of what was sent (D6), but tied to
         // nobody and holding no data, and nothing still waiting sends. The accountDeleted email is queued after this.
         await tx.delete(inboxItems).where(eq(inboxItems.userId, u.id));

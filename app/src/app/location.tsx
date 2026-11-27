@@ -5,14 +5,14 @@
 import type { City } from '@orbit/contract';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text } from 'react-native';
 
 import { CitySheet } from '../citySheet';
 import { Glass } from '../glass';
-import { Blocked, locate, setPlace, usePlace } from '../place';
+import { Blocked, locate, locationStatus, setPlace, usePlace } from '../place';
 import { color, font, space } from '../theme';
 
-type Status = 'idle' | 'locating' | 'blocked' | 'failed';
+type Status = 'idle' | 'locating' | 'failed';
 
 export default function LocationScreen() {
   const place = usePlace();
@@ -23,12 +23,23 @@ export default function LocationScreen() {
     if (router.canGoBack()) router.back(); // not if it was swiped away while locating
   }
 
+  // Allowed already: find it now. Not yet, or blocked: Orbit's sheet says why first (src/app/allow.tsx; owner, 27 Nov
+  // 2026: "Approve, build it"), and its Allow location brings up the phone's prompt.
+  const allow = (kind: 'location' | 'location-off') => router.push({ pathname: '/allow', params: { kind, from: 'location' } });
   async function useCurrent() {
     setStatus('locating');
     try {
-      choose(await locate(), 'gps');
+      const now = await locationStatus();
+      if (now !== 'on') {
+        setStatus('idle');
+        return allow(now === 'ask' ? 'location' : 'location-off');
+      }
+      choose(await locate({ ask: false }), 'gps');
     } catch (e) {
-      setStatus(e instanceof Blocked ? 'blocked' : 'failed');
+      if (e instanceof Blocked) {
+        setStatus('idle');
+        allow('location-off'); // turned off between the two reads
+      } else setStatus('failed');
     }
   }
 
@@ -43,16 +54,6 @@ export default function LocationScreen() {
           <Text style={styles.currentText}>{status === 'locating' ? 'Locating…' : 'Use my current location'}</Text>
         </Glass>
       </Pressable>
-      {status === 'blocked' && (
-        <View style={styles.note}>
-          <Text style={[styles.noteText, styles.grow]}>Location is off for Orbit. Turn it on in Settings.</Text>
-          <Pressable onPress={() => Linking.openSettings()} accessibilityRole="button" hitSlop={8}>
-            <Glass style={styles.close}>
-              <Text style={styles.closeText}>Settings</Text>
-            </Glass>
-          </Pressable>
-        </View>
-      )}
       {status === 'failed' && (
         <Text style={[styles.noteText, styles.note]}>Couldn’t find where you are. Try again, or pick your city.</Text>
       )}
@@ -61,12 +62,8 @@ export default function LocationScreen() {
 }
 
 const styles = StyleSheet.create({
-  grow: { flex: 1, minWidth: 0 },
-  // The Settings pill in the blocked note (the sheet's own close is an X, CloseButton in src/rows.tsx).
-  close: { height: 32, paddingHorizontal: 12, borderCurve: 'continuous', borderRadius: 16, justifyContent: 'center' },
-  closeText: { fontFamily: font.title, fontSize: 13, color: color.text },
   current: { marginTop: space.small, marginHorizontal: 20, height: 50, borderCurve: 'continuous', borderRadius: 25, alignItems: 'center', justifyContent: 'center' },
   currentText: { fontFamily: font.title, fontSize: 15, color: color.text },
-  note: { marginTop: space.small, marginHorizontal: 20, flexDirection: 'row', alignItems: 'center', gap: space.small },
+  note: { marginTop: space.small, marginHorizontal: 20 },
   noteText: { fontFamily: font.text, fontSize: 13, lineHeight: 18, color: color.secondary },
 });
