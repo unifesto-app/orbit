@@ -183,7 +183,9 @@ export function PayChoices({ onPicked }: { onPicked?: () => void }) {
       { text: 'Remove', style: 'destructive', onPress: () => removeUpiId(u.vpa) },
     ]);
   const known: readonly { id: string; name: string }[] = onPhone ?? UPI_APPS;
-  const apps = allApps ? known : known.slice(0, SHOWN);
+  // The phone's own apps all show, as Zomato does; only our full list (can't tell what's on the phone) folds.
+  const folded = !allApps && !onPhone && known.length > SHOWN;
+  const apps = folded ? known.slice(0, SHOWN) : known;
 
   return (
     <>
@@ -194,7 +196,7 @@ export function PayChoices({ onPicked }: { onPicked?: () => void }) {
         ))}
         {/* None of ours on this phone: plain UPI too, which opens checkout on UPI to pick an app there. */}
         {!known.some((a) => UPI_APPS.some((u) => u.id === a.id)) && <Row icon="upi" label="UPI" right={def({ kind: 'upiApp', id: 'upi' })} onPress={() => choose({ kind: 'upiApp', id: 'upi' })} />}
-        {!allApps && known.length > SHOWN && <Row label={`Show ${known.length - SHOWN} more UPI apps`} chevron onPress={() => setAllApps(true)} />}
+        {folded && <Row label={`Show ${known.length - SHOWN} more UPI apps`} chevron onPress={() => setAllApps(true)} />}
       </Group>
 
       {/* Paying to a typed UPI ID is iPhone-only: NPCI ended it on 28 Feb 2026 except in iOS apps and mobile web
