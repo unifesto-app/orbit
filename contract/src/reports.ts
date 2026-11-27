@@ -25,21 +25,27 @@ export type ReportStatus = z.infer<typeof ReportStatus>;
 export const REPORT_NOTE_MAX = 1000;
 export const REPORTS_PER_DAY = 10;
 
-// POST /reports: exactly one of eventId and hostId.
+// POST /reports: exactly one of eventId and hostId. A person in a room (inRoom R2) is eventId (the room) and memberId,
+// their room_members id as the room shows it; the app never knows anyone's account id. Answers only {id}.
 export const NewReport = z
   .object({
     eventId: z.uuid().optional(),
     hostId: z.uuid().optional(),
+    memberId: z.uuid().optional(),
     reason: ReportReason,
     note: Text(0, REPORT_NOTE_MAX).optional(),
   })
-  .refine((b) => (b.eventId === undefined) !== (b.hostId === undefined), { message: "Report one event or one host", path: ["eventId"] });
+  .refine((b) => (b.eventId === undefined) !== (b.hostId === undefined), { message: "Report one event or one host", path: ["eventId"] })
+  .refine((b) => b.memberId === undefined || b.eventId !== undefined, { message: "A person is reported from their room", path: ["memberId"] });
 export type NewReport = z.infer<typeof NewReport>;
 
 // POST /galaxy/reports/:id/resolve | dismiss.
 export const DecideReport = z.object({ note: Text(0, REPORT_NOTE_MAX).optional() });
 
-export type ReportSubject = { kind: "event" | "host"; id: string; slug: string; name: string };
+// A person report's subject is the room's event (id, slug, name: its title) with the person in it. Their card is gone
+// (memberId and line null) once their account is deleted.
+export type ReportedPerson = { userId: string; name: string | null; memberId: string | null; line: string | null };
+export type ReportSubject = { kind: "event" | "host"; id: string; slug: string; name: string } | { kind: "person"; id: string; slug: string; name: string; person: ReportedPerson };
 
 // GET /galaxy/reports: newest first.
 export type StaffReport = {
@@ -50,7 +56,7 @@ export type StaffReport = {
   createdAt: string;
   subject: ReportSubject;
   reporter: { id: string; name: string | null; phone: string | null; email: string | null };
-  openOnSubject: number; // open reports on the same event or host, this one included
+  openOnSubject: number; // open reports on the same event, host or person, this one included
 };
 // GET /galaxy/reports/:id
 export type StaffReportDetail = StaffReport & { staffNote: string | null; decidedBy: { id: string; name: string | null } | null; decidedAt: string | null };
