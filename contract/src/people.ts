@@ -45,10 +45,12 @@ export const MAX_EVENT_ACTS = 10;
 // PUT /galaxy/events/:id/acts and PUT /events/:id/acts: the event's acts (other hosts, public and live), the whole list
 // in the order the page shows it; each once. Any public live host but the event's own; nobody asks the act (staff remove).
 // `shown`: the acts the page showed, in order, so a change made since is refused (409 stale) rather than overwritten.
+// Ids lowercased, as Postgres prints them, so the checks here and in the API compare like with like.
+const ActId = z.uuid().transform((s) => s.toLowerCase());
 export const SetEventActs = z.object({
-  shown: z.array(z.uuid()).max(MAX_EVENT_ACTS),
+  shown: z.array(ActId).max(MAX_EVENT_ACTS),
   hostIds: z
-    .array(z.uuid())
+    .array(ActId)
     .max(MAX_EVENT_ACTS)
     .refine((a) => new Set(a).size === a.length, "Each act once"),
 });

@@ -357,6 +357,9 @@ test("acts: a host's Admins set them until the event starts; ten at most; hidden
   assert.equal((await put(acts)).status, 400); // the 11th
   assert.equal((await put([h.id])).body.error, "ownAct");
   assert.equal((await put([ZERO])).body.error, "noHost");
+  // Uppercase ids are the same ids: the own host still refused, a mixed-case pair a duplicate (not a 500).
+  assert.equal((await put([h.id.toUpperCase()])).body.error, "ownAct");
+  assert.equal((await put([acts[1]!, acts[1]!.toUpperCase()])).status, 400);
   await t.db.update(hosts).set({ status: "paused" }).where(eq(hosts.id, acts[10]!));
   assert.equal((await put([acts[10]!])).body.error, "actHidden");
   // An act gone hidden: only its id to the team, and it doesn't block a reorder.

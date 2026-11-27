@@ -88,7 +88,7 @@ export const changeable = (h: typeof hosts.$inferSelect) => h.status === "live" 
 // waiting (14 days), or one that had started and ended in the last 30 days. An invite they never accepted doesn't, or an
 // Admin could shield a host from staff by inviting one of them, then withdrawing it or letting it lapse; and one they
 // accepted that was never confirmed stops counting when it lapses, since they can't leave a place that never started.
-export const onHost = async (db: Db, hostId: string, u: User, now: number) => {
+export const onHost = async (db: Db | Tx, hostId: string, u: User, now: number) => {
   const mine = [u.phoneVerifiedAt && u.phone, u.emailVerifiedAt && u.email].filter((x): x is string => !!x);
   const [seat] = await db
     .select({ id: teamRoles.id })

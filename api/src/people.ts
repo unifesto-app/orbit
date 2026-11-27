@@ -67,15 +67,12 @@ export async function setActs(
   const found = added.length ? await tx.select({ visibility: hosts.visibility, status: hosts.status }).from(hosts).where(inArray(hosts.id, added)) : [];
   if (found.length !== added.length) return fail(c, 400, "noHost", "One of those hosts isn't on Orbit.");
   if (found.some((h) => h.visibility !== "public" || h.status !== "live")) return fail(c, 409, "actHidden", "One of those hosts isn't public and live, so the page wouldn't show it. Pick another.");
-  const kept = new Map(had.map((a) => [a.hostId, a]));
-  await tx.delete(eventActs).where(eq(eventActs.eventId, e.id));
-  if (b.hostIds.length)
-    await tx.insert(eventActs).values(
-      b.hostIds.map((hostId, position) => {
-        const k = kept.get(hostId);
-        return { eventId: e.id, hostId, position, addedBy: k ? k.addedBy : by, addedAt: k ? k.addedAt : at };
-      }),
-    );
+  // Kept rows only move, so their added_by isn't checked again (that would lock the adders' user rows).
+  const gone = ids.filter((id) => !b.hostIds.includes(id));
+  if (gone.length) await tx.delete(eventActs).where(and(eq(eventActs.eventId, e.id), inArray(eventActs.hostId, gone)));
+  for (const [position, hostId] of b.hostIds.entries())
+    if (ids.includes(hostId)) await tx.update(eventActs).set({ position }).where(and(eq(eventActs.eventId, e.id), eq(eventActs.hostId, hostId)));
+  if (added.length) await tx.insert(eventActs).values(added.map((hostId) => ({ eventId: e.id, hostId, position: b.hostIds.indexOf(hostId), addedBy: by, addedAt: at })));
   return ids;
 }
 
@@ -151,8 +148,8 @@ export function peopleRoutes({ db, secret, now = Date.now }: Deps) {
   const log = (tx: Db | Tx, c: Context<StaffEnv>, action: string, targetHost: string | null, data: object) =>
     tx.insert(auditLog).values({ actorId: c.var.actor.id, action, targetHost, data, at: at() });
   // Staff never act on a host they're on (Roles flow): any of these.
-  const onAny = async (c: Context<StaffEnv>, hostIds: string[]) => {
-    for (const h of new Set(hostIds)) if (await onHost(db, h, c.var.user, now())) return true;
+  const onAny = async (c: Context<StaffEnv>, hostIds: string[], q: Db | Tx = db) => {
+    for (const h of new Set(hostIds)) if (await onHost(q, h, c.var.user, now())) return true;
     return false;
   };
 
@@ -275,7 +272,7 @@ export function peopleRoutes({ db, secret, now = Date.now }: Deps) {
     try {
       const done = await db.transaction(async (tx) => {
         await tx.select({ id: events.id }).from(events).where(eq(events.id, e.id)).for("update");
-        const from = await setActs(tx, c, e, b, c.var.user.id, at(), async (had) => ((await onAny(c, [...had, ...b.hostIds])) ? ownHost(c) : null));
+        const from = await setActs(tx, c, e, b, c.var.user.id, at(), async (had) => ((await onAny(c, [...had, ...b.hostIds], tx)) ? ownHost(c) : null));
         if (from instanceof Response) return from;
         await log(tx, c, "events.acts", e.hostId, { eventId: e.id, from, to: b.hostIds });
         return null;
