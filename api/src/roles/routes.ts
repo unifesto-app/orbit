@@ -299,7 +299,7 @@ export function rolesRoutes({ db, store, notify, secret, now = Date.now }: Deps)
     );
   });
 
-  // POST /galaxy/staff/grants: give features. They wait for a second holder of Staff, or 24 hours for the owner's.
+  // POST /galaxy/staff/grants: give features. They wait for a second holder of Staff; the owner's start at once.
   app.post("/galaxy/staff/grants", auth, staffOnly, async (c) => {
     const b = await parse(c, GrantFeatures);
     if (!b) return invalid(c);
@@ -317,7 +317,7 @@ export function rolesRoutes({ db, store, notify, secret, now = Date.now }: Deps)
         return rows;
       });
       await say(await holders("staff"), "staffGrantAdded", { userId: target.id, features: b.features, reason: b.reason, by: c.var.actor.id, startsAt: ok.startsAt?.toISOString() ?? null, grants: made.map((g) => g.id) });
-      return c.json(made.map((g) => ({ id: g.id, feature: g.feature, status: g.startsAt ? "startsLater" : "waitingConfirm" })), 201);
+      return c.json(made.map((g) => ({ id: g.id, feature: g.feature, status: g.startsAt ? "active" : "waitingConfirm" })), 201);
     } catch (e) {
       if (taken(e)) return fail(c, 409, "hasFeature", "They already have, or are waiting for, one of those features.");
       throw e;

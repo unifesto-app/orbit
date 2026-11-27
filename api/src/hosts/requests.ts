@@ -121,7 +121,8 @@ export function requestsRoutes({ db, notify, secret, now = Date.now }: Deps) {
   });
 
   // Each answer: under a lock on the request, only from the statuses it allows; logged, told to the requester in the same
-  // transaction, and to every holder of Hosts after, as other staff actions are. Staff never answer their own request.
+  // transaction, and to every holder of Hosts after, as other staff actions are. Staff never answer their own request;
+  // the platform owner may.
   const decide = (action: "approve" | "changes" | "decline", from: readonly Row["status"][]) =>
     app.post(`/galaxy/event-requests/:id/${action}`, auth, hostsOnly, async (c) => {
       const b = await parse(c, DecideRequest);
@@ -134,7 +135,7 @@ export function requestsRoutes({ db, notify, secret, now = Date.now }: Deps) {
           const done = await db.transaction(async (tx) => {
             const [r] = await tx.select().from(eventRequests).where(eq(eventRequests.id, id)).for("update");
             if (!r) return "missing" as const;
-            if (r.userId === actor) return "self" as const;
+            if (r.userId === actor && !c.var.actor.owner) return "self" as const;
             if (!from.includes(r.status)) return "notOpen" as const;
             const set: Partial<typeof eventRequests.$inferInsert> = { decidedBy: actor, decidedAt: at(), updatedAt: at() };
             if (action === "approve") {

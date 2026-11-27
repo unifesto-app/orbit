@@ -11,13 +11,13 @@ export const holds = (a: Actor, f: StaffFeature) => a.owner || a.features.includ
 
 type No<E extends string> = { ok: false; error: E };
 
-// Giving a feature: a holder of Staff adds it, never to themselves. The platform owner's adds start after 24 hours,
-// cancellable by any holder of Staff; anyone else's wait for a second holder to confirm.
+// Giving a feature: a holder of Staff adds it, never to themselves. The platform owner's adds start at once (every holder
+// of Staff is emailed); anyone else's wait for a second holder to confirm.
 export function addRule(actor: Actor, target: { id: string; owner: boolean }, now: number): { ok: true; startsAt: Date | null } | No<"forbidden" | "self" | "owner"> {
   if (!holds(actor, "staff")) return { ok: false, error: "forbidden" };
   if (target.id === actor.id) return { ok: false, error: "self" };
   if (target.owner) return { ok: false, error: "owner" }; // holds everything already
-  return { ok: true, startsAt: actor.owner ? new Date(now + DAY) : null };
+  return { ok: true, startsAt: actor.owner ? new Date(now) : null };
 }
 
 export type Grant = { userId: string; addedBy: string; startsAt: Date | null; endedAt: Date | null };

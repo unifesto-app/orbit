@@ -9,7 +9,7 @@ import { Act } from "../act";
 import { confirmGrant, endGrant } from "../actions";
 
 // Orbit's staff (Roles flow; API: /galaxy/staff), for holders of Staff. An add starts once another holder of Staff
-// confirms it, never the one who added it nor the person; the platform owner's own adds start after 24 hours instead.
+// confirms it, never the one who added it nor the person; the platform owner's own adds start at once.
 // Taking a feature away is at once.
 export const metadata: Metadata = { title: "Staff" };
 

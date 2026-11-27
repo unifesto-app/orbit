@@ -14,7 +14,7 @@ const nobody: Actor = { id: "n", owner: false, features: [] };
 
 test("giving a feature", () => {
   assert.deepEqual(addRule(staffA, { id: "x", owner: false }, NOW), { ok: true, startsAt: null }); // waits for a confirm
-  assert.deepEqual(addRule(owner, { id: "x", owner: false }, NOW), { ok: true, startsAt: new Date(NOW + DAY) }); // 24 hours
+  assert.deepEqual(addRule(owner, { id: "x", owner: false }, NOW), { ok: true, startsAt: new Date(NOW) }); // at once
   assert.deepEqual(addRule(peopleOnly, { id: "x", owner: false }, NOW), { ok: false, error: "forbidden" });
   assert.deepEqual(addRule(staffA, { id: "a", owner: false }, NOW), { ok: false, error: "self" });
   assert.deepEqual(addRule(staffA, { id: "owner", owner: true }, NOW), { ok: false, error: "owner" });

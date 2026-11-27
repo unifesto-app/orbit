@@ -619,6 +619,14 @@ test("verifying needs the name staff saw", async () => {
   assert.deepEqual((await audits("hosts.verify", h.id))[0]!.data, { name: "Third Name" });
 });
 
+test("the platform owner acts on their own host", async () => {
+  const boss = await join();
+  await makeOwner(boss);
+  const h = await start(boss, "Owner's Own");
+  assert.equal((await as(boss)("POST", `/galaxy/hosts/${h.id}/suspend`, R)).status, 200);
+  assert.equal((await as(boss)("POST", `/galaxy/hosts/${h.id}/lift`, R)).status, 200);
+});
+
 test("staff on a parent's team can't detach or move its club", async () => {
   const st = await staff("hosts"), st2 = await staff("hosts"), a = await join();
   const p = await start(st, "Staff Parent"), c = await start(a, "Club"), q = await start(a, "Other Parent");

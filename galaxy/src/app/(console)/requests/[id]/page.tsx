@@ -10,7 +10,7 @@ import { RequestBadge, time } from "../status";
 
 // One Event Request (Hosts flow, H1.5; API: GET /galaxy/event-requests/:id). Approve makes the host (live, Unverified)
 // and its first event as a draft; asking for changes or declining sends the reason to the requester. The API refuses
-// staff their own request.
+// staff their own request, but not the platform owner.
 export const metadata: Metadata = { title: "Request" };
 
 export default function RequestPage({ params }: PageProps<"/requests/[id]">) {
@@ -29,8 +29,8 @@ async function Request({ params }: Pick<PageProps<"/requests/[id]">, "params">) 
   const e = q.event;
   // A person's page is People's; holders of Hosts alone see the name.
   const people = viewer.ok && !!viewer.data.staff?.features.includes("people");
-  // The API refuses a staff member answering their own request (403 self); hide the buttons too.
-  const own = viewer.ok && viewer.data.id === q.user.id;
+  // The API refuses a staff member answering their own request (403 self), the owner aside; hide the buttons too.
+  const own = viewer.ok && viewer.data.id === q.user.id && !viewer.data.staff?.owner;
   const name = q.user.name ?? "No name yet";
   const toldThem = "The requester sees this";
 

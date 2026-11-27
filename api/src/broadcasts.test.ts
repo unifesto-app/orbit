@@ -57,59 +57,47 @@ const finish = async (batch?: number) => {
   await run(batch);
 };
 
-test("one Platform holder: no one to confirm, so it goes by itself 24 hours on, audited and shown so", async () => {
+test("one Platform holder: the author confirms their own; nothing goes by itself", async () => {
   goTo(12);
   await retireStaff();
   const st = await staff();
   const a = await join("Siddipet");
   const r = await as(st)("POST", B, draft("Siddipet"));
   assert.equal(r.status, 201);
-  assert.deepEqual([r.body.status, r.body.audienceCount, r.body.autoAt, r.body.autoSent], ["waiting", 1, new Date(t.now() + DAY).toISOString(), false]);
+  assert.deepEqual([r.body.status, r.body.audienceCount, r.body.autoAt, r.body.autoSent, r.body.canConfirm], ["waiting", 1, null, false, true]);
   assert.equal(t.notices.filter((x) => x.kind === "broadcastWaiting").length, 0);
-  assert.equal((await as(st)("POST", `${B}/${r.body.id}/confirm`)).status, 403);
+  // No 24 h self-send any more: still waiting a day on.
+  t.tick(DAY + 60_000);
   await run();
   assert.equal((await get(r.body.id)).status, "waiting");
-  t.tick(DAY + 60_000);
+  const ok = await as(st)("POST", `${B}/${r.body.id}/confirm`);
+  assert.deepEqual([ok.status, ok.body.status], [200, "sending"]);
   await finish();
   assert.equal((await get(r.body.id)).status, "sent");
   assert.equal((await inbox(a)).length, 1);
-  const [audit] = await t.db.select().from(auditLog).where(eq(auditLog.action, "notifications.broadcastAutoSend"));
-  assert.deepEqual([audit?.actorId, (audit?.data as { id: string }).id], [st.me.id, r.body.id]);
-  const viewer = await staff();
-  const shown = await as(viewer)("GET", `${B}/${r.body.id}`);
-  assert.deepEqual([shown.status, shown.body.autoSent, shown.body.confirmer], [200, true, null]);
+  const shown = await as(st)("GET", `${B}/${r.body.id}`);
+  assert.deepEqual([shown.body.autoSent, shown.body.confirmer.id, shown.body.canConfirm], [false, st.me.id, false]);
   await retireStaff();
 });
 
-test("the 24 h wait runs from when the author became the only holder; a suspended holder doesn't count", async () => {
+test("the author may confirm only while no other active Platform holder could; a suspended one doesn't count", async () => {
   goTo(12);
   const [st, other] = [await staff(), await staff()];
   await join("Tirupati");
   const r = await as(st)("POST", B, draft("Tirupati"));
-  assert.equal(r.body.autoAt, null);
-  // The other holder is suspended: the author is alone from now.
+  const can = async (u: P) => (await as(u)("GET", `${B}/${r.body.id}`)).body.canConfirm;
+  assert.deepEqual([r.body.canConfirm, await can(st), await can(other)], [false, false, true]);
+  assert.equal((await as(st)("POST", `${B}/${r.body.id}/confirm`)).body.error, "ownBroadcast");
+  // The other holder is suspended: the author is alone.
   await t.db.update(users).set({ suspendedAt: new Date(t.now()) }).where(eq(users.id, other.me.id));
-  await run();
-  assert.equal((await get(r.body.id)).autoAt?.getTime(), t.now() + DAY);
-  // Back 12 hours on: the wait is off and they're told it's waiting.
-  t.tick(12 * HOUR);
+  assert.equal(await can(st), true);
   await t.db.update(users).set({ suspendedAt: null }).where(eq(users.id, other.me.id));
-  const told = () => t.notices.filter((x) => x.kind === "broadcastWaiting" && (x.to as { userId: string }).userId === other.me.id).length;
-  const before = told();
-  await run();
-  assert.equal((await get(r.body.id)).autoAt, null);
-  assert.equal(told(), before + 1);
-  await run();
-  assert.equal(told(), before + 1);
-  // They leave Platform: a fresh 24 hours from then, not from when it was written.
+  assert.equal((await as(st)("POST", `${B}/${r.body.id}/confirm`)).status, 403);
+  // They leave Platform: the author confirms it.
   await t.db.update(staffGrants).set({ endedAt: new Date(t.now()) }).where(eq(staffGrants.userId, other.me.id));
-  await run();
-  t.tick(DAY - 60_000);
-  await run();
-  assert.equal((await get(r.body.id)).status, "waiting");
-  t.tick(2 * 60_000);
-  await run();
-  assert.notEqual((await get(r.body.id)).status, "waiting");
+  assert.equal((await as(st)("POST", `${B}/${r.body.id}/confirm`)).status, 200);
+  await finish();
+  assert.equal((await t.db.select().from(auditLog).where(eq(auditLog.action, "notifications.broadcastAutoSend"))).length, 0);
   await retireStaff();
 });
 
@@ -148,7 +136,7 @@ test("the author can't confirm; another Platform holder can, once; the rest find
   assert.equal((await as(other)("GET", `${B}/${randomUUID()}`)).status, 404);
   assert.equal((await as(other)("GET", `${B}/not-an-id`)).status, 404);
   const audits = await t.db.select().from(auditLog).where(eq(auditLog.action, "notifications.broadcastConfirm"));
-  assert.equal(audits.length, 1);
+  assert.equal(audits.filter((a) => (a.data as { id: string }).id === r.body.id).length, 1);
   // A later send time: confirmed into scheduled, sent once it comes.
   const later = await as(st)("POST", B, sendAt(HOUR));
   assert.equal((await as(other)("POST", `${B}/${later.body.id}/confirm`)).body.status, "scheduled");

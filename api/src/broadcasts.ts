@@ -10,9 +10,9 @@ import { fail, invalid, isUuid, type Notify, parse, signedIn } from "./http.ts";
 import { holdersOf, requireFeature, type StaffEnv, tell } from "./roles/access.ts";
 
 // Broadcasts (notifications build plan PR 9): Platform writes one to a segment, a second Platform holder confirms it,
-// and the minute tick sends it in batches with a saved cursor. With no other Platform holder, the author's own broadcast
-// moves on by itself 24 hours after the author became the only one (auto_at), and can be cancelled until then. Every
-// write is in the audit log. A cancel also drops the deliveries still queued or held; the worker drops any written after.
+// and the minute tick sends it in batches with a saved cursor. With no other Platform holder, the author confirms their
+// own. auto_at is history: the 24-hour self-send it drove is gone (owner, 27 Nov 2026). Every write is in the audit
+// log. A cancel also drops the deliveries still queued or held; the worker drops any written after.
 
 const DAY = 86_400_000;
 const MIN = 60_000;
@@ -58,7 +58,8 @@ const othersOf = async (db: Db, authorId: string, at: Date) => {
 
 const confirmer = alias(users, "confirmer");
 type Row = { b: typeof broadcasts.$inferSelect; author: string | null; confirmer: string | null };
-const view = ({ b, author, confirmer: by }: Row): Broadcast => ({
+// `alone`: the viewer is the only Platform holder, so may confirm their own.
+const view = ({ b, author, confirmer: by }: Row, viewer: string, alone: boolean): Broadcast => ({
   id: b.id,
   type: b.type,
   segment: b.segment,
@@ -77,7 +78,9 @@ const view = ({ b, author, confirmer: by }: Row): Broadcast => ({
   autoAt: b.autoAt?.toISOString() ?? null,
   // auto_at stays on one that went by itself; a cancel while waiting clears it.
   autoSent: !b.confirmedBy && !!b.autoAt && b.status !== "waiting",
+  canConfirm: b.status === "waiting" && (b.createdBy !== viewer || alone),
 });
+const aloneOf = async (db: Db, viewer: string, now: () => number) => !(await othersOf(db, viewer, new Date(now()))).length;
 const withNames = (db: Db) =>
   db
     .select({ b: broadcasts, author: users.name, confirmer: confirmer.name })
@@ -94,7 +97,9 @@ export function broadcastsRoutes({ db, secret, notify, now = Date.now }: Deps) {
   // GET …/broadcasts: the latest 100, newest first, with who wrote and who confirmed each.
   app.get(base, auth, platform, async (c) => {
     const rows = await withNames(db).orderBy(desc(broadcasts.createdAt)).limit(100);
-    const body: Broadcasts = { items: rows.map(view) };
+    const viewer = c.var.actor.id;
+    const alone = await aloneOf(db, viewer, now);
+    const body: Broadcasts = { items: rows.map((r) => view(r, viewer, alone)) };
     return c.json(body);
   });
 
@@ -103,7 +108,7 @@ export function broadcastsRoutes({ db, secret, notify, now = Date.now }: Deps) {
     const id = c.req.param("id");
     if (!isUuid(id)) return nothing(c);
     const [row] = await withNames(db).where(eq(broadcasts.id, id));
-    return row ? c.json(view(row)) : nothing(c);
+    return row ? c.json(view(row, c.var.actor.id, await aloneOf(db, c.var.actor.id, now))) : nothing(c);
   });
 
   // POST …/broadcasts/count {segment}: the audience the form shows before Save.
@@ -115,7 +120,7 @@ export function broadcastsRoutes({ db, secret, notify, now = Date.now }: Deps) {
   });
 
   // POST …/broadcasts: written as waiting, with its audience counted now; the other Platform holders are emailed. With
-  // none, the 24-hour wait starts now. A send time may be up to 5 minutes past (a slow form) and 90 days ahead.
+  // none, the author confirms it themselves. A send time may be up to 5 minutes past (a slow form) and 90 days ahead.
   app.post(base, auth, platform, async (c) => {
     const b = await parse(c, NewBroadcast);
     if (!b) return invalid(c);
@@ -138,7 +143,6 @@ export function broadcastsRoutes({ db, secret, notify, now = Date.now }: Deps) {
           status: "waiting",
           createdBy: actor,
           sendAt,
-          autoAt: others.length ? null : new Date(at.getTime() + DAY),
           audienceCount: n,
           createdAt: at,
         })
@@ -147,10 +151,10 @@ export function broadcastsRoutes({ db, secret, notify, now = Date.now }: Deps) {
       return made!;
     });
     await tell(notify, others, "broadcastWaiting", { title: b.title, audienceCount: n }, row.id);
-    return c.json(view({ b: row, author: c.var.user.name ?? null, confirmer: null }), 201);
+    return c.json(view({ b: row, author: c.var.user.name ?? null, confirmer: null }, actor, !others.length), 201);
   });
 
-  // POST …/broadcasts/:id/confirm: the second person. Never the author (the one-holder rule needs no confirm). Moves to
+  // POST …/broadcasts/:id/confirm: the second person; the author only while no other Platform holder could. Moves to
   // scheduled when its send time is still ahead, else to sending.
   app.post(`${base}/:id/confirm`, auth, platform, async (c) => {
     const id = c.req.param("id");
@@ -158,8 +162,9 @@ export function broadcastsRoutes({ db, secret, notify, now = Date.now }: Deps) {
     const actor = c.var.actor.id;
     const [b] = await db.select().from(broadcasts).where(eq(broadcasts.id, id));
     if (!b) return nothing(c);
-    if (b.createdBy === actor) return fail(c, 403, "ownBroadcast", "Someone else with Platform has to confirm your broadcast.");
     const at = new Date(now());
+    if (b.createdBy === actor && (await othersOf(db, actor, at)).length)
+      return fail(c, 403, "ownBroadcast", "Someone else with Platform has to confirm your broadcast.");
     const status = b.sendAt && b.sendAt > at ? "scheduled" : "sending";
     const done = await db.transaction(async (tx) => {
       const [moved] = await tx
@@ -209,10 +214,8 @@ export function broadcastsRoutes({ db, secret, notify, now = Date.now }: Deps) {
 }
 
 // The minute tick's broadcast step.
-// 1. Waiting ones: the one-holder rule. No other holder: auto_at is set 24 hours on, and once it passes the broadcast
-//    moves on (audited as the author's). Another holder again: auto_at is cleared and they're emailed.
-// 2. Scheduled ones that are due start sending.
-// 3. Each sending one goes in batches of people by id after its cursor. Status is read again before each batch, so a
+// 1. Scheduled ones that are due start sending. Waiting ones wait for a confirm.
+// 2. Each sending one goes in batches of people by id after its cursor. Status is read again before each batch, so a
 //    cancel stops the rest; each person's notice is keyed by the broadcast, so a batch redone after a restart sends
 //    nothing twice. Cursor and counts are saved after each batch. It is sent once the cursor is done and none of its
 //    deliveries is still queued, held or sending, so a cancel can stop those too.
@@ -220,20 +223,6 @@ export function broadcastsRoutes({ db, secret, notify, now = Date.now }: Deps) {
 // counts would double). An advisory lock per broadcast when the API runs on more than one box.
 export async function runBroadcasts({ db, notify, now, batch = BATCH }: { db: Db; notify: Notify; now: () => number; batch?: number }) {
   const at = new Date(now());
-  for (const b of await db.select().from(broadcasts).where(eq(broadcasts.status, "waiting"))) {
-    const waiting = and(eq(broadcasts.id, b.id), eq(broadcasts.status, "waiting"));
-    const others = await othersOf(db, b.createdBy, at);
-    if (others.length) {
-      if (!b.autoAt) continue;
-      const [cleared] = await db.update(broadcasts).set({ autoAt: null }).where(and(waiting, isNotNull(broadcasts.autoAt))).returning({ id: broadcasts.id });
-      if (cleared) await tell(notify, others, "broadcastWaiting", { title: b.content.title, audienceCount: b.audienceCount }, b.id);
-    } else if (!b.autoAt) await db.update(broadcasts).set({ autoAt: new Date(at.getTime() + DAY) }).where(and(waiting, isNull(broadcasts.autoAt)));
-    else if (b.autoAt <= at) {
-      const status = b.sendAt && b.sendAt > at ? "scheduled" : "sending";
-      const [moved] = await db.update(broadcasts).set({ status }).where(waiting).returning({ id: broadcasts.id });
-      if (moved) await db.insert(auditLog).values({ actorId: b.createdBy, action: "notifications.broadcastAutoSend", data: { id: b.id, status }, at });
-    }
-  }
   await db.update(broadcasts).set({ status: "sending" }).where(and(eq(broadcasts.status, "scheduled"), lte(broadcasts.sendAt, at)));
 
   for (const { id } of await db.select({ id: broadcasts.id }).from(broadcasts).where(eq(broadcasts.status, "sending"))) {

@@ -126,12 +126,13 @@ function Field({ label, note, children }: { label: string; note?: string; childr
   );
 }
 
-// The second person's Confirm: it goes (or waits for its time) as soon as it's pressed.
-export function Confirm({ id }: { id: string }) {
+// Confirm: it goes (or waits for its time) as soon as it's pressed, so the preview says who it reaches first.
+export function Confirm({ id, preview }: { id: string; preview: string }) {
   const [pending, start] = useTransition();
   const [error, setError] = useState<string>();
   return (
     <div className={ui.row}>
+      <span className={ui.secondary}>{preview}</span>
       <button className={`${ui.btn} ${ui.primary}`} disabled={pending} onClick={() => start(async () => setError((await confirmBroadcast(id)).error))}>
         Confirm and send
       </button>
