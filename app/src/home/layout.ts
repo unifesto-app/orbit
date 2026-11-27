@@ -10,6 +10,12 @@ export type Place = { area: string; city: string; state?: string; nearAreas: rea
 // The fields of expo-location's LocationGeocodedAddress this reads.
 export type Address = { district: string | null; city: string | null; subregion: string | null; region: string | null };
 
+// Where location stands for Orbit, from expo-location's permission (locationStatus in src/place.ts): 'ask' while the
+// phone's prompt can still come up (never asked; Android also after one no), 'blocked' once only Settings can.
+export function locationStatusOf(p: { granted: boolean; status: string; canAskAgain: boolean }): 'ask' | 'on' | 'blocked' {
+  return p.granted ? 'on' : p.status === 'undetermined' || p.canAskAgain ? 'ask' : 'blocked';
+}
+
 // What the phone's geocoder calls a spot, as Home's two lines: the neighbourhood over its city ("Gachibowli",
 // "Hyderabad"). With no neighbourhood the city leads over its state, the same shape as a picked city. Never the same
 // name twice: "Hyderabad, Hyderabad" reads as a bug (the web's rule too).

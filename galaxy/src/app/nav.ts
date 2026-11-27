@@ -23,6 +23,8 @@ export const sections: { title: string; items: NavItem[] }[] = [
       { label: "Reports", href: "/reports" },
       // Help's Write to us from the Orbit app, Event Partner and Play Partner, for holders of Queues (X16).
       { label: "Support", href: "/support" },
+      // Meetup rooms (inRoom): remove a card, bar someone, for holders of Queues.
+      { label: "Rooms", href: "/rooms" },
       // Players' holds at venues and their freed-slot alerts (Track X7).
       { label: "Slot holds", href: "/slot-holds" },
       // Every host's events: unpublish, cancel, promote (X1).
