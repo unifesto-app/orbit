@@ -197,6 +197,21 @@ test('a public event brings its people and fest items; a card has neither', () =
   assert.equal(toEvent(card()).lineup, undefined);
 });
 
+test('a public event brings its acts, details, age and team count; a card brings only inRoom', () => {
+  const details = { teamMin: 2, teamMax: 4, tracks: [{ name: 'Open', brief: 'Anything.' }] };
+  const full = { ...card({ inRoom: false }), about: null, agenda: [], faq: [], terms: [], vibes: [], interested: 0, people: [], festItems: [], acts: [host], details, minAge: 18 as const, teams: 3 };
+  const e = toEvent(full);
+  assert.deepEqual(e.acts, [toHost(host)]);
+  assert.deepEqual(e.details, details);
+  assert.equal(e.minAge, 18);
+  assert.equal(e.teams, 3);
+  assert.equal(e.inRoom, false);
+  assert.deepEqual(toEvent({ ...full, acts: [] }).acts, []); // none, not unknown: love offers nothing and reads nothing
+  const c = toEvent(card({ inRoom: true }));
+  assert.equal(c.inRoom, true);
+  for (const k of ['acts', 'details', 'minAge', 'teams'] as const) assert.equal(c[k], undefined);
+});
+
 test('a place to play keeps its tile and area, and is near within 25 km only when the API measured it', async () => {
   const p = { ...host, kind: 'venue', tile: 'gaming' as const, area: 'Madhapur', stations: 'Gaming PC, PS5', distanceKm: 3.2 };
   const h = toPlace(p);

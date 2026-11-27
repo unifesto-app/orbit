@@ -125,7 +125,7 @@ function EventView({ e, host, now, live }: { e: Event; host: Host; now: number; 
           <Text style={styles.title} accessibilityRole="header">
             {e.title}
           </Text>
-          <WithActs eventId={e.id} />
+          <WithActs event={e} />
           <View style={styles.status}>
             <StatusDot tone={status.tone} />
             <Text style={styles.statusText}>{[status.label, seats].filter(Boolean).join(' · ')}</Text>
@@ -162,7 +162,7 @@ function EventView({ e, host, now, live }: { e: Event; host: Host; now: number; 
         </View>
 
         {/* Its kind's own sections: the show, the jam, how a hackathon works, the room, the fest (src/kindSections.tsx). */}
-        {!live && <KindSections event={e} past={past} />}
+        <KindSections event={e} past={past} />
 
         {/* A real fest's insides (X14), as a mock fest's in KindSections, each opening its sheet by the event's slug. */}
         {live && e.festItems && (
@@ -342,7 +342,7 @@ function Thanks({ event: e, host }: { event: Event; host: Host }) {
       title={title}
       text={`Loved it? Let ${host.name} know.`}
       then={loved ? { mine: 'Loved it', reply: `${host.name} will hear.` } : undefined}
-      answers={[loved ? { label: 'Take it back', onPress: () => loveIt(e.id, false) } : { label: 'Loved it', onPress: () => loveIt(e.id, true) }]}
+      answers={[loved ? { label: 'Take it back', onPress: () => loveIt(e, false) } : { label: 'Loved it', onPress: () => loveIt(e, true) }]}
     />
   );
 }
