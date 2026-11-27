@@ -1,5 +1,5 @@
 import { GlassView, isGlassEffectAPIAvailable, isLiquidGlassAvailable } from 'expo-glass-effect';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { AccessibilityInfo, Animated, StyleSheet, View, type ViewProps } from 'react-native';
 
 import { around, color, groundAt, radius, space, stoneAt } from './theme';
@@ -51,8 +51,32 @@ const settings = {
   screenReaderChanged: () => AccessibilityInfo.isScreenReaderEnabled(),
 };
 
+type Setting = keyof typeof settings;
+
+// Orbit's own Reduce switches (the Orbit app's Appearance, owner 27 Nov 2026): on, Orbit acts as if the phone's were
+// on. Either one on turns it on. The app saves them (app/src/glass.tsx); the host apps never set them.
+const forced: Record<Setting, boolean> = { reduceMotionChanged: false, reduceTransparencyChanged: false, screenReaderChanged: false };
+const listeners = new Set<() => void>();
+export function forceAccessibility(event: Setting, on: boolean) {
+  forced[event] = on;
+  for (const fn of listeners) fn();
+}
+const subscribe = (fn: () => void) => {
+  listeners.add(fn);
+  return () => {
+    listeners.delete(fn);
+  };
+};
+export const useForcedAccessibility = (event: Setting) => useSyncExternalStore(subscribe, () => forced[event]);
+
+/** The setting as Orbit follows it: the phone's, or Orbit's own switch. */
+export function useAccessibility(event: Setting) {
+  const forcedOn = useForcedAccessibility(event);
+  return usePhoneAccessibility(event) || forcedOn;
+}
+
 // A system accessibility switch, kept current while the screen is open.
-export function useAccessibility(event: keyof typeof settings) {
+export function usePhoneAccessibility(event: Setting) {
   const [on, setOn] = useState(false);
   useEffect(() => {
     settings[event]().then(setOn);
