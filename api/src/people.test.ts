@@ -94,6 +94,9 @@ test("staff set the lineup and replace it; the public reads it in order, and the
   assert.deepEqual(set.body.people.map((p: any) => [p.name, p.role]), [["Vikram Sen", "Host"], ["Asha Rao", "Judge"]]);
   assert.equal((await as(st)("PUT", `/galaxy/events/${e.id}/people`, { shown: [cr(p2.id, "Host"), cr(p1.id, "Judge")], people: [{ personId: ZERO, role: "Judge" }] })).status, 400);
   assert.equal((await as(st)("PUT", `/galaxy/events/${e.id}/people`, { shown: [cr(p2.id, "Host"), cr(p1.id, "Judge")], people: [{ personId: p1.id, role: "A" }, { personId: p1.id, role: "B" }] })).status, 400);
+  // Case doesn't slip a person in twice (400, not a key clash), nor make the shown list look stale.
+  assert.equal((await as(st)("PUT", `/galaxy/events/${e.id}/people`, { shown: [cr(p2.id, "Host"), cr(p1.id, "Judge")], people: [{ personId: p1.id, role: "A" }, { personId: p1.id.toUpperCase(), role: "B" }] })).status, 400);
+  assert.equal((await as(st)("PUT", `/galaxy/events/${e.id}/people`, { shown: [cr(p2.id.toUpperCase(), "Host"), cr(p1.id, "Judge")], people: [{ personId: p2.id, role: "Host" }, { personId: p1.id, role: "Judge" }] })).status, 200);
   // A page that showed an older list (or two saves racing from one page) is refused, not overwritten.
   const old = await as(st)("PUT", `/galaxy/events/${e.id}/people`, { shown: [cr(p1.id, "Judge"), cr(p2.id, "Host")], people: [] });
   assert.equal(old.status, 409);
@@ -148,6 +151,7 @@ test("fest items: fests only, ordered, act shown while its host is public and li
   assert.equal((await as(st)("PATCH", `/galaxy/fest-items/${i1.id}`, { title: "Battle of Bands", actHostId: band.id })).status, 200);
 
   assert.equal((await as(st)("PUT", `/galaxy/events/${fest.id}/fest-items/order`, { ids: [i2.id] })).status, 409);
+  assert.equal((await as(st)("PUT", `/galaxy/events/${fest.id}/fest-items/order`, { ids: [i1.id, i1.id.toUpperCase()] })).status, 400);
   const ord = await as(st)("PUT", `/galaxy/events/${fest.id}/fest-items/order`, { ids: [i2.id, i1.id] });
   assert.equal(ord.status, 200);
   pub = (await t.call("GET", `/public/events/${fest.slug}`)).body;

@@ -29,13 +29,16 @@ export type NewPerson = z.input<typeof NewPerson>;
 export const EditPerson = PersonFields.partial().refine((b) => Object.keys(b).length > 0, "Change at least one thing");
 export type EditPerson = z.input<typeof EditPerson>;
 
+// An id in a list the API compares in JS: lowercased, as Postgres prints them, so "each once" and the checks hold.
+const ListId = z.uuid().transform((s) => s.toLowerCase());
+
 export const MAX_EVENT_PEOPLE = 50;
 // PUT /galaxy/events/:id/people: the whole list in the order the page shows it; each person once. `shown`: the people
 // and roles the page showed, in order, so a change made since (a role too) is refused (409 stale) rather than overwritten.
 export const SetEventPeople = z.object({
-  shown: z.array(z.object({ personId: z.uuid(), role: z.string().max(30) })).max(MAX_EVENT_PEOPLE),
+  shown: z.array(z.object({ personId: ListId, role: z.string().max(30) })).max(MAX_EVENT_PEOPLE),
   people: z
-    .array(z.object({ personId: z.uuid(), role: Text(1, 30) }))
+    .array(z.object({ personId: ListId, role: Text(1, 30) }))
     .max(MAX_EVENT_PEOPLE)
     .refine((a) => new Set(a.map((p) => p.personId)).size === a.length, "Each person once"),
 });
@@ -45,12 +48,10 @@ export const MAX_EVENT_ACTS = 10;
 // PUT /galaxy/events/:id/acts and PUT /events/:id/acts: the event's acts (other hosts, public and live), the whole list
 // in the order the page shows it; each once. Any public live host but the event's own; nobody asks the act (staff remove).
 // `shown`: the acts the page showed, in order, so a change made since is refused (409 stale) rather than overwritten.
-// Ids lowercased, as Postgres prints them, so the checks here and in the API compare like with like.
-const ActId = z.uuid().transform((s) => s.toLowerCase());
 export const SetEventActs = z.object({
-  shown: z.array(ActId).max(MAX_EVENT_ACTS),
+  shown: z.array(ListId).max(MAX_EVENT_ACTS),
   hostIds: z
-    .array(ActId)
+    .array(ListId)
     .max(MAX_EVENT_ACTS)
     .refine((a) => new Set(a).size === a.length, "Each act once"),
 });
@@ -84,7 +85,7 @@ export const MAX_FEST_ITEMS = 100;
 // PUT /galaxy/events/:id/fest-items/order: every item's id, each once, in the new order.
 export const OrderFestItems = z.object({
   ids: z
-    .array(z.uuid())
+    .array(ListId)
     .max(MAX_FEST_ITEMS)
     .refine((a) => new Set(a).size === a.length, "Each item once"),
 });
