@@ -86,8 +86,10 @@ export function opensOf(v: unknown): Opens {
   }
 }
 const pictureOf = (v: unknown): InboxItem['picture'] => {
-  const p = v as Record<string, unknown> | null;
-  return p && typeof p === 'object' ? (str(p.event) ? { event: p.event } : str(p.host) ? { host: p.host } : null) : null;
+  const e = (v as { event?: Record<string, unknown> } | null)?.event;
+  if (e && str(e.id) && str(e.title) && str(e.poster)) return { event: { id: e.id, title: e.title, poster: e.poster } };
+  const h = (v as { host?: Record<string, unknown> } | null)?.host;
+  return h && str(h.id) && str(h.name) ? { host: { id: h.id, name: h.name, logo: str(h.logo) ? h.logo : null } } : null;
 };
 
 // An API row as the inbox draws it. A kind this build doesn't know (a newer API) still shows, with its type's label or

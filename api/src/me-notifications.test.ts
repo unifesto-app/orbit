@@ -325,6 +325,33 @@ test("inbox: pages of 30 newest first with a cursor, the app's unread count, rea
   assert.equal((await as(a)("GET", "/me/inbox?app=launch")).body.unread, 1);
 });
 
+test("inbox: each row's picture is read from what it opens, and only while that is public", async () => {
+  goTo(12);
+  const a = await join();
+  const { hostId, eventId } = await hostAndEvent(a);
+  await t.db.update(hosts).set({ status: "live", visibility: "public", logo: "https://x.test/logo.jpg" }).where(eq(hosts.id, hostId));
+  await t.db.update(events).set({ poster: "https://x.test/poster.jpg" }).where(eq(events.id, eventId));
+  await t.db.delete(inboxItems).where(eq(inboxItems.userId, a.me.id));
+  const opens = [{ to: "ticket", event: eventId }, { to: "host", host: hostId }, { to: "slot", venue: hostId }, { to: "event", event: crypto.randomUUID() }, { to: "security" }, null];
+  await t.db.insert(inboxItems).values(opens.map((o, i) => ({
+    userId: a.me.id, app: "orbit" as const, kind: "orbitNews", type: "announcement", fromName: "Orbit", text: `p${i}`, opens: o, dedupeKey: `pic-${i}`,
+    createdAt: new Date(t.now() - i * MIN),
+  })));
+  const pictures = async () => (await as(a)("GET", "/me/inbox?app=orbit")).body.items.map((i: { picture: unknown }) => i.picture);
+  const host = { host: { id: hostId, name: (await t.db.select().from(hosts).where(eq(hosts.id, hostId)))[0]!.name, logo: "https://x.test/logo.jpg" } };
+  assert.deepEqual(await pictures(), [{ event: { id: eventId, title: "Open Mic", poster: "https://x.test/poster.jpg" } }, host, host, null, null, null]);
+  // No poster: the event's host.
+  await t.db.update(events).set({ poster: null }).where(eq(events.id, eventId));
+  assert.deepEqual((await pictures()).slice(0, 3), [host, host, host]);
+  // A private host: its event still opens, but neither shows the host.
+  await t.db.update(events).set({ poster: "https://x.test/poster.jpg" }).where(eq(events.id, eventId));
+  await t.db.update(hosts).set({ visibility: "private" }).where(eq(hosts.id, hostId));
+  assert.deepEqual((await pictures()).slice(0, 3), [{ event: { id: eventId, title: "Open Mic", poster: "https://x.test/poster.jpg" } }, null, null]);
+  // A host that isn't live: nothing at all.
+  await t.db.update(hosts).set({ visibility: "public", status: "paused" }).where(eq(hosts.id, hostId));
+  assert.deepEqual((await pictures()).slice(0, 3), [null, null, null]);
+});
+
 const png = () => sharp({ create: { width: 900, height: 1200, channels: 3, background: "#1D372A" } }).png().toBuffer();
 const upload = async (a: A, path: string) => {
   const form = new FormData();

@@ -15,8 +15,8 @@ import { Note, Page, Pill, SignInNote, styles as kit } from '../account/kit';
 import { type IconName, Icon } from '../icons';
 import { inboxDays, type InboxItem, timeLabel } from '../inbox';
 import { loadInbox, loadMore, markRead, type Message, useInbox, useUnread } from '../inboxStore';
-import { events, hosts } from '../mock';
 import { ORB } from '../orbitSays';
+import { markOf } from '../hosts';
 import { CircleButton, Monogram, Poster, Section } from '../rows';
 import { useSignedIn } from '../session';
 import { color, font, space, stoneAt } from '../theme';
@@ -123,13 +123,12 @@ function MessageRow({ m, whole, onPress }: { m: Message; whole: boolean; onPress
   );
 }
 
-// The event's 3:4 poster, the host's 1:1 logo, or Orbit's orb for a message from Orbit (or about an event that's gone).
-// An id this build doesn't know (the API sends none yet, notification-emails.ts opensFor) falls through to the orb.
+// The API's picture (me-notifications.ts): the event's 3:4 poster, the host's 1:1 mark, or Orbit's orb for a message
+// from Orbit (or about something no longer public).
+// ponytail: a host draws as its monogram, as on its own page, until real logos are drawn there too.
 function Picture({ of }: { of: Message['picture'] }) {
-  const e = of && 'event' in of ? events.find((x) => x.id === of.event) : undefined;
-  if (e) return <Poster media={e.poster} width={PICTURE} label={e.title} />;
-  const h = of && 'host' in of ? hosts.find((x) => x.id === of.host) : undefined;
-  if (h) return <Monogram mark={h} size={PICTURE} />;
+  if (of && 'event' in of) return <Poster media={{ source: { uri: of.event.poster }, ratio: '3:4' }} width={PICTURE} label={of.event.title} />;
+  if (of && 'host' in of) return <Monogram mark={markOf(of.host)} size={PICTURE} />;
   return <Image source={ORB} style={styles.orb} accessibilityIgnoresInvertColors />;
 }
 

@@ -2,6 +2,8 @@
 // with a bell in Home's header from https://claude.ai/artifact/4H6dp7ssrQbNXCJ4kSBj2b, 19 Nov 2026). Pure, so it runs on
 // Node in inbox.test.ts: where each message opens and its day and time. The screen is src/app/inbox.tsx; the items and
 // read state come from the API (src/notices.ts, src/inboxStore.ts), which keeps 180 days.
+import type { InboxPicture } from '@orbit/contract';
+
 import { indiaDay, indiaWhen } from './status.ts';
 
 // What a message is about, and so the screen it opens. A refund outcome opens the ticket while there is one; a fully
@@ -22,7 +24,7 @@ export type InboxItem = {
   kind: string; // what it is: "Announcement", "Tomorrow", "Near you", "Refund sent"
   type: 'announcement' | 'reminder' | 'follow' | 'near' | 'ticket' | 'refund' | 'inRoom' | 'thanks' | 'account'; // its icon
   text: string;
-  picture: { event: string } | { host: string } | null; // the event's 3:4 poster, the host's logo, or Orbit's orb
+  picture: InboxPicture; // the event's 3:4 poster, the host's logo, or Orbit's orb
   opens: Opens;
   read?: boolean; // opened already, on any phone
 };
