@@ -25,7 +25,7 @@ import type { Person } from '../../events';
 import { useLoad } from '../../load';
 import { events, now, people } from '../../mock';
 import { OrbitSays } from '../../orbitSays';
-import { actionOf, cardOf, chipOf, keyboardOf, REACH_CHIPS, type ReachRow, roomSays, roomsApi } from '../../rooms';
+import { actionOf, cardOf, keyboardOf, pickChip, REACH_CHIPS, rowChip, type ReachRow, roomSays, roomsApi } from '../../rooms';
 import { BackBar, Failed, Monogram, NotFound, SECTION, Section, Tag, TOP, Waiting } from '../../rows';
 import { api, askToConnect, needsAccount, real, setInRoom, useAsked, useInRoom, useLetIn, useSession, useViewer } from '../../session';
 import { color, font, space } from '../../theme';
@@ -273,8 +273,8 @@ function CardForm({
       <Field label="Your line" value={line} onChangeText={setLine} maxLength={ROOM_LINE_MAX} placeholder="What you do, or what you’re here for" />
       {rows.map((r, i) => (
         <View key={i} style={styles.reachRow}>
-          <Chips options={REACH_CHIPS} value={chipOf(r.label)} onChange={(c) => change(i, { label: c === 'Other' ? '' : c })} />
-          {chipOf(r.label) === 'Other' && <Field label="Label" value={r.label} onChangeText={(label) => change(i, { label })} maxLength={24} placeholder="Instagram" />}
+          <Chips options={REACH_CHIPS} value={rowChip(r)} onChange={(c) => setRows(rows.map((x, j) => (j === i ? pickChip(x, c) : x)))} />
+          {rowChip(r) === 'Other' && <Field label="Label" value={r.label} onChangeText={(label) => change(i, { label })} maxLength={24} placeholder="Instagram" />}
           <Field
             label={r.label || 'How to reach you'}
             value={r.value}

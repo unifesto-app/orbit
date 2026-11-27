@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { actionOf, cardOf, chipOf, keyboardOf, roomSays, roomsApi } from './rooms.ts';
+import { actionOf, cardOf, chipOf, keyboardOf, pickChip, roomSays, roomsApi, rowChip } from './rooms.ts';
 
 test('roomsApi: the room routes, all signed in', async () => {
   const got: string[] = [];
@@ -67,4 +67,13 @@ test('roomSays: a line for every state but in; a closed room says whether connec
   for (const s of ['out', 'door', 'removed', 'barred'] as const) assert.ok(roomSays(s));
   assert.equal(roomSays('in'), null);
   assert.notEqual(roomSays('closed', 0), roomSays('closed', 2));
+});
+
+test('pickChip: Other keeps a label typed under it; a label typed as "Phone" stays under Other', () => {
+  const insta = { label: 'Instagram', value: '@riya' };
+  assert.deepEqual(pickChip(insta, 'Other'), { ...insta, chip: 'Other' });
+  assert.deepEqual(pickChip({ label: 'Phone', value: '1' }, 'Other'), { label: '', value: '1', chip: 'Other' });
+  assert.equal(pickChip(insta, 'Email').label, 'Email');
+  assert.equal(rowChip({ label: 'Phone', value: '', chip: 'Other' }), 'Other');
+  assert.equal(rowChip({ label: 'Phone', value: '' }), 'Phone');
 });

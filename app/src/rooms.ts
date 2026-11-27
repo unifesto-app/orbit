@@ -24,8 +24,9 @@ export const roomsApi = (api: Api) => {
 const LABEL_MAX = 24;
 const VALUE_MAX = 120;
 
-/** One reach row on the join card, as typed. */
-export type ReachRow = { label: string; value: string };
+/** One reach row on the join card, as typed. `chip` is the one picked, once a chip is tapped: a label typed after Other
+ * stays under Other even if it reads "Phone". */
+export type ReachRow = { label: string; value: string; chip?: ReachChip };
 
 /** The join card as typed → the card to PUT, or what to fix: trimmed, empty rows dropped, the contract's limits. */
 export function cardOf(line: string, rows: readonly ReachRow[]): { card: RoomCard } | { error: string } {
@@ -45,6 +46,14 @@ export function cardOf(line: string, rows: readonly ReachRow[]): { card: RoomCar
 export const REACH_CHIPS = ['Phone', 'Email', 'Other'] as const;
 export type ReachChip = (typeof REACH_CHIPS)[number];
 export const chipOf = (label: string): ReachChip => (label === 'Phone' || label === 'Email' ? label : 'Other');
+/** A row's chip: the one tapped, else read from the label (a saved card). */
+export const rowChip = (r: ReachRow): ReachChip => r.chip ?? chipOf(r.label);
+/** Tapping a chip: Phone and Email set the label; Other keeps a label already typed under Other, else starts empty. */
+export const pickChip = (r: ReachRow, chip: ReachChip): ReachRow => ({
+  ...r,
+  chip,
+  label: chip !== 'Other' ? chip : rowChip(r) === 'Other' ? r.label : '',
+});
 /** The value's keyboard for a row's label. */
 export const keyboardOf = (label: string) => (label === 'Phone' ? 'phone-pad' : label === 'Email' ? 'email-address' : 'default');
 
