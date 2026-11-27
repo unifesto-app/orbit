@@ -4,7 +4,7 @@ import { Text } from "./text.ts";
 
 // Broadcasts (notifications build plan PR 9): a staff message to a segment, confirmed by a second Platform holder. News
 // (orbitNews) honours the person's "From Orbit" switch, quiet hours and caps; a service notice (orbitNotice) is Must, for
-// outages and changes to terms. With no other Platform holder, the author's own broadcast goes after a 24-hour wait.
+// outages and changes to terms. With no other Platform holder, the author confirms their own.
 
 export const BROADCAST_TYPES = ["news", "notice"] as const;
 export type BroadcastType = (typeof BROADCAST_TYPES)[number];
@@ -49,9 +49,10 @@ export type Broadcast = {
   failed: number;
   reason: string | null;
   createdAt: string;
-  // With no other Platform holder: when the author's own broadcast moves on by itself.
+  // History: before 27 Nov 2026 a sole holder's broadcast went by itself after 24 hours. New ones never set these.
   autoAt: string | null;
-  // It went after the 24-hour wait, with no one confirming.
   autoSent: boolean;
+  // The viewer may confirm it: waiting, and not theirs or no one else holds Platform.
+  canConfirm: boolean;
 };
 export type Broadcasts = { items: Broadcast[] };
