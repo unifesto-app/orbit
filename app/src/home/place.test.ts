@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { placeName } from './layout.ts';
+import { locationStatusOf, placeName } from './layout.ts';
 
 const none = { district: null, city: null, subregion: null, region: null };
 
@@ -44,4 +44,11 @@ test('a city-state has no second line', () => {
 
 test('nothing usable gives null', () => {
   assert.equal(placeName(none), null);
+});
+
+test('location permission: on, ask while the prompt can still come up, else blocked', () => {
+  assert.equal(locationStatusOf({ granted: true, status: 'granted', canAskAgain: true }), 'on');
+  assert.equal(locationStatusOf({ granted: false, status: 'undetermined', canAskAgain: true }), 'ask');
+  assert.equal(locationStatusOf({ granted: false, status: 'denied', canAskAgain: true }), 'ask'); // Android, after one no
+  assert.equal(locationStatusOf({ granted: false, status: 'denied', canAskAgain: false }), 'blocked');
 });

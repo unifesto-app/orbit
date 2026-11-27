@@ -260,18 +260,21 @@ export function Pill({
   size = 'normal',
   muted = false,
   disabled = false,
+  accessibilityLabel,
 }: {
   label: string;
   onPress?: () => void;
   size?: 'small' | 'normal' | 'wide';
   muted?: boolean; // a grey label, for a state rather than an action ("Following")
   disabled?: boolean;
+  accessibilityLabel?: string; // when the label alone doesn't say what it acts on (a row's "Turn on")
 }) {
   return (
     <Pressable
       onPress={onPress}
       disabled={disabled || !onPress}
       accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
       accessibilityState={{ disabled }}
       hitSlop={size === 'small' ? 6 : 0}
       style={[size === 'wide' && styles.wideWrap, disabled && styles.disabled]}>
