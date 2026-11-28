@@ -26,5 +26,8 @@
       "EXPO_PUBLIC_SENTRY_DSN": "https://ddc790ead5d44d9b1251502a1890210a@o4512480664485888.ingest.us.sentry.io/4512480676610048",
       "EXPO_PUBLIC_RAZORPAY_KEY_ID": "rzp_live_SIugDnRzCGce2s" }
     }
+  },
+  "submit": {
+    "production": {}
   }
 }
