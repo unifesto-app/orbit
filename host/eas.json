@@ -7,12 +7,12 @@
     "event-partner": {
       "corepack": true,
       "autoIncrement": true,
-      "env": { "APP_VARIANT": "launch" }
+      "env": { "APP_VARIANT": "launch", "EXPO_PUBLIC_API_URL": "https://api.heyorbit.in" }
     },
     "play-partner": {
       "corepack": true,
       "autoIncrement": true,
-      "env": { "APP_VARIANT": "station" }
+      "env": { "APP_VARIANT": "station", "EXPO_PUBLIC_API_URL": "https://api.heyorbit.in" }
     }
   },
   "submit": {
