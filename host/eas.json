@@ -1,0 +1,22 @@
+{
+  "cli": {
+    "version": ">= 18.8.1",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "event-partner": {
+      "corepack": true,
+      "autoIncrement": true,
+      "env": { "APP_VARIANT": "launch" }
+    },
+    "play-partner": {
+      "corepack": true,
+      "autoIncrement": true,
+      "env": { "APP_VARIANT": "station" }
+    }
+  },
+  "submit": {
+    "event-partner": {},
+    "play-partner": {}
+  }
+}
