@@ -78,6 +78,8 @@ function fakeServices() {
       assert.equal(new Headers(init?.headers).get("authorization"), "Bearer google-access");
       const v = JSON.parse(Buffer.from(JSON.parse(String(init?.body)).integrity_token, "base64url").toString()) as Verdict;
       const pkg = v.pkg ?? "in.heyorbit.app";
+      // Google opens a token only under the package that asked for it.
+      if (!url.includes(`/v1/${pkg}:decodeIntegrityToken`)) return new Response("wrong package", { status: 400 });
       return Response.json({
         tokenPayloadExternal: {
           requestDetails: { requestPackageName: pkg, requestHash: v.hash, timestampMillis: String(Date.now()) },
@@ -101,7 +103,7 @@ async function setup(enforce = true, extra: Partial<ProofConfig> = {}) {
   const cfg: ProofConfig = {
     enforce,
     apple: { appIds: [APP], roots: [apple.root] },
-    play: { packageName: "in.heyorbit.app", email: "integrity@orbit.iam.gserviceaccount.com", key: serviceKey, certs: ["test-build-key"] },
+    play: { packageNames: ["in.heyorbit.app", "in.heyorbit.launch", "in.heyorbit.station"], email: "integrity@orbit.iam.gserviceaccount.com", key: serviceKey, certs: ["test-build-key"] },
     turnstile: { secret: "turnstile-secret" },
     fetch: services.f,
     ...extra,
@@ -243,9 +245,9 @@ test("a key kept before the host apps came (its public key alone) is the Orbit a
 });
 
 test("APP_BUNDLE_ID: unset is the Orbit app then the host apps; a list keeps its order; Play takes the first", () => {
-  assert.deepEqual(appsFrom(undefined, "TEAM123456"), { appIds: DEFAULT_BUNDLES.map((b) => `TEAM123456.${b}`), playPackage: "in.heyorbit.app" });
-  assert.deepEqual(appsFrom(" , ", "TEAM123456").playPackage, "in.heyorbit.app");
-  assert.deepEqual(appsFrom("in.heyorbit.app", "TEAM123456"), { appIds: ["TEAM123456.in.heyorbit.app"], playPackage: "in.heyorbit.app" });
+  assert.deepEqual(appsFrom(undefined, "TEAM123456"), { appIds: DEFAULT_BUNDLES.map((b) => `TEAM123456.${b}`), playPackages: DEFAULT_BUNDLES });
+  assert.deepEqual(appsFrom(" , ", "TEAM123456").playPackages[0], "in.heyorbit.app");
+  assert.deepEqual(appsFrom("in.heyorbit.app", "TEAM123456"), { appIds: ["TEAM123456.in.heyorbit.app"], playPackages: ["in.heyorbit.app"] });
   assert.deepEqual(appsFrom("in.heyorbit.app, in.heyorbit.launch,", "TEAM123456").appIds, ["TEAM123456.in.heyorbit.app", "TEAM123456.in.heyorbit.launch"]);
   assert.throws(() => appsFrom("in.heyorbit.app in.heyorbit.launch", "TEAM123456"), /bundle ids/);
   assert.throws(() => appsFrom("orbit", "TEAM123456"), /bundle ids/);
@@ -284,6 +286,22 @@ test("an Android verdict needs the request, Orbit's app and a real device", asyn
   assert.equal(await check({ pkg: "com.copycat" }), false);
   assert.equal(await check({}, "another-challenge:code:9000000001"), false);
   assert.equal(services.calls.filter((u) => u.includes("oauth2")).length, 1); // Google's token is kept for its hour
+});
+
+test("the partner apps prove themselves on Android by naming their package; one off the list can't", async () => {
+  const { p } = await setup();
+  const check = async (pkg: string, app: string | undefined) => {
+    const c = await p.challenge();
+    const token = androidToken({ hash: `${c}:${what}`, pkg });
+    return (await quiet(() => p.check({ kind: "android", challenge: c, token, app }, what))).result;
+  };
+  assert.equal(await check("in.heyorbit.launch", "in.heyorbit.launch"), true); // Event Partner
+  assert.equal(await check("in.heyorbit.station", "in.heyorbit.station"), true); // Play Partner
+  assert.equal(await check("in.heyorbit.app", undefined), true); // the Orbit app, as builds from before send it
+  assert.equal(await check("in.heyorbit.launch", undefined), false); // named none: opened as the Orbit app's, which it isn't
+  assert.equal(await check("in.heyorbit.station", "in.heyorbit.launch"), false); // names one app, token is another's
+  assert.equal(await check("in.heyorbit.crew", "in.heyorbit.crew"), false); // not on the list
+  assert.equal(await check("com.copycat", "com.copycat"), false);
 });
 
 test("Android without Play Integrity set up fails", async () => {

@@ -6,14 +6,15 @@
 // - iPhone: the first proof attests a new key with Apple; later ones are assertions with it. A key the phone lost (a
 //   reinstall keeps the Keychain but not App Attest's keys) fails its assertion here and is attested anew; one the API
 //   forgot is refused as unproven and attested anew, once.
-// - Android: the Google Cloud project linked to Play, Orbit's own; the host apps prove themselves on Android once Play
-//   has each of them (api/src/server.ts).
+// - Android: the Google Cloud project linked to Play, Orbit's own, linked to each partner app in Play Console too; the
+//   proof names this app's package, since Google opens a token only under the package that asked.
 import { proofOf, type Proof } from '@orbit/contract';
 import type { Result } from '@orbit/mobile/api';
 import { requireOptionalNativeModule } from 'expo';
 import { Platform } from 'react-native';
 
 import { api, kept } from './session';
+import { thisApp } from './variant';
 
 let integrity: typeof import('@expo/app-integrity') | null = null;
 if (requireOptionalNativeModule('ExpoAppIntegrity')) {
@@ -48,9 +49,10 @@ async function prove(what: string, fresh: boolean): Promise<Proof | undefined> {
         return m.requestIntegrityCheckAsync(signed);
       };
       const first = await token().catch(() => null); // a provider that has expired: make a new one and try once more
-      if (first) return { kind: 'android', challenge, token: first };
+      // Which app asked: Google opens the token only under that package (api/src/auth/proof.ts).
+      if (first) return { kind: 'android', challenge, token: first, app: thisApp.id };
       preparing = null;
-      return { kind: 'android', challenge, token: await token() };
+      return { kind: 'android', challenge, token: await token(), app: thisApp.id };
     }
     const held = fresh ? null : kept.get(KEY);
     if (held) {

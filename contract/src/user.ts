@@ -82,7 +82,8 @@ export const Proof = z.discriminatedUnion("kind", [
     attestation: z.string().max(20_000).optional(),
     assertion: z.string().max(2_000).optional(),
   }),
-  z.object({ kind: z.literal("android"), challenge: z.string().min(1).max(100), token: z.string().min(1).max(20_000) }),
+  // `app`: the Android package that asked (the partner apps send theirs); none means the Orbit app, as builds from before.
+  z.object({ kind: z.literal("android"), challenge: z.string().min(1).max(100), token: z.string().min(1).max(20_000), app: z.string().min(1).max(150).optional() }),
   z.object({ kind: z.literal("web"), token: z.string().min(1).max(4_000) }),
 ]);
 export type Proof = z.infer<typeof Proof>;
