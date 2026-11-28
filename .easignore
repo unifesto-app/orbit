@@ -1,0 +1,40 @@
+# What EAS Build uploads from this monorepo (the apps import contract/, tokens/ and mobile/, so the whole repo goes).
+# With this file EAS stops reading .gitignore, so its rules are repeated here. Keep under EAS's 2 GB archive limit.
+
+# from .gitignore
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+logs/
+.DS_Store
+.expo/
+.next/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# not part of an app build: Claude's worktrees (whole repo copies), docs and store artifacts, deploy and CI
+.claude/
+docs/
+deploy/
+.github/
+
+# native projects: EAS prebuilds them from app.json / app.config.ts
+app/ios/
+app/android/
+host/ios/
+host/android/
+
+# server-side workspaces: only their package.json, so pnpm's frozen-lockfile install still sees every importer
+api/*
+!api/package.json
+web/*
+!web/package.json
+galaxy/*
+!galaxy/package.json
+console/*
+!console/package.json
