@@ -112,7 +112,9 @@ export function deletionRoutes({ db, store, notify, secret, now = Date.now }: De
 // ponytail: the server runs this hourly until the job runner arrives to run it nightly at 03:30 IST.
 export async function runDeletions(db: Db, notify: Notify, now: number, revokeApple?: (token: string) => Promise<void>, media?: Media) {
   const at = new Date(now);
-  const due = await db.select({ id: users.id }).from(users).where(and(lte(users.deletionDueAt, at), isNull(users.deletedAt)));
+  // Never a review account (auth/review.ts): App Review tries Delete account on it, which asks as for anyone, but the
+  // next reviewer needs it, so the seed drops the request again.
+  const due = await db.select({ id: users.id }).from(users).where(and(lte(users.deletionDueAt, at), isNull(users.deletedAt), isNull(users.review)));
   let done = 0;
   for (const { id } of due) {
     try {
@@ -121,7 +123,7 @@ export async function runDeletions(db: Db, notify: Notify, now: number, revokeAp
         const [u] = await tx
           .select()
           .from(users)
-          .where(and(eq(users.id, id), lte(users.deletionDueAt, at), isNull(users.deletedAt)))
+          .where(and(eq(users.id, id), lte(users.deletionDueAt, at), isNull(users.deletedAt), isNull(users.review)))
           .for("update");
         if (!u) return null;
         const blockers = await blockersOf(tx, u, now);

@@ -3,6 +3,8 @@ import { createApp } from "./app.ts";
 import { runDeletions } from "./auth/deletion.ts";
 import { codeSender, emailSender, type Mail, sesClient, sesMail, sesRawClient, whatsappSender } from "./auth/senders.ts";
 import { readContact } from "@orbit/contract";
+import { reviewFrom } from "./auth/review.ts";
+import { resetReview, seedReview } from "./auth/review-seed.ts";
 import { appsFrom, type ProofConfig } from "./auth/proof.ts";
 import { memoryStore, redisStore } from "./auth/store.ts";
 import { sweepActivity } from "./analytics.ts";
@@ -69,6 +71,20 @@ const openTo = (() => {
 })();
 const dailyCap = Number(env.CODE_DAILY_CAP?.trim() || 500); // an empty line means the default
 if (!Number.isInteger(dailyCap) || dailyCap < 1) throw new Error("CODE_DAILY_CAP must be a whole number above 0");
+// App Store and Play reviewers' sign-in (auth/review.ts): off unless REVIEW_CODE and REVIEW_EMAILS are set. The review
+// accounts are made or put right here, at every start; neither value is ever logged.
+// Every start signs the review accounts out (resetReview). A seed that fails leaves review sign-in off rather than the API
+// down, and only Postgres's code and constraint name are logged, as its message quotes the email it was given.
+let review = reviewFrom(env.REVIEW_CODE, env.REVIEW_EMAILS);
+await resetReview(db).catch(() => console.error("[review] couldn't sign the review accounts out"));
+if (review)
+  await seedReview(db, review).catch((e) => {
+    // Postgres's code and constraint name only ("23505 users_phone_unique"): its message quotes the values.
+    const pg = (e as { cause?: { code?: string; constraint_name?: string } }).cause;
+    console.error(`[review] seeding the review accounts failed (${pg?.code ?? "no code"} ${pg?.constraint_name ?? ""}); review sign-in is off`);
+    review = null;
+  });
+console.log(`[review] ${review ? `on for ${review.accounts.map((a) => a.app).join(", ")}` : "off"}`);
 const codes = { openTo, dailyCap };
 const mode = (s: unknown) => (s === logCode ? "logs" : s ? "sends" : "off");
 console.log(
@@ -267,6 +283,6 @@ if (rz)
       .finally(() => (polling = false));
   }, 15 * 60_000).unref();
 
-serve({ fetch: createApp({ db, store, send, notify, secret, codes, ways: waysConfig, media, proof, mail, sesTopic, razorpay: rz, ask }).fetch, port }, (info) => {
+serve({ fetch: createApp({ db, store, send, notify, secret, codes, review, ways: waysConfig, media, proof, mail, sesTopic, razorpay: rz, ask }).fetch, port }, (info) => {
   console.log(`orbit-api listening on :${info.port}`);
 });

@@ -8,6 +8,7 @@ import { auditLog } from "./db/schema.ts";
 import { signedIn } from "./http.ts";
 import { requireFeature, type StaffEnv } from "./roles/access.ts";
 import { holds } from "./roles/rules.ts";
+import { realPerson, realPersonU } from "./auth/review.ts";
 
 // Galaxy's Analytics reading side (owner, 19 Nov 2026: "user analytics, mau, dau etc", "app analytics and more"). The
 // numbers come from the activity log (activity.ts), kept "90 days", then summed into activityDays by sweepActivity.
@@ -26,7 +27,7 @@ export async function activeCounts(db: Db, at: number) {
   const today = istDay(at);
   const [r] = await many<{ day: number; week: number; month: number }>(
     db,
-    sql`select (count(distinct a.user_id) filter (where a.day = ${today}::date))::int as day, (count(distinct a.user_id) filter (where a.day >= ${addDays(today, -6)}::date))::int as week, (count(distinct a.user_id) filter (where a.day >= ${addDays(today, -29)}::date))::int as month from activity a join users u on u.id = a.user_id where u.deleted_at is null and a.day >= ${addDays(today, -29)}::date`,
+    sql`select (count(distinct a.user_id) filter (where a.day = ${today}::date))::int as day, (count(distinct a.user_id) filter (where a.day >= ${addDays(today, -6)}::date))::int as week, (count(distinct a.user_id) filter (where a.day >= ${addDays(today, -29)}::date))::int as month from activity a join users u on u.id = a.user_id where u.deleted_at is null and ${realPersonU} and a.day >= ${addDays(today, -29)}::date`,
   );
   return r!;
 }
@@ -89,7 +90,7 @@ export function analyticsRoutes({ db, secret, now = Date.now }: Deps) {
 
     const perDay = await many<{ day: string; active: number; new: number }>(
       db,
-      sql`select to_char(a.day, 'YYYY-MM-DD') as day, count(distinct a.user_id)::int as active, (count(distinct a.user_id) filter (where (u.created_at at time zone 'Asia/Kolkata')::date = a.day))::int as new from activity a join users u on u.id = a.user_id where u.deleted_at is null and a.day >= ${from30}::date group by a.day`,
+      sql`select to_char(a.day, 'YYYY-MM-DD') as day, count(distinct a.user_id)::int as active, (count(distinct a.user_id) filter (where (u.created_at at time zone 'Asia/Kolkata')::date = a.day))::int as new from activity a join users u on u.id = a.user_id where u.deleted_at is null and ${realPersonU} and a.day >= ${from30}::date group by a.day`,
     );
     const dayRow = new Map(perDay.map((r) => [r.day, r]));
     const days = Array.from({ length: 30 }, (_, i) => {
@@ -100,13 +101,13 @@ export function analyticsRoutes({ db, secret, now = Date.now }: Deps) {
 
     const plat = await many<{ platform: Platform; count: number }>(
       db,
-      sql`select a.platform, count(distinct a.user_id)::int as count from activity a join users u on u.id = a.user_id where u.deleted_at is null and a.day >= ${from30}::date group by a.platform`,
+      sql`select a.platform, count(distinct a.user_id)::int as count from activity a join users u on u.id = a.user_id where u.deleted_at is null and ${realPersonU} and a.day >= ${from30}::date group by a.platform`,
     );
     const platforms: Tally = plat.map((r) => ({ name: PLATFORMS[r.platform], count: r.count })).sort(byCount);
 
     const vers = await many<{ platform: "ios" | "android"; version: string; count: number }>(
       db,
-      sql`select a.platform, a.version, count(distinct a.user_id)::int as count from activity a join users u on u.id = a.user_id where u.deleted_at is null and a.day >= ${from7}::date and a.platform in ('ios', 'android') and a.version is not null group by a.platform, a.version`,
+      sql`select a.platform, a.version, count(distinct a.user_id)::int as count from activity a join users u on u.id = a.user_id where u.deleted_at is null and ${realPersonU} and a.day >= ${from7}::date and a.platform in ('ios', 'android') and a.version is not null group by a.platform, a.version`,
     );
     const versions: Tally = vers.map((r) => ({ name: `${PLATFORMS[r.platform]} ${r.version}`, count: r.count })).sort(byCount);
 
@@ -117,11 +118,11 @@ export function analyticsRoutes({ db, secret, now = Date.now }: Deps) {
     const firstWeek = addDays(monday, -56);
     const signups = await many<{ id: string; day: string }>(
       db,
-      sql`select id, to_char(created_at at time zone 'Asia/Kolkata', 'YYYY-MM-DD') as day from users where deleted_at is null and (created_at at time zone 'Asia/Kolkata')::date >= ${firstWeek}::date and (created_at at time zone 'Asia/Kolkata')::date < ${monday}::date`,
+      sql`select id, to_char(created_at at time zone 'Asia/Kolkata', 'YYYY-MM-DD') as day from users where deleted_at is null and ${realPerson} and (created_at at time zone 'Asia/Kolkata')::date >= ${firstWeek}::date and (created_at at time zone 'Asia/Kolkata')::date < ${monday}::date`,
     );
     const seen = await many<{ user_id: string; day: string }>(
       db,
-      sql`select a.user_id, to_char(a.day, 'YYYY-MM-DD') as day from activity a join users u on u.id = a.user_id where u.deleted_at is null and a.day >= ${addDays(firstWeek, 7)}::date and (u.created_at at time zone 'Asia/Kolkata')::date >= ${firstWeek}::date and (u.created_at at time zone 'Asia/Kolkata')::date < ${monday}::date`,
+      sql`select a.user_id, to_char(a.day, 'YYYY-MM-DD') as day from activity a join users u on u.id = a.user_id where u.deleted_at is null and ${realPersonU} and a.day >= ${addDays(firstWeek, 7)}::date and (u.created_at at time zone 'Asia/Kolkata')::date >= ${firstWeek}::date and (u.created_at at time zone 'Asia/Kolkata')::date < ${monday}::date`,
     );
     const weekOf = (day: string) => Math.floor((dayMs(day) - dayMs(firstWeek)) / (7 * DAY)); // 0..7 for a sign-up, more for activity
     const cohort = new Map(signups.map((s) => [s.id, weekOf(s.day)]));
@@ -159,7 +160,7 @@ export function analyticsRoutes({ db, secret, now = Date.now }: Deps) {
 
     const [w] = await many<{ phone: number; email: number; google: number; apple: number; passkey: number }>(
       db,
-      sql`select (count(*) filter (where phone is not null))::int as phone, (count(*) filter (where email is not null))::int as email, (count(*) filter (where exists (select 1 from identities i where i.user_id = users.id and i.provider = 'google')))::int as google, (count(*) filter (where exists (select 1 from identities i where i.user_id = users.id and i.provider = 'apple')))::int as apple, (count(*) filter (where exists (select 1 from passkeys p where p.user_id = users.id)))::int as passkey from users where deleted_at is null`,
+      sql`select (count(*) filter (where phone is not null))::int as phone, (count(*) filter (where email is not null))::int as email, (count(*) filter (where exists (select 1 from identities i where i.user_id = users.id and i.provider = 'google')))::int as google, (count(*) filter (where exists (select 1 from identities i where i.user_id = users.id and i.provider = 'apple')))::int as apple, (count(*) filter (where exists (select 1 from passkeys p where p.user_id = users.id)))::int as passkey from users where deleted_at is null and ${realPerson}`,
     );
     const ways: Tally = [
       { name: "Phone", count: w!.phone },
@@ -172,7 +173,7 @@ export function analyticsRoutes({ db, secret, now = Date.now }: Deps) {
     // Age on today's IST date; no dob is "Not given". All six bands are kept so the order never changes.
     const [a] = await many<Record<"u18" | "a18" | "a25" | "a35" | "a45" | "none", number>>(
       db,
-      sql`select (count(*) filter (where age < 18))::int as u18, (count(*) filter (where age between 18 and 24))::int as a18, (count(*) filter (where age between 25 and 34))::int as a25, (count(*) filter (where age between 35 and 44))::int as a35, (count(*) filter (where age >= 45))::int as a45, (count(*) filter (where age is null))::int as none from (select extract(year from age(${today}::date, dob))::int as age from users where deleted_at is null) x`,
+      sql`select (count(*) filter (where age < 18))::int as u18, (count(*) filter (where age between 18 and 24))::int as a18, (count(*) filter (where age between 25 and 34))::int as a25, (count(*) filter (where age between 35 and 44))::int as a35, (count(*) filter (where age >= 45))::int as a45, (count(*) filter (where age is null))::int as none from (select extract(year from age(${today}::date, dob))::int as age from users where deleted_at is null and ${realPerson}) x`,
     );
     const ages: Tally = [
       { name: "Under 18", count: a!.u18 },
@@ -187,11 +188,11 @@ export function analyticsRoutes({ db, secret, now = Date.now }: Deps) {
     // one's own words reach this page.
     const g = await many<{ name: string; count: number }>(
       db,
-      sql`select case when gender is null then 'Not given' when gender in ('Woman', 'Man', 'Non-binary', 'Rather not say') then gender else 'Other' end as name, count(*)::int as count from users where deleted_at is null group by 1`,
+      sql`select case when gender is null then 'Not given' when gender in ('Woman', 'Man', 'Non-binary', 'Rather not say') then gender else 'Other' end as name, count(*)::int as count from users where deleted_at is null and ${realPerson} group by 1`,
     );
     const genders: Tally = g.sort(byCount);
 
-    const ct = await many<{ name: string; count: number }>(db, sql`select city as name, count(*)::int as count from users where deleted_at is null and city is not null group by city`);
+    const ct = await many<{ name: string; count: number }>(db, sql`select city as name, count(*)::int as count from users where deleted_at is null and ${realPerson} and city is not null group by city`);
     const sorted = ct.sort(byCount);
     const rest = sorted.slice(10).reduce((n, r) => n + r.count, 0);
     const cities: Tally = rest ? [...sorted.slice(0, 10), { name: "Others", count: rest }] : sorted;
@@ -200,13 +201,13 @@ export function analyticsRoutes({ db, secret, now = Date.now }: Deps) {
     // percentile_disc picks a real count (no 1.5 hosts).
     const [f] = await many<{ people: number; following: number; p50: number | null; p90: number | null }>(
       db,
-      sql`select (select count(*) from users where deleted_at is null)::int as people, count(*)::int as following, (percentile_disc(0.5) within group (order by n))::int as p50, (percentile_disc(0.9) within group (order by n))::int as p90 from (select count(*) as n from follows f join users u on u.id = f.user_id where u.deleted_at is null group by f.user_id) x`,
+      sql`select (select count(*) from users where deleted_at is null and ${realPerson})::int as people, count(*)::int as following, (percentile_disc(0.5) within group (order by n))::int as p50, (percentile_disc(0.9) within group (order by n))::int as p90 from (select count(*) as n from follows f join users u on u.id = f.user_id where u.deleted_at is null and ${realPersonU} group by f.user_id) x`,
     );
     const follows = f!;
 
     const [d] = await many<{ pending: number; month: number }>(
       db,
-      sql`select (count(*) filter (where deletion_due_at is not null and deleted_at is null))::int as pending, (count(*) filter (where deleted_at >= ${ts(at - 30 * DAY)}))::int as month from users`,
+      sql`select (count(*) filter (where deletion_due_at is not null and deleted_at is null))::int as pending, (count(*) filter (where deleted_at >= ${ts(at - 30 * DAY)}))::int as month from users where ${realPerson}`,
     );
 
     // Bookings: every one made in the last 30 days, whatever became of it. A booking's payment is found through its event
@@ -302,8 +303,9 @@ export function analyticsRoutes({ db, secret, now = Date.now }: Deps) {
 export async function sweepActivity(db: Db, now: number) {
   const keepFrom = addDays(istDay(now), -89); // today and the 89 days before it are kept: 90 days
   await db.transaction(async (tx) => {
-    // Any row left by a request that raced its account's deletion goes now, before it could be counted.
-    await tx.execute(sql`delete from activity a using users u where u.id = a.user_id and u.deleted_at is not null`);
+    // Any row left by a request that raced its account's deletion goes now, before it could be counted, and so does any
+    // of an App Store or Play reviewer's account (auth/review.ts).
+    await tx.execute(sql`delete from activity a using users u where u.id = a.user_id and (u.deleted_at is not null or u.review is not null)`);
     await tx.execute(
       sql`insert into activity_days (day, active, ios, android, web, app) select day, count(distinct user_id)::int, (count(distinct user_id) filter (where platform = 'ios'))::int, (count(distinct user_id) filter (where platform = 'android'))::int, (count(distinct user_id) filter (where platform = 'web'))::int, (count(distinct user_id) filter (where platform = 'app'))::int from activity where day < ${keepFrom}::date group by day on conflict do nothing`,
     );

@@ -7,6 +7,7 @@ import { auditLog } from "./db/schema.ts";
 import { signedIn } from "./http.ts";
 import { requireFeature, type StaffEnv } from "./roles/access.ts";
 import { holds } from "./roles/rules.ts";
+import { realPerson } from "./auth/review.ts";
 
 // Galaxy's Dashboard (owner, 19 Nov 2026: "remove all in dashboard page", "add Analytics, Traction and all"). One read
 // for any staff; each block only if they hold the feature that owns it, and only those blocks are worked out.
@@ -51,7 +52,7 @@ export function dashboardRoutes({ db, secret, now = Date.now }: Deps) {
     const body: DashboardStats = {};
     if (has("people")) {
       body.people = {
-        ...(await counts(sql`users`, sql`deleted_at is null`)),
+        ...(await counts(sql`users`, sql`deleted_at is null and ${realPerson}`)),
         // As Analytics counts: distinct people in the activity log, today, the last 7 IST days, the last 30.
         active: await activeCounts(db, at),
       };

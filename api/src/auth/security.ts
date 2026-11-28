@@ -1,3 +1,4 @@
+import { notForReview } from "./review.ts";
 import { and, asc, count, eq, isNull, ne, gt, desc } from "drizzle-orm";
 import { Hono, type Context } from "hono";
 import { AddPasskey, AddWay, AppleProof, ChangeContact, FreshCheck, GoogleProof, Provider, RenamePasskey, type Way } from "@orbit/contract";
@@ -169,7 +170,7 @@ export function securityRoutes({ db, store, notify, secret, now = Date.now, ways
   });
 
   // PUT /me/phone: a new number, proven by the code sent to it. The phone can be changed but never removed.
-  app.put("/me/phone", auth, async (c) => {
+  app.put("/me/phone", auth, notForReview, async (c) => {
     const b = await parse(c, ChangeContact);
     if (!b) return invalid(c);
     const to = contactOf(c, b.to);
@@ -193,7 +194,7 @@ export function securityRoutes({ db, store, notify, secret, now = Date.now, ways
   });
 
   // PUT /me/email: add or change the email, proven by the code sent to it.
-  app.put("/me/email", auth, async (c) => {
+  app.put("/me/email", auth, notForReview, async (c) => {
     const b = await parse(c, ChangeContact);
     if (!b) return invalid(c);
     const to = contactOf(c, b.to);
@@ -220,7 +221,7 @@ export function securityRoutes({ db, store, notify, secret, now = Date.now, ways
   });
 
   // DELETE /me/email. Never the last way in (an account whose number moved away may have only this).
-  app.delete("/me/email", auth, async (c) => {
+  app.delete("/me/email", auth, notForReview, async (c) => {
     const before = c.var.user;
     if (!before.email) return fail(c, 404, "notFound", "Your account has no email.");
     const s = await sessionOf(c.var.sid);
@@ -277,14 +278,14 @@ export function securityRoutes({ db, store, notify, secret, now = Date.now, ways
 
   // Passkeys. POST /me/passkeys/options, then POST /me/passkeys: Add a passkey, named after this device. Both steps
   // need the fresh check, so a stolen session can't slip a passkey in.
-  app.post("/me/passkeys/options", auth, async (c) => {
+  app.post("/me/passkeys/options", auth, notForReview, async (c) => {
     const u = c.var.user;
     if (!fresh(await sessionOf(c.var.sid), now())) return needFresh(c);
     const have = await db.select({ credentialId: passkeys.credentialId, transports: passkeys.transports }).from(passkeys).where(eq(passkeys.userId, u.id));
     if (have.length >= 20) return fail(c, 409, "tooMany", "You have 20 passkeys. Remove one before adding another.");
     return c.json(await w.passkeyCreation(u, have));
   });
-  app.post("/me/passkeys", auth, async (c) => {
+  app.post("/me/passkeys", auth, notForReview, async (c) => {
     const b = await parse(c, AddPasskey);
     if (!b) return invalid(c);
     const u = c.var.user;
@@ -348,18 +349,18 @@ export function securityRoutes({ db, store, notify, secret, now = Date.now, ways
         : fail(c, 409, `${p}Taken`, `That ${NAMES[p]} account signs in to another Orbit account.`);
     }
   };
-  app.post("/me/google", auth, async (c) => {
+  app.post("/me/google", auth, notForReview, async (c) => {
     const b = await parse(c, GoogleProof);
     if (!b) return invalid(c);
     return linkTo(c, c.var.user, () => w.google(b), "google");
   });
-  app.post("/me/apple", auth, async (c) => {
+  app.post("/me/apple", auth, notForReview, async (c) => {
     const b = await parse(c, AppleProof);
     if (!b) return invalid(c);
     return linkTo(c, c.var.user, () => w.apple(b), "apple");
   });
   // DELETE /me/google, DELETE /me/apple. Apple's token is revoked with it.
-  app.delete("/me/:provider{google|apple}", auth, async (c) => {
+  app.delete("/me/:provider{google|apple}", auth, notForReview, async (c) => {
     const p = c.req.param("provider") as Provider;
     const u = c.var.user;
     const refused = await changeCheck(c, u, p);
@@ -376,7 +377,7 @@ export function securityRoutes({ db, store, notify, secret, now = Date.now, ways
 
   // POST /me/ways: "Add Google to your account?", answered yes. The sign-in that offered it proved the Google or Apple
   // and made this device fresh; the offer works once.
-  app.post("/me/ways", auth, async (c) => {
+  app.post("/me/ways", auth, notForReview, async (c) => {
     const b = await parse(c, AddWay);
     const t = b && (await read<Identity & { sub: string; jti: string }>(secret, "addWay", b.token));
     if (!t || t.sub !== c.var.user.id) return fail(c, 400, "expired", "That took too long. Link it from Sign-in and security.");

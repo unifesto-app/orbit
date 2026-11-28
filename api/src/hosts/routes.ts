@@ -7,6 +7,7 @@ import { auditLog, follows, hosts, hostSlugs, payouts, teamRoles, users, venues 
 import { type Env, fail, invalid, isUuid, type Notify, listPage, parse, signedIn, taken } from "../http.ts";
 import { adminsOf, changeable, holdersOf, holdIfUnanswered, masked, onHost, requireFeature, type StaffEnv, teamOf, tell } from "../roles/access.ts";
 import { type Action, parentRule, statusRule } from "./rules.ts";
+import { isReview } from "../auth/review.ts";
 
 // Hosts without events: profile, owner status, follows and the public read, and Galaxy's host tools
 // (Orbit flows: Hosts, Galaxy, Discover and Roles).
@@ -80,6 +81,12 @@ export function hostsRoutes({ db, notify, secret, now = Date.now }: Deps) {
           .where(and(eq(teamRoles.hostId, host.id), eq(teamRoles.userId, c.var.user.id), eq(teamRoles.role, "admin"), isNotNull(teamRoles.startedAt), isNull(teamRoles.endedAt)));
         if (!seat) return "gone" as const;
         if (!changeable(cur!)) return "closed" as const;
+        // A review account's host, or one a reviewer runs, stays private (auth/review.ts): their test events never
+        // reach Orbit, whoever else is on its team.
+        if (b.visibility === "public") {
+          const [owner] = await tx.select({ review: users.review }).from(users).where(eq(users.id, cur!.ownerId));
+          if (isReview(owner!) || isReview(c.var.user)) return "review" as const;
+        }
         // A Venue with its counter set up, or a Desk seat that has started, stays a Venue: as anything else its bookings
         // couldn't be checked in or released (slots routes answer only Venue hosts). A waiting Desk invite doesn't count:
         // accept refuses on a host that's no longer a Venue.
@@ -110,6 +117,7 @@ export function hostsRoutes({ db, notify, secret, now = Date.now }: Deps) {
       if (done === "gone") return nothing(c);
       if (done === "closed") return fail(c, 409, "hostClosed", "This host can't be edited right now.");
       if (done === "taken") return fail(c, 409, "linkTaken", "That link is taken. Try another.");
+      if (done === "review") return fail(c, 409, "reviewPrivate", "A demo host stays private.");
       if (done === "venue") return fail(c, 409, "stillVenue", "This Venue takes bookings by the hour, so it stays a Venue.");
     } catch (e) {
       if (taken(e)) return fail(c, 409, "linkTaken", "That link is taken. Try another.");

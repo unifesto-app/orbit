@@ -3,6 +3,7 @@ import type { Contact } from "@orbit/contract";
 import { createApp } from "./app.ts";
 import type { Sender, SendPolicy } from "./auth/codes.ts";
 import type { ProofConfig } from "./auth/proof.ts";
+import type { ReviewConfig } from "./auth/review.ts";
 import { memoryStore } from "./auth/store.ts";
 import type { WaysConfig } from "./auth/ways.ts";
 import { connect, migrateDb } from "./db/index.ts";
@@ -23,7 +24,7 @@ import type { AskModel } from "./ask.ts";
 // test calls `deliver()`, which runs one worker pass with `mail` (default: kept in `mails`) and an optional fake `push`.
 // `razorpay`: paying on, with a fake fetch (payments.test.ts); without it the pay routes answer paymentsOff.
 // `ask`: a fake model for Ask Orbit (ask.test.ts); without it POST /ask answers askOff.
-export async function testApp(opts: { send?: Sender; codes?: SendPolicy; ways?: WaysConfig; media?: false; proof?: ProofConfig; mail?: Mail; razorpay?: Razorpay; ask?: AskModel } = {}) {
+export async function testApp(opts: { send?: Sender; codes?: SendPolicy; ways?: WaysConfig; media?: false; proof?: ProofConfig; mail?: Mail; razorpay?: Razorpay; ask?: AskModel; review?: ReviewConfig } = {}) {
   const url = process.env.TEST_DATABASE_URL ?? "postgres://localhost:5432/orbit_test";
   if (!/_test(\?|$)/.test(url)) throw new Error("Tests empty their database, so its name must end in _test");
   const { db, close } = connect(url);
@@ -51,6 +52,7 @@ export async function testApp(opts: { send?: Sender; codes?: SendPolicy; ways?: 
     send: opts.send ?? (async (to, code) => void sent.push({ to, code })),
     mail,
     codes: opts.codes,
+    review: opts.review,
     ways: opts.ways,
     proof: opts.proof,
     notify,

@@ -33,11 +33,14 @@ export type SendResult =
   | { ok: false; error: "notOpen" | "tooSoon" | "tooMany" | "paused" }
   | { ok: false; error: "notSent"; reason: "refused" | "throttled" | "notSetUp" };
 
+// `fixed`: App Store and Play reviewers' sign-in (auth/review.ts), passed by POST /auth/code only, for a review account's
+// email. That code is kept instead of a new one and goes nowhere; it's checked like any other, under the same limits.
 // `scope` keeps a code for one purpose: "" is sign-in's (keys unchanged), "waitlist:" the landing page's, so a waitlist
 // code never signs anyone in and never replaces a sign-in code on its way. The send and try limits stay shared.
-export async function sendCode(store: Store, send: Sender, secret: string, to: Contact, ip: string, policy: SendPolicy = OPEN, now = Date.now(), scope = ""): Promise<SendResult> {
+export async function sendCode(store: Store, send: Sender, secret: string, to: Contact, ip: string, policy: SendPolicy = OPEN, now = Date.now(), scope = "", fixed?: string): Promise<SendResult> {
   const id = idOf(to);
-  if (policy.openTo && !policy.openTo.has(id)) return { ok: false, error: "notOpen" };
+  // Open to a review account whatever the gate says, as the owner set it up.
+  if (policy.openTo && !policy.openTo.has(id) && !fixed) return { ok: false, error: "notOpen" };
   const today = `send:all:${to.kind}:${new Date(now + IST).toISOString().slice(0, 10)}`;
   // Before the limits, so a paused send uses up nobody's.
   if (to.kind === "phone" && Number(await store.get(today)) >= policy.dailyCap) return { ok: false, error: "paused" };
@@ -55,8 +58,9 @@ export async function sendCode(store: Store, send: Sender, secret: string, to: C
   if ((await store.incr(today, DAY)) === policy.dailyCap)
     console.error(`[codes] ${policy.dailyCap} ${to.kind} codes today: check for abuse${to.kind === "phone" ? "; WhatsApp codes stop until midnight" : ""}`);
 
-  const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
+  const code = fixed ?? String(randomInt(0, 1_000_000)).padStart(6, "0");
   const keep = () => store.set(`code:${scope}${id}`, mac(secret, scope + id, code), CODE_TTL);
+  if (fixed) return keep().then(() => ({ ok: true }));
   try {
     await send(to, code);
   } catch (e) {
