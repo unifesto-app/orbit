@@ -33,7 +33,7 @@ import { drop, linkOf, type Media, newKey, squareImage } from "../media.ts";
 import { clearLapsedSuspension, rolesOf } from "../roles/access.ts";
 import { checkCode, OPEN, RESEND_AFTER, sendCode, type Sender, type SendPolicy } from "./codes.ts";
 import { proofs, type ProofConfig } from "./proof.ts";
-import { isReview } from "./review.ts";
+import { isReview, type ReviewConfig } from "./review.ts";
 import type { Mail } from "./senders.ts";
 import type { Razorpay } from "../payments/razorpay.ts";
 import type { AskModel } from "../ask.ts";
@@ -51,7 +51,7 @@ import { defaultWays, type Identity, relay, ways, type WaysConfig } from "./ways
 // `mail`: other emails than codes (the waitlist's welcome); without it they're skipped.
 // `razorpay`: paying (payments/routes.ts); without it the pay routes answer 503 paymentsOff.
 // `ask`: Ask Orbit's model (ask.ts); without it POST /ask answers 503 askOff.
-export type Deps = { db: Db; store: Store; send: Sender; notify: Notify; secret: string; now?: () => number; codes?: SendPolicy; ways?: WaysConfig; media?: Media; proof?: ProofConfig; mail?: Mail; sesTopic?: string; razorpay?: Razorpay; ask?: AskModel };
+export type Deps = { db: Db; store: Store; send: Sender; notify: Notify; secret: string; now?: () => number; codes?: SendPolicy; ways?: WaysConfig; media?: Media; proof?: ProofConfig; mail?: Mail; sesTopic?: string; razorpay?: Razorpay; ask?: AskModel; review?: ReviewConfig | null };
 
 // ponytail: the terms version is a constant until Galaxy's Legal documents keeps them in the database. The migration
 // must leave every copied Unifesto acceptance below it, so each migrated person accepts Orbit's terms at About you.
@@ -65,7 +65,7 @@ const AUTH_BODY_MAX = 32 * 1024;
 const TOO_LONG = "That took too long. Start signing in again.";
 const PHONE_TAKEN = "That number signs in to another Orbit account. Use a different number.";
 
-export function authRoutes({ db, store, send, notify, secret, now = Date.now, codes = OPEN, ways: waysConfig = defaultWays, media, proof }: Deps) {
+export function authRoutes({ db, store, send, notify, secret, now = Date.now, codes = OPEN, ways: waysConfig = defaultWays, media, proof, review }: Deps) {
   const app = new Hono<Env>();
   // First, so it runs before every /auth route below.
   app.use("/auth/*", bodyLimit({ maxSize: AUTH_BODY_MAX, onError: (c) => fail(c, 413, "tooLarge", "That's too much at once.") }));
@@ -143,9 +143,8 @@ export function authRoutes({ db, store, send, notify, secret, now = Date.now, co
     const refused = await unproven(c, b.proof, proofOf.code);
     if (refused) return refused;
     // A review email takes the fixed code only while a review account holds it (auth/review.ts), never a real person's.
-    const held = to.kind === "email" && codes.review?.emails.has(to.email) ? (await db.select({ phone: users.phone }).from(users).where(eq(users.email, to.email)))[0] : undefined;
-    const policy = codes.review && !(held && isReview(held)) ? { ...codes, review: null } : codes;
-    const r = await sendCode(store, send, secret, to, clientIp(c), policy, now());
+    const held = to.kind === "email" && review?.emails.has(to.email) ? (await db.select({ review: users.review }).from(users).where(eq(users.email, to.email)))[0] : undefined;
+    const r = await sendCode(store, send, secret, to, clientIp(c), codes, now(), "", held && isReview(held) ? review!.code : undefined);
     if (r.ok) return c.json({ retryIn: RESEND_AFTER }); // also when the outcome is unsure: the code is kept, and they can ask again
     const byPhone = to.kind === "phone";
     switch (r.error) {

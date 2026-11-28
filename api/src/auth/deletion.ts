@@ -1,3 +1,4 @@
+import { notForReview } from "./review.ts";
 import { and, eq, gt, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import type { Db } from "../db/index.ts";
@@ -61,7 +62,7 @@ export function deletionRoutes({ db, store, notify, secret, now = Date.now }: De
   );
 
   // POST /me/deletion: a fresh code, then Delete. Every session ends, this one too.
-  app.post("/me/deletion", auth, async (c) => {
+  app.post("/me/deletion", auth, notForReview, async (c) => {
     const u = c.var.user;
     const [s] = await db.select().from(sessions).where(eq(sessions.id, c.var.sid));
     if (!fresh(s!, now())) return fail(c, 403, "needsFresh", "For your security, confirm it's you first.");

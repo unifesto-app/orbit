@@ -1,6 +1,7 @@
 import { readContact } from "@orbit/contract";
 import { sql } from "drizzle-orm";
-import type { Review } from "./codes.ts";
+import { createMiddleware } from "hono/factory";
+import { type Env, fail } from "../http.ts";
 
 // App Store and Play reviewers' sign-in (PM X20; owner, 27 Nov 2026: "Fixed code, review emails"). Reviewers can't get a
 // code, so a few review-only emails take one fixed code and nothing is sent (codes.ts). Set on the API box only:
@@ -9,7 +10,7 @@ import type { Review } from "./codes.ts";
 // Both unset: off, and sign-in is exactly as without this. Neither value is ever logged or sent in a response.
 export const REVIEW_APPS = ["orbit", "launch", "station"] as const;
 export type ReviewApp = (typeof REVIEW_APPS)[number];
-export type ReviewConfig = Review & { accounts: { app: ReviewApp; email: string }[] };
+export type ReviewConfig = { code: string; emails: ReadonlySet<string>; accounts: { app: ReviewApp; email: string }[] };
 
 export function reviewFrom(code?: string, emails?: string): ReviewConfig | null {
   code = code?.trim();
@@ -27,14 +28,19 @@ export function reviewFrom(code?: string, emails?: string): ReviewConfig | null 
   return { code, emails: new Set(accounts.map((a) => a.email)), accounts };
 }
 
-// A review account's phone: +91 0000 0000 0N. No real number starts with 0 after +91 and nothing typed can become one
-// (readPhone takes 6-9 only), so it belongs to nobody, never collides and never signs in by WhatsApp. It is also how the
-// rest of the API knows a review account from the database alone, whatever the env says later: Galaxy tags it, analytics
-// leaves it out, and its hosts stay private.
-// ponytail: the phone is the mark, so no migration; a column if review accounts ever need a real number.
-export const REVIEW_PHONE = "+9100000000";
-export const reviewPhone = (app: ReviewApp) => `${REVIEW_PHONE}0${REVIEW_APPS.indexOf(app) + 1}`;
-export const isReview = (u: { phone: string | null }) => !!u.phone?.startsWith(REVIEW_PHONE);
+// A review account is marked by users.review (which app's), set by the seed only (auth/review-seed.ts), so the mark holds
+// whatever the env says later: Galaxy tags it, analytics leave it out, its hosts stay private and its ways in stay put.
+// Its phone is +91 00000000 0N: no real number starts with 0 after +91 and nothing typed can become one (readPhone takes
+// 6-9 only), so it belongs to nobody and never signs in by WhatsApp; it is there so the account needs no phone step.
+export const reviewPhone = (app: ReviewApp) => `+91000000000${REVIEW_APPS.indexOf(app) + 1}`;
+export const isReview = (u: { review: string | null }) => u.review !== null;
 // For analytics' raw SQL: a real person, on `users` or the alias `u`.
-export const realPerson = sql.raw(`coalesce(phone, '') not like '${REVIEW_PHONE}%'`);
-export const realPersonU = sql.raw(`coalesce(u.phone, '') not like '${REVIEW_PHONE}%'`);
+export const realPerson = sql.raw("review is null");
+export const realPersonU = sql.raw("u.review is null");
+
+// After `signedIn`: a review account's ways in, account and staff access stay as the seed made them, so a reviewer can't
+// lock out the next one, keep a way in past the code, or take the account out of review (PM X20 review).
+export const notForReview = createMiddleware<Env>(async (c, next) => {
+  if (c.var.user.review) return fail(c, 403, "reviewAccount", "This is a demo account for app review, so this can't be changed.");
+  await next();
+});

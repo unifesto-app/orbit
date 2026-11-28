@@ -44,7 +44,7 @@ export const noContact = (c: Context) => fail(c, 409, "noContact", "They need a 
 export async function startHost(
   tx: Tx,
   b: { name: string; kind: string; city: string; about?: string | null },
-  u: { id: string; phone: string | null; email: string | null },
+  u: { id: string; phone: string | null; email: string | null; review: string | null },
   at: Date,
 ) {
   const contact = u.phone ?? u.email;
@@ -308,6 +308,8 @@ export function rolesRoutes({ db, store, notify, secret, now = Date.now }: Deps)
     if (!b) return invalid(c);
     const [target] = await db.select().from(users).where(and(eq(users.id, b.userId), isNull(users.deletedAt)));
     if (!target) return fail(c, 404, "notFound", "No account with that id.");
+    // An App Store or Play reviewer's account (auth/review.ts) opens with a code written in the review notes.
+    if (isReview(target)) return fail(c, 409, "reviewAccount", "That's a demo account for app review. It can't have staff access.");
     const ok = addRule(c.var.actor, { id: target.id, owner: target.platformOwner }, now());
     if (!ok.ok) return refuse(c, ok.error);
     try {

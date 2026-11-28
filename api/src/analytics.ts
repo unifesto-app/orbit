@@ -303,8 +303,9 @@ export function analyticsRoutes({ db, secret, now = Date.now }: Deps) {
 export async function sweepActivity(db: Db, now: number) {
   const keepFrom = addDays(istDay(now), -89); // today and the 89 days before it are kept: 90 days
   await db.transaction(async (tx) => {
-    // Any row left by a request that raced its account's deletion goes now, before it could be counted.
-    await tx.execute(sql`delete from activity a using users u where u.id = a.user_id and u.deleted_at is not null`);
+    // Any row left by a request that raced its account's deletion goes now, before it could be counted, and so does any
+    // of an App Store or Play reviewer's account (auth/review.ts).
+    await tx.execute(sql`delete from activity a using users u where u.id = a.user_id and (u.deleted_at is not null or u.review is not null)`);
     await tx.execute(
       sql`insert into activity_days (day, active, ios, android, web, app) select day, count(distinct user_id)::int, (count(distinct user_id) filter (where platform = 'ios'))::int, (count(distinct user_id) filter (where platform = 'android'))::int, (count(distinct user_id) filter (where platform = 'web'))::int, (count(distinct user_id) filter (where platform = 'app'))::int from activity where day < ${keepFrom}::date group by day on conflict do nothing`,
     );

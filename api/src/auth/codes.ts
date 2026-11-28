@@ -25,10 +25,7 @@ export const idOf = (c: Contact) => (c.kind === "phone" ? c.e164 : c.email);
 // (User flow, Account security). WhatsApp codes then stop until midnight, which caps the bill even if a script gets
 // past the proofs; email codes go on (owner, 17 Nov 2026).
 // ponytail: the alert is a log line, once a day per channel, until the Notifications flow sends messages.
-// `review`: App Store and Play reviewers' sign-in (auth/review.ts). A code asked for one of these emails is the fixed
-// code and goes nowhere; it is kept and checked like any other, under the same limits. No other contact ever gets it.
-export type SendPolicy = { openTo: ReadonlySet<string> | null; dailyCap: number; review?: Review | null };
-export type Review = { emails: ReadonlySet<string>; code: string };
+export type SendPolicy = { openTo: ReadonlySet<string> | null; dailyCap: number };
 export const OPEN: SendPolicy = { openTo: null, dailyCap: Infinity };
 
 export type SendResult =
@@ -36,13 +33,14 @@ export type SendResult =
   | { ok: false; error: "notOpen" | "tooSoon" | "tooMany" | "paused" }
   | { ok: false; error: "notSent"; reason: "refused" | "throttled" | "notSetUp" };
 
+// `fixed`: App Store and Play reviewers' sign-in (auth/review.ts), passed by POST /auth/code only, for a review account's
+// email. That code is kept instead of a new one and goes nowhere; it's checked like any other, under the same limits.
 // `scope` keeps a code for one purpose: "" is sign-in's (keys unchanged), "waitlist:" the landing page's, so a waitlist
 // code never signs anyone in and never replaces a sign-in code on its way. The send and try limits stay shared.
-export async function sendCode(store: Store, send: Sender, secret: string, to: Contact, ip: string, policy: SendPolicy = OPEN, now = Date.now(), scope = ""): Promise<SendResult> {
+export async function sendCode(store: Store, send: Sender, secret: string, to: Contact, ip: string, policy: SendPolicy = OPEN, now = Date.now(), scope = "", fixed?: string): Promise<SendResult> {
   const id = idOf(to);
-  // Sign-in only: a waitlist code is never the fixed one. Open to them whatever the gate says, as the owner set them.
-  const review = scope === "" && to.kind === "email" && policy.review?.emails.has(id) ? policy.review : null;
-  if (policy.openTo && !policy.openTo.has(id) && !review) return { ok: false, error: "notOpen" };
+  // Open to a review account whatever the gate says, as the owner set it up.
+  if (policy.openTo && !policy.openTo.has(id) && !fixed) return { ok: false, error: "notOpen" };
   const today = `send:all:${to.kind}:${new Date(now + IST).toISOString().slice(0, 10)}`;
   // Before the limits, so a paused send uses up nobody's.
   if (to.kind === "phone" && Number(await store.get(today)) >= policy.dailyCap) return { ok: false, error: "paused" };
@@ -60,9 +58,9 @@ export async function sendCode(store: Store, send: Sender, secret: string, to: C
   if ((await store.incr(today, DAY)) === policy.dailyCap)
     console.error(`[codes] ${policy.dailyCap} ${to.kind} codes today: check for abuse${to.kind === "phone" ? "; WhatsApp codes stop until midnight" : ""}`);
 
-  const code = review?.code ?? String(randomInt(0, 1_000_000)).padStart(6, "0");
+  const code = fixed ?? String(randomInt(0, 1_000_000)).padStart(6, "0");
   const keep = () => store.set(`code:${scope}${id}`, mac(secret, scope + id, code), CODE_TTL);
-  if (review) return keep().then(() => ({ ok: true }));
+  if (fixed) return keep().then(() => ({ ok: true }));
   try {
     await send(to, code);
   } catch (e) {

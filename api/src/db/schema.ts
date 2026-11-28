@@ -39,6 +39,9 @@ export const users = pgTable("users", {
   // Barred from every inRoom by staff (rooms.ts): can't join or be seen in any room until staff unbar them.
   inRoomBarredAt: at("in_room_barred_at"),
   inRoomBarredBy: uuid("in_room_barred_by").references((): AnyPgColumn => users.id),
+  // An App Store or Play reviewer's account (auth/review.ts): which app's, one each. Only the seed sets it. Kept through a
+  // deletion's scrub, so the row stays out of analytics.
+  review: text("review", { enum: ["orbit", "launch", "station"] }).unique(),
   createdAt: at("created_at").notNull().defaultNow(),
   updatedAt: at("updated_at").notNull().defaultNow(),
 }, (t) => [uniqueIndex("users_one_platform_owner").on(t.platformOwner).where(sql`${t.platformOwner}`)]);

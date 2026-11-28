@@ -73,10 +73,16 @@ const dailyCap = Number(env.CODE_DAILY_CAP?.trim() || 500); // an empty line mea
 if (!Number.isInteger(dailyCap) || dailyCap < 1) throw new Error("CODE_DAILY_CAP must be a whole number above 0");
 // App Store and Play reviewers' sign-in (auth/review.ts): off unless REVIEW_CODE and REVIEW_EMAILS are set. The review
 // accounts are made or put right here, at every start; neither value is ever logged.
-const review = reviewFrom(env.REVIEW_CODE, env.REVIEW_EMAILS);
-if (review) await seedReview(db, review);
+// A seed that fails leaves review sign-in off rather than the API down; its error isn't logged, as a database error quotes
+// the email it was given.
+let review = reviewFrom(env.REVIEW_CODE, env.REVIEW_EMAILS);
+if (review)
+  await seedReview(db, review).catch(() => {
+    console.error("[review] seeding the review accounts failed; review sign-in is off");
+    review = null;
+  });
 console.log(`[review] ${review ? `on for ${review.accounts.map((a) => a.app).join(", ")}` : "off"}`);
-const codes = { openTo, dailyCap, review };
+const codes = { openTo, dailyCap };
 const mode = (s: unknown) => (s === logCode ? "logs" : s ? "sends" : "off");
 console.log(
   `[codes] WhatsApp ${mode(phone)}, email ${mode(email)}, open to ${openTo ? `${openTo.size} contacts` : "everyone"}, ` +
@@ -274,6 +280,6 @@ if (rz)
       .finally(() => (polling = false));
   }, 15 * 60_000).unref();
 
-serve({ fetch: createApp({ db, store, send, notify, secret, codes, ways: waysConfig, media, proof, mail, sesTopic, razorpay: rz, ask }).fetch, port }, (info) => {
+serve({ fetch: createApp({ db, store, send, notify, secret, codes, review, ways: waysConfig, media, proof, mail, sesTopic, razorpay: rz, ask }).fetch, port }, (info) => {
   console.log(`orbit-api listening on :${info.port}`);
 });

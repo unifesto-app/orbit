@@ -2,10 +2,11 @@ import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { eq } from "drizzle-orm";
 import { testApp } from "../testkit.ts";
-import { activity, hosts, stations, users, venues } from "../db/schema.ts";
-import { activeCounts } from "../analytics.ts";
+import { activity, activityDays, hosts, stations, teamRoles, users, venues } from "../db/schema.ts";
+import { activeCounts, sweepActivity } from "../analytics.ts";
 import { reviewFrom } from "./review.ts";
 import { seedReview } from "./review-seed.ts";
+import { startSession } from "./sessions.ts";
 
 // App Store and Play reviewers' sign-in (auth/review.ts, PM X20).
 
@@ -27,7 +28,7 @@ after(() => {
 let t: Awaited<ReturnType<typeof testApp>>;
 // Closed to everyone (OPEN_TO set, nobody on it): the review emails still get in.
 before(async () => {
-  t = await testApp({ codes: { openTo: new Set(), dailyCap: Infinity, review } });
+  t = await testApp({ codes: { openTo: new Set(), dailyCap: Infinity }, review });
   await seedReview(t.db, review, t.now());
 });
 after(() => t?.close());
@@ -125,6 +126,59 @@ test("the fixed code is used up once, like any code", async () => {
   assert.equal((await verify(ORBIT, CODE)).body.error, "codeExpired");
 });
 
+test("a review account's ways in and the account itself can't be changed", async () => {
+  const o = await signIn(ORBIT);
+  const as = (m: string, path: string, body?: unknown) => t.call(m, path, body, o.access);
+  for (const [m, path, body] of [
+    ["PUT", "/me/phone", { phone: "9876543210", code: "123456" }],
+    ["PUT", "/me/email", { email: "mine@example.com", code: "123456" }],
+    ["DELETE", "/me/email"],
+    ["POST", "/me/passkeys/options"],
+    ["POST", "/me/google", {}],
+    ["POST", "/me/apple", {}],
+    ["POST", "/me/ways", { token: "x" }],
+    ["POST", "/me/deletion", {}],
+  ] as [string, string, unknown?][]) {
+    const r = await as(m, path, body);
+    assert.equal(r.body?.error, "reviewAccount", `${m} ${path}: ${JSON.stringify(r.body)}`);
+  }
+  const [u] = await t.db.select().from(users).where(eq(users.email, ORBIT));
+  assert.equal(u!.deletionDueAt, null);
+});
+
+test("a real Admin on a reviewer's host can't make it public either", async () => {
+  const l = await signIn(LAUNCH);
+  const id = l.me.teams[0].hostId;
+  const at = new Date(t.now());
+  const [real] = await t.db.insert(users).values({ name: "Real", phone: "+919811111111", phoneVerifiedAt: at, dob: "1990-01-01" }).returning();
+  await t.db.insert(teamRoles).values({ hostId: id, role: "admin", contact: real!.phone!, userId: real!.id, addedBy: l.me.id, addedAt: at, acceptedAt: at, startedAt: at });
+  // Signed in as them (this app's gate is closed to real numbers).
+  const s = await startSession(t.db, t.secret, real!.id, { ...device, id: "d1" } as any, t.now(), "phone", null);
+  const r = await t.call("PATCH", `/hosts/${id}`, { visibility: "public" }, s.access);
+  assert.equal(r.body.error, "reviewPrivate");
+});
+
+test("two seeds at once make each account once", async () => {
+  await Promise.all([seedReview(t.db, review, t.now()), seedReview(t.db, review, t.now())]);
+  assert.equal((await t.db.select().from(users)).filter((u) => u.review).length, 3);
+});
+
+test("reordering the emails moves each account to its new email", async () => {
+  const swapped = reviewFrom(CODE, `${LAUNCH},${ORBIT}`)!;
+  await seedReview(t.db, swapped, t.now());
+  const byApp = Object.fromEntries((await t.db.select().from(users)).filter((u) => u.review).map((u) => [u.review, u.email]));
+  assert.deepEqual(byApp, { orbit: LAUNCH, launch: ORBIT, station: STATION });
+  await seedReview(t.db, review, t.now());
+});
+
+test("an archived demo host is replaced at the next seed", async () => {
+  const l = await signIn(LAUNCH);
+  await t.db.update(hosts).set({ status: "archived" }).where(eq(hosts.id, l.me.teams[0].hostId));
+  await seedReview(t.db, review, t.now());
+  const live = (await t.db.select().from(hosts)).filter((h) => h.kind === "other" && h.status === "live");
+  assert.equal(live.length, 1);
+});
+
 test("a real email never takes the fixed code, and its own code still goes", async () => {
   const t2 = await testAppReview(); // open, so a real email gets codes
   try {
@@ -156,6 +210,20 @@ test("a review email on a real person's account is left out: a real code, never 
   }
 });
 
+test("a row that already holds a review phone is never adopted", async () => {
+  const t2 = await testAppReview();
+  try {
+    const at = new Date(t2.now());
+    await t2.db.insert(users).values({ name: "Legacy Person", phone: "+910000000001", phoneVerifiedAt: at, email: "legacy@example.com" });
+    await assert.rejects(seedReview(t2.db, review, t2.now())); // the server logs it and starts with review off
+    const [u] = await t2.db.select().from(users).where(eq(users.phone, "+910000000001"));
+    assert.equal(u!.email, "legacy@example.com");
+    assert.equal(u!.review, null);
+  } finally {
+    await t2.close();
+  }
+});
+
 test("Galaxy tags a review account, and analytics leave them out", async () => {
   const t2 = await testAppReview();
   try {
@@ -171,7 +239,7 @@ test("Galaxy tags a review account, and analytics leave them out", async () => {
     const [d0, a0] = [await dash(), await stats()];
 
     await seedReview(t2.db, review, t2.now());
-    const ids = (await t2.db.select().from(users)).filter((u) => u.phone?.startsWith("+9100000000")).map((u) => u.id);
+    const ids = (await t2.db.select().from(users)).filter((u) => u.review).map((u) => u.id);
     assert.equal(ids.length, 3);
     for (const id of ids) await t2.db.insert(activity).values({ userId: id, day: new Date(t2.now() + 330 * 60_000).toISOString().slice(0, 10), platform: "ios" });
 
@@ -181,6 +249,16 @@ test("Galaxy tags a review account, and analytics leave them out", async () => {
     assert.deepEqual(a1.follows, a0.follows);
     assert.deepEqual(a1.ages, a0.ages);
     assert.deepEqual(await activeCounts(t2.db, t2.now()), a0.active);
+
+    // Past the 90 days the log keeps, none of theirs reaches the summed history.
+    await t2.db.insert(activity).values({ userId: ids[0]!, day: "2020-01-01", platform: "ios" });
+    await sweepActivity(t2.db, t2.now());
+    assert.equal((await t2.db.select().from(activityDays)).length, 0);
+    assert.deepEqual((await t2.db.select().from(activity)).filter((a) => ids.includes(a.userId)), []);
+
+    // Staff access is never theirs.
+    const g = await t2.call("POST", "/galaxy/staff/grants", { userId: ids[0], features: ["people"], reason: "test" }, s.body.access);
+    assert.equal(g.body.error, "reviewAccount");
 
     const page = await as(`/galaxy/people/${ids[0]}`);
     assert.equal(page.body.review, true);
@@ -204,7 +282,7 @@ test("unset, review emails are ordinary emails: a real code is sent", async () =
 });
 
 test("the app's proof is still needed for a review email", async () => {
-  const t2 = await testApp({ codes: { openTo: null, dailyCap: Infinity, review }, proof: { enforce: true, apple: { appIds: ["9AH3Z5C5DH.in.heyorbit.app"] } } });
+  const t2 = await testApp({ review, proof: { enforce: true, apple: { appIds: ["9AH3Z5C5DH.in.heyorbit.app"] } } });
   try {
     await seedReview(t2.db, review, t2.now());
     const r = await t2.call("POST", "/auth/code", { to: ORBIT });
@@ -218,4 +296,4 @@ test("the app's proof is still needed for a review email", async () => {
 });
 
 // Its own database, open to everyone, with the review emails set. Each empties the database, so these run after `t`'s.
-const testAppReview = () => testApp({ codes: { openTo: null, dailyCap: Infinity, review } });
+const testAppReview = () => testApp({ review });
