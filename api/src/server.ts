@@ -165,8 +165,9 @@ const revokeApple = ways(waysConfig, store).revokeApple;
 //   anyone can sign with.
 // - APP_BUNDLE_ID: the apps' iOS bundle ids, comma-separated, the Orbit app's first, which is also the Android package
 //   Play Integrity checks (each app's Android package is its bundle id; a proof that names none is the Orbit app's).
-//   Unless set: the Orbit app, then the host apps Orbit Launch, Station and Crew (22 Nov 2026). Each package needs the
-//   service account's Cloud project linked to it in Play Console (App integrity).
+//   Unless set: the Orbit app, then the host apps Orbit Launch, Station and Crew (22 Nov 2026). Linking the service
+//   account's Cloud project to each in Play Console (App integrity) is Google's advice, not a gate: an app is trusted
+//   only for a package name Orbit holds on Play, so list only those.
 // - Web: Turnstile, with TURNSTILE_SECRET.
 const playKey = (() => {
   if (!env.PLAY_INTEGRITY_KEY) return null;
