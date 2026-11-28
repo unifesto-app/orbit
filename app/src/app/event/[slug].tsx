@@ -23,7 +23,7 @@ import { Fact, FactCard } from '../../fact';
 import { DARK_TINT } from '../../glass';
 import { Carousel } from '../../home/Carousel';
 import { KindSections, WithActs } from '../../kindSections';
-import { meetups } from '../../kinds';
+import { hasRoom } from '../../rooms';
 import type { Event, Host, Person } from '../../events';
 import { markOf } from '../../hosts';
 import { interestedBase, people, vibes } from '../../mock';
@@ -326,7 +326,7 @@ function Interested({ event: e, live }: { event: Event; live: boolean }) {
 function Thanks({ event: e, host }: { event: Event; host: Host }) {
   const loved = useLoved(e.id);
   const title = `Thanks for coming to ${e.title}`;
-  if (meetups[e.id]?.inRoom) {
+  if (hasRoom(e)) {
     return (
       <OrbitSays
         top={SECTION}
