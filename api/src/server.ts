@@ -164,8 +164,10 @@ const revokeApple = ways(waysConfig, store).revokeApple;
 //   without a Play install, for test builds: only keys Orbit alone holds (EAS's), never a debug keystore's, which
 //   anyone can sign with.
 // - APP_BUNDLE_ID: the apps' iOS bundle ids, comma-separated, the Orbit app's first, which is also the Android package
-//   Play Integrity checks. Unless set: the Orbit app, then the host apps Orbit Launch, Station and Crew (22 Nov 2026).
-//   ponytail: Play checks the first package only; the host apps prove themselves on Android when Play has each.
+//   Play Integrity checks (each app's Android package is its bundle id; a proof that names none is the Orbit app's).
+//   Unless set: the Orbit app, then the host apps Orbit Launch, Station and Crew (22 Nov 2026). Linking the service
+//   account's Cloud project to each in Play Console (App integrity) is Google's advice, not a gate: an app is trusted
+//   only for a package name Orbit holds on Play, so list only those.
 // - Web: Turnstile, with TURNSTILE_SECRET.
 const playKey = (() => {
   if (!env.PLAY_INTEGRITY_KEY) return null;
@@ -179,12 +181,12 @@ const apps = appsFrom(env.APP_BUNDLE_ID, env.APPLE_TEAM_ID?.trim() || "9AH3Z5C5D
 const proof: ProofConfig = {
   enforce: env.PROOF?.trim() === "enforce",
   apple: { appIds: apps.appIds },
-  play: playKey ? { packageName: apps.playPackage, ...playKey, certs: list(env.PLAY_CERTS) } : undefined,
+  play: playKey ? { packageNames: apps.playPackages, ...playKey, certs: list(env.PLAY_CERTS) } : undefined,
   turnstile: env.TURNSTILE_SECRET ? { secret: env.TURNSTILE_SECRET } : undefined,
 };
 console.log(
   `[proof] ${proof.enforce ? "enforced" : "logged only"}: App Attest for ${proof.apple.appIds.join(", ")}, ` +
-    `Play Integrity ${proof.play ? `for ${proof.play.packageName}` : "not set up"}, ` +
+    `Play Integrity ${proof.play ? `for ${proof.play.packageNames.join(", ")}` : "not set up"}, ` +
     `Turnstile ${proof.turnstile ? "on (the waitlist's code sends enforce it)" : "not set up"}`,
 );
 

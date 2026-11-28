@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { adultOn, ageOn, Dob, maskName, readContact, readPhone } from "./user.ts";
+import { adultOn, ageOn, Dob, maskName, readContact, readPhone, SendCode } from "./user.ts";
 
 test("readPhone takes Indian mobiles in every usual shape and refuses others", () => {
   for (const t of ["9876543210", "+91 98765 43210", "919876543210", "09876543210", "(98765) 43-210"]) assert.equal(readPhone(t), "+919876543210", t);
@@ -41,4 +41,11 @@ test("Dob takes only real past days", () => {
 
 test("maskName keeps only initials", () => {
   assert.equal(maskName(" riya  kapoor "), "R••• K•••");
+});
+
+test("a code send keeps the Android proof's package, and drops a proof whose package is bad", () => {
+  const proof = { kind: "android", challenge: "c", token: "t", app: "in.heyorbit.launch" };
+  assert.deepEqual(SendCode.parse({ to: "a@b.in", proof }).proof, proof);
+  assert.deepEqual(SendCode.parse({ to: "a@b.in", proof: { kind: "android", challenge: "c", token: "t" } }).proof, { kind: "android", challenge: "c", token: "t" });
+  assert.equal(SendCode.parse({ to: "a@b.in", proof: { ...proof, app: "" } }).proof, undefined);
 });

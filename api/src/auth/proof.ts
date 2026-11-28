@@ -21,9 +21,10 @@ export type ProofConfig = {
   // "<team id>.<bundle id>" of every app that may prove itself: the Orbit app first, then the host apps (Orbit Launch,
   // Station and Crew, 22 Nov 2026). roots: Apple's own unless a test swaps it.
   apple: { appIds: string[]; roots?: string[] };
-  // A Google Cloud service account in the project linked to Play. `certs`: signing-certificate digests, as verdicts
+  // A Google Cloud service account in the project linked to Play. `packageNames`: the Android apps that may prove
+  // themselves, the Orbit app first (a proof that names none is its). `certs`: signing-certificate digests, as verdicts
   // show them, that pass without a Play install (Orbit's own test builds).
-  play?: { packageName: string; email: string; key: string; certs?: string[] };
+  play?: { packageNames: string[]; email: string; key: string; certs?: string[] };
   turnstile?: { secret: string };
   fetch?: typeof fetch; // tests answer for Google and Cloudflare
 };
@@ -65,16 +66,16 @@ export function readKey(held: string, appIds: readonly string[]): { app: string 
 }
 
 // The apps from APP_BUNDLE_ID (comma-separated bundle ids, the Orbit app first) under the Apple team: App Attest's app ids
-// and Play's package, the first. Unset or empty: the Orbit app, then the host apps. A list that isn't bundle ids stops
+// and Play's packages (each app's Android package is its bundle id). Unset or empty: the Orbit app, then the host apps. A list that isn't bundle ids stops
 // the API at startup, rather than refusing every phone later.
 export const DEFAULT_BUNDLES = ["in.heyorbit.app", "in.heyorbit.launch", "in.heyorbit.station", "in.heyorbit.crew"];
-export function appsFrom(bundleIds: string | undefined, team: string): { appIds: string[]; playPackage: string } {
+export function appsFrom(bundleIds: string | undefined, team: string): { appIds: string[]; playPackages: string[] } {
   const listed = (bundleIds ?? "").split(",").map((s) => s.trim()).filter(Boolean);
   const bundles = listed.length ? listed : DEFAULT_BUNDLES;
   const bad = bundles.find((b) => !/^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/.test(b));
   if (bad !== undefined) throw new Error(`APP_BUNDLE_ID must be bundle ids, comma-separated (got "${bad}")`);
   if (!/^[A-Z0-9]{10}$/.test(team)) throw new Error(`APPLE_TEAM_ID must be a 10-character team id (got "${team}")`);
-  return { appIds: bundles.map((b) => `${team}.${b}`), playPackage: bundles[0]! };
+  return { appIds: bundles.map((b) => `${team}.${b}`), playPackages: bundles };
 }
 
 export function proofs(cfg: ProofConfig, store: Store) {
@@ -141,23 +142,26 @@ export function proofs(cfg: ProofConfig, store: Store) {
     appIntegrity?: { appRecognitionVerdict?: string; packageName?: string; certificateSha256Digest?: string[] };
     deviceIntegrity?: { deviceRecognitionVerdict?: string[] };
   };
-  async function android(token: string, signed: string): Promise<string | null> {
+  async function android(token: string, signed: string, asked: string | undefined): Promise<string | null> {
     const play = cfg.play;
     if (!play) return "notSetUp";
-    const res = await f(`https://playintegrity.googleapis.com/v1/${play.packageName}:decodeIntegrityToken`, {
+    // Google opens a token only for the package that asked, so the proof names it; the verdict must then say the same.
+    const pkg = asked ?? play.packageNames[0];
+    if (!pkg || !play.packageNames.includes(pkg)) return "app";
+    const res = await f(`https://playintegrity.googleapis.com/v1/${pkg}:decodeIntegrityToken`, {
       method: "POST",
       headers: { authorization: `Bearer ${await googleToken(play)}`, "content-type": "application/json" },
       body: JSON.stringify({ integrity_token: token }),
       signal: timeout(),
     });
-    if (!res.ok) return `Google answered ${res.status}`;
+    if (!res.ok) return `${pkg}: Google answered ${res.status}`;
     const v = ((await res.json()) as { tokenPayloadExternal?: Verdict }).tokenPayloadExternal;
-    if (v?.requestDetails?.requestPackageName !== play.packageName || v.requestDetails.requestHash !== signed) return "request";
+    if (v?.requestDetails?.requestPackageName !== pkg || v.requestDetails.requestHash !== signed) return `${pkg}: request`;
     const app = v.appIntegrity;
     const ours = app?.appRecognitionVerdict === "PLAY_RECOGNIZED" || !!app?.certificateSha256Digest?.some((d) => play.certs?.includes(d));
     // The digest is logged so a test build's can be added to PLAY_CERTS.
-    if (app?.packageName !== play.packageName || !ours) return `app ${app?.appRecognitionVerdict} ${app?.certificateSha256Digest?.join(",")}`;
-    if (!v.deviceIntegrity?.deviceRecognitionVerdict?.includes("MEETS_DEVICE_INTEGRITY")) return "device";
+    if (app?.packageName !== pkg || !ours) return `${pkg}: app ${app?.appRecognitionVerdict} ${app?.certificateSha256Digest?.join(",")}`;
+    if (!v.deviceIntegrity?.deviceRecognitionVerdict?.includes("MEETS_DEVICE_INTEGRITY")) return `${pkg}: device`;
     return null;
   }
 
@@ -180,7 +184,7 @@ export function proofs(cfg: ProofConfig, store: Store) {
     if (p.kind === "web") return web(p.token);
     if (!(await store.del(`proof:challenge:${p.challenge}`))) return "challenge";
     const signed = `${p.challenge}:${what}`;
-    return p.kind === "ios" ? ios(p, signed) : android(p.token, signed);
+    return p.kind === "ios" ? ios(p, signed) : android(p.token, signed, p.app);
   }
 
   return {
