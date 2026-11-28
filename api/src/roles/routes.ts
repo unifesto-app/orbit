@@ -7,6 +7,7 @@ import { auditLog, hosts, hostSlugs, sessions, staffGrants, teamRoles, users } f
 import { contactOf, type Env, fail, invalid, isUuid, type Notify, listPage, parse, signedIn, taken } from "../http.ts";
 import { activeFeatures, adminsOf, changeable, holdersOf, masked, holdIfUnanswered, liftHostsOf, person, type StaffEnv, requireFeature, teamOf as teamOf_, tell } from "./access.ts";
 import { slugFor } from "../slugs.ts";
+import { isReview } from "../auth/review.ts";
 import { tellWaiting } from "../broadcasts.ts";
 import { acceptRule, addRule, confirmRule, confirmSeatRule, endRule, endSeatRule, expired, holds, INVITE_DAYS, suspendRule, waiting } from "./rules.ts";
 
@@ -39,6 +40,7 @@ export class NoContact extends Error {}
 export const noContact = (c: Context) => fail(c, 409, "noContact", "They need a phone or email on their account first.");
 
 // A new host, live and unverified, with `u` as its owner and started Admin. POST /hosts and an approved Event Request.
+// A review account's host is private (auth/review.ts), so what an App Store or Play reviewer makes never shows in Orbit.
 export async function startHost(
   tx: Tx,
   b: { name: string; kind: string; city: string; about?: string | null },
@@ -47,7 +49,7 @@ export async function startHost(
 ) {
   const contact = u.phone ?? u.email;
   if (!contact) throw new NoContact();
-  const [h] = await tx.insert(hosts).values({ ...b, slug: slugFor(b.name), ownerId: u.id, createdBy: u.id, createdAt: at, updatedAt: at }).returning();
+  const [h] = await tx.insert(hosts).values({ ...b, ...(isReview(u) && { visibility: "private" as const }), slug: slugFor(b.name), ownerId: u.id, createdBy: u.id, createdAt: at, updatedAt: at }).returning();
   await tx.insert(hostSlugs).values({ slug: h!.slug, hostId: h!.id, createdAt: at });
   await tx.insert(teamRoles).values({ hostId: h!.id, role: "admin", contact, userId: u.id, addedBy: u.id, addedAt: at, acceptedAt: at, startedAt: at });
   return h!;
@@ -460,6 +462,7 @@ export function rolesRoutes({ db, store, notify, secret, now = Date.now }: Deps)
       suspensionReason: u.suspensionReason,
       deletionDue: u.deletionDueAt?.toISOString() ?? null,
       roomBarredAt: u.inRoomBarredAt?.toISOString() ?? null, // barred from every inRoom (rooms.ts)
+      review: isReview(u), // an App Store or Play reviewer's account (auth/review.ts), not a real person
       owner: seesStaff ? u.platformOwner : null,
       staff,
       hosts: onHosts.map(({ ownerId, ...h }) => ({ ...h, owner: ownerId === u.id })),

@@ -23,6 +23,7 @@ type PersonFile = Person & {
   suspensionReason: string | null;
   deletionDue: string | null;
   roomBarredAt: string | null;
+  review: boolean; // an App Store or Play reviewer's account (api/src/auth/review.ts)
   owner: boolean | null; // null, with staff, for viewers without Staff
   staff: StaffFeature[] | null;
   hosts: { id: string; slug: string; name: string; status: string; owner: boolean }[];
@@ -78,6 +79,7 @@ async function User({ params }: Pick<PageProps<"/users/[id]">, "params">) {
                 <Badge tone="success">Active</Badge>
               ),
             ],
+            ...(p.review ? [["Account", <Badge key="rv" tone="info">Review account: for App Store and Play reviewers, not a real person</Badge>] as [string, ReactNode]] : []),
             ["Phone", p.phone && <>{phone(p.phone)} {verified(p.phoneVerified)}</>],
             ["Email", p.email && <>{p.email} {verified(p.emailVerified)}</>],
             ["Date of birth", p.dob && day(p.dob)],

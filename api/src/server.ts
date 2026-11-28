@@ -3,6 +3,8 @@ import { createApp } from "./app.ts";
 import { runDeletions } from "./auth/deletion.ts";
 import { codeSender, emailSender, type Mail, sesClient, sesMail, sesRawClient, whatsappSender } from "./auth/senders.ts";
 import { readContact } from "@orbit/contract";
+import { reviewFrom } from "./auth/review.ts";
+import { seedReview } from "./auth/review-seed.ts";
 import { appsFrom, type ProofConfig } from "./auth/proof.ts";
 import { memoryStore, redisStore } from "./auth/store.ts";
 import { sweepActivity } from "./analytics.ts";
@@ -69,7 +71,12 @@ const openTo = (() => {
 })();
 const dailyCap = Number(env.CODE_DAILY_CAP?.trim() || 500); // an empty line means the default
 if (!Number.isInteger(dailyCap) || dailyCap < 1) throw new Error("CODE_DAILY_CAP must be a whole number above 0");
-const codes = { openTo, dailyCap };
+// App Store and Play reviewers' sign-in (auth/review.ts): off unless REVIEW_CODE and REVIEW_EMAILS are set. The review
+// accounts are made or put right here, at every start; neither value is ever logged.
+const review = reviewFrom(env.REVIEW_CODE, env.REVIEW_EMAILS);
+if (review) await seedReview(db, review);
+console.log(`[review] ${review ? `on for ${review.accounts.map((a) => a.app).join(", ")}` : "off"}`);
+const codes = { openTo, dailyCap, review };
 const mode = (s: unknown) => (s === logCode ? "logs" : s ? "sends" : "off");
 console.log(
   `[codes] WhatsApp ${mode(phone)}, email ${mode(email)}, open to ${openTo ? `${openTo.size} contacts` : "everyone"}, ` +

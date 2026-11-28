@@ -25,7 +25,10 @@ export const idOf = (c: Contact) => (c.kind === "phone" ? c.e164 : c.email);
 // (User flow, Account security). WhatsApp codes then stop until midnight, which caps the bill even if a script gets
 // past the proofs; email codes go on (owner, 17 Nov 2026).
 // ponytail: the alert is a log line, once a day per channel, until the Notifications flow sends messages.
-export type SendPolicy = { openTo: ReadonlySet<string> | null; dailyCap: number };
+// `review`: App Store and Play reviewers' sign-in (auth/review.ts). A code asked for one of these emails is the fixed
+// code and goes nowhere; it is kept and checked like any other, under the same limits. No other contact ever gets it.
+export type SendPolicy = { openTo: ReadonlySet<string> | null; dailyCap: number; review?: Review | null };
+export type Review = { emails: ReadonlySet<string>; code: string };
 export const OPEN: SendPolicy = { openTo: null, dailyCap: Infinity };
 
 export type SendResult =
@@ -37,7 +40,9 @@ export type SendResult =
 // code never signs anyone in and never replaces a sign-in code on its way. The send and try limits stay shared.
 export async function sendCode(store: Store, send: Sender, secret: string, to: Contact, ip: string, policy: SendPolicy = OPEN, now = Date.now(), scope = ""): Promise<SendResult> {
   const id = idOf(to);
-  if (policy.openTo && !policy.openTo.has(id)) return { ok: false, error: "notOpen" };
+  // Sign-in only: a waitlist code is never the fixed one. Open to them whatever the gate says, as the owner set them.
+  const review = scope === "" && to.kind === "email" && policy.review?.emails.has(id) ? policy.review : null;
+  if (policy.openTo && !policy.openTo.has(id) && !review) return { ok: false, error: "notOpen" };
   const today = `send:all:${to.kind}:${new Date(now + IST).toISOString().slice(0, 10)}`;
   // Before the limits, so a paused send uses up nobody's.
   if (to.kind === "phone" && Number(await store.get(today)) >= policy.dailyCap) return { ok: false, error: "paused" };
@@ -55,8 +60,9 @@ export async function sendCode(store: Store, send: Sender, secret: string, to: C
   if ((await store.incr(today, DAY)) === policy.dailyCap)
     console.error(`[codes] ${policy.dailyCap} ${to.kind} codes today: check for abuse${to.kind === "phone" ? "; WhatsApp codes stop until midnight" : ""}`);
 
-  const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
+  const code = review?.code ?? String(randomInt(0, 1_000_000)).padStart(6, "0");
   const keep = () => store.set(`code:${scope}${id}`, mac(secret, scope + id, code), CODE_TTL);
+  if (review) return keep().then(() => ({ ok: true }));
   try {
     await send(to, code);
   } catch (e) {

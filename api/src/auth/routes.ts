@@ -33,6 +33,7 @@ import { drop, linkOf, type Media, newKey, squareImage } from "../media.ts";
 import { clearLapsedSuspension, rolesOf } from "../roles/access.ts";
 import { checkCode, OPEN, RESEND_AFTER, sendCode, type Sender, type SendPolicy } from "./codes.ts";
 import { proofs, type ProofConfig } from "./proof.ts";
+import { isReview } from "./review.ts";
 import type { Mail } from "./senders.ts";
 import type { Razorpay } from "../payments/razorpay.ts";
 import type { AskModel } from "../ask.ts";
@@ -54,7 +55,7 @@ export type Deps = { db: Db; store: Store; send: Sender; notify: Notify; secret:
 
 // ponytail: the terms version is a constant until Galaxy's Legal documents keeps them in the database. The migration
 // must leave every copied Unifesto acceptance below it, so each migrated person accepts Orbit's terms at About you.
-const TERMS_VERSION = 1;
+export const TERMS_VERSION = 1;
 
 // Every /auth route but sign-out is open to anyone, so their bodies are capped before they're read. Room for the
 // largest proof SendCode and Google's start allow (a 20,000-character attestation and a 2,000-character assertion);
@@ -141,7 +142,10 @@ export function authRoutes({ db, store, send, notify, secret, now = Date.now, co
     // Before the limits, so a script can't use up someone's sends without the app.
     const refused = await unproven(c, b.proof, proofOf.code);
     if (refused) return refused;
-    const r = await sendCode(store, send, secret, to, clientIp(c), codes, now());
+    // A review email takes the fixed code only while a review account holds it (auth/review.ts), never a real person's.
+    const held = to.kind === "email" && codes.review?.emails.has(to.email) ? (await db.select({ phone: users.phone }).from(users).where(eq(users.email, to.email)))[0] : undefined;
+    const policy = codes.review && !(held && isReview(held)) ? { ...codes, review: null } : codes;
+    const r = await sendCode(store, send, secret, to, clientIp(c), policy, now());
     if (r.ok) return c.json({ retryIn: RESEND_AFTER }); // also when the outcome is unsure: the code is kept, and they can ask again
     const byPhone = to.kind === "phone";
     switch (r.error) {

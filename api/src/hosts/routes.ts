@@ -7,6 +7,7 @@ import { auditLog, follows, hosts, hostSlugs, payouts, teamRoles, users, venues 
 import { type Env, fail, invalid, isUuid, type Notify, listPage, parse, signedIn, taken } from "../http.ts";
 import { adminsOf, changeable, holdersOf, holdIfUnanswered, masked, onHost, requireFeature, type StaffEnv, teamOf, tell } from "../roles/access.ts";
 import { type Action, parentRule, statusRule } from "./rules.ts";
+import { isReview } from "../auth/review.ts";
 
 // Hosts without events: profile, owner status, follows and the public read, and Galaxy's host tools
 // (Orbit flows: Hosts, Galaxy, Discover and Roles).
@@ -69,6 +70,8 @@ export function hostsRoutes({ db, notify, secret, now = Date.now }: Deps) {
     if (t?.mine.role !== "admin") return nothing(c);
     const { host } = t;
     if (!changeable(host)) return fail(c, 409, "hostClosed", "This host can't be edited right now.");
+    // A review account's host stays private (auth/review.ts): a reviewer's test events never reach Orbit.
+    if (b.visibility === "public" && isReview(c.var.user)) return fail(c, 409, "reviewPrivate", "A demo host stays private.");
     try {
       // The host and the person's seat are read again under a lock: a suspension or removal that landed since the
       // first read stands.
