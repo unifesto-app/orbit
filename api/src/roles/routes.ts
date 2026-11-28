@@ -175,6 +175,8 @@ export function rolesRoutes({ db, store, notify, secret, now = Date.now }: Deps)
     const id = c.req.param("id");
     const [seat] = isUuid(id) ? await db.select().from(teamRoles).where(eq(teamRoles.id, id)) : [];
     if (!seat) return refuse(c, "notFound");
+    // A review account (auth/review.ts) opens with a code written in the review notes: never onto a real host's team.
+    if (isReview(c.var.user)) return fail(c, 409, "reviewAccount", "This is a demo account for app review, so it can't join a team.");
     const ok = acceptRule(seat, contactsOf(c.var.user).includes(seat.contact), now());
     if (!ok.ok) return refuse(c, ok.error);
     try {

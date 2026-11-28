@@ -4,7 +4,7 @@ import { runDeletions } from "./auth/deletion.ts";
 import { codeSender, emailSender, type Mail, sesClient, sesMail, sesRawClient, whatsappSender } from "./auth/senders.ts";
 import { readContact } from "@orbit/contract";
 import { reviewFrom } from "./auth/review.ts";
-import { seedReview } from "./auth/review-seed.ts";
+import { resetReview, seedReview } from "./auth/review-seed.ts";
 import { appsFrom, type ProofConfig } from "./auth/proof.ts";
 import { memoryStore, redisStore } from "./auth/store.ts";
 import { sweepActivity } from "./analytics.ts";
@@ -76,9 +76,12 @@ if (!Number.isInteger(dailyCap) || dailyCap < 1) throw new Error("CODE_DAILY_CAP
 // A seed that fails leaves review sign-in off rather than the API down; its error isn't logged, as a database error quotes
 // the email it was given.
 let review = reviewFrom(env.REVIEW_CODE, env.REVIEW_EMAILS);
+await resetReview(db);
 if (review)
-  await seedReview(db, review).catch(() => {
-    console.error("[review] seeding the review accounts failed; review sign-in is off");
+  await seedReview(db, review).catch((e) => {
+    // Postgres's code and constraint name only ("23505 users_phone_unique"): its message quotes the values.
+    const pg = (e as { cause?: { code?: string; constraint_name?: string } }).cause;
+    console.error(`[review] seeding the review accounts failed (${pg?.code ?? "no code"} ${pg?.constraint_name ?? ""}); review sign-in is off`);
     review = null;
   });
 console.log(`[review] ${review ? `on for ${review.accounts.map((a) => a.app).join(", ")}` : "off"}`);

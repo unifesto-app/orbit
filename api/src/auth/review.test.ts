@@ -5,7 +5,8 @@ import { testApp } from "../testkit.ts";
 import { activity, activityDays, hosts, stations, teamRoles, users, venues } from "../db/schema.ts";
 import { activeCounts, sweepActivity } from "../analytics.ts";
 import { reviewFrom } from "./review.ts";
-import { seedReview } from "./review-seed.ts";
+import { resetReview, seedReview } from "./review-seed.ts";
+import { runDeletions } from "./deletion.ts";
 import { startSession } from "./sessions.ts";
 
 // App Store and Play reviewers' sign-in (auth/review.ts, PM X20).
@@ -137,13 +138,41 @@ test("a review account's ways in and the account itself can't be changed", async
     ["POST", "/me/google", {}],
     ["POST", "/me/apple", {}],
     ["POST", "/me/ways", { token: "x" }],
-    ["POST", "/me/deletion", {}],
+    ["POST", "/me/passkeys", {}],
+    ["DELETE", "/me/google"],
   ] as [string, string, unknown?][]) {
     const r = await as(m, path, body);
     assert.equal(r.body?.error, "reviewAccount", `${m} ${path}: ${JSON.stringify(r.body)}`);
   }
+});
+
+test("Delete account asks as for anyone, but never runs, and the next start drops it", async () => {
+  const o = await signIn(ORBIT);
+  assert.equal((await t.call("POST", "/me/deletion", {}, o.access)).status, 200);
+  t.tick(31 * 86_400_000);
+  await runDeletions(t.db, t.notify, t.now());
   const [u] = await t.db.select().from(users).where(eq(users.email, ORBIT));
-  assert.equal(u!.deletionDueAt, null);
+  assert.equal(u!.deletedAt, null);
+  await seedReview(t.db, review, t.now());
+  assert.equal((await t.db.select().from(users).where(eq(users.email, ORBIT)))[0]!.deletionDueAt, null);
+  await signIn(ORBIT);
+});
+
+test("every start signs the review accounts out, so a new code shuts out the old one", async () => {
+  const o = await signIn(ORBIT);
+  assert.equal((await t.call("GET", "/me", undefined, o.access)).status, 200);
+  await resetReview(t.db, t.now());
+  assert.equal((await t.call("GET", "/me", undefined, o.access)).status, 401);
+});
+
+test("a review account can't join a real host's team", async () => {
+  const o = await signIn(ORBIT);
+  const at = new Date(t.now());
+  const [real] = await t.db.insert(users).values({ name: "Host", phone: "+919822222222", phoneVerifiedAt: at, dob: "1990-01-01" }).returning();
+  const [h] = await t.db.insert(hosts).values({ name: "Real host", slug: "real-host-x1", kind: "other", city: "Hyderabad", ownerId: real!.id, createdBy: real!.id }).returning();
+  const [seat] = await t.db.insert(teamRoles).values({ hostId: h!.id, role: "admin", contact: ORBIT, addedBy: real!.id, addedAt: at }).returning();
+  const r = await t.call("POST", `/invites/${seat!.id}/accept`, {}, o.access);
+  assert.equal(r.body.error, "reviewAccount");
 });
 
 test("a real Admin on a reviewer's host can't make it public either", async () => {
@@ -158,11 +187,6 @@ test("a real Admin on a reviewer's host can't make it public either", async () =
   assert.equal(r.body.error, "reviewPrivate");
 });
 
-test("two seeds at once make each account once", async () => {
-  await Promise.all([seedReview(t.db, review, t.now()), seedReview(t.db, review, t.now())]);
-  assert.equal((await t.db.select().from(users)).filter((u) => u.review).length, 3);
-});
-
 test("reordering the emails moves each account to its new email", async () => {
   const swapped = reviewFrom(CODE, `${LAUNCH},${ORBIT}`)!;
   await seedReview(t.db, swapped, t.now());
@@ -173,10 +197,11 @@ test("reordering the emails moves each account to its new email", async () => {
 
 test("an archived demo host is replaced at the next seed", async () => {
   const l = await signIn(LAUNCH);
-  await t.db.update(hosts).set({ status: "archived" }).where(eq(hosts.id, l.me.teams[0].hostId));
+  await t.db.update(hosts).set({ status: "archived" }).where(eq(hosts.ownerId, l.me.id));
   await seedReview(t.db, review, t.now());
-  const live = (await t.db.select().from(hosts)).filter((h) => h.kind === "other" && h.status === "live");
+  const live = (await t.db.select().from(hosts).where(eq(hosts.ownerId, l.me.id))).filter((h) => h.status === "live");
   assert.equal(live.length, 1);
+  assert.equal(live[0]!.visibility, "private");
 });
 
 test("a real email never takes the fixed code, and its own code still goes", async () => {
@@ -205,6 +230,17 @@ test("a review email on a real person's account is left out: a real code, never 
     assert.equal((await t2.call("POST", "/auth/code", { to: ORBIT })).status, 200);
     assert.equal(t2.sent.length, 1); // a real code went to them
     if (t2.lastCode(ORBIT) !== CODE) assert.equal((await t2.call("POST", "/auth/code/verify", { to: ORBIT, code: CODE, device })).body.error, "wrongCode");
+  } finally {
+    await t2.close();
+  }
+});
+
+test("seeds at once on an empty database make each account once", async () => {
+  const t2 = await testAppReview();
+  try {
+    await Promise.all([1, 2, 3].map(() => seedReview(t2.db, review, t2.now())));
+    assert.equal((await t2.db.select().from(users)).filter((u) => u.review).length, 3);
+    assert.equal((await t2.db.select().from(hosts)).length, 2);
   } finally {
     await t2.close();
   }

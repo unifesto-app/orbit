@@ -1,6 +1,6 @@
-import { and, eq, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import type { Db } from "../db/index.ts";
-import { hosts, legalAcceptances, stations, users, venues } from "../db/schema.ts";
+import { hosts, identities, legalAcceptances, passkeys, sessions, stations, users, venues } from "../db/schema.ts";
 import { startHost } from "../roles/routes.ts";
 import { isReview, type ReviewApp, type ReviewConfig, reviewPhone } from "./review.ts";
 import { TERMS_VERSION } from "./routes.ts";
@@ -17,6 +17,18 @@ import { TERMS_VERSION } from "./routes.ts";
 const NAME: Record<ReviewApp, string> = { orbit: "App Review", launch: "App Review Events", station: "App Review Venue" };
 const DOB = "1990-01-01";
 const LOCK = 742020; // any fixed number: pg_advisory_xact_lock's key for this seed
+
+// At every start, set or not: every review account is signed out and loses any passkey, Google or Apple, so a new code,
+// or turning review sign-in off, shuts out whoever had the old one. Reviewers just sign in again.
+export async function resetReview(db: Db, now = Date.now()) {
+  const at = new Date(now);
+  const ids = db.select({ id: users.id }).from(users).where(isNotNull(users.review));
+  await db.transaction(async (tx) => {
+    await tx.update(sessions).set({ endedAt: at }).where(and(inArray(sessions.userId, ids), isNull(sessions.endedAt)));
+    await tx.delete(passkeys).where(inArray(passkeys.userId, ids));
+    await tx.delete(identities).where(inArray(identities.userId, ids));
+  });
+}
 
 export async function seedReview(db: Db, cfg: ReviewConfig, now = Date.now()) {
   const at = new Date(now);
@@ -41,8 +53,14 @@ export async function seedReview(db: Db, cfg: ReviewConfig, now = Date.now()) {
       if (app === "orbit") return true;
 
       const kind = app === "station" ? "venue" : "other";
-      // One that isn't archived: an archived demo host is left as the reviewer left it, and a new one made.
-      let [host] = await tx.select().from(hosts).where(and(eq(hosts.ownerId, u.id), eq(hosts.kind, kind), ne(hosts.status, "archived"))).limit(1);
+      // One that isn't archived (an archived one is left as the reviewer left it, and a new one made); Play Partner's must
+      // be a Venue, Event Partner's any kind they changed it to.
+      let [host] = await tx
+        .select()
+        .from(hosts)
+        .where(and(eq(hosts.ownerId, u.id), ne(hosts.status, "archived"), app === "station" ? eq(hosts.kind, "venue") : undefined))
+        .orderBy(hosts.createdAt)
+        .limit(1);
       host ??= await startHost(tx, { name: NAME[app], kind, city: "Hyderabad", about: "A demo host for App Store and Play review. Not a real host." }, u, at);
       // Every host they own, also ones a reviewer started, stays private.
       await tx.update(hosts).set({ visibility: "private", updatedAt: at }).where(and(eq(hosts.ownerId, u.id), ne(hosts.visibility, "private")));
