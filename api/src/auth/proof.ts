@@ -154,14 +154,14 @@ export function proofs(cfg: ProofConfig, store: Store) {
       body: JSON.stringify({ integrity_token: token }),
       signal: timeout(),
     });
-    if (!res.ok) return `Google answered ${res.status}`;
+    if (!res.ok) return `${pkg}: Google answered ${res.status}`;
     const v = ((await res.json()) as { tokenPayloadExternal?: Verdict }).tokenPayloadExternal;
-    if (v?.requestDetails?.requestPackageName !== pkg || v.requestDetails.requestHash !== signed) return "request";
+    if (v?.requestDetails?.requestPackageName !== pkg || v.requestDetails.requestHash !== signed) return `${pkg}: request`;
     const app = v.appIntegrity;
     const ours = app?.appRecognitionVerdict === "PLAY_RECOGNIZED" || !!app?.certificateSha256Digest?.some((d) => play.certs?.includes(d));
     // The digest is logged so a test build's can be added to PLAY_CERTS.
-    if (app?.packageName !== pkg || !ours) return `app ${app?.appRecognitionVerdict} ${app?.certificateSha256Digest?.join(",")}`;
-    if (!v.deviceIntegrity?.deviceRecognitionVerdict?.includes("MEETS_DEVICE_INTEGRITY")) return "device";
+    if (app?.packageName !== pkg || !ours) return `${pkg}: app ${app?.appRecognitionVerdict} ${app?.certificateSha256Digest?.join(",")}`;
+    if (!v.deviceIntegrity?.deviceRecognitionVerdict?.includes("MEETS_DEVICE_INTEGRITY")) return `${pkg}: device`;
     return null;
   }
 

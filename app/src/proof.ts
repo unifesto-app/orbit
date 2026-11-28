@@ -50,9 +50,10 @@ async function prove(what: string, fresh: boolean): Promise<Proof | undefined> {
       };
       // A provider that has expired fails the first try: make a new one and try once more.
       const first = await token().catch(() => null);
-      if (first) return { kind: 'android', challenge, token: first };
+      // Which app asked (api/src/auth/proof.ts); the API takes none as this app too, for builds from before.
+      if (first) return { kind: 'android', challenge, token: first, app: 'in.heyorbit.app' };
       preparing = null;
-      return { kind: 'android', challenge, token: await token() };
+      return { kind: 'android', challenge, token: await token(), app: 'in.heyorbit.app' };
     }
     const kept = fresh ? null : Storage.getItemSync(KEY);
     if (kept) {

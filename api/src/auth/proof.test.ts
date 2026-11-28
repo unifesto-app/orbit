@@ -67,7 +67,8 @@ async function fakeApple() {
 
 // ---- double: Google (a service account's token, then the verdict the token stands for) and Cloudflare
 const serviceKey = generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey.export({ type: "pkcs8", format: "pem" }).toString();
-type Verdict = { hash: string; app?: string; certs?: string[]; device?: string[]; pkg?: string };
+// `pkg`: the package that asked (Google decodes the token only under it); `reqPkg`/`appPkg` make the verdict say another.
+type Verdict = { hash: string; app?: string; certs?: string[]; device?: string[]; pkg?: string; reqPkg?: string; appPkg?: string };
 const androidToken = (v: Verdict) => Buffer.from(JSON.stringify(v)).toString("base64url");
 function fakeServices() {
   const calls: string[] = [];
@@ -82,8 +83,8 @@ function fakeServices() {
       if (!url.includes(`/v1/${pkg}:decodeIntegrityToken`)) return new Response("wrong package", { status: 400 });
       return Response.json({
         tokenPayloadExternal: {
-          requestDetails: { requestPackageName: pkg, requestHash: v.hash, timestampMillis: String(Date.now()) },
-          appIntegrity: { appRecognitionVerdict: v.app ?? "PLAY_RECOGNIZED", packageName: pkg, certificateSha256Digest: v.certs ?? ["play-key"] },
+          requestDetails: { requestPackageName: v.reqPkg ?? pkg, requestHash: v.hash, timestampMillis: String(Date.now()) },
+          appIntegrity: { appRecognitionVerdict: v.app ?? "PLAY_RECOGNIZED", packageName: v.appPkg ?? pkg, certificateSha256Digest: v.certs ?? ["play-key"] },
           deviceIntegrity: { deviceRecognitionVerdict: v.device ?? ["MEETS_DEVICE_INTEGRITY"] },
         },
       });
@@ -244,7 +245,7 @@ test("a key kept before the host apps came (its public key alone) is the Orbit a
   assert.equal(await both.check({ kind: "ios", challenge: c, keyId: phone.keyId, assertion: phone.assert(`${c}:${what}`) }, what), null);
 });
 
-test("APP_BUNDLE_ID: unset is the Orbit app then the host apps; a list keeps its order; Play takes the first", () => {
+test("APP_BUNDLE_ID: unset is the Orbit app then the host apps; a list keeps its order; Play takes them all, a proof naming none being the first's", () => {
   assert.deepEqual(appsFrom(undefined, "TEAM123456"), { appIds: DEFAULT_BUNDLES.map((b) => `TEAM123456.${b}`), playPackages: DEFAULT_BUNDLES });
   assert.deepEqual(appsFrom(" , ", "TEAM123456").playPackages[0], "in.heyorbit.app");
   assert.deepEqual(appsFrom("in.heyorbit.app", "TEAM123456"), { appIds: ["TEAM123456.in.heyorbit.app"], playPackages: ["in.heyorbit.app"] });
@@ -302,6 +303,20 @@ test("the partner apps prove themselves on Android by naming their package; one 
   assert.equal(await check("in.heyorbit.station", "in.heyorbit.launch"), false); // names one app, token is another's
   assert.equal(await check("in.heyorbit.crew", "in.heyorbit.crew"), false); // not on the list
   assert.equal(await check("com.copycat", "com.copycat"), false);
+});
+
+test("an Android verdict must name the package it was opened under, twice; a listed test cert works for each app", async () => {
+  const { p } = await setup();
+  const check = async (v: Omit<Verdict, "hash">, app: string) => {
+    const c = await p.challenge();
+    return (await quiet(() => p.check({ kind: "android", challenge: c, token: androidToken({ hash: `${c}:${what}`, ...v }), app }, what))).result;
+  };
+  const launch = "in.heyorbit.launch";
+  assert.equal(await check({ pkg: launch, reqPkg: "in.heyorbit.app" }, launch), false);
+  assert.equal(await check({ pkg: launch, appPkg: "in.heyorbit.app" }, launch), false);
+  assert.equal(await check({ pkg: launch, reqPkg: "com.copycat" }, launch), false);
+  assert.equal(await check({ pkg: launch, appPkg: "com.copycat" }, launch), false);
+  assert.equal(await check({ pkg: launch, app: "UNRECOGNIZED_VERSION", certs: ["test-build-key"] }, launch), true); // Orbit's own test build
 });
 
 test("Android without Play Integrity set up fails", async () => {
