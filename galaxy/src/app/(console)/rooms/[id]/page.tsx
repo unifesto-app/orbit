@@ -63,7 +63,7 @@ async function Room({ params }: Pick<PageProps<"/rooms/[id]">, "params">) {
             </thead>
             <tbody>
               {members.map((m) => (
-                <tr key={m.id}>
+                <tr key={m.id} id={m.id /* a report links to the card: /rooms/[id]#memberId */}>
                   <td>
                     {people ? (
                       <Link href={`/users/${m.userId}`} prefetch={false}>
