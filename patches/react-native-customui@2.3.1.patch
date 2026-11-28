@@ -1,3 +1,23 @@
+diff --git a/android/build.gradle b/android/build.gradle
+index 0000000..0000000 100644
+--- a/android/build.gradle
++++ b/android/build.gradle
+@@ -16,11 +16,12 @@ repositories {
+     google()
+ }
+ android {
+-    compileSdkVersion 31
++    // Orbit: RN 0.88 needs compileSdk 34+; take the app's own SDK levels.
++    compileSdkVersion rootProject.ext.has('compileSdkVersion') ? rootProject.ext.compileSdkVersion : 35
+     namespace 'com.razorpay.rn.custom'
+     defaultConfig {
+-        minSdkVersion 21
+-        targetSdkVersion 31
++        minSdkVersion rootProject.ext.has('minSdkVersion') ? rootProject.ext.minSdkVersion : 24
++        targetSdkVersion rootProject.ext.has('targetSdkVersion') ? rootProject.ext.targetSdkVersion : 35
+         versionCode 1
+         versionName "1.0"
+     }
 diff --git a/ios/RazorpayCustomui.h b/ios/RazorpayCustomui.h
 index 577cac2..aa427a4 100644
 --- a/ios/RazorpayCustomui.h

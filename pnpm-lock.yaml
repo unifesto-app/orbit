@@ -13,7 +13,7 @@ patchedDependencies:
     hash: 4a5c7b312e6d3a835be5c5a93cdf9be88f6ee33653fe87e708b309373fac648b
     path: patches/expo-modules-autolinking@58.1.0.patch
   react-native-customui@2.3.1:
-    hash: 30387c9b59e1426580af8f6c28f6bf7eef2378808413abbe657bc896a2f8b40e
+    hash: a1282cd40744232c2670367822deb16188ae850007947fc6aebb958403216c3e
     path: patches/react-native-customui@2.3.1.patch
   react-native-razorpay@3.0.0:
     hash: 1e9a6cb903efa4cf3813df70d22285430942d26cc52d13c9f5fc75424d76ebec
@@ -178,7 +178,7 @@ importers:
         version: 0.88.1(@babel/core@7.29.13)(@react-native/metro-config@0.88.1(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.0)
       react-native-customui:
         specifier: 2.3.1
-        version: 2.3.1(patch_hash=30387c9b59e1426580af8f6c28f6bf7eef2378808413abbe657bc896a2f8b40e)(react-native@0.88.1(@babel/core@7.29.13)(@react-native/metro-config@0.88.1(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.0))(react@19.3.0)
+        version: 2.3.1(patch_hash=a1282cd40744232c2670367822deb16188ae850007947fc6aebb958403216c3e)(react-native@0.88.1(@babel/core@7.29.13)(@react-native/metro-config@0.88.1(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.0))(react@19.3.0)
       react-native-passkey:
         specifier: 3.6.2
         version: 3.6.2(react-native@0.88.1(@babel/core@7.29.13)(@react-native/metro-config@0.88.1(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.0))(react@19.3.0)
@@ -12198,7 +12198,7 @@ snapshots:
 
   react-is@19.3.1: {}
 
-  react-native-customui@2.3.1(patch_hash=30387c9b59e1426580af8f6c28f6bf7eef2378808413abbe657bc896a2f8b40e)(react-native@0.88.1(@babel/core@7.29.13)(@react-native/metro-config@0.88.1(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.0))(react@19.3.0):
+  react-native-customui@2.3.1(patch_hash=a1282cd40744232c2670367822deb16188ae850007947fc6aebb958403216c3e)(react-native@0.88.1(@babel/core@7.29.13)(@react-native/metro-config@0.88.1(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.0))(react@19.3.0):
     dependencies:
       '@babel/core': 7.29.13
       react: 19.3.0
