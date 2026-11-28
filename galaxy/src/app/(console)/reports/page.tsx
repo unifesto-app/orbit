@@ -5,10 +5,10 @@ import { Suspense } from "react";
 import { read } from "../../../api";
 import { Alert, Container, PageHeader, phone, ui } from "../../ui";
 import { time } from "../requests/status";
-import { STATUS_LABELS } from "./status";
+import { KINDS, STATUS_LABELS } from "./status";
 
 // Reports (X15; API: GET /galaxy/reports), for holders of Queues: people flagging an event or a host from its page in
-// the app, newest first. Contacts come masked.
+// the app, or a person in an event's room (inRoom), newest first. Contacts come masked.
 export const metadata: Metadata = { title: "Reports" };
 
 const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
@@ -16,7 +16,7 @@ const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v
 export default function Reports({ searchParams }: PageProps<"/reports">) {
   return (
     <div className={ui.page}>
-      <PageHeader title="Reports" description="Events and hosts people flagged in the app, newest first." />
+      <PageHeader title="Reports" description="Events, hosts and people in rooms flagged in the app, newest first." />
       <Suspense fallback={<nav aria-label="Report status" className={ui.tabs} />}>
         <Body searchParams={searchParams} />
       </Suspense>
@@ -61,10 +61,10 @@ async function Body({ searchParams }: Pick<PageProps<"/reports">, "searchParams"
                   <tr key={q.id}>
                     <td>
                       <Link href={`/reports/${q.id}`} prefetch={false}>
-                        {q.subject.name}
+                        {q.subject.kind === "person" ? `${q.subject.person.name ?? "No name yet"} in ${q.subject.name}` : q.subject.name}
                       </Link>
                     </td>
-                    <td>{q.subject.kind === "event" ? "Event" : "Host"}</td>
+                    <td>{KINDS[q.subject.kind]}</td>
                     <td>{REPORT_REASON_LABELS[q.reason]}</td>
                     <td>{q.openOnSubject}</td>
                     <td>{q.reporter.name ?? (q.reporter.phone ? phone(q.reporter.phone) : q.reporter.email) ?? "No name yet"}</td>

@@ -1256,6 +1256,8 @@ export const reports = pgTable(
     userId: uuid("user_id").notNull().references(() => users.id),
     eventId: uuid("event_id").references(() => events.id),
     hostId: uuid("host_id").references(() => hosts.id),
+    // A person reported from that event's room (inRoom R2): always with the event, which says where they were seen.
+    subjectUserId: uuid("subject_user_id").references(() => users.id),
     reason: text("reason", { enum: ["misleading", "scam", "unsafe", "offensive", "spam", "other"] }).notNull(),
     note: text("note"),
     status: text("status", { enum: ["open", "resolved", "dismissed"] }).notNull().default("open"),
@@ -1267,12 +1269,16 @@ export const reports = pgTable(
   (t) => [
     check("reports_one_subject", sql`(${t.eventId} is null) <> (${t.hostId} is null)`),
     check("reports_status", sql`${t.status} in ('open', 'resolved', 'dismissed')`),
+    check("reports_person_in_event", sql`${t.subjectUserId} is null or ${t.eventId} is not null`),
     index().on(t.status, t.createdAt),
-    // One open report per person per subject: a second is answered with the first.
-    uniqueIndex("reports_one_open_event").on(t.userId, t.eventId).where(sql`${t.status} = 'open' and ${t.eventId} is not null`),
+    // One open report per person per subject: a second is answered with the first. A person is a subject per room
+    // they were reported from; their room's event stays a subject of its own.
+    uniqueIndex("reports_one_open_event").on(t.userId, t.eventId).where(sql`${t.status} = 'open' and ${t.eventId} is not null and ${t.subjectUserId} is null`),
     uniqueIndex("reports_one_open_host").on(t.userId, t.hostId).where(sql`${t.status} = 'open' and ${t.hostId} is not null`),
+    uniqueIndex("reports_one_open_user").on(t.userId, t.eventId, t.subjectUserId).where(sql`${t.status} = 'open' and ${t.subjectUserId} is not null`),
     index().on(t.eventId),
     index().on(t.hostId),
+    index().on(t.subjectUserId),
   ],
 );
 

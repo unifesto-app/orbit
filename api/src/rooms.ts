@@ -17,6 +17,7 @@ import {
 import type { Deps } from "./auth/routes.ts";
 import type { User } from "./auth/sessions.ts";
 import { auditLog, bookings, events, hosts, roomAsks, roomMembers, userBlocks, users } from "./db/schema.ts";
+import type { Db } from "./db/index.ts";
 import { fail, invalid, isUuid, parse, signedIn, type Tx } from "./http.ts";
 import { holdersOf, onHost, requireFeature, type StaffEnv } from "./roles/access.ts";
 
@@ -52,36 +53,37 @@ const letIn = (userId: unknown, eventId: string) =>
 const askOf = (a: Ask | undefined, me: string): RoomAsk =>
   !a ? "none" : a.status === "accepted" ? "connected" : a.fromMember === me ? "asked" : a.status === "pending" ? "incoming" : "declined";
 
+// The room behind an event id, as rooms are defined above; null for anything else. Shared with reports.ts (R2).
+export const roomOf = async (db: Db, id: string): Promise<Room | null> => {
+  if (!isUuid(id)) return null;
+  const [r] = await db
+    .select({ id: events.id, slug: events.slug, title: events.title, startsAt: events.startsAt, endsAt: events.endsAt, hostId: events.hostId })
+    .from(events)
+    .innerJoin(hosts, eq(hosts.id, events.hostId))
+    .where(and(eq(events.id, id), eq(events.category, "meetups"), eq(events.inRoom, true), eq(events.status, "published"), eq(hosts.status, "live")));
+  return r?.startsAt && r.endsAt ? (r as Room) : null;
+};
+
+// Where the viewer stands, and their card. Removed outranks barred outranks closed; then whether they're let in now.
+export const standing = async (db: Db, now: () => number, room: Room, u: User): Promise<{ state: RoomState; mine: Member | null }> => {
+  const [mine = null] = await db.select().from(roomMembers).where(and(eq(roomMembers.eventId, room.id), eq(roomMembers.userId, u.id)));
+  if (mine?.removedAt) return { state: "removed", mine };
+  if (u.inRoomBarredAt) return { state: "barred", mine };
+  if (now() >= room.endsAt.getTime() + OPEN_MS) return { state: "closed", mine };
+  const [b] = await db
+    .select({ id: bookings.id })
+    .from(bookings)
+    .where(and(eq(bookings.userId, u.id), eq(bookings.eventId, room.id), eq(bookings.status, "confirmed"), gt(bookings.admitted, 0)))
+    .limit(1);
+  if (!b) return { state: "out", mine };
+  return { state: mine && !mine.leftAt ? "in" : "door", mine };
+};
+
 export function roomsRoutes({ db, store, secret, notify, media, now = Date.now }: Deps) {
   const app = new Hono<StaffEnv>();
   const auth = signedIn(db, secret, now);
   const queues = requireFeature(db, now, "queues");
   const at = () => new Date(now());
-
-  const roomOf = async (id: string): Promise<Room | null> => {
-    if (!isUuid(id)) return null;
-    const [r] = await db
-      .select({ id: events.id, slug: events.slug, title: events.title, startsAt: events.startsAt, endsAt: events.endsAt, hostId: events.hostId })
-      .from(events)
-      .innerJoin(hosts, eq(hosts.id, events.hostId))
-      .where(and(eq(events.id, id), eq(events.category, "meetups"), eq(events.inRoom, true), eq(events.status, "published"), eq(hosts.status, "live")));
-    return r?.startsAt && r.endsAt ? (r as Room) : null;
-  };
-
-  // Where the viewer stands, and their card. Removed outranks barred outranks closed; then whether they're let in now.
-  const standing = async (room: Room, u: User): Promise<{ state: RoomState; mine: Member | null }> => {
-    const [mine = null] = await db.select().from(roomMembers).where(and(eq(roomMembers.eventId, room.id), eq(roomMembers.userId, u.id)));
-    if (mine?.removedAt) return { state: "removed", mine };
-    if (u.inRoomBarredAt) return { state: "barred", mine };
-    if (now() >= room.endsAt.getTime() + OPEN_MS) return { state: "closed", mine };
-    const [b] = await db
-      .select({ id: bookings.id })
-      .from(bookings)
-      .where(and(eq(bookings.userId, u.id), eq(bookings.eventId, room.id), eq(bookings.status, "confirmed"), gt(bookings.admitted, 0)))
-      .limit(1);
-    if (!b) return { state: "out", mine };
-    return { state: mine && !mine.leftAt ? "in" : "door", mine };
-  };
 
   // Who can show at all: a card staff haven't removed, of an account not deleted, suspended or barred.
   const shown = () =>
@@ -149,7 +151,7 @@ export function roomsRoutes({ db, store, secret, notify, media, now = Date.now }
   };
 
   const viewOf = async (room: Room, u: User): Promise<RoomView> => {
-    const { state, mine } = await standing(room, u);
+    const { state, mine } = await standing(db, now, room, u);
     let members: RoomMember[] = [];
     // In: everyone visible. Closed: a past member (not removed) keeps the people they connected with, and their reach.
     if ((state === "in" || state === "closed") && mine) {
@@ -168,16 +170,16 @@ export function roomsRoutes({ db, store, secret, notify, media, now = Date.now }
 
   // The room and the viewer, in it; or the response that says why not. Hidden rooms and members are all the same 404.
   const inside = async (c: Context<StaffEnv>) => {
-    const room = await roomOf(c.req.param("eventId") ?? "");
+    const room = await roomOf(db, c.req.param("eventId") ?? "");
     if (!room) return nothing(c);
-    const { state, mine } = await standing(room, c.var.user);
+    const { state, mine } = await standing(db, now, room, c.var.user);
     if (state !== "in") return fail(c, 403, state, state === "door" ? "Join the room first." : REFUSED[state]);
     return { room, mine: mine! }; // "in" has a card
   };
 
   // GET /me/rooms/:eventId
   app.get("/me/rooms/:eventId", auth, async (c) => {
-    const room = await roomOf(c.req.param("eventId"));
+    const room = await roomOf(db, c.req.param("eventId"));
     return room ? c.json(await viewOf(room, c.var.user)) : nothing(c);
   });
 
@@ -185,9 +187,9 @@ export function roomsRoutes({ db, store, secret, notify, media, now = Date.now }
   app.put("/me/rooms/:eventId/card", auth, async (c) => {
     const b = await parse(c, RoomCard);
     if (!b) return invalid(c);
-    const room = await roomOf(c.req.param("eventId"));
+    const room = await roomOf(db, c.req.param("eventId"));
     if (!room) return nothing(c);
-    const { state } = await standing(room, c.var.user);
+    const { state } = await standing(db, now, room, c.var.user);
     if (state !== "door" && state !== "in") return fail(c, 403, state, REFUSED[state]);
     const [made] = await db
       .insert(roomMembers)
@@ -201,7 +203,7 @@ export function roomsRoutes({ db, store, secret, notify, media, now = Date.now }
   // DELETE /me/rooms/:eventId: leave. Asks waiting on me go; the ones I sent stay, unanswerable while I'm away
   // (accepting needs the asker in the room), and connections stay.
   app.delete("/me/rooms/:eventId", auth, async (c) => {
-    const room = await roomOf(c.req.param("eventId"));
+    const room = await roomOf(db, c.req.param("eventId"));
     if (!room) return nothing(c);
     await db.transaction(async (tx) => {
       const [left] = await tx
@@ -277,9 +279,9 @@ export function roomsRoutes({ db, store, secret, notify, media, now = Date.now }
   // it), and every ask between the two goes. From the door, inside or after the close: anyone I share an ask with, or
   // anyone I can see while I'm in. Never once removed or barred.
   app.post("/me/rooms/:eventId/members/:memberId/block", auth, async (c) => {
-    const room = await roomOf(c.req.param("eventId"));
+    const room = await roomOf(db, c.req.param("eventId"));
     if (!room) return nothing(c);
-    const { state, mine } = await standing(room, c.var.user);
+    const { state, mine } = await standing(db, now, room, c.var.user);
     if (state !== "door" && state !== "in" && state !== "closed") return fail(c, 403, state, REFUSED[state]);
     const memberId = c.req.param("memberId");
     const [them] =
